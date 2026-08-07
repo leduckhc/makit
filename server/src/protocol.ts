@@ -312,6 +312,45 @@ export interface PortDTO {
    * Absent means the UI hides Open/Copy rather than offering a broken link.
    */
   openUrl?: string;
+  /**
+   * SPEC-42 D10. Present only when this listener's cwd matches a worktree that
+   * history records as REMOVED — i.e. nothing will ever reclaim the port but the
+   * user. Mutually exclusive with {@link worktreePath}: an orphan is by
+   * definition unowned. Absent for every port makit cannot prove is orphaned,
+   * including on a first run with no history — the fields inside are individually
+   * optional so a known-orphan with an unknown date never fabricates one.
+   */
+  orphan?: PortOrphanDTO;
+  /**
+   * SPEC-42 D12. Present when history shows a second ACTIVE worktree also claims
+   * this port, so a dev server started there would fail to bind. Derived from
+   * history, not from the live scan: the OS forbids two live LISTENs on one
+   * endpoint, so the rival is by construction not currently running.
+   */
+  collision?: PortCollisionDTO;
+}
+
+/**
+ * Why a listener is an orphan. Every field is optional on purpose (SPEC-41's
+ * absent-stays-absent rule): makit can often prove the cwd is a dead worktree
+ * while knowing neither its branch nor when it was removed, and a fabricated
+ * "removed 0d ago" would be worse than silence.
+ */
+export interface PortOrphanDTO {
+  /** Branch the removed worktree was on, when history recorded it. */
+  formerBranch?: string;
+  /** Absolute path of the worktree that is gone. */
+  formerWorktreePath?: string;
+  /** Epoch ms makit first saw the worktree missing; absent when unknown. */
+  removedAt?: number;
+}
+
+/** The rival claimant for a port. */
+export interface PortCollisionDTO {
+  /** Branch of the other worktree that history says also uses this port. */
+  withBranch?: string;
+  /** Absolute path of that worktree. */
+  withWorktreePath?: string;
 }
 
 /** One host-wide scan, carried on the `ports.snapshot` event as `snapshot`. */

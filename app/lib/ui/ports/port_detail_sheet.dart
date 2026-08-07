@@ -101,7 +101,7 @@ class PortDetailSheetBody extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SheetHeader(title: ':${port.port} ${port.command.split(' ').first}'),
+          SheetHeader(title: ':${port.port} ${portCommandToken(port.command)}'),
           Padding(
             padding: const EdgeInsets.fromLTRB(kSpace16, 0, kSpace16, kSpace8),
             child: Row(

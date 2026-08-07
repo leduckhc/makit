@@ -27,6 +27,7 @@ class PortsGlyph extends StatelessWidget {
     required this.state,
     required this.count,
     this.size = 16,
+    this.showBadge = true,
   });
 
   final PortsGlyphState state;
@@ -37,6 +38,11 @@ class PortsGlyph extends StatelessWidget {
   /// Painted glyph size. 14 on the desktop sub-row (fits the 16 pt line), 16
   /// on the phone's trailing control column.
   final double size;
+
+  /// Whether the attention/exposed dot (and the unknown `?`) ride the glyph.
+  /// The session-tile glyph sets this false so it stays quieter than the row
+  /// glyph, which already carries attention (SPEC-42 D14).
+  final bool showBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -59,8 +65,9 @@ class PortsGlyph extends StatelessWidget {
           alignment: Alignment.center,
           children: [
             Icon(PhosphorIconsLight.plug, size: size, color: color),
-            if (state == PortsGlyphState.attention ||
-                state == PortsGlyphState.exposed)
+            if (showBadge &&
+                (state == PortsGlyphState.attention ||
+                    state == PortsGlyphState.exposed))
               Positioned(
                 top: -2,
                 right: -2,
@@ -76,7 +83,7 @@ class PortsGlyph extends StatelessWidget {
                   ),
                 ),
               ),
-            if (state == PortsGlyphState.unknown)
+            if (showBadge && state == PortsGlyphState.unknown)
               Positioned(
                 top: -2,
                 right: -2,

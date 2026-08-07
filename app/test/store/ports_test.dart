@@ -16,6 +16,8 @@ Map<String, dynamic> _portJson({
   String? sessionId,
   Map<String, dynamic>? health,
   String? openUrl,
+  Object? orphan,
+  Object? collision,
 }) => {
   'key': key,
   'port': port,
@@ -28,6 +30,8 @@ Map<String, dynamic> _portJson({
   'sessionId': ?sessionId,
   'health': ?health,
   'openUrl': ?openUrl,
+  'orphan': ?orphan,
+  'collision': ?collision,
 };
 
 PortsSnapshot _snap(List<Map<String, dynamic>> ports, {bool scanOk = true}) =>
@@ -88,6 +92,95 @@ void main() {
       )!;
       expect(p.health!.kind, PortHealthKind.refused);
       expect(p.health!.status, isNull);
+    });
+  });
+
+  group('orphan/collision tolerance (SPEC-42 D10/D12)', () {
+    test('a well-formed orphan parses all three fields', () {
+      final p = PortInfo.fromJson(
+        _portJson(
+          worktreePath: null,
+          orphan: {
+            'formerBranch': 'feat/desktop-tabs',
+            'formerWorktreePath': '/repo/gone',
+            'removedAt': 2500,
+          },
+        ),
+      )!;
+      expect(p.orphan, isNotNull);
+      expect(p.orphan!.formerBranch, 'feat/desktop-tabs');
+      expect(p.orphan!.formerWorktreePath, '/repo/gone');
+      expect(p.orphan!.removedAt, 2500);
+      expect(p.collision, isNull);
+    });
+
+    test('a well-formed collision parses both fields', () {
+      final p = PortInfo.fromJson(
+        _portJson(
+          collision: {
+            'withBranch': 'chore/deps',
+            'withWorktreePath': '/repo/deps',
+          },
+        ),
+      )!;
+      expect(p.collision, isNotNull);
+      expect(p.collision!.withBranch, 'chore/deps');
+      expect(p.collision!.withWorktreePath, '/repo/deps');
+    });
+
+    test('a non-map orphan drops to null but keeps the port', () {
+      final p = PortInfo.fromJson(_portJson(orphan: 'oops'));
+      expect(p, isNotNull);
+      expect(p!.orphan, isNull);
+    });
+
+    test('a non-map collision drops to null but keeps the port', () {
+      final p = PortInfo.fromJson(_portJson(collision: 42));
+      expect(p, isNotNull);
+      expect(p!.collision, isNull);
+    });
+
+    test('a bad-scalar removedAt stays absent (never coerced to 0 — D10)', () {
+      // The fabrication D10 exists to prevent: a zeroed date would render as an
+      // epoch string / "removed 56y ago", the exact "up 56y" lie the feature
+      // refuses. Absent must stay absent.
+      final p = PortInfo.fromJson(
+        _portJson(
+          worktreePath: null,
+          orphan: {'formerBranch': 'feat/x', 'removedAt': 'nope'},
+        ),
+      )!;
+      expect(p.orphan, isNotNull);
+      expect(p.orphan!.formerBranch, 'feat/x');
+      expect(p.orphan!.removedAt, isNull);
+    });
+
+    test('an empty orphan object is still an orphan (branch/date unknown)', () {
+      // The annotation existing is what marks the port orphaned; the fields
+      // inside are individually optional (the port IS orphaned even when we
+      // know neither its branch nor when it went).
+      final p = PortInfo.fromJson(
+        _portJson(worktreePath: null, orphan: <String, dynamic>{}),
+      )!;
+      expect(p.orphan, isNotNull);
+      expect(p.orphan!.formerBranch, isNull);
+      expect(p.orphan!.formerWorktreePath, isNull);
+      expect(p.orphan!.removedAt, isNull);
+    });
+
+    test('a bad-scalar withBranch stays absent (never coerced)', () {
+      final p = PortInfo.fromJson(
+        _portJson(collision: {'withBranch': 7, 'withWorktreePath': '/repo/d'}),
+      )!;
+      expect(p.collision, isNotNull);
+      expect(p.collision!.withBranch, isNull);
+      expect(p.collision!.withWorktreePath, '/repo/d');
+    });
+
+    test('orphan/collision stay absent when not sent', () {
+      final p = PortInfo.fromJson(_portJson())!;
+      expect(p.orphan, isNull);
+      expect(p.collision, isNull);
     });
   });
 

@@ -111,6 +111,22 @@ void main() {
         const KeyChord(LogicalKeyboardKey.enter, shift: true),
       );
     });
+
+    test('openPorts defaults to ⌘⇧P on macOS (SPEC-42 D9)', () {
+      final map = Keymap.defaults(cmdIsPrimary: true);
+      expect(
+        map.chordFor(ShortcutAction.openPorts),
+        const KeyChord(LogicalKeyboardKey.keyP, meta: true, shift: true),
+      );
+    });
+
+    test('openPorts defaults to ⌃⇧P off macOS (SPEC-42 D9)', () {
+      final map = Keymap.defaults(cmdIsPrimary: false);
+      expect(
+        map.chordFor(ShortcutAction.openPorts),
+        const KeyChord(LogicalKeyboardKey.keyP, control: true, shift: true),
+      );
+    });
   });
 
   group('Keymap conflicts', () {
@@ -140,6 +156,18 @@ void main() {
       // sendMessage (composer) and openSettings (global) could share a chord.
       final send = map.chordFor(ShortcutAction.sendMessage);
       expect(map.conflictFor(send, ShortcutScope.global), isNull);
+    });
+
+    test('openPorts ⌘⇧P is free in the global scope (SPEC-42 D9)', () {
+      final chord = map.chordFor(ShortcutAction.openPorts);
+      expect(
+        map.conflictFor(
+          chord,
+          ShortcutScope.global,
+          ignore: ShortcutAction.openPorts,
+        ),
+        isNull,
+      );
     });
   });
 

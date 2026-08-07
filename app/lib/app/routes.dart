@@ -21,5 +21,9 @@ const kRouteSettings = '$kRouteRepos/settings';
 const kRouteArchived = '$kRouteRepos/archived';
 const kRouteDiagnostics = '$kRouteRepos/diagnostics';
 
+/// The global Ports screen (SPEC-42 P2a) — "everything, all repos". Accepts an
+/// optional `?repo=<id>` that pre-selects the *This repo* filter.
+const kRoutePorts = '$kRouteRepos/ports';
+
 /// A single session's screen.
 String routeForSession(String sessionId) => '$kRouteRepos/session/$sessionId';

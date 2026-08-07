@@ -121,6 +121,12 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(width: kSpace6),
                     ],
                     GlassCircleButton(
+                      icon: PhosphorIconsLight.plug,
+                      tooltip: 'Ports',
+                      onTap: () => context.go(kRoutePorts),
+                    ),
+                    const SizedBox(width: kSpace6),
+                    GlassCircleButton(
                       icon: PhosphorIconsLight.archiveBox,
                       tooltip: 'Archived sessions',
                       onTap: () => context.go(kRouteArchived),

@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:makit/app/routes.dart';
 import 'package:makit/store/ports.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/ports/port_detail_sheet.dart';
@@ -379,5 +381,88 @@ void main() {
     );
     await tester.pump();
     expect(find.byKey(const ValueKey('ports-list-row-5173')), findsNothing);
+  });
+
+  // SPEC-42 P2a T7 — sheet 1 offers a jump to the global Ports screen.
+  group('sheet 1 — Open the Ports screen', () {
+    testWidgets('the button invokes onOpenPortsScreen', (tester) async {
+      var opened = 0;
+      await tester.pumpWidget(
+        _host(
+          WorktreePortsSheetBody(
+            branch: 'feat/open-ports',
+            ports: [_port(port: 5173)],
+            onOpenPort: (_) {},
+            onOpenPortsScreen: () => opened++,
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open the Ports screen'));
+      expect(opened, 1);
+    });
+
+    testWidgets('there is no button when no callback is supplied', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          WorktreePortsSheetBody(
+            branch: 'feat/open-ports',
+            ports: [_port(port: 5173)],
+            onOpenPort: (_) {},
+          ),
+        ),
+      );
+      expect(find.text('Open the Ports screen'), findsNothing);
+    });
+
+    testWidgets('showWorktreePortsSheet routes to kRoutePorts', (tester) async {
+      final router = GoRouter(
+        initialLocation: '/',
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (ctx, _) => Scaffold(
+              body: ElevatedButton(
+                onPressed: () => showWorktreePortsSheet(
+                  ctx,
+                  worktreePath: '/wt',
+                  branch: 'feat/open-ports',
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+          GoRoute(
+            path: kRoutePorts,
+            builder: (_, _) => const Scaffold(body: Text('PORTS SCREEN')),
+          ),
+        ],
+      );
+      final container = ProviderContainer(
+        overrides: [
+          portsProvider.overrideWithValue(
+            PortsSnapshot(
+              ports: [_port(port: 5173)],
+              scannedAt: 0,
+              scanOk: true,
+            ),
+          ),
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(routerConfig: router),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open the Ports screen'));
+      await tester.pumpAndSettle();
+      expect(find.text('PORTS SCREEN'), findsOneWidget);
+    });
   });
 }

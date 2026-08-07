@@ -8,6 +8,7 @@ import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../widgets/session_status_dot.dart';
+import '../ports/session_ports_glyph.dart';
 import 'repo_chips.dart';
 import '../../app/routes.dart';
 
@@ -142,6 +143,9 @@ class SessionTile extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(width: kSpace8),
+                    // The session's own ports glyph (D14): quiet, renders only
+                    // when a listener is attributed to this session.
+                    SessionPortsGlyph(sessionId: session.id),
                     // The agent is the least urgent fact here, so it sits last
                     // and small — the status leads.
                     AgentAvatar(agent: session.agent, size: 22),

@@ -41,6 +41,8 @@ PortHealthKind? _parseHealthKind(Object? v) => switch (v) {
 
 int? _asIntOrNull(Object? v) => v is num ? v.toInt() : null;
 
+String? _asStringOrNull(Object? v) => v is String ? v : null;
+
 /// One HTTP probe verdict. [status] is absent unless a status line was parsed
 /// (D3); [probedAt] is required — it is what drives "probed N s ago".
 class PortHealth {
@@ -69,6 +71,59 @@ class PortHealth {
   }
 }
 
+/// SPEC-42 D10. Why a listener is an orphan: its process cwd sits under a
+/// worktree that history records as removed, so nothing but the user will ever
+/// reclaim the port. Every field is individually optional (the absent-stays-
+/// absent rule): makit can prove the cwd is a dead worktree while knowing
+/// neither its branch nor when it went, and a fabricated "removed 0d ago" is
+/// exactly the "up 56y" lie [portUptimeLabel] refuses to tell.
+class PortOrphan {
+  const PortOrphan({
+    this.formerBranch,
+    this.formerWorktreePath,
+    this.removedAt,
+  });
+
+  /// Branch the removed worktree was on, when history recorded it.
+  final String? formerBranch;
+
+  /// Absolute path of the worktree that is gone.
+  final String? formerWorktreePath;
+
+  /// Epoch ms the worktree was last seen active; absent ⇒ render NO date (D10).
+  final int? removedAt;
+
+  /// Tolerant decode of an orphan sub-object. The presence of the object is
+  /// what marks the port orphaned, so this never returns null for a map — each
+  /// field degrades to absent independently, never coerced (a bad `removedAt`
+  /// stays null, never 0). The caller drops a non-map orphan to null while
+  /// keeping the port.
+  static PortOrphan fromJson(Map<String, dynamic> j) => PortOrphan(
+    formerBranch: _asStringOrNull(j['formerBranch']),
+    formerWorktreePath: _asStringOrNull(j['formerWorktreePath']),
+    removedAt: _asIntOrNull(j['removedAt']),
+  );
+}
+
+/// SPEC-42 D12. The rival claimant for a port: another still-active worktree
+/// that history says also binds it, so a dev server started here would fail to
+/// bind. Both fields are optional for the same absent-stays-absent reason.
+class PortCollision {
+  const PortCollision({this.withBranch, this.withWorktreePath});
+
+  /// Branch of the other worktree that history says also uses this port.
+  final String? withBranch;
+
+  /// Absolute path of that worktree.
+  final String? withWorktreePath;
+
+  /// Tolerant decode; never null for a map (see [PortOrphan.fromJson]).
+  static PortCollision fromJson(Map<String, dynamic> j) => PortCollision(
+    withBranch: _asStringOrNull(j['withBranch']),
+    withWorktreePath: _asStringOrNull(j['withWorktreePath']),
+  );
+}
+
 /// One listening TCP port attributed (best-effort) to a worktree.
 class PortInfo {
   const PortInfo({
@@ -83,6 +138,8 @@ class PortInfo {
     this.sessionId,
     this.health,
     this.openUrl,
+    this.orphan,
+    this.collision,
   });
 
   /// Snapshot key, NOT an identity: `<pid>:<address>:<port>` (D6).
@@ -109,6 +166,13 @@ class PortInfo {
   /// guessing.
   final String? openUrl;
 
+  /// SPEC-42 D10: this port outlived its worktree; absent unless orphaned.
+  final PortOrphan? orphan;
+
+  /// SPEC-42 D12: another active worktree also binds this port; absent unless
+  /// a collision was derived.
+  final PortCollision? collision;
+
   /// Tolerant decode: returns null when a required scalar is unrecoverable
   /// (so the codec can drop just this entry). Absent optionals stay absent.
   static PortInfo? fromJson(Map<String, dynamic> j) {
@@ -128,6 +192,17 @@ class PortInfo {
     final health = rawHealth is Map
         ? PortHealth.fromJson(Map<String, dynamic>.from(rawHealth))
         : null;
+    // Tolerant: a malformed (non-map) annotation drops to null WITHOUT dropping
+    // the port — a bad annotation must never lose a real listener (the
+    // PortHealth precedent).
+    final rawOrphan = j['orphan'];
+    final orphan = rawOrphan is Map
+        ? PortOrphan.fromJson(Map<String, dynamic>.from(rawOrphan))
+        : null;
+    final rawCollision = j['collision'];
+    final collision = rawCollision is Map
+        ? PortCollision.fromJson(Map<String, dynamic>.from(rawCollision))
+        : null;
     return PortInfo(
       key: key,
       port: (j['port'] as num).toInt(),
@@ -142,6 +217,8 @@ class PortInfo {
       sessionId: j['sessionId'] is String ? j['sessionId'] as String : null,
       health: health,
       openUrl: j['openUrl'] is String ? j['openUrl'] as String : null,
+      orphan: orphan,
+      collision: collision,
     );
   }
 }

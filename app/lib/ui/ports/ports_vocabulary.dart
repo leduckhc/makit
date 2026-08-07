@@ -82,6 +82,64 @@ String portReachPill(PortReach reach) => switch (reach) {
   PortReach.exposed => 'exposed',
 };
 
+/// The one word that ships with the orphan tint, so colour is never the only
+/// signal (SPEC-41's accessibility rule, spec §9).
+const String portOrphanWord = 'orphan';
+
+/// The one word that ships with the collision tint (spec §9 legend: "clash").
+const String portClashWord = 'clash';
+
+/// The orphan row's provenance line (D10): `was <branch>, removed Nd ago` when
+/// history recorded both; it degrades to the branch alone, then to the cwd
+/// path, and NEVER fabricates a date — a missing [PortOrphan.removedAt] renders
+/// no date at all, the same discipline as [portUptimeLabel]'s empty string
+/// rather than a zero-epoch "removed 56y ago".
+String portOrphanLabel(PortOrphan orphan, {required int nowMs}) {
+  final removed = _removedAge(orphan.removedAt, nowMs);
+  final branch = orphan.formerBranch;
+  if (branch != null && branch.isNotEmpty) {
+    return removed.isEmpty ? 'was $branch' : 'was $branch, removed $removed';
+  }
+  // No branch recorded: say WHERE from, still with no fabricated date.
+  final path = orphan.formerWorktreePath;
+  if (path != null && path.isNotEmpty) {
+    return removed.isEmpty ? 'cwd $path' : 'cwd $path, removed $removed';
+  }
+  return removed.isEmpty ? 'worktree gone' : 'removed $removed';
+}
+
+/// The full orphan sentence (spec §3/§9 tooltip = Semantics.label). Ends in the
+/// removal age only when history holds it (D10) — never a fabricated date.
+String portOrphanTooltip(PortOrphan orphan, {required int nowMs}) {
+  final where = orphan.formerWorktreePath;
+  final head = (where != null && where.isNotEmpty)
+      ? 'Listening from $where, which stopped being a worktree'
+      : 'Listening from a worktree that is gone';
+  final removed = _removedAge(orphan.removedAt, nowMs);
+  final when = removed.isEmpty ? '' : ' $removed';
+  return '$head$when. Nothing will ever reclaim it but you.';
+}
+
+/// The collision line (D12): names the other branch and stops there — NO
+/// suggested free port (that is SPEC-43/P3). `also wanted by <branch>`.
+String portCollisionLabel(PortCollision collision, {required int port}) {
+  final branch = collision.withBranch;
+  return (branch != null && branch.isNotEmpty)
+      ? '$port also wanted by $branch'
+      : '$port also wanted by another worktree';
+}
+
+/// The full collision sentence (spec §3/§9 tooltip = Semantics.label). States
+/// the clash honestly; carries no suggested port (D12).
+String portCollisionTooltip(PortCollision collision, {required int port}) {
+  final branch = collision.withBranch;
+  final who = (branch != null && branch.isNotEmpty)
+      ? branch
+      : 'another worktree';
+  return '$who already holds $port — a dev server started here would fail to '
+      'bind.';
+}
+
 /// Why the glyph shows an honest unknown (`lsof` denied). [scanError] is the
 /// server's one-line reason when it has one.
 String portsScanUnavailableTooltip(String? scanError) {
@@ -106,6 +164,36 @@ String portUptimeLabel(int? startedAt, {required int nowMs}) {
 /// pid + command, one string for the process line.
 String portPidCommandLabel(int pid, String command) => 'pid $pid · $command';
 
+/// The global screen's subtitle: how many are listening, and how old the scan
+/// is. Freshness is a first-class fact here for the same reason the health
+/// tooltip carries `probed N s ago` — every verdict on the screen is cached
+/// (stale-while-revalidate), and a list with no age reads as live.
+String portsScanSummary({
+  required int listening,
+  required int scannedAt,
+  required int nowMs,
+}) {
+  final what = listening == 1 ? '1 listening' : '$listening listening';
+  final secs = ((nowMs - scannedAt) ~/ 1000).clamp(0, 1 << 30);
+  final age = secs < 90 ? '$secs s ago' : '${secs ~/ 60} min ago';
+  return '$what · scanned $age';
+}
+
+/// The short command word line 1 shows: argv[0]'s basename, because a real
+/// argv[0] is an absolute path (`/opt/homebrew/Cellar/node/26.5.1/bin/node`)
+/// that ellipses to nothing in a 320 pt popover row. This is NOT the `kind`
+/// guessing D5 cut — no pattern matching, no invented vocabulary; it is still
+/// literally the command, just without the directories. The full argv stays one
+/// hover away via [portPidCommandLabel].
+String portCommandToken(String command) {
+  final argv0 = command.split(' ').first;
+  final slash = argv0.lastIndexOf('/');
+  if (slash < 0) return argv0;
+  final base = argv0.substring(slash + 1);
+  // A trailing slash leaves no basename; show the path rather than a blank slot.
+  return base.isEmpty ? argv0 : base;
+}
+
 /// The glyph's spoken label — a WORD for every tinted state, so colour is
 /// never the only signal (worktree_row.dart's rule). Returns empty for
 /// [PortsGlyphState.none] (nothing is drawn there).
@@ -125,6 +213,20 @@ String _probeAge(int probedAt, int nowMs) {
   final secs = ((nowMs - probedAt) ~/ 1000).clamp(0, 1 << 30);
   if (secs < 90) return 'probed $secs s ago';
   return 'probed ${secs ~/ 60} min ago';
+}
+
+/// "41m ago" / "3h ago" / "2d ago"; empty when the removal time is unknown —
+/// the same absent-stays-absent discipline as [portUptimeLabel] (D10 forbids a
+/// fabricated date).
+String _removedAge(int? removedAt, int nowMs) {
+  if (removedAt == null) return '';
+  final ms = nowMs - removedAt;
+  if (ms < 0) return '';
+  final mins = ms ~/ 60000;
+  if (mins < 60) return '${mins}m ago';
+  final hours = mins ~/ 60;
+  if (hours < 24) return '${hours}h ago';
+  return '${hours ~/ 24}d ago';
 }
 
 /// The reason phrase for a status code (2xx/3xx/4xx/5xx). Terse; the tooltip

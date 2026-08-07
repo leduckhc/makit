@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { PortsService, SCAN_INTERVAL_MS } from "./service.js";
 import type { Exec } from "./scan.js";
 import type { PortsSnapshotDTO } from "../protocol.js";
+import type { PortHistory } from "./history_store.js";
 
 const LISTENER_OUT = ["p200", "u501", "f3", "PTCP", "n127.0.0.1:5173"].join("\n");
 const PS_OUT = ["  200 100 01:00:00 node vite", "  100 1 01:00:01 pnpm dev"].join("\n");
@@ -29,6 +30,9 @@ function harness(overrides: Partial<Parameters<typeof makeService>[0]> = {}): Ha
 function makeService(overrides: {
   exec?: Exec;
   listWorktreePaths?: () => string[];
+  listWorktreeBranches?: () => Map<string, string>;
+  loadHistory?: () => PortHistory;
+  saveHistory?: (h: PortHistory) => void;
   now?: () => number;
 } = {}) {
   const snapshots: PortsSnapshotDTO[] = [];
@@ -62,6 +66,9 @@ function makeService(overrides: {
       verdict: () => undefined,
     },
     listWorktreePaths: overrides.listWorktreePaths ?? (() => ["/repo/wt-a"]),
+    listWorktreeBranches: overrides.listWorktreeBranches ?? (() => new Map()),
+    loadHistory: overrides.loadHistory ?? (() => ({ entries: [] })),
+    saveHistory: overrides.saveHistory ?? (() => {}),
     listSessionRoots: () => new Map(),
     tailnetAddress: () => null,
     onSnapshot: (s) => snapshots.push(s),
@@ -325,4 +332,91 @@ test("the cached snapshot is available for a freshly-arrived watcher", async () 
   const cached = h.service.cachedSnapshot();
   assert.ok(cached);
   assert.equal(cached!.ports[0]!.port, 5173);
+});
+
+// --- T11: port-history wiring (upsert → annotate → debounced save) ---
+
+/** An in-memory fake of the injected history store: load returns what save last stored. */
+function fakeHistory() {
+  let stored: PortHistory = { entries: [] };
+  const saves: PortHistory[] = [];
+  return {
+    loadHistory: () => stored,
+    saveHistory: (h: PortHistory) => {
+      stored = h;
+      saves.push(h);
+    },
+    saves,
+    current: () => stored,
+  };
+}
+
+test("a scan with an owned port upserts it into the injected history store", async () => {
+  const store = fakeHistory();
+  const h = makeService({
+    loadHistory: store.loadHistory,
+    saveHistory: store.saveHistory,
+    listWorktreeBranches: () => new Map([["/repo/wt-a", "feat/a"]]),
+  });
+  h.service.setWatchers(1);
+  await flush();
+  assert.equal(store.saves.length, 1, "the history sink received one write");
+  const entry = store.current().entries.find((e) => e.worktreePath === "/repo/wt-a");
+  assert.ok(entry, "the owned worktree was recorded");
+  assert.deepEqual(entry!.ports, [5173]);
+  assert.equal(entry!.branch, "feat/a");
+});
+
+test("a rescan after the worktree leaves activeWorktreePaths yields an orphan-annotated snapshot", async () => {
+  const store = fakeHistory();
+  let active = ["/repo/wt-a"];
+  const h = makeService({
+    loadHistory: store.loadHistory,
+    saveHistory: store.saveHistory,
+    listWorktreePaths: () => active,
+    listWorktreeBranches: () => new Map([["/repo/wt-a", "feat/a"]]),
+  });
+  h.service.setWatchers(1);
+  await flush();
+  assert.equal(h.snapshots[0]!.ports[0]!.worktreePath, "/repo/wt-a");
+  assert.equal(h.snapshots[0]!.ports[0]!.orphan, undefined);
+
+  // The worktree is removed; its port keeps listening but is now unowned.
+  active = [];
+  h.tick();
+  await flush();
+  const last = h.snapshots[h.snapshots.length - 1]!;
+  assert.equal(last.ports[0]!.worktreePath, undefined, "the port is now unowned");
+  assert.equal(last.ports[0]!.orphan?.formerWorktreePath, "/repo/wt-a");
+  assert.equal(last.ports[0]!.orphan?.formerBranch, "feat/a");
+  assert.equal(typeof last.ports[0]!.orphan?.removedAt, "number");
+});
+
+test("the history write is debounced — an identical projection does not write again", async () => {
+  const store = fakeHistory();
+  const h = makeService({
+    loadHistory: store.loadHistory,
+    saveHistory: store.saveHistory,
+    listWorktreeBranches: () => new Map([["/repo/wt-a", "feat/a"]]),
+  });
+  h.service.setWatchers(1);
+  await flush();
+  assert.equal(store.saves.length, 1);
+  h.tick(); // identical scan → identical projection → no broadcast, no write
+  await flush();
+  assert.equal(store.saves.length, 1, "no second write for an unchanged projection");
+});
+
+test("a THROWING history read keeps the scan alive (scanOk reflects the scan, not the store)", async () => {
+  const h = makeService({
+    loadHistory: () => {
+      throw new Error("history store on fire");
+    },
+  });
+  h.service.setWatchers(1);
+  await flush();
+  assert.equal(h.snapshots.length, 1);
+  assert.equal(h.snapshots[0]!.scanOk, true, "the scan succeeds despite the store throwing");
+  assert.equal(h.snapshots[0]!.ports[0]!.port, 5173, "ports are still published, unannotated");
+  assert.equal(h.snapshots[0]!.ports[0]!.orphan, undefined);
 });

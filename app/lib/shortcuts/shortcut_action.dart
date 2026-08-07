@@ -70,6 +70,14 @@ enum ShortcutAction {
     scope: ShortcutScope.global,
   ),
 
+  /// Open the global Ports screen (SPEC-42 D9).
+  openPorts(
+    id: 'openPorts',
+    label: 'Open Ports',
+    description: 'Open the global Ports screen (everything, all repos)',
+    scope: ShortcutScope.global,
+  ),
+
   /// Split the active split into a left/right layout.
   splitVertical(
     id: 'splitVertical',
