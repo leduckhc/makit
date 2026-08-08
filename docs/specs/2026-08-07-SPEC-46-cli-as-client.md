@@ -75,6 +75,8 @@ identity, lineage, and an output contract.
 | **D10** | **Lineage is protocol data, not CLI bookkeeping.** `SessionDTO` gains `parentId?`, `handoffReason?`, `origin?: "app" \| "cli" \| "agent"`, persisted on `SessionMeta`. `makit tree` is a projection of those fields, and the app can caption "handed off from …". | If lineage lived only in `~/.makit`, the phone would show mystery sessions appearing with no explanation, and D9 would have nothing to count. It is also the minimum the app needs later to draw the chain without another spec changing the wire. |
 | **D11** | **Remote (`makit ctx` / `makit login`) is P3, and pins the same fingerprint the app pins.** `~/.makit/contexts.json`: named `{host, port, fingerprint, bearer}`; `makit login <makit://…>` consumes the URL `makit qr --url-only` already prints. Until then the CLI targets loopback, with `--host`/`--port` as today. | The workflow this spec exists for is local (the agent and the CLI run on the server host). Remote needs a pairing story for a device with no camera — a paste-the-URL flow, capability defaults, and cert pinning outside the app's pinning code. Real work, separable, and no P1 verb blocks on it. |
 | **D12** | **No TUI, no `race`, no `fleet`.** `makit attach` stays the line-oriented readline client it is. | SPEC-02 already put a long-running TUI out of scope, and ensemble/fleet orchestration is composition *on top of* this verb set — it should be specced once these verbs are real, not designed against imagined ones. |
+| **D13** | **A prompt from an agent-spawned session is routed up the lineage, then to everyone — it is never auto-approved.** `askDevice` stops filtering on `subscribed.has(sessionId)` and takes an **audience resolver**: (1) the session's own subscribers; else (2) the subscribers of the nearest ancestor via `parentId` (walking up, bounded by D9's depth); else (3) every authed client; then (4) today's `onUndeliverable` wake push. Applies identically to **both** kinds of `srv.request` — a tool permission (`awaiting-approval`) and an elicitation, i.e. a real question to the human (`awaiting-input`). The default policy stays `ask-on-risky` (`session.ts:212`); `--yolo` is opt-in **per handoff**. | Today's filter assumes every session was born on a screen, which is exactly the assumption D3 breaks: nobody has an agent-spawned session open, so `sent === 0` and the question is either pushed as a context-free buzz or **rejected outright** ("no subscribed clients to ask") — a handoff dead on arrival, discovered twenty minutes later. Routing up the lineage matches who owns the consequence: you asked for the handoff, so its questions are yours. Auto-approving instead was considered and rejected — it silently hands unsupervised shell access to an agent nobody watched, in a worktree that may hold credentials, and it fixes *only* permissions, leaving elicitation (which no policy can answer) still undeliverable. One routing rule covers both request kinds; two mechanisms would not. |
+| **D14** | **A prompt is self-describing.** Because step (3) can deliver to a client that has never seen this session, the `srv.request` must carry enough for the app to caption it — session title, harness, and handoff origin (D10's `parentId`/`handoffReason`) — not just the question text. | Step (3) is what makes D13 total, and an uncaptioned "Allow `rm -rf build`?" for a session the user never opened is worse than no prompt: it trains the user to answer without reading. Attribution is what makes the fallback tolerable instead of the reason notifications get switched off. |
 
 ## The verb grammar
 
@@ -123,9 +125,10 @@ producer is an LLM and a rejected handoff loses the context it was built from.
   D7's output contract and D8's exit codes. `makit sessions` becomes `makit ls` over WSS
   (`sessions` kept as a deprecated alias for one release).
 - **P1 — the handoff workflow.** D3 (env identity), D4 (`new`), D5 (`handoff`), D9 (depth guard),
-  D10 (lineage on the wire + persisted), plus `send`, `tail`, `wait`, `run`, `resume`, `rm`, and
-  `attach` re-homed on the new credential. **This is the slice that replaces the copy-paste
-  ritual.**
+  D10 (lineage on the wire + persisted), **D13 (prompt routing up the lineage) + D14 (captioned
+  prompts)** — both P1, because D3 is precisely what strands a prompt, plus `send`, `tail`, `wait`,
+  `run`, `resume`, `rm`, and `attach` re-homed on the new credential. **This is the slice that
+  replaces the copy-paste ritual.**
 - **P2 — the terminal as a full peer.** `session.fork` (SPEC-29's pending item), `approve`/`answer`
   (unblocking an agent-spawned session from the terminal), `ask --wait` (cross-harness delegation),
   `log`/`tree`, and the app-side "handed off from …" caption on D10's fields.
@@ -168,6 +171,15 @@ producer is an LLM and a rejected handoff loses the context it was built from.
       the refusal is server-side (proven by a direct WSS `session.spawn` with a forged shallow
       `MAKIT_SPAWN_DEPTH`).
 - [ ] `MAKIT_CLI_TOKEN` is rejected once its session ends (exit `4`).
+- [ ] **D13 routing**, proven rung by rung against the stub adapter: a prompt from a handoff child
+      reaches a client that has only the **parent** open; with the parent closed too it reaches every
+      authed client; with no client at all it still takes the wake-push path and stays pending. No
+      prompt is ever auto-answered, and an elicitation (`awaiting-input`) routes identically to a
+      permission (`awaiting-approval`).
+- [ ] The lineage walk terminates on a cycle and on a missing/archived ancestor (unit test with a
+      forged `parentId` loop).
+- [ ] **D14**: the `srv.request` envelope carries session title, agent and `handoffReason`, and the
+      app captions a prompt for a session it has never subscribed to.
 - [ ] Manifest rendering is deterministic and total: golden test over full/partial/empty/unknown-key
       inputs, no throw.
 - [ ] `pnpm test` green, `pnpm typecheck` clean; app-side additive DTO fields keep
@@ -177,26 +189,19 @@ producer is an LLM and a rejected handoff loses the context it was built from.
 
 ## Open questions
 
-1. **Who answers an agent-spawned session's approval prompt?** Notifications are routed to
-   **devices** with push tokens; a CLI-spawned session has no device of its own, so a `srv.request`
-   from a session nobody is watching blocks until timeout. Options: fan the prompt to all paired
-   devices (simple, noisy), inherit the parent session's watcher, or have `--policy` default to
-   `yolo` for `origin: "agent"` spawns (fast, and exactly the wrong default in a repo with secrets).
-   **This is the one open question that can make P1 feel broken**, and it wants a decision before
-   D3 ships.
-2. **Does `makit new` fork a worktree by default?** Post-SPEC-27, a spawn without a worktree runs in
+1. **Does `makit new` fork a worktree by default?** Post-SPEC-27, a spawn without a worktree runs in
    the **repo dir** (`manager.test.ts:889`). Terminal-first users are usually already *in* a
    worktree, which argues for "infer from `cwd`, never create implicitly" — but then `makit new`
    from a repo root puts an agent on the user's checkout.
-3. **Does a handoff mark the parent?** A `session.meta` note ("handed off to …") is discoverable in
+2. **Does a handoff mark the parent?** A `session.meta` note ("handed off to …") is discoverable in
    the app but adds an event kind; leaving it implicit keeps the wire smaller and makes the parent
    look abandoned. Related: should `handoff` archive the parent by default?
-4. **Where does the manifest live on disk?** `<worktree>/.makit/handoff/*.json` (git-excluded, like
+3. **Where does the manifest live on disk?** `<worktree>/.makit/handoff/*.json` (git-excluded, like
    SPEC-33's materialised attachments, and visible to both agents) vs `~/.makit/handoff/`
    (server-scoped, survives worktree removal).
-5. **Where are `caps` enforced?** In `auth_gate.ts` as a per-connection allowlist (one place, coarse)
+4. **Where are `caps` enforced?** In `auth_gate.ts` as a per-connection allowlist (one place, coarse)
    or per command handler (precise, spread out).
-6. **`makit sessions` alias lifetime** — one release, or keep it permanently since it is in SPEC-02's
+5. **`makit sessions` alias lifetime** — one release, or keep it permanently since it is in SPEC-02's
    frozen-ish surface and possibly in users' scripts.
 
 ## Current-state anchors (real code this spec builds on)
