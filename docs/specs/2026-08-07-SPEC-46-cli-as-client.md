@@ -77,6 +77,7 @@ identity, lineage, and an output contract.
 | **D12** | **No TUI, no `race`, no `fleet`.** `makit attach` stays the line-oriented readline client it is. | SPEC-02 already put a long-running TUI out of scope, and ensemble/fleet orchestration is composition *on top of* this verb set — it should be specced once these verbs are real, not designed against imagined ones. |
 | **D13** | **A prompt from an agent-spawned session is routed up the lineage, then to everyone — it is never auto-approved.** `askDevice` stops filtering on `subscribed.has(sessionId)` and takes an **audience resolver**: (1) the session's own subscribers; else (2) the subscribers of the nearest ancestor via `parentId` (walking up, bounded by D9's depth); else (3) every authed client; then (4) today's `onUndeliverable` wake push. Applies identically to **both** kinds of `srv.request` — a tool permission (`awaiting-approval`) and an elicitation, i.e. a real question to the human (`awaiting-input`). The default policy stays `ask-on-risky` (`session.ts:212`); `--yolo` is opt-in **per handoff**. | Today's filter assumes every session was born on a screen, which is exactly the assumption D3 breaks: nobody has an agent-spawned session open, so `sent === 0` and the question is either pushed as a context-free buzz or **rejected outright** ("no subscribed clients to ask") — a handoff dead on arrival, discovered twenty minutes later. Routing up the lineage matches who owns the consequence: you asked for the handoff, so its questions are yours. Auto-approving instead was considered and rejected — it silently hands unsupervised shell access to an agent nobody watched, in a worktree that may hold credentials, and it fixes *only* permissions, leaving elicitation (which no policy can answer) still undeliverable. One routing rule covers both request kinds; two mechanisms would not. |
 | **D14** | **A prompt is self-describing.** Because step (3) can deliver to a client that has never seen this session, the `srv.request` must carry enough for the app to caption it — session title, harness, and handoff origin (D10's `parentId`/`handoffReason`) — not just the question text. | Step (3) is what makes D13 total, and an uncaptioned "Allow `rm -rf build`?" for a session the user never opened is worse than no prompt: it trains the user to answer without reading. Attribution is what makes the fallback tolerable instead of the reason notifications get switched off. |
+| **D15** | **`makit new` creates a worktree — always, not conditionally on `cwd`.** The CLI calls `worktree.create` and passes the resulting `worktreePath` + `branch` to `session.spawn`. With `-m`, the message seeds `branchName` (`slugifyBranch` + `uniqueBranch` already handle safety and collisions), so `makit new -m "fix the migration"` lands on `fix-the-migration` instead of `worktree-a1b2c3`; without `-m` the auto name stands, as in the app. `--here` is the explicit opt-out (run in `cwd`'s tree), and a non-git or unborn-HEAD repo degrades to the repo dir on its own (`createWorktree` returns `{path: repoPath, branch: null}`). **`makit handoff` is the opposite: it inherits the parent's `worktreePath` and branch**, and takes a fresh tree only when asked (`--worktree` / `--branch`). | Session-owns-a-worktree is the invariant the rest of makit is built on — tab groups are keyed by worktree (SPEC-30), ports are attributed per branch (SPEC-41/42), and SPEC-38's *Wrap up* means "remove the worktree, delete the branch, fast-forward the base". A CLI that dropped agents into the user's checkout would mint sessions that cannot be wrapped up, whose ports collide, and whose diff is tangled with the user's own uncommitted edits. Rejected the cwd-aware reading ("adopt the worktree I'm standing in") because it makes one command behave two ways depending on invisible state, and `--here` says it explicitly instead. Handoff inverts the default because **continuity is the entire point**: the manifest's `file:line` references and, usually, uncommitted work live in the parent's tree — a fresh tree off the default branch would strand exactly what was being handed over. |
 
 ## The verb grammar
 
@@ -85,12 +86,12 @@ Every row is a thin client of an existing or (†) new WSS command.
 | Verb | Wire | Phase |
 | --- | --- | --- |
 | `makit ls [--archived] [--project P] [--json]` | `sessions.snapshot` · `session.listArchived` | P1 |
-| `makit new [-m MSG] [--agent A] [--project P] [--worktree \| --branch B [--base R]] [--config k=v]... [--json]` | `worktree.create` + `session.spawn`† + `send.message` | P1 |
+| `makit new [-m MSG] [--agent A] [--project P] [--here \| --branch B [--base R]] [--config k=v]... [--json]` | `worktree.create` (default, D15) + `session.spawn`† + `send.message` | P1 |
 | `makit send <id> -m MSG [--attach FILE]...` | `send.message` (+ `POST /media`) | P1 |
 | `makit tail <id> [-f] [--since SEQ] [--json]` | `sub { fromSeq }` | P1 |
 | `makit wait <id> [--for …] [--timeout S]` | `sub` + `session.status` | P1 |
 | `makit run …` (= `new` + `wait` + print) | composed | P1 |
-| `makit handoff [--to A] [--carry …] [--file M \| -] [--goal …] [--next …]` | `session.spawn`† + `send.message` | P1 |
+| `makit handoff [--to A] [--carry …] [--file M \| -] [--goal …] [--next …] [--worktree]` | `session.spawn`† (inherits the parent's tree, D15) + `send.message` | P1 |
 | `makit resume <id>` | `session.attach` | P1 |
 | `makit rm <id> [--kill]` (default: archive) | `session.archive` · `session.kill` | P1 |
 | `makit attach [<id>]` (re-homed on D2's credential) | existing | P1 |
@@ -170,6 +171,12 @@ producer is an LLM and a rejected handoff loses the context it was built from.
 - [ ] A spawn chain refuses at depth 3 and at the 5th live child, with a message naming the limit;
       the refusal is server-side (proven by a direct WSS `session.spawn` with a forged shallow
       `MAKIT_SPAWN_DEPTH`).
+- [ ] **D15**: `makit new -m "fix the migration"` creates a worktree on a branch named from the
+      message (not `worktree-<uuid>`), and the session's `worktreePath` is that tree, never the repo
+      dir. `--here` runs in `cwd`. A non-git project and an unborn HEAD both land in the repo dir
+      without an error.
+- [ ] **D15 inverse**: a `makit handoff` child reports the **parent's** `worktreePath` and branch, so
+      the parent's uncommitted work is visible to it; `--worktree` opts into a fresh tree.
 - [ ] `MAKIT_CLI_TOKEN` is rejected once its session ends (exit `4`).
 - [ ] **D13 routing**, proven rung by rung against the stub adapter: a prompt from a handoff child
       reaches a client that has only the **parent** open; with the parent closed too it reaches every
@@ -189,19 +196,20 @@ producer is an LLM and a rejected handoff loses the context it was built from.
 
 ## Open questions
 
-1. **Does `makit new` fork a worktree by default?** Post-SPEC-27, a spawn without a worktree runs in
-   the **repo dir** (`manager.test.ts:889`). Terminal-first users are usually already *in* a
-   worktree, which argues for "infer from `cwd`, never create implicitly" — but then `makit new`
-   from a repo root puts an agent on the user's checkout.
-2. **Does a handoff mark the parent?** A `session.meta` note ("handed off to …") is discoverable in
-   the app but adds an event kind; leaving it implicit keeps the wire smaller and makes the parent
-   look abandoned. Related: should `handoff` archive the parent by default?
-3. **Where does the manifest live on disk?** `<worktree>/.makit/handoff/*.json` (git-excluded, like
+1. **Does a handoff stop the parent?** Forced open by D15: the child inherits the parent's worktree,
+   so leaving both live puts **two agents in one tree** — concurrent edits, two test runs, one index.
+   Archiving the parent by default is the safe reading (a handoff means "you take it from here"), but
+   it is a destructive-feeling default for a session the user may still want to read, and D5's
+   `--carry` already copied out what mattered. Alternatives: leave both live and warn; refuse a
+   handoff from a session whose turn is still running; or `--keep-parent` as the opt-out. Related and
+   cheaper: whether the parent gets a `session.meta` note ("handed off to …") so the app does not
+   just show it as abandoned.
+2. **Where does the manifest live on disk?** `<worktree>/.makit/handoff/*.json` (git-excluded, like
    SPEC-33's materialised attachments, and visible to both agents) vs `~/.makit/handoff/`
    (server-scoped, survives worktree removal).
-4. **Where are `caps` enforced?** In `auth_gate.ts` as a per-connection allowlist (one place, coarse)
+3. **Where are `caps` enforced?** In `auth_gate.ts` as a per-connection allowlist (one place, coarse)
    or per command handler (precise, spread out).
-5. **`makit sessions` alias lifetime** — one release, or keep it permanently since it is in SPEC-02's
+4. **`makit sessions` alias lifetime** — one release, or keep it permanently since it is in SPEC-02's
    frozen-ish surface and possibly in users' scripts.
 
 ## Current-state anchors (real code this spec builds on)
