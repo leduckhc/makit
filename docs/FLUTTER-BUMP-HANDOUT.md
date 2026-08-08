@@ -170,7 +170,7 @@ rather than assuming the bug is fixed.
 
 `/Users/le/Work/Vibe/flutter` is shared by every worktree:
 
-```
+```text
 /Users/le/Work/Vibe/makit                         [main]
 /Users/le/.worktrees/makit/chore-bump-flutter     [chore/bump-flutter]
 /Users/le/.worktrees/makit/chore-update-packages  [chore/update-packages]
@@ -194,8 +194,14 @@ want more soak time (3.44.9 was 2 days old when this was written). Substitute
 below.
 
 ```sh
+# 0. where things live. Run this from the worktree you are bumping. §6: one
+#    shared SDK serves all five worktrees, so REPO_ROOT is whichever one you
+#    are in — and each of the others still needs step 2 re-run for itself.
+REPO_ROOT=$(git rev-parse --show-toplevel)
+FLUTTER_SDK_DIR=/Users/le/Work/Vibe/flutter   # or a per-worktree SDK, see §6
+
 # 1. clean the SDK, then move it
-cd /Users/le/Work/Vibe/flutter
+cd "$FLUTTER_SDK_DIR"
 git checkout -- packages/flutter/lib/src/widgets/_window_macos.dart \
                 packages/flutter_tools/lib/src/build_system/tools/shader_compiler.dart
 git checkout 3.44.9 && flutter precache   # explicit tag: CI pins an exact
@@ -204,17 +210,21 @@ git checkout 3.44.9 && flutter precache   # explicit tag: CI pins an exact
                                           # stable is newest and overshoots.
                                           # Use 3.44.8 here for more soak time.
 
-# 2. re-apply the in-place patch (§5) — not optional
-bash /Users/le/.worktrees/makit/chore-bump-flutter/app/tool/patch_flutter_sdk.sh
+# 2. re-apply the in-place patch (§5) — not optional. FLUTTER_ROOT pins which
+#    SDK gets patched; without it the script falls back to `command -v flutter`,
+#    which may still be the old SDK if PATH has not been repointed yet.
+FLUTTER_ROOT="$FLUTTER_SDK_DIR" bash "$REPO_ROOT/app/tool/patch_flutter_sdk.sh"
 
-# 3. update the pins (§8) — covers flutter-version *and* the cache keys
+# 3. update the pins (§8) — covers flutter-version *and* the cache keys.
+#    cd back first: step 1 left the shell inside the SDK, not the repo.
+cd "$REPO_ROOT"
 sed -i '' "s/3\.44\.4/3.44.9/g" .github/workflows/*.yml
 $EDITOR docs/DEVELOPMENT.md          # lines 13 and 31
 
 # 4. verify (§9). Run these separately — do NOT chain with `&&`: `flutter test`
 #    exits non-zero on the known loading-stage flake, which would stop the
 #    macOS build, and the build is the one check that cannot be skipped (§5).
-cd app
+cd "$REPO_ROOT/app"
 flutter pub get --enforce-lockfile   # then: git diff --stat pubspec.lock → must be empty
 flutter analyze                      # must be clean
 flutter test                         # expect 5-17 loading-stage failures, NOT 0.
@@ -228,7 +238,7 @@ flutter build macos --release        # must build *and launch* — the #188060 c
 
 ## 8. Every site that pins the SDK version — 20 lines, 18 in scope
 
-```
+```text
 .github/workflows/flutter-ci.yml:27,82,127             flutter-version
 .github/workflows/flutter-ci.yml:36,38,91,93,136,138   cache key + restore-keys
 .github/workflows/integration-ci.yml:30,127            flutter-version
@@ -252,7 +262,7 @@ change `app/pubspec.lock`, so a key built only from that hash still hits the
 
 Two more that the first draft of this list missed:
 
-```
+```text
 BUILD_AND_DEPLOY.md:362   flutter-action snippet, build-ios job
 BUILD_AND_DEPLOY.md:394   flutter-action snippet, build-macos job
 ```
