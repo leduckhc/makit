@@ -45,11 +45,12 @@ import { AuthGate } from "./ws/auth_gate.js";
 import { sessionTokens } from "./ws/session_tokens.js";
 import { SubscriptionHub } from "./ws/subscription_hub.js";
 import { CommandRouter } from "./ws/command_router.js";
+import type { CommandDeps } from "./ws/commands/deps.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
 import { WakeCoordinator } from "./push/wake_coordinator.js";
 import { NoopPushSender, type PushSender } from "./push/sender.js";
 import { buildWakePayload } from "./push/payload.js";
-import { registerPushCommands } from "./push/register_cmd.js";
+import { registerPushCommands, type PushTokenRegistry } from "./push/register_cmd.js";
 import { register as registerSessionCommands } from "./ws/commands/session.js";
 import { register as registerProjectCommands } from "./ws/commands/project.js";
 import { register as registerWorktreeCommands } from "./ws/commands/worktree.js";
@@ -568,7 +569,22 @@ export function startWsServer(opts: ServerOpts) {
   });
   const askDevice = rpc.askDevice.bind(rpc);
   const authGate = new AuthGate({ registry, onAuthenticated, sessionTokens });
-  const router = buildCommandRouter();
+  const router = buildCommandRouter(
+    {
+      manager,
+      gateway,
+      budgetWatch,
+      broadcastSnapshots,
+      broadcastReposSnapshot,
+      broadcastBudget,
+      askDevice,
+      onMetricsWatchersChanged: recomputeMetricsWatchers,
+      sendMetricsHistory,
+      onPortsWatchersChanged: recomputePortsWatchers,
+      sendPortsSnapshot,
+    },
+    registry,
+  );
 
   // -------- session wiring ------------------------------------------------
 
@@ -696,42 +712,8 @@ export function startWsServer(opts: ServerOpts) {
 
   // -------- command handlers (OCP registry) -------------------------------
 
-  function buildCommandRouter(): CommandRouter {
-    const r = new CommandRouter();
-    const deps = {
-      manager,
-      gateway,
-      budgetWatch,
-      broadcastSnapshots,
-      broadcastReposSnapshot,
-      broadcastBudget,
-      askDevice,
-      onMetricsWatchersChanged: recomputeMetricsWatchers,
-      sendMetricsHistory,
-      onPortsWatchersChanged: recomputePortsWatchers,
-      sendPortsSnapshot,
-    };
-
-    registerSessionCommands(r, deps);
-    registerProjectCommands(r, deps);
-    registerWorktreeCommands(r, deps);
-    registerRepoCommands(r, deps);
-    registerGithubCommands(r, deps);
-    registerMetricsCommands(r, deps);
-    registerPortsCommands(r, deps);
-
-    // In-app logging: ingest client diagnostics into the server log. Always on
-    // (not dev-gated) — field crash reports from iOS are a production need.
-    registerDiagnosticsCommands(r);
-
-    // SPEC-07: register the device's content-free wake push token.
-    registerPushCommands(r, registry);
-
-    // B9b: dev-only debug commands, registered only when MAKIT_DEV is set.
-    if (process.env.MAKIT_DEV) registerDebugCommands(r, deps);
-
-    return r;
-  }
+  // (registration is delegated to the module-level `buildCommandRouter` so the
+  // capability-map completeness test can build the real router — see below.)
 
   // -------- session fan-out + snapshots -----------------------------------
 
@@ -889,4 +871,37 @@ export function startWsServer(opts: ServerOpts) {
       },
     };
   }
+}
+
+/**
+ * Build the real command router (SPEC-19 OCP registry). Module-level and
+ * exported so the capability-map completeness test (SPEC-46 C1) can build the
+ * SAME router the server runs — not a toy with two handlers. `deps` is used
+ * only at dispatch, so the test may pass a stub; registration is what matters.
+ */
+export function buildCommandRouter(
+  deps: CommandDeps,
+  registry: PushTokenRegistry,
+): CommandRouter {
+  const r = new CommandRouter();
+
+  registerSessionCommands(r, deps);
+  registerProjectCommands(r, deps);
+  registerWorktreeCommands(r, deps);
+  registerRepoCommands(r, deps);
+  registerGithubCommands(r, deps);
+  registerMetricsCommands(r, deps);
+  registerPortsCommands(r, deps);
+
+  // In-app logging: ingest client diagnostics into the server log. Always on
+  // (not dev-gated) — field crash reports from iOS are a production need.
+  registerDiagnosticsCommands(r);
+
+  // SPEC-07: register the device's content-free wake push token.
+  registerPushCommands(r, registry);
+
+  // B9b: dev-only debug commands, registered only when MAKIT_DEV is set.
+  if (process.env.MAKIT_DEV) registerDebugCommands(r, deps);
+
+  return r;
 }
