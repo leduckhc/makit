@@ -4,6 +4,7 @@ import { sharedMediaStore } from "../media/store.js";
 import { prepareTurnOrFail } from "../media/attach.js";
 import type { SessionConfigOption } from "../protocol.js";
 import type { UIResponse } from "../uicall.js";
+import { TurnStatusTracker } from "./turn-status.js";
 
 export interface StubAdapterOptions {
   askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
@@ -28,6 +29,9 @@ const MARKDOWN_SAMPLE = [
 ///   - "ASK_MULTI"     → multi-question / multi-select askUserQuestion round-trip
 ///   - "ASK_QUESTION"  → single-question askUserQuestion round-trip
 ///   - "MARKDOWN"      → a markdown reply (heading, link, fenced dart code block)
+///   - "AWAIT_APPROVAL"→ park the turn on a tool-permission gate and STAY there
+///   - "AWAIT_INPUT"   → park the turn on an elicitation gate and STAY there
+///   - "FAIL_TURN"     → a terminal `session.error`, then settle IDLE (not "error")
 ///   - anything else   → `echo: <text>` after 50ms
 export class StubAdapter extends EventEmitter implements AgentAdapter {
   readonly agent = "stub";
@@ -46,6 +50,27 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
   private turnCount = 0;
+
+  /**
+   * SPEC-46 (T15): the same turns/gates state machine the real subprocess
+   * adapters use, so a parked stub turn is indistinguishable on the wire from a
+   * parked codex or pi turn. Hand-rolling it here is what the tracker exists to
+   * prevent: the coarse `status` channel only carries `"idle" | "running"`, so
+   * `awaiting-approval` is a `session.status` EVENT, and two spellings of that
+   * is precisely the drift that produced stuck-spinner bugs in acp/codex.
+   */
+  private readonly turns = new TurnStatusTracker({
+    emitStatus: (s) => this.emit("status", s),
+    emitSessionStatus: (status) =>
+      this.emitEvent({ ts: Date.now(), kind: "session.status", payload: { status } }),
+    isExited: () => this.exited,
+  });
+
+  /** True once killed — suppresses any further transition (tracker contract). */
+  private exited = false;
+
+  /** Key of the turn parked on a gate, so cancel can release it. */
+  private gatedTurn?: string;
 
   constructor(options: StubAdapterOptions = {}) {
     super();
@@ -108,6 +133,39 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
           kind: "agent.message",
           payload: { text: MARKDOWN_SAMPLE },
         });
+      }, echoDelayMs);
+      return;
+    }
+
+    // SPEC-46 (T15) — the two states `makit wait` must be able to observe, and
+    // the one it must NOT confuse with a status. Placed before SLOW/STREAM so a
+    // prompt naming a gate is never swallowed by another trigger.
+    //
+    // AWAIT_APPROVAL / AWAIT_INPUT: a turn genuinely in flight, then blocked on
+    // the user. It deliberately never clears itself — `makit wait --for approval`
+    // exiting 10 is only meaningful if the gate persists, and a self-clearing
+    // gate would make that test pass for the wrong reason.
+    if (prompt.includes("AWAIT_APPROVAL") || prompt.includes("AWAIT_INPUT")) {
+      const gate = prompt.includes("AWAIT_APPROVAL") ? "awaiting-approval" : "awaiting-input";
+      this.gatedTurn = this.turns.enterTurn();
+      this.turns.enterApproval(gate);
+      return;
+    }
+
+    // FAIL_TURN: a turn that fails. The status settles **idle**, not "error" —
+    // nothing in makit ever emits `status: "error"` (the real adapters emit
+    // `session.error` and then settle), which is exactly why `makit wait` keys
+    // its failure exit code off the EVENT. Encoded here so the stub cannot
+    // quietly acquire an "error" status and invalidate that design.
+    if (prompt.includes("FAIL_TURN")) {
+      const key = this.turns.enterTurn();
+      setTimeout(() => {
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: `FAIL_TURN: the stub was asked to fail this turn (${prompt})` },
+        });
+        this.turns.leaveTurn(key);
       }, echoDelayMs);
       return;
     }
@@ -203,6 +261,18 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     if (this.slowTimeout !== undefined) {
       clearTimeout(this.slowTimeout);
       this.slowTimeout = undefined;
+    }
+    // Release a parked gate (SPEC-46 T15) without emitting the intermediate
+    // "running" that leaveApproval would otherwise produce: drop the TURN first
+    // so the tracker has nothing to resume to, then the gate, then settle. A
+    // cancel that left the gate counted would wedge the session for good --
+    // settleIdle could never fire again, so every later turn would look stuck.
+    if (this.gatedTurn !== undefined) {
+      this.turns.leaveTurn(this.gatedTurn);
+      this.gatedTurn = undefined;
+      this.turns.leaveApproval();
+      this.turns.settleIdle();
+      return;
     }
     this.emit("status", "idle");
   }
@@ -317,6 +387,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       clearTimeout(this.slowTimeout);
       this.slowTimeout = undefined;
     }
+    this.exited = true;
     this.emit("exit", null);
   }
 

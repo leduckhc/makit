@@ -119,3 +119,87 @@ test("a plain echo is a whole turn (running → idle), so a queue keeps draining
 
   assert.deepEqual(statuses, ["running", "idle"]);
 });
+
+// ---------------------------------------------------------------------------
+// SPEC-46 T15 — the stub can be BLOCKED and can FAIL.
+//
+// `makit wait` promises distinct exit codes for "the agent finished" (0), "it is
+// blocked on you" (10 / 11) and "it failed" (20). None of those could be proven
+// against this stub, which only ever went running → idle: it had no
+// `awaiting-*` path at all, and its two `session.error` emissions were both
+// internal bridge faults with no way for a test to ask for one.
+//
+// The gates go through the shared `TurnStatusTracker`, not a hand-rolled emit,
+// for the reason that class exists: the coarse `status` channel is typed
+// `"idle" | "running"`, so a gate is a `session.status` EVENT, and having two
+// spellings of that is what drifted acp and codex into stuck-spinner bugs.
+// ---------------------------------------------------------------------------
+
+function collectStatuses(adapter: StubAdapter): { coarse: string[]; gates: string[] } {
+  const coarse: string[] = [];
+  const gates: string[] = [];
+  adapter.on("status", (s: string) => coarse.push(s));
+  adapter.on("event", (e: AdapterEvent) => {
+    if (e.kind === "session.status") gates.push((e.payload as { status: string }).status);
+  });
+  return { coarse, gates };
+}
+
+function collectKinds(adapter: StubAdapter, kind: string): AdapterEvent[] {
+  const out: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === kind) out.push(e);
+  });
+  return out;
+}
+
+test("AWAIT_APPROVAL parks the turn on an approval gate and stays there", async () => {
+  const stub = new StubAdapter();
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  const { coarse, gates } = collectStatuses(stub);
+  await stub.send({ text: "please AWAIT_APPROVAL now" });
+  // running first (a turn is genuinely in flight), then the gate.
+  assert.deepEqual(coarse, ["running"]);
+  assert.deepEqual(gates, ["awaiting-approval"]);
+  // And it must NOT settle on its own — a gate that auto-clears would make
+  // `makit wait --for approval` flaky-green.
+  await new Promise((r) => setTimeout(r, 120));
+  assert.deepEqual(coarse, ["running"], "the gate cleared itself");
+});
+
+test("AWAIT_INPUT parks on the input gate, routed identically", async () => {
+  const stub = new StubAdapter();
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  const { coarse, gates } = collectStatuses(stub);
+  await stub.send({ text: "AWAIT_INPUT" });
+  assert.deepEqual(coarse, ["running"]);
+  assert.deepEqual(gates, ["awaiting-input"]);
+});
+
+test("cancel releases a gate instead of wedging the session", async () => {
+  const stub = new StubAdapter();
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  const { coarse } = collectStatuses(stub);
+  await stub.send({ text: "AWAIT_APPROVAL" });
+  await stub.cancel();
+  assert.deepEqual(coarse, ["running", "idle"]);
+  // The gate is gone, so a following turn behaves normally.
+  await stub.send({ text: "hello" });
+  await new Promise((r) => setTimeout(r, 120));
+  assert.deepEqual(coarse, ["running", "idle", "running", "idle"]);
+});
+
+test("FAIL_TURN emits a terminal session.error and then settles IDLE", async () => {
+  const stub = new StubAdapter();
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  const { coarse } = collectStatuses(stub);
+  const errors = collectKinds(stub, "session.error");
+  await stub.send({ text: "FAIL_TURN" });
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(errors.length, 1);
+  assert.match((errors[0].payload as { message: string }).message, /FAIL_TURN/);
+  // THE POINT of this test: the status ends `idle`, not `error`. Nothing in
+  // makit emits `status: "error"`, so `makit wait` must key exit 20 off the
+  // EVENT. If this ever ends "error", the exit-code design changes.
+  assert.deepEqual(coarse, ["running", "idle"]);
+});
