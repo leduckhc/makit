@@ -23,6 +23,7 @@ import type {
   PairCurrentData,
   DevicesListData,
   SessionsListData,
+  CliGrantData,
   LogsTailArgs,
 } from "./protocol.js";
 import type { SessionDTO } from "../protocol.js";
@@ -35,6 +36,10 @@ export interface BackendRegistry {
   list(): Array<{ id: string; label: string; pairedAt: number; lastSeenAt: number }>;
   mintPairToken(ttlMs?: number): string;
   revoke(id: string): boolean;
+  grantCli(): {
+    device: { id: string; label: string; bearer: string };
+    created: boolean;
+  };
 }
 
 /** The slice of SessionManager the backend needs. */
@@ -114,6 +119,11 @@ export function createServerBackend(deps: ServerBackendDeps): ControlBackend {
 
     sessionsList(): SessionsListData {
       return { sessions: deps.manager.listSessions() };
+    },
+
+    cliGrant(): CliGrantData {
+      const { device, created } = deps.registry.grantCli();
+      return { deviceId: device.id, label: device.label, bearer: device.bearer, created };
     },
 
     serverStop() {

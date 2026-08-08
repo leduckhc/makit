@@ -39,6 +39,10 @@ function deps(over: Partial<ServerBackendDeps> = {}): ServerBackendDeps {
         devices.splice(i, 1);
         return true;
       },
+      grantCli: () => ({
+        device: { id: "cli-1", label: "cli@host", bearer: "cli-bearer" },
+        created: true,
+      }),
     },
     manager: {
       listSessions: () => [
