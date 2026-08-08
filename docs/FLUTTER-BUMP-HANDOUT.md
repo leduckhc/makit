@@ -191,34 +191,57 @@ below.
 cd /Users/le/Work/Vibe/flutter
 git checkout -- packages/flutter/lib/src/widgets/_window_macos.dart \
                 packages/flutter_tools/lib/src/build_system/tools/shader_compiler.dart
-flutter upgrade                      # or: git checkout 3.44.8 && flutter precache
+git checkout 3.44.9 && flutter precache   # explicit tag: CI pins an exact
+                                          # version, so match it exactly.
+                                          # `flutter upgrade` chases whatever
+                                          # stable is newest and overshoots.
+                                          # Use 3.44.8 here for more soak time.
 
 # 2. re-apply the in-place patch (§5) — not optional
 bash /Users/le/.worktrees/makit/chore-bump-flutter/app/tool/patch_flutter_sdk.sh
 
-# 3. update the pins (§8)
-cd /Users/le/.worktrees/makit/chore-bump-flutter
-sed -i '' "s/flutter-version: '3.44.4'/flutter-version: '3.44.9'/" .github/workflows/*.yml
+# 3. update the pins (§8) — covers flutter-version *and* the cache keys
+sed -i '' "s/3\.44\.4/3.44.9/g" .github/workflows/*.yml
 $EDITOR docs/DEVELOPMENT.md          # lines 13 and 31
 
-# 4. verify (§9)
-cd app && flutter pub get --enforce-lockfile && flutter analyze && flutter test
-flutter build macos --release
+# 4. verify (§9). Run these separately — do NOT chain with `&&`: `flutter test`
+#    exits non-zero on the known loading-stage flake, which would stop the
+#    macOS build, and the build is the one check that cannot be skipped (§5).
+cd app
+flutter pub get --enforce-lockfile   # then: git diff --stat pubspec.lock → must be empty
+flutter analyze                      # must be clean
+flutter test                         # expect 5-17 loading-stage failures, NOT 0.
+                                     # Gate is: no failure line lacking
+                                     # ": loading ", and the count in family
+                                     # with a baseline run on main. See §9.
+flutter build macos --release        # must build *and launch* — the #188060 canary
 ```
 
 ---
 
-## 8. Every site that pins `3.44.4` — 12 lines, 10 in scope
+## 8. Every site that pins the SDK version — 20 lines, 18 in scope
 
 ```
-.github/workflows/flutter-ci.yml:27,82,127
-.github/workflows/integration-ci.yml:30,127
-.github/workflows/integration-desktop-ci.yml:31
-.github/workflows/protocol-contract-ci.yml:88
-.github/workflows/real-pi-e2e.yml:97
+.github/workflows/flutter-ci.yml:27,82,127             flutter-version
+.github/workflows/flutter-ci.yml:36,38,91,93,136,138   cache key + restore-keys
+.github/workflows/integration-ci.yml:30,127            flutter-version
+.github/workflows/integration-desktop-ci.yml:31        flutter-version
+.github/workflows/protocol-contract-ci.yml:88          flutter-version
+.github/workflows/protocol-contract-ci.yml:97,99       cache key + restore-keys
+.github/workflows/real-pi-e2e.yml:97                   flutter-version
 docs/DEVELOPMENT.md:13    toolchain table row
-docs/DEVELOPMENT.md:31    "flutter --version  # expect 3.44.4"
+docs/DEVELOPMENT.md:31    "flutter --version  # expect <version>"
 ```
+
+**Why the cache keys carry the version.** `flutter-ci.yml` and
+`protocol-contract-ci.yml` hand-roll an `actions/cache` whose `path` includes
+`${{ runner.tool_cache }}/flutter/` — the SDK itself. An SDK bump does not
+change `app/pubspec.lock`, so a key built only from that hash still hits the
+*previous* SDK's entry: the new SDK is never saved (exact-key hit ⇒ no save) and
+`restore-keys` drags the old one in as the base. `integration-ci.yml` and
+`integration-desktop-ci.yml` need nothing here — they use the action's own
+`cache: true`, which is version-aware. `real-pi-e2e.yml:124` caches only
+`~/.pub-cache`, so keying it on the lockfile alone is correct.
 
 Two more that the first draft of this list missed:
 

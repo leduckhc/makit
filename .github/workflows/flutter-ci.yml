@@ -33,9 +33,9 @@ jobs:
           path: |
             ${{ runner.tool_cache }}/flutter/
             ~/.pub-cache/
-          key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-3.44.9-${{ hashFiles('app/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-
+            ${{ runner.os }}-flutter-3.44.9-
 
       - name: Install Flutter dependencies (lockfile-locked)
         run: |
@@ -88,9 +88,9 @@ jobs:
           path: |
             ${{ runner.tool_cache }}/flutter/
             ~/.pub-cache/
-          key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-3.44.9-${{ hashFiles('app/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-
+            ${{ runner.os }}-flutter-3.44.9-
 
       - name: Install Flutter dependencies
         run: |
@@ -133,9 +133,9 @@ jobs:
           path: |
             ${{ runner.tool_cache }}/flutter/
             ~/.pub-cache/
-          key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-3.44.9-${{ hashFiles('app/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-
+            ${{ runner.os }}-flutter-3.44.9-
 
       - name: Install Flutter dependencies
         run: |
