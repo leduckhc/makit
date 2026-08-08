@@ -31,6 +31,12 @@ reports 28 incompatible packages ✓ · patch script reported `patched 5 class(e
 not 0 ✓ · `analyze` clean ✓ · `build macos --release` launches with no `illegal
 cid` ✓ · server typecheck + 1115 tests ✓.
 
+All of that was measured on base `9d31156`. `#148` has since landed four
+dependency upgrades on `main`, so the package counts in §3 are a snapshot, not a
+live figure — re-measure before quoting them. CI for this branch runs on the
+merge ref, so the green run did exercise 3.44.9 against the post-`#148`
+lockfile.
+
 ---
 
 ## 1. Goal
@@ -78,7 +84,8 @@ test_api: 0.7.11
 ```
 
 Those four cascade into eleven packages that pub reports as outdated but cannot
-resolve:
+resolve (counted on base `9d31156`; `#148` later bumped four constraints, which
+shortens the list but does not change the mechanism):
 
 | package | wants | blocked by |
 |---|---|---|
