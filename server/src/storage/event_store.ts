@@ -11,7 +11,7 @@
  * the assigned `seq` back inline and can fan out immediately after.
  */
 
-import type { SessionEvent, SessionStatus, ApprovalPolicy } from "../protocol.js";
+import type { SessionEvent, SessionStatus, ApprovalPolicy, SessionOrigin } from "../protocol.js";
 
 /** Persisted session metadata (runtime-only `pane` is intentionally excluded). */
 export interface SessionMeta {
@@ -49,6 +49,16 @@ export interface SessionMeta {
    * and restorable via `session.unarchive`. Persisted so it survives a restart.
    */
   archived?: boolean;
+  /**
+   * SPEC-46 lineage (D10), persisted so the app can draw the handoff chain and
+   * so D9's depth/fan-out guard has something to count. Added by an in-place
+   * `ALTER TABLE` migration: a row written before SPEC-46 rehydrates with all
+   * three `undefined`, which is why nothing may treat a missing `origin` as an
+   * error.
+   */
+  parentId?: string;
+  handoffReason?: string;
+  origin?: SessionOrigin;
 }
 
 /** A new event to append: seq + sessionId are assigned/owned by the store. */

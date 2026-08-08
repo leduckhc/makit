@@ -14,6 +14,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 
+import type { DeviceCap } from "../protocol.js";
+
 function makitHome(): string {
   return process.env.MAKIT_HOME || join(homedir(), ".makit");
 }
@@ -40,6 +42,13 @@ export interface PairedDevice {
   pushPlatform?: string;
   /** APNs environment for the token: "sandbox" | "production". */
   pushEnv?: string;
+  /**
+   * SPEC-46 (D2): what this device may do. **Absent means full access**, which
+   * is what every device paired before SPEC-46 is — the field is additive and
+   * must never retroactively restrict an existing phone. `cli@<host>` is minted
+   * with `["client"]` so it is a separately revocable subject.
+   */
+  caps?: DeviceCap[];
 }
 
 export class DeviceRegistry {

@@ -607,7 +607,42 @@ export interface SessionDTO {
    * usually still exists, so resume can offer to recreate the worktree.
    */
   orphaned?: boolean;
+  /**
+   * SPEC-46 lineage (D10). The session this one was handed off / spawned from,
+   * **derived server-side from the spawning credential** (D9) and never taken
+   * from the wire — a body `parentId` that disagrees with the caller's own
+   * session is refused. Absent for a session with no parent (every session
+   * created before SPEC-46, and every one the app spawns).
+   */
+  parentId?: string;
+  /** SPEC-46 (D10): why the handoff happened, as written by the outgoing agent. */
+  handoffReason?: string;
+  /** SPEC-46 (D10): which client created this session. Absent means "app" (pre-SPEC-46 rows). */
+  origin?: SessionOrigin;
 }
+
+/**
+ * SPEC-46 (D10): who created a session. Persisted on `SessionMeta` and carried
+ * on `SessionDTO` so the app can caption "handed off from …" without a second
+ * lookup. Absent (rather than `"app"`) on rows written before SPEC-46 — the
+ * migration does not backfill, because guessing an origin is worse than none.
+ */
+export type SessionOrigin = "app" | "cli" | "agent";
+
+/**
+ * SPEC-46 (D2/D3/D17): what a credential is allowed to do.
+ *
+ * A device with **no** `caps` is full access — that is what every already-paired
+ * phone is, and the absence is load-bearing: adding `caps` must not retroactively
+ * restrict a device that predates the field.
+ *
+ * - `client` — a human-driven peer (the app, or `cli@<host>`). Same surface as an
+ *   unrestricted device; the point is that it is a separately revocable subject.
+ * - `read` / `send` / `spawn` — the agent-scoped per-session token (D3), which is
+ *   deliberately narrower than a human's: it may read its own session, send into
+ *   it, and spawn a child, and nothing else.
+ */
+export type DeviceCap = "client" | "read" | "send" | "spawn";
 
 let _seq = 0;
 export const newId = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${(_seq++).toString(36)}`;
@@ -639,6 +674,15 @@ export type CmdKind =
   | "session.unarchive"
   | "session.listArchived"
   | "session.setAgent"
+  /**
+   * SPEC-46 (D5/C3): a **bounded** read of a session's event log —
+   * `{kind:'session.transcript', sessionId, limit}` → `ack {events}` with the
+   * last `limit` events, oldest-first. Exists because `sub {fromSeq}` cannot
+   * bound a tail: it takes no limit, no DTO publishes a latest seq to subtract
+   * from, and `session.events` hydrates the whole persisted log before the
+   * filter runs. `makit handoff --carry last:N` is the caller.
+   */
+  | "session.transcript"
   /** Drop ONE pending mid-turn message by `queuedId` (SPEC-35). */
   | "queue.cancel"
   /** Edit a pending mid-turn message; empty text cancels it (SPEC-38). */
