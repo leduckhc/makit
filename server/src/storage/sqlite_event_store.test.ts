@@ -163,6 +163,94 @@ test("migrates a legacy sessions schema in place, idempotently, keeping existing
   }
 });
 
+test("saveSession round-trips SPEC-46 lineage (absent stays undefined)", () => {
+  const store = new SqliteEventStore();
+  store.saveSession(
+    meta("s1", { parentId: "parent-1", handoffReason: "out of context", origin: "agent" }),
+  );
+  store.saveSession(meta("s2")); // no lineage → all three undefined, not null
+
+  const byId = new Map(store.loadSessions().map((s) => [s.id, s]));
+  assert.equal(byId.get("s1")!.parentId, "parent-1");
+  assert.equal(byId.get("s1")!.handoffReason, "out of context");
+  assert.equal(byId.get("s1")!.origin, "agent");
+  assert.equal(byId.get("s2")!.parentId, undefined);
+  assert.equal(byId.get("s2")!.handoffReason, undefined);
+  assert.equal(byId.get("s2")!.origin, undefined);
+  store.close();
+});
+
+test("migrates a pre-SPEC-46 schema, rehydrating a legacy row with undefined lineage", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-store-"));
+  const path = join(dir, "events.db");
+  try {
+    // Seed a pre-SPEC-46 DB: the SPEC-29 schema (no parent_id / handoff_reason /
+    // origin columns), plus one row written before lineage existed.
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      CREATE TABLE sessions (
+        id             TEXT PRIMARY KEY,
+        project_id     TEXT NOT NULL,
+        agent          TEXT NOT NULL,
+        title          TEXT NOT NULL,
+        status         TEXT NOT NULL,
+        policy         TEXT NOT NULL,
+        created_at     INTEGER NOT NULL,
+        last_activity_at INTEGER NOT NULL,
+        last_preview   TEXT NOT NULL,
+        resume_session_path TEXT,
+        agent_session_id TEXT,
+        branch         TEXT,
+        worktree_path  TEXT,
+        archived       INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    legacy
+      .prepare(
+        "INSERT INTO sessions (id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run("s-old", "p1", "pi", "pre-lineage row", "idle", "ask-on-risky", 1000, 1000, "old");
+    legacy.close();
+
+    // Opening through the store migrates in place: the row is intact and the
+    // load-bearing assertion holds — lineage rehydrates as undefined, never null
+    // and never a throw.
+    const store = new SqliteEventStore(path);
+    try {
+      const loaded = store.loadSessions();
+      assert.equal(loaded.length, 1);
+      assert.equal(loaded[0].title, "pre-lineage row");
+      assert.equal(loaded[0].parentId, undefined);
+      assert.equal(loaded[0].handoffReason, undefined);
+      assert.equal(loaded[0].origin, undefined);
+      // The migrated columns are writable end-to-end.
+      store.saveSession(
+        meta("s-old", {
+          title: "pre-lineage row",
+          parentId: "parent-1",
+          handoffReason: "why",
+          origin: "cli",
+        }),
+      );
+    } finally {
+      store.close();
+    }
+
+    // Reopening the already-migrated file reads the lineage back (idempotent).
+    const reopened = new SqliteEventStore(path);
+    try {
+      const again = reopened.loadSessions();
+      assert.equal(again[0].parentId, "parent-1");
+      assert.equal(again[0].handoffReason, "why");
+      assert.equal(again[0].origin, "cli");
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("deleteSession removes the session and its events", () => {
   const store = new SqliteEventStore();
   store.saveSession(meta("s1"));

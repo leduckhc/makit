@@ -616,3 +616,37 @@ test("replaceAdapter unbinds only the session's own listeners, not a third party
   assert.deepEqual(foreignExits, [0], "a foreign exit listener survived the swap");
   assert.equal(foreignEvents.length, 1, "a foreign event listener survived the swap");
 });
+
+test("toDTO projects SPEC-46 lineage hydrated from meta (D10)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const session = new Session({
+    projectId: "p",
+    agent: "pi",
+    adapter: fakeAdapter(),
+    store,
+    parentId: "parent-1",
+    handoffReason: "out of context",
+    origin: "agent",
+  });
+
+  const dto = session.toDTO();
+  assert.equal(dto.parentId, "parent-1");
+  assert.equal(dto.handoffReason, "out of context");
+  assert.equal(dto.origin, "agent");
+
+  // Lineage is persisted on meta too, so a rehydrated session still reports it.
+  const meta = store.loadSessions()[0];
+  assert.equal(meta.parentId, "parent-1");
+  assert.equal(meta.handoffReason, "out of context");
+  assert.equal(meta.origin, "agent");
+  store.close();
+});
+
+test("toDTO omits lineage for a session with no parent (pre-SPEC-46 / app-spawned)", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+  const dto = session.toDTO();
+  assert.equal(dto.parentId, undefined);
+  assert.equal(dto.handoffReason, undefined);
+  assert.equal(dto.origin, undefined);
+});
