@@ -9,6 +9,30 @@ two traps that are not discoverable from the diff.
 
 ---
 
+## 0. Status — landed 2026-08-08
+
+Pinned SDK is now **`3.44.9`** (rev `6b182d2c75`, Dart 3.12.2), taken for the
+Xcode 27 lipo fix in §4. Installed the **separate-directory** way (§6) at
+`/Users/le/Work/Vibe/flutter-3.44.9`, so the shared checkout stayed on `3.44.4`
+and the other four worktrees did not move. Using it needs a per-shell override:
+
+```sh
+export PATH="/Users/le/Work/Vibe/flutter-3.44.9/bin:$PATH"
+```
+
+**At merge:** move the shared checkout to `3.44.9` (§7 step 1), re-run
+`patch_flutter_sdk.sh` against it, then delete `flutter-3.44.9` (4.0 GB).
+`docs/DEVELOPMENT.md` deliberately documents the canonical shared path, not the
+temporary one.
+
+Every claim below was re-checked against 3.44.9 rather than assumed: §3
+byte-identical pubspecs ✓ · zero-line `pubspec.lock` diff ✓ · `pub get` still
+reports 28 incompatible packages ✓ · patch script reported `patched 5 class(es)`,
+not 0 ✓ · `analyze` clean ✓ · `build macos --release` launches with no `illegal
+cid` ✓ · server typecheck + 1115 tests ✓.
+
+---
+
 ## 1. Goal
 
 Move the pinned Flutter SDK off `3.44.4`, which is what every CI workflow, the
@@ -26,8 +50,8 @@ go back and re-scope.
 
 | | version | Dart | released |
 |---|---|---|---|
-| **pinned now** | `3.44.4` (rev `ad70ec4617`) | 3.12.2 | 2026-06-24 |
-| latest stable | `3.44.9` | 3.12.2 | 2026-08-06 |
+| was pinned | `3.44.4` (rev `ad70ec4617`) | 3.12.2 | 2026-06-24 |
+| **pinned now** · latest stable | `3.44.9` (rev `6b182d2c75`) | 3.12.2 | 2026-08-06 |
 | previous stable | `3.44.8` | 3.12.2 | 2026-07-23 |
 | latest beta | `3.47.0-0.4.pre` | **3.13.0** | 2026-08-05 |
 
@@ -184,7 +208,7 @@ flutter build macos --release
 
 ---
 
-## 8. Every site that pins `3.44.4` — 10 lines
+## 8. Every site that pins `3.44.4` — 12 lines, 10 in scope
 
 ```
 .github/workflows/flutter-ci.yml:27,82,127
@@ -195,6 +219,18 @@ flutter build macos --release
 docs/DEVELOPMENT.md:13    toolchain table row
 docs/DEVELOPMENT.md:31    "flutter --version  # expect 3.44.4"
 ```
+
+Two more that the first draft of this list missed:
+
+```
+BUILD_AND_DEPLOY.md:362   flutter-action snippet, build-ios job
+BUILD_AND_DEPLOY.md:394   flutter-action snippet, build-macos job
+```
+
+Those are **left at `3.44.4`** — template YAML for a proposed tag-triggered
+release workflow, not live CI, so they change nothing today. Unlike the specs
+below they are prescriptive, not a record, so copying that template now
+reintroduces the old pin. Open follow-up, deliberately out of this diff.
 
 **Do not touch** `docs/specs/2026-08-06-SPEC-40-composer-footer-space.md` or
 `docs/specs/2026-08-06-SPEC-40-PLAN.md`. They also say `3.44.4`, but as the
@@ -209,24 +245,28 @@ update the VM image.
 
 ## 9. Definition of done
 
-- [ ] `flutter --version` reports the target on the SDK the repo resolves to
-- [ ] `git -C /Users/le/Work/Vibe/flutter status --porcelain` shows exactly the
+- [x] `flutter --version` reports the target on the SDK the repo resolves to
+- [x] `git -C "$FLUTTER_ROOT" status --porcelain` shows exactly the
       two §5 files modified — i.e. the patch is re-applied
-- [ ] `cd app && flutter pub get --enforce-lockfile` succeeds **and
+- [x] `cd app && flutter pub get --enforce-lockfile` succeeds **and
       `git diff --stat app/pubspec.lock` is empty.** A non-empty lockfile diff
       means the SDK pins moved after all — stop and re-read §3, because the
       blast radius is then much larger than this branch assumes
-- [ ] `flutter analyze` — clean
-- [ ] `flutter test` — no *new* failures. Known pre-existing noise on `main`:
-      ~15 tests fail at the *loading* stage in a full parallel run
-      (load timeouts, not real failures). They pass individually. Compare
-      against a baseline run on `main` before blaming the bump
-- [ ] `flutter build macos --release` succeeds and **launches** — this is the
+- [x] `flutter analyze` — clean
+- [x] `flutter test` — no *new* failures. Known pre-existing noise: 5–17 test
+      files fail at the *loading* stage on any whole-suite run, a different set
+      each time, and each one passes when run alone. **Not** a parallelism
+      artifact as earlier drafts of this file claimed — `--concurrency 1` still
+      fails 5–7. Baseline on `main` @ 3.44.4: 8 failures parallel / 7 serial,
+      and `0` non-loading either way. Check that
+      `grep -v ': loading '` over the failure list is empty and that the count
+      is in family with a baseline run before blaming the bump
+- [x] `flutter build macos --release` succeeds and **launches** — this is the
       #188060 canary; an `illegal cid, full-aot` crash means step 2 was skipped
-- [ ] `cd server && pnpm typecheck && pnpm test` — untouched, but cheap to confirm
+- [x] `cd server && pnpm typecheck && pnpm test` — untouched, but cheap to confirm
 - [ ] CI green on all 5 workflows that were re-pinned
-- [ ] Decide the fate of this file before merge: keep it as the standing
-      upgrade runbook, or delete it as branch scratch
+- [x] Decide the fate of this file before merge — **kept** as the standing
+      upgrade runbook, corrected in place after the 3.44.9 run
 
 ---
 
