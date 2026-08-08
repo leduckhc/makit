@@ -42,6 +42,7 @@ import type { ServerCert } from "./pairing/cert.js";
 import { log } from "./log.js";
 import type { OutgoingFrame, WsClient } from "./ws/client.js";
 import { AuthGate } from "./ws/auth_gate.js";
+import { sessionTokens } from "./ws/session_tokens.js";
 import { SubscriptionHub } from "./ws/subscription_hub.js";
 import { CommandRouter } from "./ws/command_router.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
@@ -566,7 +567,7 @@ export function startWsServer(opts: ServerOpts) {
     onUndeliverable: (env, ctx) => wakeCoordinator.wake(env, ctx),
   });
   const askDevice = rpc.askDevice.bind(rpc);
-  const authGate = new AuthGate({ registry, onAuthenticated });
+  const authGate = new AuthGate({ registry, onAuthenticated, sessionTokens });
   const router = buildCommandRouter();
 
   // -------- session wiring ------------------------------------------------

@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { AuthGate, type AuthRegistry } from "./auth_gate.js";
 import type { WsClient } from "./client.js";
 import type { Envelope } from "../protocol.js";
+import { SessionTokenStore } from "./session_tokens.js";
 
 interface Frame {
   t: string;
@@ -80,4 +81,20 @@ test("an unknown bearer still closes 4401 and sets no principal", () => {
   assert.equal(client.authed, false);
   assert.equal(client.principal, undefined);
   assert.equal(client.closed?.code, 4401);
+});
+
+test("a session-token bearer authenticates via the store when the registry misses (C2)", () => {
+  const registry: AuthRegistry = { authenticate: () => null, consumePairToken: () => null };
+  const store = new SessionTokenStore();
+  const token = store.mint("sess-A");
+  const client = fakeClient();
+
+  new AuthGate({ registry, onAuthenticated: () => {}, sessionTokens: store }).handleHello(
+    client,
+    hello(token),
+  );
+
+  assert.equal(client.authed, true);
+  assert.equal(client.principal?.sessionId, "sess-A");
+  assert.deepEqual(client.principal?.caps, ["read", "send", "spawn"]);
 });
