@@ -1,6 +1,6 @@
 # SPEC-46 — The CLI is a client: sessions from the terminal, handoff as a command
 
-**Status:** Draft · **Priority:** P1 · **Branch:** `feat/cli-client`
+**Status:** Draft **rev 2** (dual codex review applied — see §Review findings applied) · **Priority:** P1 · **Branch:** `feat/cli-client`
 **Depends on:** SPEC-01 (daemon + control socket), SPEC-02 (CLI subcommands — the dir, the
 `requireDaemon()` convention, exit 3), SPEC-27 (drafts: a spawned session defers its worktree and
 harness until the first message; config picks at spawn), SPEC-29 (adapter-native lifecycle —
@@ -38,10 +38,10 @@ identity, lineage, and an output contract.
 | Need | What already exists | Gap |
 | --- | --- | --- |
 | Create a session | `session.spawn` → `manager.spawnPendingSession(projectId, agent, worktreePath, branch, configOptions)`; first `send.message` promotes the draft (names branch/worktree, applies picks) | no CLI caller; no `parentId`/`origin` |
-| Read a transcript | `sub { fromSeq }` replays `session.events` (`subscription_hub.ts:55`); `EventStore.read(id, fromSeq)` | no CLI caller |
+| Read a transcript | `sub { fromSeq }` replays `session.events` (`subscription_hub.ts:55`), whose getter lazily hydrates the **whole** persisted log (`session.ts:195`); `EventStore.read(id, fromSeq)` exists but `sub` does not use it | no CLI caller, and **no bounded tail** — hence D5's `session.transcript` |
 | Resume a cold session | `session.attach` + server-side re-attach on restart (`397f444`) | no CLI caller |
 | End a session | `session.archive` / `session.unarchive` / `session.kill` | no CLI caller |
-| Per-session env for the agent | `Manager.startOpts()` injects `MAKIT_BRIDGE_URL` / `MAKIT_BRIDGE_TOKEN` into `SpawnOpts.env` | no session identity, no CLI token |
+| Per-session env for the agent | `Manager.startOpts()` injects `MAKIT_BRIDGE_URL`, `MAKIT_BRIDGE_TOKEN` **and `MAKIT_SESSION_ID`** into `SpawnOpts.env` (`manager.ts:1278`-`1284`) | project/worktree/depth fields + a scoped CLI token; **env is proven only as far as the immediate child** |
 | Worktrees / PRs / ports | `worktree.create`/`createFromPr`/`wrapUp`/`discard`, `pr.*`, `ports.*` | out of scope here, but free later |
 | Fork a conversation | `SessionCapabilities.fork`, `AgentAdapter.forkSession?()`, codex `thread/fork` | **`session.fork` cmd never landed** (SPEC-29 marks it PENDING) |
 
@@ -65,20 +65,21 @@ identity, lineage, and an output contract.
 | --- | --- | --- |
 | **D1** | **One client transport: WSS.** Every session verb in this spec is a WSS command, using the same envelope, the same DTOs and the same `hello` auth as the app. The control socket stays **lifecycle + pairing only** (`status`, `pair.*`, `devices.*`, `server.stop`, `logs.*`) and its frozen verb list is not repurposed. `sessions.list` stays for the desktop app; `makit ls` (D7) is served over WSS. | The WSS router already implements everything (`session.*`, `send.message`, `queue.*`, `worktree.*`, `pr.*`), and its snapshots are the app's own projection — so the CLI cannot drift from the app by construction. The control socket also cannot reach a *remote* makit, which D11 needs. The cost is real and accepted: a CLI session verb now needs a credential, not just filesystem access — which is what D2 makes invisible. |
 | **D2** | **The CLI is its own device.** One additive control verb, `cli.grant`, returns a bearer for a device labelled `cli@<hostname>` with `caps: ["client"]`, minted on first use and cached at `~/.makit/cli.json` (mode `0600`). `readBearer()`'s `devices.json[0]` hack is deleted. `PairedDevice` gains `caps?: DeviceCap[]`; **absent means full**, so every already-paired phone keeps working. | Fixes all four defects in §2 at once: revocation becomes per-client, `makit devices` tells the truth, and there is a subject to attach capabilities to. Minting over the **unix socket** (not a pair token) is the right trust boundary: a process that can write `~/.makit/control.sock` is already the local user, and demanding a QR scan for a local terminal would be theatre. |
-| **D3** | **The agent's identity comes from its environment, and it is scoped.** `startOpts()` gains `MAKIT_SESSION_ID`, `MAKIT_PROJECT_ID`, `MAKIT_WORKTREE`, `MAKIT_SPAWN_DEPTH`, and `MAKIT_CLI_TOKEN` — a **per-session** bearer with `caps: ["spawn","send","read"]` that is revoked when the session ends. The CLI prefers `MAKIT_CLI_TOKEN` over `~/.makit/cli.json` when present. | This is the whole unlock: `makit handoff --to codex` with zero positional arguments, because the CLI knows who "I" am. It must **not** reuse the bridge token: `bridge.ts` mints **one** token per server process and takes `sessionId` from the request **body, unverified** — so it can authenticate "some agent" but never authorize "spawn as *my* child". The bridge is the connector channel (`/uicall`, `/usage`); making it a client channel would widen a global secret. A per-session token dies with the session, which also makes D9's counter attributable. |
-| **D4** | **`makit new` composes existing commands; `session.spawn` gains no prompt.** `new` = `session.spawn` (optionally after `worktree.create`) → `send.message`. `session.spawn` gains only `parentId?`, `handoffReason?` and `origin?`. | The draft contract is load-bearing: a spawned session is `pending` and the **first substantive message** is what names the branch/worktree and applies the pre-spawn config picks (`manager.ts` promotion path). An `initialPrompt` parameter would be a second launch path through that same promotion logic, for zero gain — the client can just send the message. |
-| **D5** | **Handoff is a manifest plus a new session. The transcript is never replayed into the new agent.** `makit handoff` (a) resolves a manifest, (b) spawns with `parentId` + `handoffReason`, (c) sends the rendered manifest as the first message. `--carry last:N` appends a rendered slice of the **event log**, read over `sub { fromSeq }` — as *quoted context in a message*, not as agent state. | Cross-harness replay is not a thing: a codex thread cannot ingest a pi transcript, and the transports that *can* replay have a primitive for it (`session/load`) which is **resume**, a different feature. A message is the one interchange format every harness accepts. Reading via `sub` rather than a new `session.transcript` command reuses a path the app exercises on every subscribe. |
+| **D3** | **The agent's environment carries a scoped credential — session identity is already there.** `startOpts()` **already** injects `MAKIT_SESSION_ID` (`manager.ts:1282`), so this decision adds only `MAKIT_PROJECT_ID`, `MAKIT_WORKTREE`, `MAKIT_SPAWN_DEPTH` and `MAKIT_CLI_TOKEN` — a **per-session** bearer with `caps: ["spawn","send","read"]`, minted with the session, revoked when it ends, and **re-minted on every re-attach** (`startOpts` is rebuilt at `manager.ts:1401`, so the restored session's old token must be dropped in the same step). The CLI prefers it over `~/.makit/cli.json`. | This is the unlock: `makit handoff --to codex` with zero positional arguments, because the CLI knows who "I" am. It must **not** reuse the bridge token: `bridge.ts:46`-`71` mints **one** token per server process and reads `sessionId` from the request **body, unverified** — it can authenticate "some agent" but never authorize "spawn as *my* child". A per-session token dies with the session, which is also what makes D9's counter attributable. **Rev 2:** `SpawnOpts.env` is proven to reach the **immediate** child only (`child_transport.ts:132`), and pi runs behind `pi-acp`, which spawns pi itself with a fixed argv — the same seam that already silently drops `SpawnOpts.extensions`. So P1 owes a spike proving the token reaches **pi**, not just `pi-acp`; if it does not, pi sessions get the token via the bridge-style handshake instead. |
+| **D4** | **`makit new` composes existing commands; `session.spawn` gains no prompt.** `new` = `session.spawn` (after `worktree.create`, D15) → `send.message`. `session.spawn` gains only `parentId?`, `handoffReason?` and `origin?`. | The draft contract is load-bearing: a spawned session is `pending`, and the **first `send.message`** is what names the branch/worktree and applies the pre-spawn config picks (promotion at `manager.ts:871`-`907`; concurrent promotions collapse onto one promise at `manager.ts:938`). An `initialPrompt` parameter would be a second launch path through that same promotion logic for zero gain. **Rev 2:** rev 1 called it the first *substantive* message, which is the code **comment's** phrasing, not the behaviour — `ws/commands/session.ts:140` promotes on **any** string, `""` included (an image-only turn falls back to `IMAGE_ONLY_LABEL`). Nothing in the design depended on the word, but the CLI must not rely on a substantive-message guard that does not exist. |
+| **D5** | **Handoff is a manifest plus a new session. The transcript is never replayed into the new agent.** `makit handoff` (a) resolves a manifest, (b) spawns with `parentId` + `handoffReason`, (c) sends the rendered manifest as the first message. `--carry last:N` appends a rendered slice, read through a **new bounded command `session.transcript { sessionId, limit }`** answered from the event log server-side — as *quoted context in a message*, not as agent state. | Cross-harness replay is not a thing: a codex thread cannot ingest a pi transcript, and the transports that *can* replay have a primitive for it (`session/load`) which is **resume**, a different feature. A message is the one interchange format every harness accepts. **Rev 2:** rev 1 read the slice via `sub { fromSeq }`, which cannot bound it — `sub` takes no limit, no DTO publishes a latest seq to subtract from, and `session.events` hydrates the entire persisted log before the filter runs (`subscription_hub.ts:55`, `session.ts:195`). `--carry last:5` on a long session would therefore load and ship the whole transcript to print five lines. One small server-side command is cheaper than a `latestSeq` field plus client arithmetic, and it makes the flood impossible rather than unlikely. |
 | **D6** | **"Fork" is two operations and the CLI names them separately.** `makit fork <id>` is the **adapter-native** fork (SPEC-29's pending `session.fork` → `forkSession()`, gated on `capabilities.fork`; codex `thread/fork` today) and fails with a precise message where unsupported (*"pi cannot fork: pi-acp advertises no `session/fork` — use `makit handoff` instead"*). `makit handoff` is the **makit-level** fork: cross-harness, manifest-carried, no native support needed. | Collapsing them into one verb would mean either lying about fidelity (a "fork" that is a summary) or shipping a verb that works on one of three harnesses. Naming them apart also lets P1 ship the workflow the user actually has, while `session.fork` lands as the honest completion of SPEC-29's pending item. |
 | **D7** | **Output contract: human by default, `--json` = NDJSON of the wire, unmodified.** Stream commands emit one `SessionEvent` per line exactly as received; list commands emit the DTO array as it arrives on `sessions.snapshot`. No third projection, no reshaped fields, no `--format` zoo. Human rendering stays in `cli/render.ts`. | A bespoke CLI JSON schema is a second protocol projection that drifts from the app's the first time an event kind is added (SPEC-19's lesson; SPEC-45's D-notes make the same argument about second mechanisms). "The wire, one object per line" is also the format `jq` wants. |
-| **D8** | **Exit codes are the automation contract**, derived from `SessionStatus`: `0` idle/turn complete · `10` `awaiting-approval` · `11` `awaiting-input` · `20` `error` · `21` `exited` · `3` daemon not running (SPEC-02's convention) · `4` credential/auth · `2` usage. `makit wait <id> [--for idle\|approval\|input\|any] [--timeout]` blocks and exits accordingly. | Without distinct codes, a git hook or CI job cannot tell "the agent finished" from "the agent is blocked on you" — and an agent shelling out to `makit ask … --wait` would hang forever on an approval prompt it cannot see. This is what makes the CLI scriptable rather than merely usable. |
-| **D9** | **Spawn depth and fan-out are bounded, server-side.** A `session.spawn` carrying `parentId` from a `spawn`-capped credential is refused past `MAKIT_SPAWN_DEPTH >= 3` or more than `N` live children per parent (default 4), with a clear error. The env var is advisory for display; the **server** derives depth from lineage (D10). | D3 makes agents able to spawn agents; a confused loop then spawns unbounded agent processes with real money attached, and the phone becomes an unusable list of ghosts. The bound must live where the lineage does — a client-side check is a suggestion. |
+| **D8** | **Exit codes are the automation contract**, and `wait` is **edge-triggered**: `0` turn complete · `10` `awaiting-approval` · `11` `awaiting-input` · `20` a terminal `session.error` · `21` `exited` · `3` daemon not running (SPEC-02's convention) · `4` credential/auth · `2` usage. `makit wait <id> [--for idle\|approval\|input\|any] [--timeout]` records the seq it started at and requires a `running` → non-running **transition** before exiting `0`. | Without distinct codes a git hook or CI job cannot tell "the agent finished" from "the agent is blocked on you", and an agent shelling out to `makit ask … --wait` would hang forever on an approval it cannot see. **Rev 2:** rev 1 derived all of this from `SessionStatus`, which was wrong twice. (i) **Nothing emits `status: "error"`** — adapters emit a `session.error` event and then settle *idle* (`acp.ts:313`, `codex.ts:250`; `session.ts:281` only moves status on `session.status`), so `20` must key off the event. (ii) `send.message` **acks before promotion** (`ws/commands/session.ts:128`), so a composed `new + send + wait` would observe the pre-existing `idle` and exit `0` having waited for nothing. The app already solved the boundary with a running→non-running edge (`notification_policy.dart:19`); the CLI copies it rather than inventing one. |
+| **D9** | **Lineage is derived from the credential, never taken from the wire — and depth/fan-out are bounded server-side.** For an agent-scoped token the parent **is** that token's session; a body `parentId` that disagrees is refused (`BadRequest`), not quietly honoured. Depth and live-child count are computed from persisted lineage (D10); refuse past depth `3` or more than `4` live children. `MAKIT_SPAWN_DEPTH` is display only. | D3 makes agents able to spawn agents; a confused loop then spawns unbounded agent processes with real money attached. **Rev 2:** rev 1 let the client supply `parentId` while the guard counted lineage — so a spawn bearer could forge shallow ancestry to escape the bound, attach a child to an unrelated session, or build a cycle, making the guard advisory. Deriving the parent from the credential also makes cycles impossible by construction, which demotes "the walk terminates on a cycle" from a live path to a unit test over hostile persisted data. |
 | **D10** | **Lineage is protocol data, not CLI bookkeeping.** `SessionDTO` gains `parentId?`, `handoffReason?`, `origin?: "app" \| "cli" \| "agent"`, persisted on `SessionMeta`. `makit tree` is a projection of those fields, and the app can caption "handed off from …". | If lineage lived only in `~/.makit`, the phone would show mystery sessions appearing with no explanation, and D9 would have nothing to count. It is also the minimum the app needs later to draw the chain without another spec changing the wire. |
 | **D11** | **Remote (`makit ctx` / `makit login`) is P3, and pins the same fingerprint the app pins.** `~/.makit/contexts.json`: named `{host, port, fingerprint, bearer}`; `makit login <makit://…>` consumes the URL `makit qr --url-only` already prints. Until then the CLI targets loopback, with `--host`/`--port` as today. | The workflow this spec exists for is local (the agent and the CLI run on the server host). Remote needs a pairing story for a device with no camera — a paste-the-URL flow, capability defaults, and cert pinning outside the app's pinning code. Real work, separable, and no P1 verb blocks on it. |
 | **D12** | **No TUI, no `race`, no `fleet`.** `makit attach` stays the line-oriented readline client it is. | SPEC-02 already put a long-running TUI out of scope, and ensemble/fleet orchestration is composition *on top of* this verb set — it should be specced once these verbs are real, not designed against imagined ones. |
-| **D13** | **A prompt from an agent-spawned session is routed up the lineage, then to everyone — it is never auto-approved.** `askDevice` stops filtering on `subscribed.has(sessionId)` and takes an **audience resolver**: (1) the session's own subscribers; else (2) the subscribers of the nearest ancestor via `parentId` (walking up, bounded by D9's depth); else (3) every authed client; then (4) today's `onUndeliverable` wake push. Applies identically to **both** kinds of `srv.request` — a tool permission (`awaiting-approval`) and an elicitation, i.e. a real question to the human (`awaiting-input`). The default policy stays `ask-on-risky` (`session.ts:212`); `--yolo` is opt-in **per handoff**. | Today's filter assumes every session was born on a screen, which is exactly the assumption D3 breaks: nobody has an agent-spawned session open, so `sent === 0` and the question is either pushed as a context-free buzz or **rejected outright** ("no subscribed clients to ask") — a handoff dead on arrival, discovered twenty minutes later. Routing up the lineage matches who owns the consequence: you asked for the handoff, so its questions are yours. Auto-approving instead was considered and rejected — it silently hands unsupervised shell access to an agent nobody watched, in a worktree that may hold credentials, and it fixes *only* permissions, leaving elicitation (which no policy can answer) still undeliverable. One routing rule covers both request kinds; two mechanisms would not. |
+| **D13** | **A stranded prompt is routed up the lineage, then to everyone — never auto-approved — and both the pending record and the *answer* are authorized.** (a) `askDevice` takes an audience resolver: the session's own subscribers → the nearest ancestor's subscribers via `parentId` → every authed client → today's `onUndeliverable` wake push (which stays gated on `sent === 0`). (b) The resolved eligibility is **stored on the pending request**, so `replayPendingTo()` re-sends only to clients that were eligible. (c) An `srv.response` is accepted **only** from a client in that audience, and **never** from an agent-scoped token. Applies identically to a tool permission (`awaiting-approval`) and an elicitation (`awaiting-input`). Default policy stays `ask-on-risky` (`session.ts:212`); `--yolo` is opt-in per handoff **and settable only by a human credential** (`caps: ["client"]`). | Today's `subscribed.has(sessionId)` filter assumes every session was born on a screen — exactly what D3 breaks: nobody has an agent-spawned session open, so `sent === 0` and the question is either a context-free push or **rejected outright**, a handoff dead on arrival. Routing up the lineage matches who owns the consequence. Auto-approving instead was rejected: it hands unsupervised shell access to an agent nobody watched, and fixes *only* permissions, leaving elicitation undeliverable. **Rev 2:** (b) and (c) are not polish — without them the ladder is decorative. `replayPendingTo()` re-sends **every** pending request to **every** newly-authed client regardless of subscription, on both auth and `sub` (`reverse_rpc.ts:65`), and `handleResponse` takes the first answer with no check on the sender (`reverse_rpc.ts:76`). So rev 1 would have let a never-subscribed device — or the child agent's own token — approve another session's tool call. Same reason `--yolo` cannot be agent-settable: an agent granting itself broader authority is not human opt-in. |
 | **D14** | **A prompt is self-describing.** Because step (3) can deliver to a client that has never seen this session, the `srv.request` must carry enough for the app to caption it — session title, harness, and handoff origin (D10's `parentId`/`handoffReason`) — not just the question text. | Step (3) is what makes D13 total, and an uncaptioned "Allow `rm -rf build`?" for a session the user never opened is worse than no prompt: it trains the user to answer without reading. Attribution is what makes the fallback tolerable instead of the reason notifications get switched off. |
 | **D15** | **`makit new` creates a worktree — always, not conditionally on `cwd`.** The CLI calls `worktree.create` and passes the resulting `worktreePath` + `branch` to `session.spawn`. With `-m`, the message seeds `branchName` (`slugifyBranch` + `uniqueBranch` already handle safety and collisions), so `makit new -m "fix the migration"` lands on `fix-the-migration` instead of `worktree-a1b2c3`; without `-m` the auto name stands, as in the app. `--here` is the explicit opt-out (run in `cwd`'s tree), and a non-git or unborn-HEAD repo degrades to the repo dir on its own (`createWorktree` returns `{path: repoPath, branch: null}`). **`makit handoff` is the opposite: it inherits the parent's `worktreePath` and branch**, and takes a fresh tree only when asked (`--worktree` / `--branch`). | Session-owns-a-worktree is the invariant the rest of makit is built on — tab groups are keyed by worktree (SPEC-30), ports are attributed per branch (SPEC-41/42), and SPEC-38's *Wrap up* means "remove the worktree, delete the branch, fast-forward the base". A CLI that dropped agents into the user's checkout would mint sessions that cannot be wrapped up, whose ports collide, and whose diff is tangled with the user's own uncommitted edits. Rejected the cwd-aware reading ("adopt the worktree I'm standing in") because it makes one command behave two ways depending on invisible state, and `--here` says it explicitly instead. Handoff inverts the default because **continuity is the entire point**: the manifest's `file:line` references and, usually, uncommitted work live in the parent's tree — a fresh tree off the default branch would strand exactly what was being handed over. |
-| **D16** | **A handoff leaves the parent running. Sessions may share a worktree, and nothing guards against it.** No archive-the-parent default, no "turn still running" refusal, no co-tenancy warning. `makit ls` shows each session's branch/worktree so the sharing is visible, and that is the whole of the mitigation. | Parallel agents in one tree is a *feature* of the terminal workflow, not an accident to be prevented — the parent is often still finishing something useful, and a handoff is "also work on this", not always "stop". The one hazard that would have justified a guard is already handled: `removeWorktree` reconciles **every** session bound to the tree (`manager.ts:852`, live → archive, never kill), so SPEC-38's *Wrap up* cannot delete a tree out from under a co-tenant. Accepted and unmitigated: git index contention and interleaved commits (identical to the risk a human already takes editing while an agent works), two agents editing one file with no merge boundary, and — a real reporting gap — SPEC-41/42 attributes a port to a **worktree/branch**, so with two sessions in one tree the ports view cannot name which session opened it. |
+| **D16** | **A handoff leaves the parent running. Sessions may share a worktree, and nothing guards against it.** No archive-the-parent default, no "turn still running" refusal, no co-tenancy warning. `makit ls` shows each session's branch/worktree so the sharing is visible, and that is the whole of the mitigation. | Parallel agents in one tree is a *decision*, not an accident to prevent — the parent is often still finishing something useful, and a handoff is frequently "also work on this". The hazard that would have justified a guard is already handled: `removeWorktree` reconciles **every** session bound to the tree (`manager.ts:833`-`863`: live → archive, drafts killed, already-archived left alone), so SPEC-38's *Wrap up* cannot delete a tree from under a co-tenant; the app's worktree groups and `repo_service.ts`'s `sessionIds: string[]` already model many sessions per tree. Accepted and unmitigated: git index contention and interleaved commits (the risk a human already takes editing while an agent works), and two agents editing one file with no merge boundary. **Rev 2 correction:** rev 1 also claimed the ports view could not name which co-tenant opened a port. It can — `PortDTO.sessionId` is derived by walking the agent's own process tree (`protocol.ts:301`, `ports/attribute.ts:158`), so a port opened under session A stays attributed to A. |
+| **D17** | **`caps` are enforced once, at the connection's principal.** `AuthGate` returns a principal (`{deviceId, label, caps, sessionId?}`) instead of `{id, label}`; `WsClient` carries it; the router checks a per-command capability map before dispatch, and `srv.response` is checked against D13(c). A principal with no `caps` — every already-paired phone — is full access. | Rev 1 left this as an open question, and the review was right that doing so makes D2, D3, D9 and D13 rest on an enforcement point that **does not exist**: `AuthGate` returns `{id,label}` (`auth_gate.ts:21`), `WsClient` stores no principal (`client.ts:15`), and every authed socket may dispatch every command (`server.ts:650`). One coarse place is the correct trade: a per-handler check would spread the rule across every command file and still miss `srv.response`, which is not a command at all. |
 
 ## The verb grammar
 
@@ -92,7 +93,7 @@ Every row is a thin client of an existing or (†) new WSS command.
 | `makit tail <id> [-f] [--since SEQ] [--json]` | `sub { fromSeq }` | P1 |
 | `makit wait <id> [--for …] [--timeout S]` | `sub` + `session.status` | P1 |
 | `makit run …` (= `new` + `wait` + print) | composed | P1 |
-| `makit handoff [--to A] [--carry …] [--file M \| -] [--goal …] [--next …] [--worktree]` | `session.spawn`† (inherits the parent's tree, D15) + `send.message` | P1 |
+| `makit handoff [--to A] [--carry …] [--file M \| -] [--goal …] [--next …] [--worktree]` | `session.spawn`† (inherits the parent's tree, D15) + `session.transcript`† (for `--carry`) + `send.message` | P1 |
 | `makit resume <id>` | `session.attach` | P1 |
 | `makit rm <id> [--kill]` (default: archive) | `session.archive` · `session.kill` | P1 |
 | `makit attach [<id>]` (re-homed on D2's credential) | existing | P1 |
@@ -124,13 +125,16 @@ producer is an LLM and a rejected handoff loses the context it was built from.
 
 - **P0 — foundation, no new user-facing verbs.** D1's shared WSS client module (`cli/client.ts`:
   connect, hello, cmd/ack correlation, snapshot cache, clean teardown), D2's credential + `caps`,
-  D7's output contract and D8's exit codes. `makit sessions` becomes `makit ls` over WSS
-  (`sessions` kept as a deprecated alias for one release).
+  **D17's principal + router enforcement** (without it D2's caps are decoration), D7's output
+  contract and D8's exit codes. `makit sessions` becomes `makit ls` over WSS (`sessions` kept as a
+  deprecated alias for one release).
 - **P1 — the handoff workflow.** D3 (env identity), D4 (`new`), D5 (`handoff`), D9 (depth guard),
-  D10 (lineage on the wire + persisted), **D13 (prompt routing up the lineage) + D14 (captioned
-  prompts)** — both P1, because D3 is precisely what strands a prompt, plus `send`, `tail`, `wait`,
-  `run`, `resume`, `rm`, and `attach` re-homed on the new credential. **This is the slice that
-  replaces the copy-paste ritual.**
+  D10 (lineage on the wire + persisted, **including the SQLite migration and the hand-maintained
+  Flutter DTO**), **D13 (routing + pending-eligibility + response authorization) and D14 (captioned
+  prompts, which is app work in P1 — rev 1's phasing wrongly implied otherwise)** — both P1, because
+  D3 is precisely what strands a prompt, plus `send`, `tail`, `wait`, `run`, `resume`, `rm`, and
+  `attach` re-homed on the new credential. **This is the slice that replaces the copy-paste
+  ritual.**
 - **P2 — the terminal as a full peer.** `session.fork` (SPEC-29's pending item), `approve`/`answer`
   (unblocking an agent-spawned session from the terminal), `ask --wait` (cross-harness delegation),
   `log`/`tree`, and the app-side "handed off from …" caption on D10's fields.
@@ -158,6 +162,7 @@ producer is an LLM and a rejected handoff loses the context it was built from.
       `makit devices` then lists a `cli@<host>` device distinct from the phone. Revoking it makes
       the next verb exit `4`; revoking the **phone** leaves the CLI working.
 - [ ] No CLI code path reads `devices.json` (asserted by a grep test — this is the §2 defect).
+- [ ] **D17**: a principal with `caps: ["client"]` is refused a command outside its map, a principal with no `caps` (an existing phone) is unaffected, and the refusal is at the router — not inside a handler.
 - [ ] Daemon down → SPEC-02's message and exit `3`, no stack trace, for every verb.
 
 **P1**
@@ -165,13 +170,18 @@ producer is an LLM and a rejected handoff loses the context it was built from.
       `sessions.snapshot` with `origin: "cli"`, promotes out of `pending`, and the reply streams to
       `makit tail -f` and the app simultaneously.
 - [ ] An agent shell-out inside a makit session runs `makit handoff --to codex --carry last:5
-      --goal "…"` with **no session/project arguments** and the new session's first message contains
-      the rendered manifest + a 5-event excerpt; its `parentId` is the calling session.
-- [ ] `makit wait <id>` exits `0` on turn end, `10` when the agent asks for approval, `11` on
-      ask-user, `20` on error — proven against `test/e2e-server.ts --mode stub` (keyless).
-- [ ] A spawn chain refuses at depth 3 and at the 5th live child, with a message naming the limit;
-      the refusal is server-side (proven by a direct WSS `session.spawn` with a forged shallow
-      `MAKIT_SPAWN_DEPTH`).
+      --goal "…"` with **no session/project arguments**; the new session's first message contains the
+      rendered manifest + a 5-event excerpt fetched via `session.transcript { limit: 5 }`, and its
+      `parentId` is the calling session **as derived from the credential** (D9).
+- [ ] `makit wait <id>` exits `0` only after a `running` → non-running **edge** — a `wait` started
+      while the session is already `idle` must not exit `0` until a turn has actually run and
+      finished. `10`/`11`/`20` require the stub to **emit** `awaiting-approval`, `awaiting-input` and
+      a terminal `session.error`; it emits none of the three today (`adapters/stub.ts` has no
+      `awaiting`), so extending the stub is part of this criterion, not an assumption of it.
+- [ ] A spawn chain refuses at depth 3 and at the 5th live child, with a message naming the limit.
+      Proven **server-side against a hostile client**: a forged shallow `MAKIT_SPAWN_DEPTH` is
+      ignored, and a `session.spawn` from an agent token carrying a `parentId` other than its own
+      session is refused (`BadRequest`) rather than honoured.
 - [ ] **D15**: `makit new -m "fix the migration"` creates a worktree on a branch named from the
       message (not `worktree-<uuid>`), and the session's `worktreePath` is that tree, never the repo
       dir. `--here` runs in `cwd`. A non-git project and an unborn HEAD both land in the repo dir
@@ -181,12 +191,26 @@ producer is an LLM and a rejected handoff loses the context it was built from.
 - [ ] **D16**: a handoff leaves the parent `idle`/`running` (not archived), both sessions report the
       **same** `worktreePath`, and *Wrap up* on that tree archives **both** — a regression lock on
       `removeWorktree`'s existing all-sessions reconciliation, which this decision now depends on.
-- [ ] `MAKIT_CLI_TOKEN` is rejected once its session ends (exit `4`).
+- [ ] `MAKIT_CLI_TOKEN` is rejected once its session ends (exit `4`), cannot name a **different**
+      session while it lives, and a re-attach mints a new one while revoking the old (D3).
+- [ ] **Spike, not a unit test**: `MAKIT_CLI_TOKEN` actually reaches **pi** — not just `pi-acp`,
+      which spawns pi with a fixed argv and already drops `SpawnOpts.extensions`. If it does not,
+      D3's pi path changes before P1 ships.
+- [ ] **`SessionMeta` migration**: an existing `~/.makit` database gains the lineage columns in place
+      (explicit `ALTER TABLE` in the migration block, `sqlite_event_store.ts:104`-`164`), a session
+      written before the migration rehydrates with `parentId: undefined`, and the **hand-maintained**
+      Flutter `Session` DTO parses the new fields (`app/lib/store/models.dart:1120`).
 - [ ] **D13 routing**, proven rung by rung against the stub adapter: a prompt from a handoff child
       reaches a client that has only the **parent** open; with the parent closed too it reaches every
       authed client; with no client at all it still takes the wake-push path and stays pending. No
       prompt is ever auto-answered, and an elicitation (`awaiting-input`) routes identically to a
       permission (`awaiting-approval`).
+- [ ] **D13(b)**: a client that authenticates *after* the prompt was raised and was **not** in its
+      audience receives nothing from `replayPendingTo()` — the regression this decision depends on,
+      since today that function ignores eligibility entirely.
+- [ ] **D13(c)**: an `srv.response` from a client outside the audience, and one from an agent-scoped
+      token, are both rejected and do **not** resolve the pending request; `--yolo` from an
+      agent-scoped credential is refused.
 - [ ] The lineage walk terminates on a cycle and on a missing/archived ancestor (unit test with a
       forged `parentId` loop).
 - [ ] **D14**: the `srv.request` envelope carries session title, agent and `handoffReason`, and the
@@ -198,6 +222,55 @@ producer is an LLM and a rejected handoff loses the context it was built from.
 
 **P2/P3** — criteria written with those phases (kept out here so P1 can ship).
 
+## Review findings applied (rev 2)
+
+Rev 1 was reviewed by two independent `codex exec` passes — one verifying every claim against the
+code, one judging scope and testability against `AGENTS.md`. Verdicts: **FLAWED** and **RESCOPE**.
+Every falsification below was re-checked by the author against the code before being accepted.
+
+### Accepted — claims the code contradicted
+
+| Rev 1 said | Reality | Where it landed |
+| --- | --- | --- |
+| `startOpts()` has no session identity | `MAKIT_SESSION_ID` is already injected (`manager.ts:1282`) | D3 shrunk to project/worktree/depth/token |
+| exit `20` derives from `SessionStatus` | **No producer of `status: "error"` exists**; adapters emit `session.error` then settle idle | D8 keys `20` off the event |
+| `--carry last:N` reads via `sub { fromSeq }` | `sub` takes no limit, no DTO exposes a latest seq, and `session.events` hydrates the whole log first | D5 adds bounded `session.transcript` |
+| the ports view cannot attribute a co-tenant's port | `PortDTO.sessionId` is derived from the agent's process tree (`ports/attribute.ts:158`) | D16's risk list corrected |
+| promotion needs the first *substantive* message | Any string promotes, `""` included (`ws/commands/session.ts:140`) — that word is a code comment's, not the behaviour's | D4 reworded |
+| the stub proves exit `10`/`11`/`20` | The stub emits no `awaiting-*` and only `session.error` | the criterion now includes extending the stub |
+
+### Accepted — design defects
+
+1. **`parentId` from the wire made D9 advisory** — forgeable shallow ancestry, foreign parents,
+   cycles. Now derived from the credential (D9).
+2. **`replayPendingTo()` and `handleResponse` defeated D13** — every pending prompt is re-sent to
+   every newly-authed client, and the first answer wins with no sender check (`reverse_rpc.ts:65`,
+   `:76`). Eligibility now lives on the pending record and the response is authorized (D13 b/c).
+3. **`wait` had no turn boundary** — `send.message` acks before promotion, so `new + send + wait`
+   could exit `0` having waited for nothing. Now edge-triggered (D8).
+4. **`caps` enforcement was an open question underneath four decisions** — there is no principal on
+   the connection today. Now **D17**, in P0.
+5. **Omissions**: the `SessionMeta` SQLite migration, the hand-maintained Flutter DTO, and the fact
+   that env delivery is proven only to `pi-acp`, not to its child `pi` (now a P1 spike).
+6. **Phasing incoherence**: D14 required app work while Phasing deferred app captions to P2. P1 now
+   states the app work it owns.
+
+### Rejected, with reasons
+
+- **"Rescope P1 to handoff alone; cut `ls`/`new`/`send`/`tail`/`wait`/`resume`/`rm`/`fork`."** The
+  reviewer did not have the originating request, which named creating, forking, resuming and listing
+  sessions explicitly. YAGNI governs *speculative* surface, not requested surface. Also practical: a
+  handoff you cannot `ls` or `tail` sends the user back to the app — the ritual this spec deletes.
+- **"Cut the manifest schema; prose is equivalent for an LLM→LLM handoff."** A fair argument,
+  rejected on the requester's call: the structure is the point of the feature, and a fixed section
+  order is what makes a handoff skimmable by a human reading the child's first message.
+- **"Cut `--carry` from P1."** Kept — but its mechanism was broken and is now fixed (D5). Cutting it
+  would have hidden a protocol gap instead of closing it.
+- **"`--yolo` cannot be meaningful opt-in."** Half accepted: the flag stays, but only a human
+  credential may set it (D13). An agent granting itself authority was the real defect.
+- **"D12 is not a decision."** Correct, and kept anyway: an explicit non-goal in the decision table
+  is cheaper to point at than one buried in prose.
+
 ## Open questions
 
 1. **Does the parent get a `session.meta` note ("handed off to …")?** Not a lifecycle question any
@@ -207,9 +280,7 @@ producer is an LLM and a rejected handoff loses the context it was built from.
 2. **Where does the manifest live on disk?** `<worktree>/.makit/handoff/*.json` (git-excluded, like
    SPEC-33's materialised attachments, and visible to both agents) vs `~/.makit/handoff/`
    (server-scoped, survives worktree removal).
-3. **Where are `caps` enforced?** In `auth_gate.ts` as a per-connection allowlist (one place, coarse)
-   or per command handler (precise, spread out).
-4. **`makit sessions` alias lifetime** — one release, or keep it permanently since it is in SPEC-02's
+3. **`makit sessions` alias lifetime** — one release, or keep it permanently since it is in SPEC-02's
    frozen-ish surface and possibly in users' scripts.
 
 ## Current-state anchors (real code this spec builds on)
