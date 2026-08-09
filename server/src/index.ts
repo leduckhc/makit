@@ -76,14 +76,14 @@ async function main() {
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
   const KNOWN = new Set([
     "serve", "pair", "qr", "devices", "ls", "sessions",
-    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "attach", "approve",
+    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "attach", "approve", "answer",
     ...LIFECYCLE,
   ]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
         `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|` +
-        `ls|new|send|tail|resume|rm|wait|run|handoff|attach|approve [...]`,
+        `ls|new|send|tail|resume|rm|wait|run|handoff|attach|approve|answer [...]`,
     );
     process.exit(2);
   }
@@ -184,11 +184,6 @@ async function main() {
   if (cmd === "approve") {
     const { runApprove } = await import("./cli/approve.js");
     await runApprove(process.argv.slice(3));
-    return;
-  }
-  if (cmd === "answer") {
-    const { runAnswer } = await import("./cli/answer.js");
-    await runAnswer(process.argv.slice(3));
     return;
   }
   if (cmd === "answer") {
