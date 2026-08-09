@@ -231,16 +231,16 @@ test("a re-index picks up worktrees that only appeared after the first scan", as
 
   const svc = new DocsService({
     listWorktrees: () => worktrees,
-    exec: (async () => ({ code: 1, stdout: "" })) as unknown as Exec,
+    exec: (async () => ({ code: 1, stdout: "", stderr: "" })) as Exec,
     grants: new DocGrantStore(),
     reach: async () => null,
     now: () => 1,
     onSnapshot: (s) => snapshots.push(s),
-    setTimer: ((fn: () => void) => {
+    setTimer: (fn) => {
       timers.push(fn);
-      return 1 as unknown as ReturnType<typeof setTimeout>;
-    }) as never,
-    clearTimer: (() => {}) as never,
+      return 1;
+    },
+    clearTimer: () => {},
     scan: (worktreePath): WorktreeScan => ({
       docs: [
         {
@@ -255,7 +255,7 @@ test("a re-index picks up worktrees that only appeared after the first scan", as
       ],
       scanOk: true,
     }),
-  } as never);
+  });
 
   // Watch turns on before any worktree is known — the real race. The 0→1 edge
   // scans immediately (no debounce), which is why the empty result is what the
