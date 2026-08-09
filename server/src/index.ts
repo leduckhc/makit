@@ -74,11 +74,11 @@ function makeDaemon() {
 async function main() {
   const cmd = process.argv[2];
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-  const KNOWN = new Set(["serve", "pair", "qr", "devices", "sessions", "attach", ...LIFECYCLE]);
+  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "attach", ...LIFECYCLE]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
-        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|sessions|attach [...]`,
+        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|attach [...]`,
     );
     process.exit(2);
   }
@@ -99,9 +99,13 @@ async function main() {
     return;
   }
 
-  if (cmd === "sessions") {
-    const { runSessions } = await import("./cli/sessions.js");
-    await runSessions(process.argv.slice(3));
+  // `ls` lists sessions over WSS — the app's own `sessions.snapshot` (SPEC-46
+  // D1), so the terminal cannot drift from the phone. `sessions` is the
+  // deprecated control-socket spelling, kept for one release.
+  if (cmd === "ls" || cmd === "sessions") {
+    if (cmd === "sessions") console.error("[makit] `makit sessions` is deprecated — use `makit ls`");
+    const { runLs } = await import("./cli/ls.js");
+    await runLs(process.argv.slice(3));
     return;
   }
 

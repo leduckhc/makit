@@ -19,9 +19,9 @@
  *   3. `cli.grant` over the control socket — minted on first use, then cached.
  */
 import { WebSocket } from "ws";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { makitHome } from "../daemon/paths.js";
 import type { CliGrantData, ControlResponse, ControlVerb } from "../daemon/protocol.js";
 import type { SessionDTO } from "../protocol.js";
 
@@ -176,7 +176,7 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
 
 /** Where the `cli@<host>` device credential is cached (D2). */
 export function cliCredentialPath(): string {
-  return join(homedir(), ".makit", "cli.json");
+  return join(makitHome(), "cli.json");
 }
 
 /** The minimal control-socket surface `resolveBearer` needs (for testability). */
@@ -207,7 +207,7 @@ export async function resolveBearer(control: CliGrantControl): Promise<string> {
     throw new AuthError(`cli.grant failed: ${res.ok ? "no bearer returned" : res.error}`);
   }
   const { deviceId, label, bearer } = granted;
-  mkdirSync(join(homedir(), ".makit"), { recursive: true });
+  mkdirSync(makitHome(), { recursive: true });
   writeFileSync(cachedPath, JSON.stringify({ deviceId, label, bearer }), { mode: 0o600 });
   return bearer;
 }

@@ -7,7 +7,7 @@
  * bubble grows on a single line); the authoritative agent.message that finalizes
  * that msgId just closes the line instead of reprinting the text.
  */
-import type { SessionEvent } from "../protocol.js";
+import type { SessionDTO, SessionEvent } from "../protocol.js";
 
 export interface RenderState {
   /** msgId of the agent bubble currently streaming inline, if any. */
@@ -32,6 +32,29 @@ function str(v: unknown): string {
 function oneLine(s: string, max = 100): string {
   const first = s.replace(/\s+/g, " ").trim();
   return first.length > max ? first.slice(0, max - 1) + "…" : first;
+}
+
+/** Relative age of a timestamp, for the session list. */
+function fmtAge(ts: number): string {
+  if (!ts) return "never";
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
+
+/**
+ * One `makit ls` line. Branch and worktree are printed whenever the session has
+ * them because sessions may legitimately share a tree (D16), and making that
+ * visible here is the whole of the mitigation.
+ */
+export function renderSessionLine(s: SessionDTO): string {
+  const parts = [s.id, `[${s.status}]`, s.title || "(untitled)", `project:${s.projectId}`];
+  if (s.branch) parts.push(`branch:${s.branch}`);
+  if (s.worktreePath) parts.push(`tree:${s.worktreePath}`);
+  parts.push(`last:${fmtAge(s.lastActivityAt)}`);
+  return parts.join("  ");
 }
 
 /** Map one session event to terminal output + the next render state. */

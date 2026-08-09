@@ -7,75 +7,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer, type Server } from "node:https";
-import { WebSocketServer, type WebSocket as WsSocket } from "ws";
-import type { AddressInfo } from "node:net";
 import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import selfsigned from "selfsigned";
 
 import { openClient, resolveBearer, cliCredentialPath } from "./client.js";
 import type { ControlResponse } from "../daemon/protocol.js";
-
-interface StubOpts {
-  /** When set, a `hello` whose bearer differs is rejected (err + close 4401). */
-  acceptBearer?: string;
-  /** Pushed as a `sessions.snapshot` event right after `hello.ack`. */
-  sessions?: unknown[];
-  /** Called for each `cmd` frame; returns the ack payload to merge into the reply. */
-  onCmd?: (m: Record<string, unknown>) => Record<string, unknown>;
-}
-
-interface Stub {
-  port: number;
-  close: () => Promise<void>;
-}
-
-async function startStub(opts: StubOpts = {}): Promise<Stub> {
-  const pems = await selfsigned.generate([{ name: "commonName", value: "makit" }], {
-    keySize: 2048,
-    algorithm: "sha256",
-  });
-  const https: Server = createServer({ cert: pems.cert, key: pems.private });
-  const wss = new WebSocketServer({ server: https });
-  wss.on("connection", (ws: WsSocket) => {
-    ws.on("message", (buf: Buffer) => {
-      let m: Record<string, unknown>;
-      try {
-        m = JSON.parse(buf.toString());
-      } catch {
-        return;
-      }
-      if (m.t === "hello") {
-        if (opts.acceptBearer !== undefined && m.bearer !== opts.acceptBearer) {
-          ws.send(JSON.stringify({ t: "err", id: m.id, code: "unauthorized", message: "unknown device" }));
-          ws.close(4401, "unauthorized");
-          return;
-        }
-        ws.send(JSON.stringify({ t: "hello.ack", id: m.id, ok: true, deviceId: "d1" }));
-        if (opts.sessions) {
-          ws.send(JSON.stringify({ t: "event", id: "snap", kind: "sessions.snapshot", sessions: opts.sessions }));
-        }
-        return;
-      }
-      if (m.t === "cmd") {
-        const extra = opts.onCmd ? opts.onCmd(m) : {};
-        ws.send(JSON.stringify({ t: "ack", id: m.id, ...extra }));
-        return;
-      }
-    });
-  });
-  await new Promise<void>((resolve) => https.listen(0, "127.0.0.1", resolve));
-  const port = (https.address() as AddressInfo).port;
-  return {
-    port,
-    close: () =>
-      new Promise<void>((resolve) => {
-        wss.close(() => https.close(() => resolve()));
-      }),
-  };
-}
+import { startStubWss as startStub } from "../../test/support/stub_wss.js";
 
 test("openClient + hello: authenticates and caches the pushed snapshot", async () => {
   const stub = await startStub({ acceptBearer: "good", sessions: [{ id: "s1" }] });
@@ -140,13 +78,13 @@ test("teardown: close() rejects in-flight cmds and leaves no open socket", async
 
 function withTempHome<T>(fn: () => Promise<T>): Promise<T> {
   const dir = mkdtempSync(join(tmpdir(), "makit-cli-home-"));
-  const prevHome = process.env.HOME;
+  const prevHome = process.env.MAKIT_HOME;
   const prevToken = process.env.MAKIT_CLI_TOKEN;
-  process.env.HOME = dir;
+  process.env.MAKIT_HOME = dir;
   delete process.env.MAKIT_CLI_TOKEN;
   const restore = () => {
-    if (prevHome === undefined) delete process.env.HOME;
-    else process.env.HOME = prevHome;
+    if (prevHome === undefined) delete process.env.MAKIT_HOME;
+    else process.env.MAKIT_HOME = prevHome;
     if (prevToken === undefined) delete process.env.MAKIT_CLI_TOKEN;
     else process.env.MAKIT_CLI_TOKEN = prevToken;
     rmSync(dir, { recursive: true, force: true });
@@ -172,7 +110,7 @@ test("resolveBearer prefers MAKIT_CLI_TOKEN and never touches the control socket
 
 test("resolveBearer returns the cached cli.json bearer without granting", async () => {
   await withTempHome(async () => {
-    mkdirSync(join(process.env.HOME!, ".makit"), { recursive: true });
+    mkdirSync(process.env.MAKIT_HOME!, { recursive: true });
     writeFileSync(cliCredentialPath(), JSON.stringify({ deviceId: "cli-1", label: "cli@host", bearer: "CACHED" }));
     let called = false;
     const control = { request: async () => { called = true; return { id: "1", ok: true } as ControlResponse; } };
