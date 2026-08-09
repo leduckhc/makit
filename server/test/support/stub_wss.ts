@@ -18,12 +18,26 @@ export interface StubWssOpts {
   sessions?: unknown[];
   /** Pushed as a `projects.snapshot` event right after `hello.ack`. */
   projects?: unknown[];
-  /** Called for each `cmd` frame; returns the ack payload to merge into the reply. */
+  /**
+   * `SessionEvent`s replayed on `sub`, oldest-first, filtered by `fromSeq`
+   * exactly as the real `SubscriptionHub` does, then followed by the `sub` ack.
+   * Each is framed as the server frames it: `{t:"event", kind:"session.event"}`.
+   */
+  events?: { seq: number; sessionId: string; [k: string]: unknown }[];
+  /** When set, a `sub` is answered with an `err` frame (e.g. `no_such_session`). */
+  subErr?: string;
+  /**
+   * Called for each `cmd` frame; returns the ack payload to merge into the
+   * reply. Return `{ __err: "message" }` to answer with an `err` frame instead
+   * (e.g. `no_such_session`), which is how a plain command failure is tested.
+   */
   onCmd?: (m: Record<string, unknown>) => Record<string, unknown>;
 }
 
 export interface StubWss {
   port: number;
+  /** Push one live `session.event` to every connected client (for `tail -f`). */
+  push: (event: Record<string, unknown>) => void;
   close: () => Promise<void>;
 }
 
@@ -34,7 +48,10 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
   });
   const https: Server = createServer({ cert: pems.cert, key: pems.private });
   const wss = new WebSocketServer({ server: https });
+  const live = new Set<WsSocket>();
   wss.on("connection", (ws: WsSocket) => {
+    live.add(ws);
+    ws.on("close", () => live.delete(ws));
     ws.on("message", (buf: Buffer) => {
       let m: Record<string, unknown>;
       try {
@@ -57,8 +74,29 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
         }
         return;
       }
+      if (m.t === "sub") {
+        if (opts.subErr !== undefined) {
+          ws.send(JSON.stringify({ t: "err", id: m.id, code: "no_such_session", message: opts.subErr }));
+          return;
+        }
+        // Replay history oldest-first, filtered by fromSeq, then ack — the exact
+        // order `SubscriptionHub.handleSub` uses, so the client can key "replay
+        // complete" off the ack.
+        const fromSeq = typeof m.fromSeq === "number" ? m.fromSeq : 0;
+        for (const e of opts.events ?? []) {
+          if (e.sessionId !== m.sessionId) continue;
+          if (fromSeq > 0 && e.seq <= fromSeq) continue;
+          ws.send(JSON.stringify({ t: "event", id: `ev${e.seq}`, kind: "session.event", event: e }));
+        }
+        ws.send(JSON.stringify({ t: "ack", id: m.id }));
+        return;
+      }
       if (m.t === "cmd") {
         const extra = opts.onCmd ? opts.onCmd(m) : {};
+        if (typeof extra.__err === "string") {
+          ws.send(JSON.stringify({ t: "err", id: m.id, code: "no_such_session", message: extra.__err }));
+          return;
+        }
         ws.send(JSON.stringify({ t: "ack", id: m.id, ...extra }));
         return;
       }
@@ -68,8 +106,13 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
   const port = (https.address() as AddressInfo).port;
   return {
     port,
+    push: (event) => {
+      const frame = JSON.stringify({ t: "event", id: `ev-${Date.now()}`, kind: "session.event", event });
+      for (const ws of live) ws.send(frame);
+    },
     close: () =>
       new Promise<void>((resolve) => {
+        for (const ws of live) ws.terminate();
         wss.close(() => https.close(() => resolve()));
       }),
   };
