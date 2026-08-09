@@ -75,3 +75,39 @@ test("completeness: every kind the real router registers appears in the capabili
   const missing = router.kinds().filter((k) => !(k in COMMAND_CAPABILITIES));
   assert.deepEqual(missing, [], `command kinds missing from the capability map: ${missing.join(", ")}`);
 });
+
+test("an agent token — even with spawn+read+send — is refused session.fork", async () => {
+  // U4's least-privilege call, as a regression lock. `session.spawn` is safe to
+  // give an agent because D9 forces its `parentId` to the caller's OWN session.
+  // `session.fork` takes the source from the argv, so an agent-reachable fork
+  // would let any agent branch ANY session on the machine — copying a transcript
+  // it was never allowed to read into a session it controls. The fanout gate (T5)
+  // would not help: the fork's events are its own.
+  let entered = false;
+  const router = new CommandRouter().register("session.fork", () => {
+    entered = true;
+  });
+  const client = fakeClient({
+    deviceId: "s",
+    label: "agent",
+    caps: ["read", "send", "spawn"],
+    sessionId: "s",
+  });
+
+  await router.dispatch(client, { v: 1, t: "cmd", id: "c1", kind: "session.fork" } as Envelope);
+
+  assert.equal(entered, false, "an agent must never reach the fork handler");
+  assert.equal(client.frames.at(-1)?.code, "unauthorized");
+});
+
+test("the CLI (caps:[client]) may fork — it is a human verb", async () => {
+  let entered = false;
+  const router = new CommandRouter().register("session.fork", () => {
+    entered = true;
+  });
+  const client = fakeClient({ deviceId: "d", label: "cli@host", caps: ["client"] });
+
+  await router.dispatch(client, { v: 1, t: "cmd", id: "c1", kind: "session.fork" } as Envelope);
+
+  assert.equal(entered, true);
+});
