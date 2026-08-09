@@ -1,8 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide Tab;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../app/routes.dart';
+import '../desktop_ports_route.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../store/store.dart';
@@ -174,7 +175,8 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.openSettings:
         widget.onOpenSettings();
       case ShortcutAction.openPorts:
-        context.go(kRoutePorts);
+        // The desktop shell has no GoRouter (see desktop_ports_route.dart).
+        unawaited(DesktopPortsRoute.open(Navigator.of(context)));
       case ShortcutAction.newSession:
         showNewWorktreeDialog(context, ref, projectId: _currentProjectId(ref));
       case ShortcutAction.nextSession:

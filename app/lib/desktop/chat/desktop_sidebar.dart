@@ -1,9 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import '../../app/routes.dart';
 import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../store/models.dart';
@@ -15,6 +15,7 @@ import '../../ui/ports/session_ports_glyph.dart';
 import '../../ui/widgets/pr_state_style.dart';
 import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
+import '../desktop_ports_route.dart';
 import '../metrics/metrics_button.dart';
 import 'archived_sidebar_view.dart';
 import 'connection_endpoint.dart';
@@ -628,9 +629,14 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                       // D8: explicit navigation to the global
                                       // Ports screen pre-filtered to this repo —
                                       // never a lift of the popover's private
-                                      // open/pinned controller.
-                                      context.go(
-                                        '$kRoutePorts?repo=${repo.id}',
+                                      // open/pinned controller. Pushed on this
+                                      // shell's Navigator: the desktop window is
+                                      // not a router app (desktop_ports_route.dart).
+                                      unawaited(
+                                        DesktopPortsRoute.open(
+                                          Navigator.of(context),
+                                          repoId: repo.id,
+                                        ),
                                       );
                                   }
                                 },

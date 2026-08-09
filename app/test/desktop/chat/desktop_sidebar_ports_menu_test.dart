@@ -1,16 +1,21 @@
-// SPEC-42 P2a T5 — the `Ports (n)…` worktree overflow item (D8). It routes to
-// the global Ports screen pre-filtered to the repo; it does NOT lift the
-// popover's private controller.
+// SPEC-42 P2a T5 — the `Ports (n)…` worktree overflow item (D8). It opens the
+// global Ports screen pre-filtered to the repo; it does NOT lift the popover's
+// private controller.
+//
+// The harness is a plain `MaterialApp(home: …)` ON PURPOSE: that is what the
+// desktop shell is (only mobile uses `MaterialApp.router`). An earlier version
+// of this test wrapped the sidebar in a GoRouter, which made a `context.go`
+// implementation pass here while throwing *No GoRouter found in context* in the
+// shipped app.
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
-import 'package:makit/app/routes.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/ports.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/ui/ports/ports_screen.dart';
 
 Worktree _wt(String path, String branch) => Worktree(
   id: path,
@@ -45,29 +50,11 @@ PortInfo _port(int port, String worktreePath) => PortInfo(
   worktreePath: worktreePath,
 );
 
-Future<String? Function()> _pump(
+Future<void> _pump(
   WidgetTester tester, {
   required List<RepoInfo> repos,
   required PortsSnapshot ports,
 }) async {
-  String? navigatedTo;
-  final router = GoRouter(
-    initialLocation: '/',
-    routes: [
-      GoRoute(
-        path: '/',
-        builder: (_, _) =>
-            const Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
-      ),
-      GoRoute(
-        path: kRoutePorts,
-        builder: (_, s) {
-          navigatedTo = s.uri.toString();
-          return const Scaffold(body: Text('PORTS SCREEN'));
-        },
-      ),
-    ],
-  );
   final container = ProviderContainer(
     overrides: [
       reposProvider.overrideWithValue(ReposState(repos)),
@@ -80,12 +67,12 @@ Future<String? Function()> _pump(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: MaterialApp.router(routerConfig: router),
+      child: const MaterialApp(
+        home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+      ),
     ),
   );
   await tester.pumpAndSettle();
-  // The ports route builder captures the visited location lazily.
-  return () => navigatedTo;
 }
 
 Future<void> _openMenu(WidgetTester tester, String branch) async {
@@ -133,24 +120,26 @@ void main() {
     );
   });
 
-  testWidgets(
-    'selecting it navigates to kRoutePorts pre-filtered to the repo',
-    (tester) async {
-      final repos = [
-        _repo('p1', 'makit', [_wt('/wt/feat', 'feat/open-ports')]),
-      ];
-      final ports = PortsSnapshot(
-        ports: [_port(5173, '/wt/feat')],
-        scannedAt: 0,
-        scanOk: true,
-      );
-      final read = await _pump(tester, repos: repos, ports: ports);
-      await _openMenu(tester, 'feat/open-ports');
-      await tester.tap(find.text('Ports (1)…'));
-      await tester.pumpAndSettle();
+  testWidgets('selecting it opens the Ports screen filtered to the repo', (
+    tester,
+  ) async {
+    final repos = [
+      _repo('p1', 'makit', [_wt('/wt/feat', 'feat/open-ports')]),
+    ];
+    final ports = PortsSnapshot(
+      ports: [_port(5173, '/wt/feat')],
+      scannedAt: 0,
+      scanOk: true,
+    );
+    await _pump(tester, repos: repos, ports: ports);
+    await _openMenu(tester, 'feat/open-ports');
+    await tester.tap(find.text('Ports (1)…'));
+    // Two pumps: the first dismisses the popup menu (which is what runs
+    // `onSelected`), the second lets the pushed route's transition finish.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
 
-      expect(find.text('PORTS SCREEN'), findsOneWidget);
-      expect(read(), contains('repo=p1'));
-    },
-  );
+    final screen = tester.widget<PortsScreen>(find.byType(PortsScreen));
+    expect(screen.repoId, 'p1');
+  });
 }

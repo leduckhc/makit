@@ -130,6 +130,7 @@ class TrayController extends ChangeNotifier {
     this.onOpenDashboard,
     this.onOpenQr,
     this.onQuit,
+    this.onOpenPorts,
   }) : _stateAccessor = stateAccessor,
        _platform = platform ?? TrayManagerPlatform(),
        _isMacOS = isMacOS ?? Platform.isMacOS;
@@ -157,6 +158,18 @@ class TrayController extends ChangeNotifier {
   /// Invoked when the user chooses "Quit Makit".
   final VoidCallback? onQuit;
 
+  /// Invoked when the user chooses "Open Ports…" (SPEC-42 D15).
+  final VoidCallback? onOpenPorts;
+
+  /// The last ports the app cached, as menu lines (see `tray_ports.dart`).
+  ///
+  /// State, not an accessor, because it comes from a different subsystem than
+  /// [DaemonSummary]: the daemon summary is polled over the control socket,
+  /// while ports arrive on the WSS session's `ports.snapshot`. The tray only
+  /// ever RENDERS what it was handed — it holds no watch and can therefore
+  /// never arm the scanner (D15).
+  List<String> _portLabels = const [];
+
   /// Creates the tray icon and its initial tooltip/menu from the current state.
   Future<void> init() async {
     if (!_isMacOS) return;
@@ -176,6 +189,14 @@ class TrayController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hands the tray the app's latest cached ports and rebuilds the menu +
+  /// tooltip around them. Never scans: the caller passes what it already has.
+  Future<void> setPorts(List<String> labels) async {
+    _portLabels = List.unmodifiable(labels);
+    if (!_isMacOS) return;
+    await update(_stateAccessor());
+  }
+
   @override
   void dispose() {
     if (_isMacOS) {
@@ -185,7 +206,15 @@ class TrayController extends ChangeNotifier {
     super.dispose();
   }
 
-  String _tooltipFor(DaemonSummary state) => 'Makit — ${state.state.name}';
+  String _tooltipFor(DaemonSummary state) {
+    final base = 'Makit — ${state.state.name}';
+    // D15 puts the count here rather than in the icon: `tray_manager` exposes no
+    // rich menubar badge, so the mockup's inline "🔌 11" is not buildable. A
+    // count is only claimed once a snapshot has actually arrived.
+    if (_portLabels.isEmpty) return base;
+    final n = _portLabels.length;
+    return '$base · $n port${n == 1 ? '' : 's'}';
+  }
 
   String _stateLine(DaemonSummary state) => switch (state.state) {
     DaemonState.running => 'Running (pid ${state.pid})',
@@ -208,6 +237,7 @@ class TrayController extends ChangeNotifier {
       MenuItem.separator(),
       _dynamicDeviceSubmenu(state),
       _dynamicSessionSubmenu(state),
+      _dynamicPortsSubmenu(),
       MenuItem.separator(),
       MenuItem(label: 'Quit Makit', onClick: (_) => onQuit?.call()),
     ];
@@ -229,6 +259,26 @@ class TrayController extends ChangeNotifier {
       items: state.sessionTitles.isEmpty
           ? [MenuItem(label: 'No sessions', disabled: true)]
           : [for (final title in state.sessionTitles) MenuItem(label: title)],
+    ),
+  );
+
+  /// `Ports (n)` — the cached listeners, then "Open Ports…" (D15).
+  ///
+  /// The entries are inert labels: killing a port is SPEC-43, so the menu
+  /// deliberately offers no action on an individual row. "Open Ports…" lives
+  /// inside this submenu so the top-level menu keeps its existing length.
+  MenuItem _dynamicPortsSubmenu() => MenuItem.submenu(
+    label: 'Ports (${_portLabels.length})',
+    submenu: Menu(
+      items: [
+        if (_portLabels.isEmpty)
+          MenuItem(label: 'No ports', disabled: true)
+        else
+          for (final label in _portLabels)
+            MenuItem(label: label, disabled: true),
+        MenuItem.separator(),
+        MenuItem(label: 'Open Ports…', onClick: (_) => onOpenPorts?.call()),
+      ],
     ),
   );
 }

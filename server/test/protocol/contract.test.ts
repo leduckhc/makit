@@ -164,3 +164,21 @@ test("ports.snapshot carries orphan and collision annotations", () => {
   assert.ok(collision, "fixture must cover a collision-annotated port");
   assert.equal(collision.collision?.withBranch, "chore/deps");
 });
+
+// ── SPEC-42 P2c ────────────────────────────────────────────────────────────
+// `docker` is a third OPTIONAL annotation on the same event (D13): an ownership
+// fact, never a `reach`. The fixture's container port is bound to `0.0.0.0`, so
+// this also pins the half of D13 that is easiest to regress — the annotation
+// must not rewrite `reach` into a `docker` value the type does not have.
+test("ports.snapshot carries a docker annotation without touching reach", () => {
+  const frame = snapshots.find((f) => f.kind === "ports.snapshot");
+  assert.ok(frame);
+  assert.notEqual(decodeFrame(JSON.stringify(frame)), null);
+
+  const ports = (frame as { snapshot: { ports: PortDTO[] } }).snapshot.ports;
+  const container = ports.find((p) => p.docker !== undefined);
+  assert.ok(container, "fixture must cover a docker-annotated port");
+  assert.equal(container.docker?.container, "chat-ui-db-1");
+  assert.equal(container.docker?.compose, "/repo/chat-ui/compose.yml");
+  assert.equal(container.reach, "exposed", "docker is ownership, not reach (D13)");
+});

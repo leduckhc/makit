@@ -53,6 +53,7 @@ Future<void> showWorktreePortsSheet(
             nowMs: DateTime.now().millisecondsSinceEpoch,
             onOpenPort: (port) => showPortDetailSheet(
               sheetCtx,
+              ref,
               port: port,
               branchLabel: branch,
               sessionLabel: sessionLabel(port.sessionId),

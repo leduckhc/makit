@@ -328,6 +328,22 @@ export interface PortDTO {
    * endpoint, so the rival is by construction not currently running.
    */
   collision?: PortCollisionDTO;
+  /**
+   * SPEC-42 D13. Present only when this listener is a port a docker container
+   * published, so `com.docker.backend` stops reading as an unowned system
+   * process. Ownership, NOT a reach: `reach` keeps reporting what the socket is
+   * actually bound to (a published port on `0.0.0.0` stays `exposed`), because
+   * "docker" would be the reassuring reading of an alarming fact. Absent on
+   * every machine without a reachable docker daemon — absence means "not known",
+   * never "no containers".
+   */
+  docker?: PortDockerDTO;
+  /**
+   * SPEC-44 D7/D8. True when the user asked to be told if this endpoint stops
+   * listening. Present only on a watched port — absent means "not watched", and
+   * the app renders absence as absence (never a false-vs-unknown muddle).
+   */
+  watched?: boolean;
 }
 
 /**
@@ -353,6 +369,18 @@ export interface PortCollisionDTO {
   withWorktreePath?: string;
 }
 
+/** The container that published a port (SPEC-42 D13). */
+export interface PortDockerDTO {
+  /** Container name as `docker ps` reports it. */
+  container: string;
+  /**
+   * Compose file that defines the container, when its labels carry one — the
+   * file the user would edit to change the bind. Absent for a plain
+   * `docker run`, never guessed.
+   */
+  compose?: string;
+}
+
 /** One host-wide scan, carried on the `ports.snapshot` event as `snapshot`. */
 export interface PortsSnapshotDTO {
   /** Listening TCP ports, ascending by port then pid. */
@@ -367,6 +395,93 @@ export interface PortsSnapshotDTO {
   scanOk: boolean;
   /** One-line reason when `scanOk` is false — rendered in the glyph's tooltip. */
   scanError?: string;
+}
+
+/**
+ * The endpoint the user confirmed killing, captured from the row they saw
+ * (SPEC-43 D1/D8).
+ */
+export interface PortKillTarget {
+  address: string;
+  port: number;
+  pid: number;
+  /**
+   * Epoch ms the process started ({@link PortDTO.startedAt}). REQUIRED here even
+   * though it is optional on the DTO: a listener whose start time could not be
+   * parsed cannot be identity-verified, so the UI must not offer to kill it and
+   * the server refuses a target that omits it.
+   */
+  startedAt: number;
+}
+
+/**
+ * Terminal outcome of one kill (SPEC-43 D2/D3).
+ *
+ * Refusals are OUTCOMES, not `err` frames: each one gets its own sentence in the
+ * UI ("that process changed since you looked — rescan"), which a generic error
+ * cannot carry. `err bad_request` stays reserved for a malformed payload.
+ */
+export type PortKillOutcome =
+  /** Gone after SIGTERM. */
+  | "released"
+  /** Ignored SIGTERM, gone after SIGKILL. */
+  | "force-killed"
+  /** Still listening after SIGKILL (EPERM / foreign uid) — reach for a terminal. */
+  | "survived"
+  /** Nothing listens at `(address, port)` on the fresh scan — already gone. */
+  | "not_found"
+  /** The endpoint is taken, but by a different pid/start time (pid reuse, restart). */
+  | "identity_mismatch"
+  /** The matched listener belongs to no worktree and is no known orphan (D3). */
+  | "not_owned"
+  /** The matched pid is 1 (D3). */
+  | "refused_protected"
+  /** The matched pid is makit's server or an ancestor of it (D3). */
+  | "refused_self"
+  /** The matched pid is a session's agent root — use `session.kill` (D3). */
+  | "refused_session"
+  /** The fresh kill-path scan failed, so nothing could be verified — never guess. */
+  | "scan_unavailable";
+
+/** Ack body of `ports.kill`. */
+export interface PortKillResult {
+  outcome: PortKillOutcome;
+  /** Echo of the target so the app can re-select the row by `(address, port)`. */
+  address: string;
+  port: number;
+}
+
+/**
+ * SPEC-44 D3: permission to proxy one loopback port to one device, for a while.
+ *
+ * `grantId` is a ROUTING key, not a capability: every proxied request still
+ * carries the paired-device bearer, and the grant must belong to that device.
+ */
+export interface ForwardGrantDTO {
+  grantId: string;
+  /** The forwarded loopback port on the host. */
+  port: number;
+  /** Epoch ms the grant was minted. */
+  createdAt: number;
+  /** Epoch ms it dies regardless of activity (hard cap). */
+  expiresAt: number;
+  /**
+   * Path to open on the makit listener, e.g. `/forward/<grantId>/`. The client
+   * joins it to the origin it is already connected to, rather than the server
+   * guessing which of its addresses that client can reach.
+   */
+  path: string;
+  /**
+   * True when the grant authorises on its id alone, because the consumer is the
+   * user's own browser and cannot send an `Authorization` header. The client asks
+   * for this explicitly; it is never inferred.
+   */
+  browser: boolean;
+}
+
+/** Ack body of `ports.killOrphans` — one independent result per endpoint (D5). */
+export interface PortKillOrphansResult {
+  results: PortKillResult[];
 }
 
 /**
@@ -670,6 +785,33 @@ export type CmdKind =
    * nothing is scanned while no client is watching.
    */
   | "ports.watch"
+  /**
+   * SPEC-43: terminate ONE listening process the user is looking at. Carries the
+   * full identity tuple captured from the row it displayed
+   * ({@link PortKillTarget}); the server re-verifies that tuple on a FRESH scan
+   * before signalling (D1) and refuses on any mismatch. Request/ack — the ack
+   * body carries a {@link PortKillResult}.
+   */
+  | "ports.kill"
+  /** SPEC-43 P3b: kill every listener currently classified as an orphan (D5). */
+  | "ports.killOrphans"
+  /**
+   * SPEC-44 P4a: opt in/out of a "stopped listening" alert for one endpoint.
+   * `{worktreePath, port, on}`; acks after the store write. Identified by
+   * `(worktreePath, port)` (D7) because that is what survives a dev-server
+   * restart — which is the whole point of watching it.
+   */
+  | "ports.watchPort"
+  /**
+   * SPEC-44 P4b: mint a {@link ForwardGrantDTO} for one loopback port so this
+   * device can preview it. `{worktreePath, port, browser?}`; refused (with a
+   * reason) for anything that is not a worktree-owned, HTTP-answering loopback
+   * port. `browser:true` mints a grant the system browser can use (its id is then
+   * the capability — see {@link ForwardGrantDTO.browser}).
+   */
+  | "ports.forward"
+  /** SPEC-44 P4b: revoke a grant early. `{grantId}`; always acks. */
+  | "ports.forward.stop"
   | "push.register"
   | "client.log"
   // dev-only probes
