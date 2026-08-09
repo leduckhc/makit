@@ -26,8 +26,13 @@ const double kChatRadiusMedium = kRadius12;
 const double kChatRadiusLarge = kRadius16;
 
 /// Hairline stroke for code-block panels (markdown fences + tool output). A
-/// full 1.0 logical px reads as a heavy frame around every snippet; 0.5 still
-/// resolves to a crisp device pixel on 2x/3x screens.
+/// full 1.0 logical px reads as a heavy frame around every snippet.
+///
+/// Logical px, not physical: this is one crisp device pixel at 2x, an
+/// antialiased 1.5 at 3x and a faint 0.5 at 1x. `width: 0.0` would pin exactly
+/// one physical pixel at every ratio instead (and does draw under a border
+/// radius), but it reads as "no border" at the call site and moves the weight
+/// on 1x/3x away from the 2x rendering this was tuned against.
 const double kChatCodeBorderWidth = 0.5;
 
 /// Max height (logical px) of an expanded tool row's body before it scrolls
