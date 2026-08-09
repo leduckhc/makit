@@ -54,8 +54,11 @@ export interface MakitClient {
   awaitSnapshot(): Promise<SessionsSnapshot>;
   /** Resolve with the cached `projects.snapshot`, or the next one pushed. */
   awaitProjects(): Promise<ProjectDTO[]>;
-  /** Send a raw frame (`sub`, `srv.response`, …) with no reply correlation. */
-  send(frame: Record<string, unknown>): void;
+  /** Send a raw frame (`sub`, `srv.response`, …) with no reply correlation. The
+   * optional `onSent` fires once the frame is written to the socket, so a
+   * caller that closes immediately after (e.g. `approve`/`answer`) does not
+   * terminate the connection before the frame flushes. */
+  send(frame: Record<string, unknown>, onSent?: () => void): void;
   /**
    * Every frame this client did not answer itself: events, `srv.request`, and
    * acks nobody is awaiting. The streaming verbs (`attach`, `tail`) live here.
@@ -210,8 +213,12 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
             projectsWaiter = res;
           });
         },
-        send(frame) {
-          if (!closed && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ v: 1, ...frame }));
+        send(frame, onSent) {
+          if (!closed && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ v: 1, ...frame }), () => onSent?.());
+          } else {
+            onSent?.();
+          }
         },
         onFrame(cb) {
           frameCb = cb;
@@ -224,8 +231,12 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
           if (closed) return;
           closed = true;
           failAll(new Error("client closed"));
+          // Graceful close flushes any just-sent frame (e.g. an `srv.response`)
+          // before the socket goes away; a terminate() fallback — unref'd so it
+          // never keeps the process alive — guarantees teardown if the close
+          // handshake stalls.
           ws.close();
-          ws.terminate();
+          setTimeout(() => ws.terminate(), 1000).unref();
         },
       });
     });

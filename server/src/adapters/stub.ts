@@ -29,8 +29,10 @@ const MARKDOWN_SAMPLE = [
 ///   - "ASK_MULTI"     → multi-question / multi-select askUserQuestion round-trip
 ///   - "ASK_QUESTION"  → single-question askUserQuestion round-trip
 ///   - "MARKDOWN"      → a markdown reply (heading, link, fenced dart code block)
-///   - "AWAIT_APPROVAL"→ park the turn on a tool-permission gate and STAY there
-///   - "AWAIT_INPUT"   → park the turn on an elicitation gate and STAY there
+///   - "AWAIT_APPROVAL"→ raise a real `confirmAction` prompt and park the turn on
+///                       the tool-permission gate until it is answered
+///   - "AWAIT_INPUT"   → raise a real `input` prompt and park on the elicitation
+///                       gate until it is answered
 ///   - "FAIL_TURN"     → a terminal `session.error`, then settle IDLE (not "error")
 ///   - anything else   → `echo: <text>` after 50ms
 export class StubAdapter extends EventEmitter implements AgentAdapter {
@@ -142,13 +144,37 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     // prompt naming a gate is never swallowed by another trigger.
     //
     // AWAIT_APPROVAL / AWAIT_INPUT: a turn genuinely in flight, then blocked on
-    // the user. It deliberately never clears itself — `makit wait --for approval`
-    // exiting 10 is only meaningful if the gate persists, and a self-clearing
-    // gate would make that test pass for the wrong reason.
+    // the user. The gate never clears itself — `makit wait --for approval` exiting
+    // 10 is only meaningful if it persists — but it IS released by an answer,
+    // because production adapters go `awaiting-*` *because* they asked something.
+    // Parking the status without asking made the flow the CLI exists for
+    // (`run` → exit 10 → `makit approve` → the turn finishes) impossible to
+    // exercise, and made `approve` look broken against a session that plainly
+    // reported `[awaiting-approval]`.
     if (prompt.includes("AWAIT_APPROVAL") || prompt.includes("AWAIT_INPUT")) {
-      const gate = prompt.includes("AWAIT_APPROVAL") ? "awaiting-approval" : "awaiting-input";
+      const approval = prompt.includes("AWAIT_APPROVAL");
+      const gate = approval ? "awaiting-approval" : "awaiting-input";
       this.gatedTurn = this.turns.enterTurn();
       this.turns.enterApproval(gate);
+      // No bridge (a unit test constructing the adapter bare) → the gate simply
+      // persists, which is the older behaviour and still what those tests assert.
+      if (!this.askUser) return;
+      // `sessionId` is not decoration: the server strips it to attribute the
+      // prompt, which is what D13's ladder routes on and what `makit approve <id>`
+      // matches. Without it the question is unroutable and unanswerable.
+      const body: Record<string, unknown> = approval
+        ? {
+            sessionId: this.sessionId,
+            kind: "confirmAction",
+            title: "Run `rm -rf build`?",
+            message: "the stub was asked to request approval",
+            action: "bash",
+            preview: "rm -rf build",
+          }
+        : { sessionId: this.sessionId, kind: "input", title: "What should the stub use?", prefill: "" };
+      void this.askUser(body)
+        .then(() => this.releaseGate())
+        .catch(() => this.releaseGate());
       return;
     }
 
@@ -262,19 +288,27 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       clearTimeout(this.slowTimeout);
       this.slowTimeout = undefined;
     }
-    // Release a parked gate (SPEC-46 T15) without emitting the intermediate
-    // "running" that leaveApproval would otherwise produce: drop the TURN first
-    // so the tracker has nothing to resume to, then the gate, then settle. A
-    // cancel that left the gate counted would wedge the session for good --
-    // settleIdle could never fire again, so every later turn would look stuck.
-    if (this.gatedTurn !== undefined) {
-      this.turns.leaveTurn(this.gatedTurn);
-      this.gatedTurn = undefined;
-      this.turns.leaveApproval();
-      this.turns.settleIdle();
-      return;
-    }
+    if (this.releaseGate()) return;
     this.emit("status", "idle");
+  }
+
+  /**
+   * Release a parked gate (SPEC-46 T15) without emitting the intermediate
+   * "running" that `leaveApproval` would otherwise produce: drop the TURN first
+   * so the tracker has nothing to resume to, then the gate, then settle. A cancel
+   * that left the gate counted would wedge the session for good — `settleIdle`
+   * could never fire again, so every later turn would look stuck.
+   *
+   * Returns whether there was a gate to release. Called both by `cancel` and when
+   * the user *answers* the prompt that raised the gate.
+   */
+  private releaseGate(): boolean {
+    if (this.gatedTurn === undefined) return false;
+    this.turns.leaveTurn(this.gatedTurn);
+    this.gatedTurn = undefined;
+    this.turns.leaveApproval();
+    this.turns.settleIdle();
+    return true;
   }
 
   /**

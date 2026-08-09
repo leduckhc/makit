@@ -9,6 +9,14 @@ import assert from "node:assert/strict";
 import { StubAdapter } from "./stub.js";
 import type { AdapterEvent } from "./adapter.js";
 import type { SessionConfigOption } from "../protocol.js";
+import type { UIResponse } from "../uicall.js";
+
+/** Poll until `ready`, bounded — never an unbounded await (node --test has no timeout). */
+async function waitFor(ready: () => boolean, ms = 1000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!ready() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+  if (!ready()) throw new Error("condition not met in time");
+}
 
 function collectMeta(adapter: StubAdapter): AdapterEvent[] {
   const events: AdapterEvent[] = [];
@@ -202,4 +210,38 @@ test("FAIL_TURN emits a terminal session.error and then settles IDLE", async () 
   // makit emits `status: "error"`, so `makit wait` must key exit 20 off the
   // EVENT. If this ever ends "error", the exit-code design changes.
   assert.deepEqual(coarse, ["running", "idle"]);
+});
+
+test("AWAIT_APPROVAL raises a real confirmAction prompt, and answering it ends the turn", async () => {
+  // Production adapters go `awaiting-approval` *because* they asked the user
+  // something: the status and the `srv.request` are one event. The stub used to
+  // park the status without asking, which made the composed flow the CLI exists
+  // for — `makit run` exits 10, you `makit approve`, the turn finishes —
+  // impossible to exercise at all, and left "approve" looking broken against a
+  // session that plainly says `[awaiting-approval]`.
+  const asked: Record<string, unknown>[] = [];
+  let answer: ((r: UIResponse) => void) | undefined;
+  const stub = new StubAdapter({
+    askUser: (body) => {
+      asked.push(body);
+      return new Promise<UIResponse>((res) => {
+        answer = res;
+      });
+    },
+  });
+  await stub.start({ cwd: process.cwd(), sessionId: "s1" });
+  // Two channels, as the other gate tests do: `status` is the coarse
+  // running/idle signal, `session.status` events carry the gate itself.
+  const { coarse, gates } = collectStatuses(stub);
+  void stub.send({ text: "AWAIT_APPROVAL please" });
+  await waitFor(() => asked.length === 1);
+
+  assert.equal(asked[0]!.kind, "confirmAction", "a permission prompt, like the real adapters raise");
+  assert.equal(asked[0]!.sessionId, "s1", "attributed to the session — D13 routes on this, and `approve <id>` matches it");
+  assert.ok(gates.includes("awaiting-approval"), "and the status the CLI keys exit 10 off");
+  assert.deepEqual(coarse, ["running"], "still mid-turn while the user is asked");
+
+  // Answering it releases the turn — the half that could never be tested before.
+  answer!({ kind: "confirmAction", approved: true } as UIResponse);
+  await waitFor(() => coarse.at(-1) === "idle");
 });

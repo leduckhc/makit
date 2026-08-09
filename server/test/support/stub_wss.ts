@@ -27,6 +27,15 @@ export interface StubWssOpts {
   /** When set, a `sub` is answered with an `err` frame (e.g. `no_such_session`). */
   subErr?: string;
   /**
+   * `srv.request` envelopes pushed to a subscribing client right after the
+   * `sub` ack — the order the real server uses (`server.ts:698`-`701`:
+   * `handleSub` acks, then `rpc.replayPendingTo` re-sends the pending prompt).
+   * Sent verbatim and unconditionally, so a test can exercise both the happy
+   * path (matching `sessionId`) and the D13(b) client-side lock (a prompt for
+   * a session the client did not name).
+   */
+  srvRequests?: Record<string, unknown>[];
+  /**
    * Answer `POST /media` (SPEC-33) with this `mediaId`, recording each upload on
    * {@link StubWss.uploads}. Media rides the same HTTPS listener as the socket on
    * the real server, so the stub serves it from the same place.
@@ -44,6 +53,8 @@ export interface StubWss {
   port: number;
   /** One entry per `POST /media`, in arrival order. */
   uploads: { mime: string; auth?: string; bytes: number }[];
+  /** Every `srv.response` frame a client sent, in arrival order. */
+  responses: Record<string, unknown>[];
   /** Push one live `session.event` to every connected client (for `tail -f`). */
   push: (event: Record<string, unknown>) => void;
   close: () => Promise<void>;
@@ -67,6 +78,7 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
   const pems = await testPems();
   const https: Server = createServer({ cert: pems.cert, key: pems.private });
   const uploads: { mime: string; auth?: string; bytes: number }[] = [];
+  const responses: Record<string, unknown>[] = [];
   https.on("request", (req, res) => {
     if (req.method !== "POST" || (req.url ?? "").split("?")[0] !== "/media") return;
     const chunks: Buffer[] = [];
@@ -126,6 +138,13 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
           ws.send(JSON.stringify({ t: "event", id: `ev${e.seq}`, kind: "session.event", event: e }));
         }
         ws.send(JSON.stringify({ t: "ack", id: m.id }));
+        for (const req of opts.srvRequests ?? []) {
+          ws.send(JSON.stringify({ t: "srv.request", ...req }));
+        }
+        return;
+      }
+      if (m.t === "srv.response") {
+        responses.push(m);
         return;
       }
       if (m.t === "cmd") {
@@ -144,6 +163,7 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
   return {
     port,
     uploads,
+    responses,
     push: (event) => {
       const frame = JSON.stringify({ t: "event", id: `ev-${Date.now()}`, kind: "session.event", event });
       for (const ws of live) ws.send(frame);

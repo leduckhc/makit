@@ -76,14 +76,15 @@ async function main() {
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
   const KNOWN = new Set([
     "serve", "pair", "qr", "devices", "ls", "sessions",
-    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "ask", "tree", "attach",
+    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "ask", "tree",
+    "approve", "answer", "attach",
     ...LIFECYCLE,
   ]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
         `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|` +
-        `ls|tree|new|send|ask|tail|resume|rm|wait|run|handoff|attach [...]`,
+        `ls|tree|new|send|ask|tail|resume|rm|wait|run|handoff|approve|answer|attach [...]`,
     );
     process.exit(2);
   }
@@ -188,6 +189,20 @@ async function main() {
   if (cmd === "attach") {
     const { runAttach } = await import("./cli/attach.js");
     await runAttach(process.argv.slice(3));
+    return;
+  }
+
+  // `approve`/`answer` unblock a session's pending prompt from the terminal
+  // (SPEC-46 U3): subscribe, receive the replayed `srv.request`, and answer it.
+  // The only authorization is the server-side D13 check — none is duplicated here.
+  if (cmd === "approve") {
+    const { runApprove } = await import("./cli/approve.js");
+    await runApprove(process.argv.slice(3));
+    return;
+  }
+  if (cmd === "answer") {
+    const { runAnswer } = await import("./cli/answer.js");
+    await runAnswer(process.argv.slice(3));
     return;
   }
 
