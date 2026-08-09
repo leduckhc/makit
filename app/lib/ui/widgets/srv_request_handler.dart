@@ -389,14 +389,24 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
         title: Text(body['title']?.toString() ?? 'Input'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          minLines: multiline ? 3 : 1,
-          maxLines: multiline ? 8 : 1,
-          decoration: InputDecoration(
-            hintText: body['placeholder']?.toString(),
-          ),
+        // Captioned like a permission prompt (D14): D13 routes an elicitation up
+        // the same ladder, so this dialog can equally reach a phone that has
+        // never opened the session asking the question.
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _PromptCaption(session: body['session']),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              minLines: multiline ? 3 : 1,
+              maxLines: multiline ? 8 : 1,
+              decoration: InputDecoration(
+                hintText: body['placeholder']?.toString(),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(

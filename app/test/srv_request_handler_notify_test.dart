@@ -242,6 +242,45 @@ void main() {
     },
   );
 
+  testWidgets(
+    'an elicitation is captioned too — D13 routes both kinds up the ladder',
+    (tester) async {
+      // A tool permission is not the only prompt an unwatched agent session
+      // raises: D13 routes an `input` elicitation the same way, so an uncaptioned
+      // one is the same trap — a question about work the user cannot place.
+      final (transport, _, _) = await pumpHandler(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      transport.emit(
+        Envelope(
+          t: MsgType.srvRequest,
+          id: 'req-input-caption',
+          body: {
+            'kind': 'input',
+            'title': 'Which database should the migration target?',
+            'sessionId': 'ghost-session',
+            'session': {
+              'title': 'Fix the parser',
+              'agent': 'codex',
+              'handoffReason': 'risky refactor',
+              'origin': 'agent',
+            },
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        find.text('Which database should the migration target?'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Fix the parser'), findsOneWidget);
+      expect(find.textContaining('codex'), findsOneWidget);
+    },
+  );
+
   testWidgets('uses the navigator key supplied by the desktop app', (
     tester,
   ) async {
