@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildPortDownPayload,
   buildWakePayload,
   WAKE_ALERT_BODY,
+  WAKE_ALERT_TITLE,
   type ApnsPayload,
 } from "../src/push/payload.js";
 
@@ -69,4 +71,25 @@ test("alert body is a fixed generic string", () => {
 
 test("badge reflects pendingCount", () => {
   assert.equal(buildWakePayload({ pendingCount: 3 }).aps.badge, 3);
+});
+
+// ── SPEC-44 D8: the port-down alert ────────────────────────────────────────
+
+test("the port-down alert names the port and NOTHING else", () => {
+  // The signature is the invariant, exactly as for the wake payload: only an
+  // integer is in scope, so a branch, a path or a command CANNOT appear on a lock
+  // screen. This test pins the shape as well as the strings.
+  const p = buildPortDownPayload({ port: 5173 });
+  assert.equal(p.aps.alert.title, WAKE_ALERT_TITLE);
+  assert.equal(p.aps.alert.body, ":5173 stopped listening");
+  assert.equal(p.aps.badge, 0, "an informational alert must not stack a badge count");
+  assert.equal(p.aps["content-available"], 1);
+
+  const strings: string[] = [];
+  collectStrings(p, strings);
+  for (const probe of ["feat/", "/Users/", "vite", "sess-"]) {
+    for (const s of strings) {
+      assert.ok(!s.includes(probe), `payload string "${s}" leaked "${probe}"`);
+    }
+  }
 });

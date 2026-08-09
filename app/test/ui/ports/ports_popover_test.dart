@@ -1,17 +1,19 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/app/theme.dart';
 import 'package:makit/store/ports.dart';
 import 'package:makit/ui/ports/ports_glyph.dart';
 import 'package:makit/ui/ports/ports_popover.dart';
+import 'package:makit/ui/ports/ports_vocabulary.dart';
 
 PortInfo _port({
   int port = 5173,
   String? openUrl = 'http://127.0.0.1:5173',
   String? command,
-  int startedAt = 1000,
+  int? startedAt = 1000,
 }) => PortInfo(
   key: '100:127.0.0.1:$port',
   port: port,
@@ -26,12 +28,29 @@ PortInfo _port({
   openUrl: openUrl,
 );
 
+/// Records the `ports.kill` bodies a row sends, so a test can prove the confirm
+/// gates them (SPEC-43 D8).
+final _killBodies = <Map<String, dynamic>>[];
+
 // The real theme, so the app-wide `tooltipTheme` dwell applies here exactly as
 // it does in the product (a bare MaterialApp would silently use Flutter's
 // zero-dwell default and the tooltip tests below would prove nothing).
-Widget _host(Widget child) => MaterialApp(
-  theme: makitDarkTheme,
-  home: Scaffold(body: Center(child: child)),
+//
+// A ProviderScope wraps it because a port row owns the kill (it reads the
+// killer), with the socket replaced by a recorder.
+Widget _host(Widget child) => ProviderScope(
+  overrides: [
+    portsKillerProvider.overrideWithValue(
+      PortsKiller((body) async {
+        _killBodies.add(body);
+        return {'outcome': 'released'};
+      }),
+    ),
+  ],
+  child: MaterialApp(
+    theme: makitDarkTheme,
+    home: Scaffold(body: Center(child: child)),
+  ),
 );
 
 PortsPopover _popover({
@@ -48,6 +67,8 @@ PortsPopover _popover({
 );
 
 void main() {
+  setUp(_killBodies.clear);
+
   group('tooltip dwell (SPEC-41 §Tooltips: TOOLTIP_DWELL_MS = 500)', () {
     test('the dwell is 500 ms and cannot race the popover open dwell', () {
       expect(kTooltipDwell, const Duration(milliseconds: 500));
@@ -494,6 +515,98 @@ void main() {
       await tester.pump();
       expect(find.text('Open'), findsNothing);
       expect(find.text('Copy URL'), findsNothing);
+    });
+  });
+
+  // ── SPEC-43 P3a: the desktop Kill button (D8, mockup §2a) ────────────────
+  group('Kill action', () {
+    Future<void> pin(WidgetTester tester, {List<PortInfo>? ports}) async {
+      await tester.pumpWidget(_host(_popover(ports: ports)));
+      await tester.tap(find.byType(PortsPopover));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Kill is the LAST action, after Open and Copy URL', (
+      tester,
+    ) async {
+      await pin(tester);
+      // Tree order, not x-position: the action group wraps at 360 pt, so "last"
+      // means last in reading order — never before a non-destructive button.
+      final labels = tester
+          .widgetList<Text>(find.byType(Text))
+          .map((t) => t.data)
+          .whereType<String>()
+          .toList();
+      expect(
+        labels.indexOf(portKillLabel),
+        greaterThan(labels.indexOf('Open')),
+      );
+      expect(
+        labels.indexOf(portKillLabel),
+        greaterThan(labels.indexOf('Copy URL')),
+      );
+      // And it is never ABOVE them either.
+      final kill = tester.getTopLeft(find.text(portKillLabel));
+      expect(
+        kill.dy,
+        greaterThanOrEqualTo(tester.getTopLeft(find.text('Open')).dy),
+      );
+    });
+
+    testWidgets('it is offered even when nothing answered HTTP', (
+      tester,
+    ) async {
+      // `:5175 vite · refused, up 6h` has no openUrl — and is precisely the
+      // wedged server the feature exists to reclaim.
+      await pin(tester, ports: [_port(openUrl: null)]);
+      expect(find.text('Open'), findsNothing);
+      expect(find.text(portKillLabel), findsOneWidget);
+    });
+
+    testWidgets('a pinned popover still confirms — the pin is not consent', (
+      tester,
+    ) async {
+      await pin(tester);
+      await tester.tap(find.text(portKillLabel));
+      await tester.pumpAndSettle();
+      // A dialog naming the victim, and NOTHING sent yet.
+      expect(find.text('Kill :5173?'), findsOneWidget);
+      // The row behind the dialog also prints the pid, so `findsWidgets`: what
+      // matters is that the DIALOG names it.
+      expect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.textContaining('pid 48211'),
+        ),
+        findsOneWidget,
+      );
+      expect(_killBodies, isEmpty);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(_killBodies, isEmpty, reason: 'dismissing sends nothing');
+    });
+
+    testWidgets('confirming sends the displayed tuple', (tester) async {
+      await pin(tester);
+      await tester.tap(find.text(portKillLabel));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Kill'));
+      await tester.pumpAndSettle();
+      expect(_killBodies, [
+        {
+          'kind': 'ports.kill',
+          'address': '127.0.0.1',
+          'port': 5173,
+          'pid': 48211,
+          'startedAt': 1000,
+        },
+      ]);
+    });
+
+    testWidgets('a port with no startedAt offers no Kill (D1)', (tester) async {
+      await pin(tester, ports: [_port(startedAt: null)]);
+      expect(find.text(portKillLabel), findsNothing);
     });
   });
 }

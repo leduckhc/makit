@@ -13,6 +13,8 @@ import 'package:makit/shortcuts/key_chord.dart';
 import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/shortcuts/shortcut_action.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/store/ports.dart';
+import 'package:makit/ui/ports/ports_screen.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/secure_store.dart';
@@ -613,5 +615,41 @@ void main() {
       'g1',
       reason: 'no group 3 exists, so focus does not move',
     );
+  });
+
+  // SPEC-42 P2a, corrected: the desktop shell is a plain `MaterialApp` (only
+  // mobile uses `MaterialApp.router`), so this shortcut must not depend on a
+  // GoRouter being in context — it pushes on the shell's own Navigator.
+  testWidgets('Ctrl+Shift+P opens the Ports screen on this Navigator', (
+    tester,
+  ) async {
+    final keymap = await controller();
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        portsWatchProvider.overrideWithValue(PortsWatch((_) {})),
+        portsProvider.overrideWithValue(
+          const PortsSnapshot(ports: [], scannedAt: 0, scanOk: true),
+        ),
+        reposProvider.overrideWithValue(ReposState(const [])),
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+
+    await pressCtrl(tester, LogicalKeyboardKey.keyP, shift: true);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(PortsScreen), findsOneWidget);
+
+    // Pressing it again does not stack a second copy.
+    await pressCtrl(tester, LogicalKeyboardKey.keyP, shift: true);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(PortsScreen), findsOneWidget);
   });
 }

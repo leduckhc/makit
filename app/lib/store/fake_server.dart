@@ -499,10 +499,26 @@ class FakeServer {
     };
   }
 
-  /// Emit one plausible `ports.snapshot` (SPEC-41): a healthy dev server owned
-  /// by the first feature-branch worktree (so a glyph lights on that row), a
-  /// wildcard-bound `exposed` port with no probe, and a `refused` zombie so the
-  /// attention state is exercised on the fake path.
+  /// Ports the demo has "killed" — they stop appearing in the snapshot, so the
+  /// kill visibly works in demo mode.
+  final Set<int> _killedPorts = {};
+
+  /// Ports the demo user has asked to be told about (SPEC-44 D7).
+  final Set<int> _watchedPorts = {5173};
+
+  /// Emit one plausible `ports.snapshot`, covering every state the ports UI can
+  /// render so demo mode exercises the whole surface (SPEC-41 → SPEC-44):
+  ///
+  ///  * `:5173 vite`   — healthy, owned by the first feature-branch worktree, so
+  ///                     a glyph lights on that row. Watched by default, and the
+  ///                     one port a browser forward is offered for.
+  ///  * `:5175 vite`   — owned but **refused**: the wedged zombie SPEC-43's kill
+  ///                     exists for. No `openUrl`, so no forward is offered.
+  ///  * `:9787 serve`  — wildcard-bound, `exposed`, 404 — the security read.
+  ///  * `:5432 postgres` — published by a docker container (SPEC-42 D13): the row
+  ///                     names the CONTAINER, and `reach` still says `exposed`.
+  ///  * `:5180`/`:5181` — orphans whose worktree is gone, which is what makes the
+  ///                     orphans section and `Kill all orphans (2)` appear.
   void _pushPorts() {
     final feature = _sessions.values.firstWhere(
       (s) => s.branch != null,
@@ -512,6 +528,116 @@ class FakeServer {
         ? feature.projectPath
         : '${feature.projectPath}/.wt/${feature.branch}';
     final now = DateTime.now().millisecondsSinceEpoch;
+
+    Map<String, dynamic> port({
+      required int number,
+      required String key,
+      required String command,
+      String address = '127.0.0.1',
+      String reach = 'loopback',
+      required int pid,
+      required int upMs,
+      String? worktreePath,
+      String? sessionId,
+      Map<String, dynamic>? health,
+      String? openUrl,
+      Map<String, dynamic>? orphan,
+      Map<String, dynamic>? docker,
+    }) => {
+      'key': key,
+      'port': number,
+      'address': address,
+      'reach': reach,
+      'pid': pid,
+      'command': command,
+      'startedAt': now - upMs,
+      // Absent, never null: the app's decoder treats absence as "not known",
+      // which is the whole point of these fields (SPEC-41).
+      'worktreePath': ?worktreePath,
+      'sessionId': ?sessionId,
+      'health': ?health,
+      'openUrl': ?openUrl,
+      'orphan': ?orphan,
+      'docker': ?docker,
+      if (_watchedPorts.contains(number)) 'watched': true,
+    };
+
+    final all = <Map<String, dynamic>>[
+      port(
+        number: 5173,
+        key: '48211:127.0.0.1:5173',
+        command: 'node vite --port 5173',
+        pid: 48211,
+        upMs: 41 * 60 * 1000,
+        worktreePath: wtPath,
+        sessionId: feature.id,
+        health: {'kind': 'ok', 'status': 200, 'probedAt': now - 4000},
+        openUrl: 'http://127.0.0.1:5173',
+      ),
+      port(
+        number: 5175,
+        key: '51330:127.0.0.1:5175',
+        command: 'node vite --port 5175',
+        pid: 51330,
+        upMs: 6 * 60 * 60 * 1000,
+        worktreePath: wtPath,
+        health: {'kind': 'refused', 'probedAt': now - 3000},
+      ),
+      port(
+        number: 9787,
+        key: '47120:0.0.0.0:9787',
+        command: 'node dist/serve.js',
+        address: '0.0.0.0',
+        reach: 'exposed',
+        pid: 47120,
+        upMs: 2 * 60 * 60 * 1000,
+        worktreePath: wtPath,
+        sessionId: feature.id,
+        health: {'kind': 'http-error', 'status': 404, 'probedAt': now - 9000},
+        openUrl: 'http://127.0.0.1:9787',
+      ),
+      port(
+        number: 5432,
+        key: '901:0.0.0.0:5432',
+        command: '/Applications/Docker.app/Contents/MacOS/com.docker.backend',
+        address: '0.0.0.0',
+        reach: 'exposed',
+        pid: 901,
+        upMs: 3 * 60 * 60 * 1000,
+        docker: {
+          'container': 'chat-ui-db-1',
+          'compose': '${feature.projectPath}/compose.yml',
+        },
+      ),
+      port(
+        number: 5180,
+        key: '51002:127.0.0.1:5180',
+        command: 'node vite --port 5180',
+        pid: 51002,
+        upMs: 48 * 60 * 60 * 1000,
+        health: {'kind': 'ok', 'status': 200, 'probedAt': now - 5000},
+        openUrl: 'http://127.0.0.1:5180',
+        orphan: {
+          'formerBranch': 'feat/desktop-tabs',
+          'formerWorktreePath': '${feature.projectPath}/.wt/feat/desktop-tabs',
+          'removedAt': now - 2 * 24 * 60 * 60 * 1000,
+        },
+      ),
+      port(
+        number: 5181,
+        key: '51044:127.0.0.1:5181',
+        command: 'node storybook dev -p 5181',
+        pid: 51044,
+        upMs: 48 * 60 * 60 * 1000,
+        health: {'kind': 'ok', 'status': 200, 'probedAt': now - 5000},
+        openUrl: 'http://127.0.0.1:5181',
+        orphan: {
+          'formerBranch': 'feat/desktop-tabs',
+          'formerWorktreePath': '${feature.projectPath}/.wt/feat/desktop-tabs',
+        },
+      ),
+    ];
+
     _emit(
       Envelope(
         t: MsgType.event,
@@ -520,36 +646,8 @@ class FakeServer {
           'kind': 'ports.snapshot',
           'snapshot': {
             'ports': [
-              {
-                'key': '48211:127.0.0.1:5173',
-                'port': 5173,
-                'address': '127.0.0.1',
-                'reach': 'loopback',
-                'pid': 48211,
-                'command': 'node vite --port 5173',
-                'startedAt': now - 41 * 60 * 1000,
-                'worktreePath': wtPath,
-                'sessionId': feature.id,
-                'health': {'kind': 'ok', 'status': 200, 'probedAt': now - 4000},
-                'openUrl': 'http://127.0.0.1:5173',
-              },
-              {
-                'key': '47120:0.0.0.0:9787',
-                'port': 9787,
-                'address': '0.0.0.0',
-                'reach': 'exposed',
-                'pid': 47120,
-                'command': 'node dist/serve.js',
-                'startedAt': now - 2 * 60 * 60 * 1000,
-                'worktreePath': wtPath,
-                'sessionId': feature.id,
-                'health': {
-                  'kind': 'http-error',
-                  'status': 404,
-                  'probedAt': now - 9000,
-                },
-                'openUrl': 'http://127.0.0.1:9787',
-              },
+              for (final p in all)
+                if (!_killedPorts.contains(p['port'] as int)) p,
             ],
             'scannedAt': now,
             'scanOk': true,
@@ -604,6 +702,79 @@ class FakeServer {
         // Mirror the real server: on watch-on, paint from a plausible snapshot
         // immediately (SPEC-41). A no-op on watch-off — no ambient polling.
         if (env.body['on'] == true) _pushPorts();
+        return;
+      // SPEC-43/44: the demo answers the destructive and capability commands so
+      // the confirms lead somewhere. Deliberately shallow — it reports the happy
+      // outcome and re-pushes the snapshot; the refusal table is the real
+      // server's job and is covered by its own tests.
+      case 'ports.kill':
+        final killedPort = env.body['port'];
+        if (killedPort is int) _killedPorts.add(killedPort);
+        _emit(
+          Envelope(
+            t: MsgType.ack,
+            id: env.id,
+            body: {
+              'outcome': 'released',
+              'address': env.body['address'],
+              'port': killedPort,
+            },
+          ),
+        );
+        _pushPorts();
+        return;
+      case 'ports.killOrphans':
+        // The two seeded orphans (see `_pushPorts`).
+        const orphanPorts = [5180, 5181];
+        _killedPorts.addAll(orphanPorts);
+        _emit(
+          Envelope(
+            t: MsgType.ack,
+            id: env.id,
+            body: {
+              'results': [
+                for (final p in orphanPorts)
+                  {'outcome': 'released', 'address': '127.0.0.1', 'port': p},
+              ],
+            },
+          ),
+        );
+        _pushPorts();
+        return;
+      case 'ports.watchPort':
+        final watchedPort = env.body['port'];
+        if (watchedPort is int) {
+          if (env.body['on'] == true) {
+            _watchedPorts.add(watchedPort);
+          } else {
+            _watchedPorts.remove(watchedPort);
+          }
+        }
+        _emit(Envelope(t: MsgType.ack, id: env.id));
+        _pushPorts();
+        return;
+      case 'ports.forward':
+        final forwarded = env.body['port'];
+        _emit(
+          Envelope(
+            t: MsgType.ack,
+            id: env.id,
+            body: {
+              'grant': {
+                'grantId': 'demo-grant-${Ulid()}',
+                'port': forwarded,
+                'path': '/forward/demo-grant/',
+                'createdAt': DateTime.now().millisecondsSinceEpoch,
+                'expiresAt':
+                    DateTime.now().millisecondsSinceEpoch + 30 * 60 * 1000,
+                'browser': env.body['browser'] == true,
+              },
+            },
+          ),
+        );
+        return;
+      case 'ports.forward.stop':
+        _emit(Envelope(t: MsgType.ack, id: env.id));
         return;
       case 'session.listArchived':
         _emit(

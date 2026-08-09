@@ -17,17 +17,22 @@ PortInfo _port({
   PortReach reach = PortReach.loopback,
   PortOrphan? orphan,
   PortCollision? collision,
+  PortDocker? docker,
+  String? command,
+  int? startedAt,
 }) => PortInfo(
   key: '$port:x:$port',
   port: port,
   address: reach == PortReach.exposed ? '0.0.0.0' : '127.0.0.1',
   reach: reach,
   pid: port,
-  command: 'node vite --port $port',
+  command: command ?? 'node vite --port $port',
+  startedAt: startedAt,
   worktreePath: worktreePath,
   openUrl: 'http://127.0.0.1:$port',
   orphan: orphan,
   collision: collision,
+  docker: docker,
 );
 
 Worktree _wt(String path, String branch) => Worktree(
@@ -59,11 +64,15 @@ Future<PortsWatch> _pump(
   WidgetTester tester,
   PortsSnapshot? snapshot, {
   String? repoId,
+  PortsKiller? killer,
 }) async {
   final watch = PortsWatch((_) {});
   final container = ProviderContainer(
     overrides: [
       portsWatchProvider.overrideWithValue(watch),
+      portsKillerProvider.overrideWithValue(
+        killer ?? PortsKiller((_) async => {'results': <dynamic>[]}),
+      ),
       portsProvider.overrideWithValue(snapshot),
       reposProvider.overrideWithValue(_repos),
       sessionsProvider.overrideWithValue(SessionsState(const [])),
@@ -315,25 +324,95 @@ void main() {
       expect(texts, isNot(contains('1970')));
     });
 
-    testWidgets('no "Kill all orphans" control exists (P3, not P2)', (
+    testWidgets('the orphans section offers "Kill all orphans (n)" (P3b)', (
       tester,
     ) async {
+      // This is the button that earns the feature: removing a worktree never
+      // kills its dev server, so orphans pile up for days (mockup §6).
       await _pump(
         tester,
         _snap([
           _port(
             port: 5180,
             worktreePath: null,
+            startedAt: 900,
+            orphan: const PortOrphan(formerBranch: 'feat/gone'),
+          ),
+          _port(
+            port: 5181,
+            worktreePath: null,
+            startedAt: 900,
             orphan: const PortOrphan(formerBranch: 'feat/gone'),
           ),
         ]),
       );
       expect(find.byKey(kPortsOrphansSection), findsOneWidget);
-      expect(find.textContaining('Kill'), findsNothing);
-      expect(
-        find.widgetWithText(ElevatedButton, 'Kill all orphans'),
-        findsNothing,
+      expect(find.text('Kill all orphans (2)'), findsOneWidget);
+    });
+
+    testWidgets('it confirms once, naming the count and the ports (D5/D8)', (
+      tester,
+    ) async {
+      final sent = <Map<String, dynamic>>[];
+      await _pump(
+        tester,
+        _snap([
+          _port(
+            port: 5180,
+            worktreePath: null,
+            startedAt: 900,
+            orphan: const PortOrphan(formerBranch: 'feat/gone'),
+          ),
+        ]),
+        killer: PortsKiller((body) async {
+          sent.add(body);
+          return {
+            'results': [
+              {'outcome': 'released', 'address': '127.0.0.1', 'port': 5180},
+            ],
+          };
+        }),
       );
+      await tester.tap(find.text('Kill all orphans (1)'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('5180'), findsWidgets);
+      expect(sent, isEmpty, reason: 'nothing before the confirm');
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Kill all'));
+      await tester.pumpAndSettle();
+      expect(sent, [
+        {'kind': 'ports.killOrphans'},
+      ]);
+      expect(find.textContaining('1 port released'), findsOneWidget);
+    });
+
+    testWidgets('dismissing the confirm sends nothing', (tester) async {
+      final sent = <Map<String, dynamic>>[];
+      await _pump(
+        tester,
+        _snap([
+          _port(
+            port: 5180,
+            worktreePath: null,
+            startedAt: 900,
+            orphan: const PortOrphan(formerBranch: 'feat/gone'),
+          ),
+        ]),
+        killer: PortsKiller((body) async {
+          sent.add(body);
+          return {'results': <dynamic>[]};
+        }),
+      );
+      await tester.tap(find.text('Kill all orphans (1)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(sent, isEmpty);
+    });
+
+    testWidgets('no orphans → no bulk kill button at all', (tester) async {
+      await _pump(tester, _snap([_port(port: 5173)]));
+      expect(find.textContaining('Kill all orphans'), findsNothing);
     });
   });
 
@@ -445,6 +524,87 @@ void main() {
         reason: 'the orphan sentence is spoken twice: $spoken',
       );
       handle.dispose();
+    });
+  });
+
+  group('docker annotation (P2c, D13)', () {
+    // A published container port is held by docker's proxy, so without the
+    // annotation the row reads `com.docker.backend` in the collapsed system
+    // group — the exact illegibility D13 exists to fix.
+    PortsSnapshot dockerSnap() => _snap([
+      _port(
+        port: 5432,
+        worktreePath: null,
+        reach: PortReach.exposed,
+        command: '/Applications/Docker.app/Contents/MacOS/com.docker.backend',
+        docker: const PortDocker(
+          container: 'chat-ui-db-1',
+          compose: '/repo/chat-ui/compose.yml',
+        ),
+      ),
+    ]);
+
+    Future<void> unfoldSystem(WidgetTester tester) async {
+      await tester.tap(find.text('OTHER / SYSTEM'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the row names the container instead of docker\'s proxy', (
+      tester,
+    ) async {
+      await _pump(tester, dockerSnap());
+      await unfoldSystem(tester);
+      expect(find.text('chat-ui-db-1'), findsOneWidget);
+      expect(find.text('com.docker.backend'), findsNothing);
+    });
+
+    testWidgets('the row carries the docker word, and a plain row does not', (
+      tester,
+    ) async {
+      await _pump(tester, dockerSnap());
+      await unfoldSystem(tester);
+      expect(find.text(portDockerWord), findsOneWidget);
+
+      await _pump(tester, _snap([_port(port: 5173)]));
+      expect(find.text(portDockerWord), findsNothing);
+    });
+
+    testWidgets('the docker token speaks its sentence once, not twice', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await _pump(tester, dockerSnap());
+      await unfoldSystem(tester);
+      final spoken = tester
+          .getSemantics(
+            find.ancestor(
+              of: find.text(portDockerWord),
+              matching: find.byType(PortTokenPill),
+            ),
+          )
+          .label;
+      const docker = PortDocker(
+        container: 'chat-ui-db-1',
+        compose: '/repo/chat-ui/compose.yml',
+      );
+      expect(
+        RegExp(
+          RegExp.escape(portDockerTooltip(docker)),
+        ).allMatches(spoken).length,
+        1,
+        reason: 'the docker sentence is spoken twice: $spoken',
+      );
+      handle.dispose();
+    });
+
+    testWidgets('the reach pill still reports the real bind (D13)', (
+      tester,
+    ) async {
+      // The mockup draws `docker` as a *reach*; the shipped contract keeps reach
+      // for the bind, so a published port on 0.0.0.0 must still read `exposed`.
+      await _pump(tester, dockerSnap());
+      await unfoldSystem(tester);
+      expect(find.text(portReachPill(PortReach.exposed)), findsOneWidget);
     });
   });
 }

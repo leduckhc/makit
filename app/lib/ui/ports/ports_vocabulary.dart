@@ -13,6 +13,70 @@ import '../../store/ports.dart';
 /// already says what it does").
 enum PortAction { open, copyUrl }
 
+/// The label of the forward action (SPEC-44 P4b). "Open in browser" and not
+/// "Forward": what the user wants is the page, and the tunnel is the mechanism.
+const String portForwardLabel = 'Open in browser';
+
+/// The label of the destructive control (SPEC-43 D8), one string so the desktop
+/// button and the mobile row cannot drift.
+const String portKillLabel = 'Kill';
+
+/// The mobile sheet's version, past the danger divider — the … says a confirm
+/// follows, the same promise every other destructive row in the app makes.
+const String portKillRowLabel = 'Kill this process…';
+
+/// The confirm's body (D8): it names the process, the pid, the port and the
+/// branch, and states what will be sent. Never "Are you sure?" — a confirm the
+/// user cannot check is not a mitigation, and this exact sentence is what makes
+/// a stolen-phone kill readable before it happens.
+String portKillConfirmBody(PortInfo port, {String? branchLabel}) {
+  final where = (branchLabel != null && branchLabel.isNotEmpty)
+      ? ' in $branchLabel'
+      : '';
+  return 'Sends SIGTERM (then SIGKILL if it ignores it) to '
+      '${portRowToken(port)} (pid ${port.pid}) serving :${port.port}$where.';
+}
+
+/// The bulk-kill label, with the count the mockup asks for (§6).
+String portKillOrphansLabel(int count) => 'Kill all orphans ($count)';
+
+/// What to tell the user after a bulk kill: how many endpoints are actually free
+/// now, and how many are not. A partial result is the normal case (D5), so the
+/// sentence never rounds it up to "done".
+String portKillOrphansMessage(List<PortKillOutcome> outcomes) {
+  if (outcomes.isEmpty) return 'No orphans left to kill.';
+  final freed = outcomes.where((o) => o.releasedThePort).length;
+  final stuck = outcomes.length - freed;
+  final head = freed == 1 ? '1 port released' : '$freed ports released';
+  return stuck == 0 ? '$head.' : '$head, $stuck still listening.';
+}
+
+/// What to tell the user after an attempt. Every outcome earns its own sentence:
+/// a refusal explains itself, and "released" is claimed only when the server
+/// actually verified the endpoint was freed.
+String portKillOutcomeMessage(PortKillOutcome outcome, {required int port}) =>
+    switch (outcome) {
+      PortKillOutcome.released => ':$port released.',
+      PortKillOutcome.forceKilled => ':$port ignored SIGTERM — force-killed.',
+      PortKillOutcome.survived =>
+        ':$port survived SIGKILL. It is not yours to kill — open a terminal.',
+      PortKillOutcome.notFound => ':$port was already gone.',
+      PortKillOutcome.identityMismatch =>
+        ':$port changed since you looked — nothing was killed. Rescan and try '
+            'again.',
+      PortKillOutcome.notOwned =>
+        ':$port belongs to no worktree, so makit will not signal it.',
+      PortKillOutcome.refusedProtected =>
+        ':$port is held by a system process — refused.',
+      PortKillOutcome.refusedSelf =>
+        ':$port is makit itself — refused. Stop the server instead.',
+      PortKillOutcome.refusedSession =>
+        ':$port belongs to an agent session — stop the session instead.',
+      PortKillOutcome.scanUnavailable =>
+        'Could not read this machine’s sockets, so nothing was killed.',
+      PortKillOutcome.failed => 'The kill did not go through.',
+    };
+
 /// Actions that already say what they do get no tooltip.
 String? portActionTooltip(PortAction action) => null;
 
@@ -127,6 +191,34 @@ const String portOrphanWord = 'orphan';
 
 /// The one word that ships with the collision tint (spec §9 legend: "clash").
 const String portClashWord = 'clash';
+
+/// The one word a docker-published port's row carries (D13). A word, not only
+/// the container name, because "why is this port not mine?" is the question the
+/// row has to answer at a glance.
+const String portDockerWord = 'docker';
+
+/// The full docker sentence (spec §3 tooltip = Semantics.label): who published
+/// the port, and — when the labels carried one — which compose file to edit.
+/// Says nothing about reach: the reach pill next to it already reports the real
+/// bind, and "docker" is ownership (D13).
+String portDockerTooltip(PortDocker docker) {
+  final compose = docker.compose;
+  final where = (compose != null && compose.isNotEmpty)
+      ? ' Defined in $compose.'
+      : '';
+  return 'Published by the docker container ${docker.container}, so the '
+      'listener you see is docker’s proxy, not the server itself.$where';
+}
+
+/// What a row calls a port on line 1: the container name for a docker-published
+/// port, the command's basename otherwise. Without this, every container port
+/// reads `com.docker.backend` — identical for all of them, and identifying none.
+/// The real process still shows on line 2 via [portProcessLine], so nothing is
+/// hidden, only ordered by usefulness.
+String portRowToken(PortInfo port) {
+  final docker = port.docker;
+  return docker != null ? docker.container : portCommandToken(port.command);
+}
 
 /// The orphan row's provenance line (D10): `was <branch>, removed Nd ago` when
 /// history recorded both; it degrades to the branch alone, then to the cwd

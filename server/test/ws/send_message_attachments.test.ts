@@ -80,6 +80,12 @@ function harness() {
       sendMetricsHistory: () => {},
       onPortsWatchersChanged: () => {},
       sendPortsSnapshot: () => {},
+      killPort: async (target) => ({ outcome: "not_found" as const, address: target.address, port: target.port }),
+      rescanPorts: () => {},
+      killOrphans: async () => ({ results: [] }),
+      setWatchedPort: () => {},
+      forwardPort: async () => ({ refusal: "test" }),
+      stopForward: () => {},
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
   register(router, deps);
@@ -229,6 +235,12 @@ test("a pending session promoted by an image-only turn gets a usable label", asy
       sendMetricsHistory: () => {},
       onPortsWatchersChanged: () => {},
       sendPortsSnapshot: () => {},
+      killPort: async (target) => ({ outcome: "not_found" as const, address: target.address, port: target.port }),
+      rescanPorts: () => {},
+      killOrphans: async () => ({ results: [] }),
+      setWatchedPort: () => {},
+      forwardPort: async () => ({ refusal: "test" }),
+      stopForward: () => {},
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps);
 

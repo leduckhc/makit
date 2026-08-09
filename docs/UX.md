@@ -98,6 +98,88 @@ Nothing is scanned unless somebody is looking: the scan is watch-gated, so no
 read-only — **Open** and **Copy URL**, both hidden when nothing answered HTTP
 and there is therefore no honest URL to offer.
 
+**Everything, all repos (SPEC-42).** Beside Home and Archived sits a **Ports**
+screen (`⌘⇧P`, or the worktree menu's `Ports…`, which pre-selects *This repo*),
+grouping every listener repo ▸ worktree ▸ port, with system listeners folded
+away because they are noise, not work. Its filters are the two questions worth
+asking — *Exposed* (what is reachable off this machine, makit's own listener
+included) and *Orphans* (a dev server whose worktree is gone, which nothing but
+you will ever reclaim) — plus *Mine* and *This repo*. A port two active
+worktrees both claim carries the word `clash` and a banner naming the rival
+branch; it never suggests a free port, and the screen never kills anything —
+both are later phases. A port a container published names the **container**
+instead of `com.docker.backend` and carries a `docker` token, while its reach
+pill keeps reporting the real bind, because a published port on `0.0.0.0` is
+exposed no matter who published it. On the desktop the same cached snapshot
+feeds a `Ports (n)` menubar submenu with an `Open Ports…` item; the menubar
+reads the cache and never arms the scanner, so a count only appears once some
+surface has actually looked.
+
+**Killing one (SPEC-43).** This is the first thing makit signals that it did not
+spawn, so the whole design is about proving the process it kills is the one you
+saw. The row you confirmed carries its own identity — address, port, pid **and**
+start time — and the server ignores its cache, rescans, and re-matches all four
+before sending anything; a pid that was reused or a server that restarted in the
+meantime is refused, not killed. Only a listener a live worktree owns (or a known
+orphan) is eligible: never a system listener, never pid 1, never makit itself or
+its parents, never an agent session's own process — stop the session instead.
+SIGTERM first; if it is ignored, makit waits, **re-verifies the identity again**,
+and only then escalates to SIGKILL, so churn inside that window cannot redirect
+the kill onto whatever took the port. The answer is specific — released,
+force-killed, or *survived*, which means open a terminal rather than pretending it
+worked. Desktop puts `Kill` last in the port row, red, and it still asks even
+when the popover is pinned; the phone puts `Kill this process…` last in the
+detail sheet, past a divider, a whole sheet away from the first tap. The confirm
+names the command, pid, port and branch, because "Are you sure?" is not a
+mitigation. A port whose start time makit could not read offers no Kill at all —
+its identity is unverifiable. Every attempt is logged to stderr (device, endpoint,
+signals, outcome) and never into a session's transcript. `Kill all orphans (n)`
+in the orphans section is the same discipline N times over, behind one confirm
+that names the ports, with an honest per-port result.
+
+**Watching one (SPEC-44 P4a).** Port notifications are **opt-in per port**, from a
+`Watch this port` switch in the detail sheet — an always-on version would fire
+every time a build restarts a dev server, and would be muted within a day. A
+watch is remembered by `(worktree, port)`, not by pid, so it survives exactly the
+restart it is about, and it is persisted in `$MAKIT_HOME/watched-ports.json` by a
+store that degrades to empty rather than failing startup. The alert fires only
+after the port has been continuously gone — or bound-but-refusing — for twenty
+seconds (about five scans); a recovery inside that window cancels it and re-arms,
+so a rebuild is silent and a real outage is not. Exactly one notification per
+outage. It carries the port number and nothing else, because a branch name on a
+lock screen is the kind of content makit's push payloads deliberately cannot
+contain. Only an owned port can be watched — an unowned listener has no stable
+identity to watch by.
+
+**Forwarding one to your phone (SPEC-44 P4b).** A loopback-only dev server is
+invisible from your phone, and makit already holds a cert-pinned,
+device-authenticated channel to the machine it runs on — so it can carry that port
+over the connection it already has, without opening anything new on the host. On a
+phone, a loopback port's `Open` is replaced by **Open in browser**: one tap mints
+a grant and hands the URL to your own browser. The grant is bound to one port,
+dies after 30 minutes whatever happens, and is reaped within a minute of the
+preview going quiet; only a worktree-owned, loopback, HTTP-answering port is
+eligible, and databases, shells and makit's own listener are refused outright.
+
+Two costs the confirm states before you tap, because both are real. **The link is
+the credential** — a browser cannot send makit's bearer, so the unguessable grant
+id in the URL is what authorises it; every proxied response therefore carries
+`Referrer-Policy: no-referrer`, so the previewed page cannot hand its own URL to a
+site it links to. And **your browser will warn about the certificate**, because
+makit signs its own and no browser can be taught to pin it; the alternative was a
+second listener on the host, which is the thing makit promises not to do. Live
+reload does **not** work and says so: the HMR socket is refused rather than
+half-proxied, because a preview that silently stops updating is worse than one
+that admits it is a snapshot.
+
+The in-app WebView this originally specified is **not** what shipped. A WebView
+uses the OS network stack, so it can neither pin the certificate nor attach the
+bearer — which is why the design called for an HTTP proxy running inside the app,
+and why that could not work: on iOS the app is suspended seconds after
+backgrounding, which is exactly when a browser takes over. Going straight to the
+desktop deletes the WebView, the in-app proxy and a native dependency, and leaves
+the security work where it can be reviewed — on the server.
+
 ---
 
 ### Desktop canvas: groups (SPEC-30)

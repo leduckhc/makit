@@ -100,7 +100,7 @@ void main() {
       final decoded = WireCodec.decode(env);
       expect(decoded, isA<PortsSnapshotFrame>());
       final snap = (decoded as PortsSnapshotFrame).snapshot;
-      expect(snap.ports.length, 3);
+      expect(snap.ports.length, 4);
 
       final orphaned = snap.ports.firstWhere((p) => p.port == 5180);
       expect(orphaned.worktreePath, isNull);
@@ -116,6 +116,23 @@ void main() {
       expect(collided.collision!.withBranch, 'chore/deps');
       expect(collided.collision!.withWorktreePath, '/repo/makit-deps');
       expect(collided.orphan, isNull);
+    });
+
+    // T13 golden (P2c): the docker annotation is ownership, not reach (D13) —
+    // the container's port stays `exposed` because that is what it is bound to.
+    test('ports.snapshot T13 golden decodes the docker annotation', () {
+      final snapshots = _fixture('snapshots.json');
+      final env = _envFromFixture(
+        Map<String, dynamic>.from(snapshots[2] as Map),
+      );
+      final snap = (WireCodec.decode(env) as PortsSnapshotFrame).snapshot;
+
+      final container = snap.ports.firstWhere((p) => p.port == 5432);
+      expect(container.docker, isNotNull);
+      expect(container.docker!.container, 'chat-ui-db-1');
+      expect(container.docker!.compose, '/repo/chat-ui/compose.yml');
+      expect(container.reach, PortReach.exposed);
+      expect(container.worktreePath, isNull);
     });
 
     test('every event fixture decodes to a typed SessionEvent', () {

@@ -61,6 +61,12 @@ function routerWith(manager: Partial<CommandDeps["manager"]>) {
     // SPEC-41: required members, inert here — the PR domain sends no ports frames.
     onPortsWatchersChanged: () => {},
     sendPortsSnapshot: () => {},
+    killPort: async (target) => ({ outcome: "not_found" as const, address: target.address, port: target.port }),
+    rescanPorts: () => {},
+    killOrphans: async () => ({ results: [] }),
+    setWatchedPort: () => {},
+    forwardPort: async () => ({ refusal: "test" }),
+    stopForward: () => {},
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
   register(router, deps);

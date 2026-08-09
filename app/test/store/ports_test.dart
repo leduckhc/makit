@@ -351,4 +351,158 @@ void main() {
       expect(calls, isEmpty);
     });
   });
+
+  group('SPEC-43 killPort', () {
+    const target = PortKillTarget(
+      address: '127.0.0.1',
+      port: 5173,
+      pid: 48211,
+      startedAt: 1700000,
+    );
+
+    test(
+      'sends the exact tuple the confirm displayed, and decodes the outcome',
+      () async {
+        final sent = <Map<String, dynamic>>[];
+        final killer = PortsKiller((body) async {
+          sent.add(body);
+          return {'outcome': 'released', 'address': '127.0.0.1', 'port': 5173};
+        });
+        final outcome = await killer.kill(
+          const PortKillTarget(
+            address: '127.0.0.1',
+            port: 5173,
+            pid: 48211,
+            startedAt: 1700000,
+          ),
+        );
+        expect(outcome, PortKillOutcome.released);
+        expect(sent, [
+          {
+            'kind': 'ports.kill',
+            'address': '127.0.0.1',
+            'port': 5173,
+            'pid': 48211,
+            'startedAt': 1700000,
+          },
+        ]);
+      },
+    );
+
+    test('every server outcome decodes', () {
+      expect(parsePortKillOutcome('released'), PortKillOutcome.released);
+      expect(parsePortKillOutcome('force-killed'), PortKillOutcome.forceKilled);
+      expect(parsePortKillOutcome('survived'), PortKillOutcome.survived);
+      expect(parsePortKillOutcome('not_found'), PortKillOutcome.notFound);
+      expect(
+        parsePortKillOutcome('identity_mismatch'),
+        PortKillOutcome.identityMismatch,
+      );
+      expect(parsePortKillOutcome('not_owned'), PortKillOutcome.notOwned);
+      expect(
+        parsePortKillOutcome('refused_protected'),
+        PortKillOutcome.refusedProtected,
+      );
+      expect(parsePortKillOutcome('refused_self'), PortKillOutcome.refusedSelf);
+      expect(
+        parsePortKillOutcome('refused_session'),
+        PortKillOutcome.refusedSession,
+      );
+      expect(
+        parsePortKillOutcome('scan_unavailable'),
+        PortKillOutcome.scanUnavailable,
+      );
+    });
+
+    test('an unknown outcome is a FAILURE, never a silent success', () {
+      // Decoding an unrecognised string as `released` would tell the user the
+      // process is gone when the server said something we do not understand.
+      expect(parsePortKillOutcome('teleported'), PortKillOutcome.failed);
+      expect(parsePortKillOutcome(null), PortKillOutcome.failed);
+      expect(parsePortKillOutcome(7), PortKillOutcome.failed);
+      expect(PortKillOutcome.failed.releasedThePort, isFalse);
+    });
+
+    test('only released / force-killed count as the port being freed', () {
+      expect(PortKillOutcome.released.releasedThePort, isTrue);
+      expect(PortKillOutcome.forceKilled.releasedThePort, isTrue);
+      for (final o in PortKillOutcome.values.where(
+        (o) =>
+            o != PortKillOutcome.released && o != PortKillOutcome.forceKilled,
+      )) {
+        expect(o.releasedThePort, isFalse, reason: '$o must not read as freed');
+      }
+    });
+
+    test(
+      'a rejected request degrades to failed rather than throwing',
+      () async {
+        final killer = PortsKiller(
+          (_) async => throw StateError('bad_request'),
+        );
+        expect(await killer.kill(target), PortKillOutcome.failed);
+      },
+    );
+
+    test(
+      'PortKillTarget.of refuses a port whose startedAt is unknown (D1)',
+      () {
+        // Unverifiable identity ⇒ the UI must not offer a kill at all.
+        expect(PortKillTarget.of(PortInfo.fromJson(_portJson())!), isNull);
+        final withStart = PortInfo.fromJson(_portJson(startedAt: 1700000));
+        final target = PortKillTarget.of(withStart!);
+        expect(target, isNotNull);
+        expect(target!.startedAt, 1700000);
+        expect(target.pid, withStart.pid);
+        expect(target.address, withStart.address);
+        expect(target.port, withStart.port);
+      },
+    );
+  });
+
+  group('SPEC-44 watched ports', () {
+    test('watched decodes, and defaults to false when absent', () {
+      expect(PortInfo.fromJson(_portJson())!.watched, isFalse);
+      expect(
+        PortInfo.fromJson({..._portJson(), 'watched': true})!.watched,
+        isTrue,
+      );
+      // Junk is not a watch: only a real `true` counts.
+      expect(
+        PortInfo.fromJson({..._portJson(), 'watched': 'yes'})!.watched,
+        isFalse,
+      );
+    });
+
+    test(
+      'the toggle sends (worktreePath, port, on) — never the snapshot key',
+      () async {
+        final sent = <Map<String, dynamic>>[];
+        final watcher = PortsWatchPort((body) async {
+          sent.add(body);
+          return const {};
+        });
+        expect(
+          await watcher.set(worktreePath: '/wt/a', port: 5173, on: true),
+          isTrue,
+        );
+        expect(sent, [
+          {
+            'kind': 'ports.watchPort',
+            'worktreePath': '/wt/a',
+            'port': 5173,
+            'on': true,
+          },
+        ]);
+      },
+    );
+
+    test('a failed toggle reports false so the UI can revert', () async {
+      final watcher = PortsWatchPort((_) async => throw StateError('nope'));
+      expect(
+        await watcher.set(worktreePath: '/wt/a', port: 5173, on: true),
+        isFalse,
+      );
+    });
+  });
 }
