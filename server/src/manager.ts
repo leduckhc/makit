@@ -483,7 +483,7 @@ export class SessionManager extends EventEmitter {
    * dir (non-git project / unborn HEAD). Uses a {@link DetachedAdapter}
    * placeholder so the session wires + shows in snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[], lineage?: { parentId?: string; handoffReason?: string; origin?: SessionOrigin }, policy?: ApprovalPolicy): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[], lineage?: { parentId?: string; handoffReason?: string; origin?: SessionOrigin }, policy?: ApprovalPolicy, resumeAgentSessionId?: string): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
@@ -540,6 +540,9 @@ export class SessionManager extends EventEmitter {
       pendingWorktreePath: boundPath,
       branch: boundBranch,
       configPicks,
+      // SPEC-46 U4: a fork rides the draft as a resume handle, adopted by the
+      // adapter's resume path at promotion (see startPendingSession).
+      resumeAgentSessionId,
     });
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
@@ -943,7 +946,10 @@ export class SessionManager extends EventEmitter {
       this.adapterFactory?.({ projectPath: worktreePath, sessionId: session.id, agent: agentId }) ??
       built.adapter;
     session.replaceAdapter(adapter);
-    await adapter.start(this.startOpts(worktreePath, session.id));
+    // SPEC-46 U4: a forked draft resumes the forked thread here — the same
+    // resume path a cold session takes — rather than launching a fresh one,
+    // which would discard the fork.
+    await adapter.start(this.startOpts(worktreePath, session.id, undefined, lc.resumeAgentSessionId));
     // Apply pre-spawn config picks now: AFTER the real session/thread exists
     // and BEFORE the first prompt (SPEC-27). Best-effort per transport — ACP
     // routes to session/set_config_option, codex caches model/effort for the

@@ -18,6 +18,7 @@ import type { OutgoingFrame, WsClient } from "../client.js";
 import type { Principal } from "../principal.js";
 import type { CommandDeps } from "./deps.js";
 import { register as registerSession } from "./session.js";
+import { ForkPreconditionError } from "../../adapters/adapter.js";
 import {
   spawnDepth,
   liveChildCount,
@@ -29,8 +30,12 @@ import {
 
 interface SpawnCall {
   projectId: string;
+  agent?: string;
+  worktreePath?: string;
+  branch?: string;
   lineage?: { parentId?: string; handoffReason?: string; origin?: string };
   policy?: string;
+  resumeAgentSessionId?: string;
 }
 
 function harness(opts?: {
@@ -45,14 +50,15 @@ function harness(opts?: {
     manager: {
       spawnPendingSession: async (
         projectId: string,
-        _agent?: string,
-        _worktreePath?: string,
-        _branch?: string,
+        agent?: string,
+        worktreePath?: string,
+        branch?: string,
         _configOptions?: unknown,
         lineage?: SpawnCall["lineage"],
         policy?: string,
+        resumeAgentSessionId?: string,
       ) => {
-        spawnCalls.push({ projectId, lineage, policy });
+        spawnCalls.push({ projectId, agent, worktreePath, branch, lineage, policy, resumeAgentSessionId });
         return { id: "child-1" };
       },
       checkSpawnBounds: (_parentId: string) => opts?.boundError ?? null,
@@ -332,5 +338,117 @@ test("the depth/fan-out bound applies to a human-stated parent too", async () =>
   const err = h.sent.find((f) => f.t === "err");
   assert.ok(err, "must refuse");
   assert.match(String((err as { message?: string }).message), /maximum depth/);
+  assert.equal(h.spawnCalls.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-46 U4 — session.fork: an adapter-native head fork (codex thread/fork),
+// deliberately NOT handoff (D6). The child adopts the forked thread through the
+// resume path, records the source as its parent with NO handoffReason, and is
+// held to the same depth/fan-out guard as any spawn.
+// ---------------------------------------------------------------------------
+
+/** A live, fork-capable source session (codex). */
+function forkable(over: Record<string, unknown> = {}) {
+  return {
+    id: "src",
+    projectId: "p",
+    agent: "codex",
+    pending: false,
+    adapter: {
+      capabilities: { fork: true },
+      forkSession: async () => ({ agentSessionId: "th-forked" }),
+    },
+    ...over,
+  };
+}
+
+test("U4: a head fork resumes the forked thread and records the source as parent, no handoffReason", async () => {
+  const h = harness({ principal: cli, session: forkable() });
+  await h.cmd({ kind: "session.fork", sessionId: "src" });
+  assert.ok(h.sent.some((f) => f.t === "ack"), "the fork is acked");
+  assert.equal(h.spawnCalls.length, 1);
+  const call = h.spawnCalls[0]!;
+  assert.equal(call.projectId, "p", "the child stays in the source's project");
+  assert.equal(call.resumeAgentSessionId, "th-forked", "the child resumes the FORKED thread");
+  assert.equal(call.lineage?.parentId, "src", "the source is the parent (D10)");
+  assert.equal(call.lineage?.handoffReason, undefined, "a fork is not a handoff (D6)");
+});
+
+test("U4: the child inherits the worktree and branch the client resolved (D15 inverse)", async () => {
+  const h = harness({ principal: cli, session: forkable() });
+  await h.cmd({ kind: "session.fork", sessionId: "src", worktreePath: "/wt/src", branch: "feat/x" });
+  const call = h.spawnCalls[0]!;
+  assert.equal(call.worktreePath, "/wt/src");
+  assert.equal(call.branch, "feat/x");
+});
+
+test("U4: pi is refused with D6's precise sentence naming handoff, never a bare boolean", async () => {
+  const pi = forkable({ agent: "pi", adapter: { capabilities: { fork: false } } });
+  const h = harness({ principal: cli, session: pi });
+  await h.cmd({ kind: "session.fork", sessionId: "src" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "must refuse");
+  assert.equal(
+    String((err as { message?: string }).message),
+    "pi cannot fork: pi-acp advertises no `session/fork` — use `makit handoff` instead",
+  );
+  assert.equal(h.spawnCalls.length, 0, "no child is created when fork is unsupported");
+});
+
+test("U4: a session that has not completed a turn is refused in plain words (rollout precondition)", async () => {
+  const noTurn = forkable({
+    adapter: {
+      capabilities: { fork: true },
+      forkSession: async () => {
+        throw new ForkPreconditionError("no rollout found for thread id th1");
+      },
+    },
+  });
+  const h = harness({ principal: cli, session: noTurn });
+  await h.cmd({ kind: "session.fork", sessionId: "src" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "must refuse");
+  const msg = String((err as { message?: string }).message);
+  assert.match(msg, /has not run a turn yet/);
+  assert.doesNotMatch(msg, /-32600|rollout/, "never relays the JSON-RPC string");
+  assert.equal(h.spawnCalls.length, 0);
+});
+
+test("U4: a draft source (never promoted) is refused in the same plain words", async () => {
+  const draft = forkable({ pending: true, adapter: { capabilities: { fork: false } } });
+  const h = harness({ principal: cli, session: draft });
+  await h.cmd({ kind: "session.fork", sessionId: "src" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "must refuse");
+  assert.match(String((err as { message?: string }).message), /has not run a turn yet/);
+  assert.equal(h.spawnCalls.length, 0);
+});
+
+test("U4: the depth/fan-out bound refuses a fork, and never forks the thread first", async () => {
+  let forked = false;
+  const source = forkable({
+    adapter: {
+      capabilities: { fork: true },
+      forkSession: async () => {
+        forked = true;
+        return { agentSessionId: "th-forked" };
+      },
+    },
+  });
+  const h = harness({ principal: cli, session: source, boundError: "spawn refused: at maximum depth of 3" });
+  await h.cmd({ kind: "session.fork", sessionId: "src" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "must refuse");
+  assert.match(String((err as { message?: string }).message), /maximum depth/);
+  assert.equal(forked, false, "the bound is checked BEFORE forking, so no orphan thread is left");
+  assert.equal(h.spawnCalls.length, 0);
+});
+
+test("U4: forking a session that does not exist is refused", async () => {
+  const h = harness({ principal: cli, session: undefined });
+  await h.cmd({ kind: "session.fork", sessionId: "ghost" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "must refuse");
   assert.equal(h.spawnCalls.length, 0);
 });

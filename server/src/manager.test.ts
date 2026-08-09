@@ -599,6 +599,33 @@ test("spawnPendingSession is a draft: no worktree, no agent started", async () =
   }
 });
 
+// SPEC-46 U4 — the promotion trap. A forked draft carries the forked thread id
+// as `resumeAgentSessionId`; when the first message promotes it, that id MUST
+// reach the adapter's start() so the child continues the forked conversation
+// (codex `thread/resume`). If promotion started a fresh thread instead, the
+// fork would be silently discarded and the user would get a new conversation
+// that merely looked forked — so this asserts the id survives promotion.
+test("a forked draft resumes the forked thread on promotion, never starts fresh (U4)", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    const draft = await manager.spawnPendingSession(
+      projectId, "codex", undefined, undefined, undefined, undefined, undefined, "th-forked",
+    );
+    await manager.promotePendingSession(draft, "continue the fork");
+    assert.equal(started.length, 1, "the fork promotes to exactly one live agent");
+    assert.equal(
+      started[0].resumeAgentSessionId, "th-forked",
+      "promotion must resume the forked thread, not start a fresh one",
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 /** A stub adapter that records SpawnOpts + configOption actions applied to it. */
 function stubActionAdapter(
   started: SpawnOpts[],

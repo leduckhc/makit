@@ -7,6 +7,7 @@
 import { WireErrorCode } from "../../protocol/codec.js";
 import type { ApprovalPolicy, SessionOrigin } from "../../protocol.js";
 import { isAgentScoped } from "../principal.js";
+import { ForkPreconditionError } from "../../adapters/adapter.js";
 import { log } from "../../log.js";
 import {
   isMediaId,
@@ -476,6 +477,89 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     broadcastSnapshots();
     void broadcastReposSnapshot();
     ctx.ack({ sessionId: newSession.id });
+  });
+
+  // SPEC-46 U4: session.fork — an adapter-native fork of a live session at its
+  // head (codex `thread/fork`). Deliberately NOT `handoff` (D6): a handoff
+  // carries a written manifest across harnesses, a fork is a high-fidelity
+  // branch of the same conversation, so it is gated on the adapter's own
+  // `fork` capability and refuses in a sentence that names the alternative
+  // where unsupported — an agent reading "fork: false" learns nothing about
+  // what to do instead.
+  r.register("session.fork", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const source = sid ? manager.getSession(sid) : undefined;
+    if (!source) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    // A fork needs a persisted rollout. A draft has never run, so there is
+    // literally nothing to fork — refuse in the same plain words the codex
+    // rollout precondition earns below, never a capability boolean an agent
+    // cannot act on.
+    const NO_ROLLOUT = `session ${sid} has not run a turn yet, so there is nothing to fork`;
+    if (source.pending) {
+      ctx.err(WireErrorCode.BadRequest, NO_ROLLOUT);
+      return;
+    }
+    const adapter = source.adapter;
+    if (!adapter.capabilities.fork || !adapter.forkSession) {
+      // D6's precise sentence: name the harness and the alternative. For pi this
+      // reads "pi cannot fork: pi-acp advertises no `session/fork` — use `makit
+      // handoff` instead"; codex advertises fork and never reaches here.
+      ctx.err(
+        WireErrorCode.BadRequest,
+        `${source.agent} cannot fork: ${source.agent}-acp advertises no \`session/fork\` — use \`makit handoff\` instead`,
+      );
+      return;
+    }
+    // A fork IS a spawn (D9): apply the depth/fan-out guard BEFORE forking, so a
+    // refused fork never leaves an orphan thread behind on the back end.
+    const boundError = manager.checkSpawnBounds(sid);
+    if (boundError) {
+      ctx.err(WireErrorCode.BadRequest, boundError);
+      return;
+    }
+    let forked: { agentSessionId: string };
+    try {
+      forked = await adapter.forkSession();
+    } catch (e) {
+      // The rollout precondition (codex `-32600`) is an expected refusal, said
+      // in plain words; anything else is a real transport bug and keeps its
+      // message so it does not masquerade as a graceful "nothing to fork".
+      if (e instanceof ForkPreconditionError) {
+        ctx.err(WireErrorCode.BadRequest, NO_ROLLOUT);
+        return;
+      }
+      throw e;
+    }
+    // Lineage: the source IS the parent, and `handoffReason` stays unset — a
+    // fork is not a handoff (D10). Origin follows the credential exactly as a
+    // spawn does. The child adopts the forked thread through the resume path
+    // (resumeAgentSessionId → the adapter's `thread/resume` at promotion), not
+    // a fresh launch.
+    const principal = ctx.client.principal;
+    const origin: SessionOrigin = isAgentScoped(principal)
+      ? "agent"
+      : principal?.caps?.includes("client")
+        ? "cli"
+        : "app";
+    const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
+    const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
+    const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;
+    const child = await manager.spawnPendingSession(
+      source.projectId,
+      agent,
+      worktreePath,
+      branch,
+      undefined,
+      { parentId: sid, origin },
+      undefined,
+      forked.agentSessionId,
+    );
+    broadcastSnapshots();
+    void broadcastReposSnapshot();
+    ctx.ack({ sessionId: child.id });
   });
 
   r.register("agents.list", async (ctx) => {

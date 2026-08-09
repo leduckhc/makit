@@ -9,7 +9,7 @@ import type { UICall, UIResponse } from "../uicall.js";
  * A controllable fake `codex app-server`: auto-replies to the adapter's
  * requests and lets the test push notifications / server-requests in.
  */
-function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown } } = {}) {
+function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown }; fork?: () => { result?: unknown; error?: unknown } } = {}) {
   let lineCb: (l: string) => void = () => {};
   const sent: any[] = [];
   const feed = (obj: unknown) => lineCb(JSON.stringify(obj));
@@ -26,6 +26,14 @@ function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown
         // shapes are load-bearing (SPEC-35 §Evidence).
         if (msg.method === "turn/steer" && opts.steer) {
           const scripted = opts.steer();
+          queueMicrotask(() => feed({ id: msg.id, ...scripted }));
+          return;
+        }
+        // `thread/fork` is scripted per-test: both its success shape (a NEW
+        // thread id) and its rollout-precondition error are load-bearing
+        // (SPEC-46 U4 §Evidence).
+        if (msg.method === "thread/fork" && opts.fork) {
+          const scripted = opts.fork();
           queueMicrotask(() => feed({ id: msg.id, ...scripted }));
           return;
         }
@@ -596,6 +604,40 @@ test("start({resumeAgentSessionId}) resumes via thread/resume, not thread/start 
 test("codex advertises the full session lifecycle capability set (SPEC-29)", () => {
   const adapter = new CodexAppServerAdapter();
   assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true });
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-46 U4 — thread/fork. The wire is settled (spiked against codex-cli
+// 0.146.0): `thread/fork {threadId}` → `{thread:{id, forkedFromId, …}}` with a
+// NEW id, and forking a thread with no completed turn fails
+// `-32600 no rollout found for thread id <id>`. Both are asserted here so a
+// protocol change shows up as a failure, and the fake is truthful about both.
+// ---------------------------------------------------------------------------
+test("forkSession() forks the live thread at its head and returns the NEW thread id (U4)", async () => {
+  const fake = fakeAppServer({
+    fork: () => ({ result: { thread: { id: "th-forked", forkedFromId: "th1" } } }),
+  });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/repo", sessionId: "m1" });
+  const forked = await adapter.forkSession!();
+  const fork = fake.sent.find((m: any) => m.method === "thread/fork");
+  assert.ok(fork, "must call thread/fork");
+  assert.equal(fork.params.threadId, "th1", "forks the thread the adapter is on");
+  assert.equal(forked.agentSessionId, "th-forked", "returns the forked thread's id, not the source's");
+  await adapter.kill();
+});
+
+test("forkSession() rejects with ForkPreconditionError when there is no rollout yet (U4)", async () => {
+  const fake = fakeAppServer({
+    fork: () => ({ error: { code: -32600, message: "no rollout found for thread id th1" } }),
+  });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/repo", sessionId: "m1" });
+  await assert.rejects(() => adapter.forkSession!(), (e: Error) => {
+    assert.equal(e.name, "ForkPreconditionError");
+    return true;
+  });
+  await adapter.kill();
 });
 
 /**
