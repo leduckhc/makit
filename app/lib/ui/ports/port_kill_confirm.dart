@@ -38,6 +38,11 @@ Future<PortKillOutcome?> confirmAndKillPort(
   // reaching here with an unverifiable port would be a bug, not user input.
   if (target == null) return null;
 
+  // Read the provider BEFORE the dialog: `ref` belongs to the caller's widget,
+  // and if that widget is disposed while the confirm is up (the sheet closed, the
+  // popover unpinned, a snapshot rebuilt the row) then `ref.read` throws into a
+  // button handler. The killer itself is a plain object and outlives the widget.
+  final killer = ref.read(portsKillerProvider);
   final messenger = ScaffoldMessenger.of(context);
   final confirmed = await showDialog<bool>(
     context: context,
@@ -62,7 +67,7 @@ Future<PortKillOutcome?> confirmAndKillPort(
   );
   if (confirmed != true) return null;
 
-  final outcome = await ref.read(portsKillerProvider).kill(target);
+  final outcome = await killer.kill(target);
   messenger.showSnackBar(
     SnackBar(content: Text(portKillOutcomeMessage(outcome, port: port.port))),
   );
@@ -83,6 +88,8 @@ Future<void> confirmAndKillOrphans(
   List<PortInfo> orphans,
 ) async {
   if (orphans.isEmpty) return;
+  // Same rule as the single kill: resolve the provider before the confirm.
+  final killer = ref.read(portsKillerProvider);
   final messenger = ScaffoldMessenger.of(context);
   final ports = orphans.map((p) => ':${p.port}').join(', ');
   final confirmed = await showDialog<bool>(
@@ -115,7 +122,7 @@ Future<void> confirmAndKillOrphans(
   );
   if (confirmed != true) return;
 
-  final outcomes = await ref.read(portsKillerProvider).killOrphans();
+  final outcomes = await killer.killOrphans();
   messenger.showSnackBar(
     SnackBar(content: Text(portKillOrphansMessage(outcomes))),
   );

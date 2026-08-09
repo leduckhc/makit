@@ -99,6 +99,23 @@ test("R3: the SAME process re-scanned still matches despite startedAt jitter", (
   }
 });
 
+test("R3: one millisecond past the tolerance is already a mismatch", () => {
+  // Pins the far side of the window the drift test pins the near side of, so the
+  // tolerance cannot be widened (or turned into a wildcard) unnoticed.
+  for (const drift of [STARTED_AT_TOLERANCE_MS + 1, -(STARTED_AT_TOLERANCE_MS + 1)]) {
+    const decision = classifyKillTarget(
+      TARGET,
+      { ...ok, ports: [listener({ startedAt: TARGET.startedAt + drift })] },
+      GUARDS,
+    );
+    assert.deepEqual(
+      decision,
+      { signal: false, outcome: "identity_mismatch" },
+      `drift ${drift} must be refused`,
+    );
+  }
+});
+
 test("R3: a RESTARTED process (same pid, new startedAt) → identity_mismatch", () => {
   const decision = classifyKillTarget(
     TARGET,

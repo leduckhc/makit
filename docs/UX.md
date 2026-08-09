@@ -176,9 +176,9 @@ The in-app WebView this originally specified is **not** what shipped. A WebView
 uses the OS network stack, so it can neither pin the certificate nor attach the
 bearer — which is why the design called for an HTTP proxy running inside the app,
 and why that could not work: on iOS the app is suspended seconds after
-backgrounding, which is exactly when a browser takes over. Going straight to the
-desktop deletes the WebView, the in-app proxy and a native dependency, and leaves
-the security work where it can be reviewed — on the server.
+backgrounding, which is exactly when a browser takes over. Handing the URL to the
+system browser deletes the WebView, the in-app proxy and a native dependency, and
+leaves the security work where it can be reviewed — on the server.
 
 ---
 

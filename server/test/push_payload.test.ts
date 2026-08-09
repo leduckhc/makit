@@ -80,9 +80,16 @@ test("the port-down alert names the port and NOTHING else", () => {
   // integer is in scope, so a branch, a path or a command CANNOT appear on a lock
   // screen. This test pins the shape as well as the strings.
   const p = buildPortDownPayload({ port: 5173 });
+  // The same recursive allowlist the wake payload is held to: a future field
+  // (`aps.alert.subtitle`, a `data` bag) fails here instead of shipping.
+  assertKeysAllowlisted(p, "");
   assert.equal(p.aps.alert.title, WAKE_ALERT_TITLE);
   assert.equal(p.aps.alert.body, ":5173 stopped listening");
-  assert.equal(p.aps.badge, 0, "an informational alert must not stack a badge count");
+  assert.equal(
+    p.aps.badge,
+    undefined,
+    "no badge: APNs treats 0 as CLEAR, which would wipe a waiting turn's count",
+  );
   assert.equal(p.aps["content-available"], 1);
 
   const strings: string[] = [];

@@ -48,7 +48,11 @@ function setup(outcome: PortKillOutcome = "released"): Recorder {
     forwardAsks: [],
     stops: [],
   };
-  const deps = {
+  // `satisfies` on the ports slice: the object still needs the blanket cast for
+  // the members this harness does not stub, but every member it DOES stub is now
+  // checked against `CommandDeps`, so a signature change fails here instead of
+  // silently passing a wrong shape through `as unknown`.
+  const portsDeps = {
     onPortsWatchersChanged: () => {
       rec.recounts++;
     },
@@ -89,8 +93,18 @@ function setup(outcome: PortKillOutcome = "released"): Recorder {
         { outcome: "not_found" as const, address: "127.0.0.1", port: 5181 },
       ],
     }),
-  } as unknown as CommandDeps;
-  registerPorts(rec.router, deps);
+  } satisfies Pick<
+    CommandDeps,
+    | "onPortsWatchersChanged"
+    | "sendPortsSnapshot"
+    | "killPort"
+    | "rescanPorts"
+    | "forwardPort"
+    | "stopForward"
+    | "setWatchedPort"
+    | "killOrphans"
+  >;
+  registerPorts(rec.router, portsDeps as unknown as CommandDeps);
   return rec;
 }
 

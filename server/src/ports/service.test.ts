@@ -950,3 +950,40 @@ test("with an EMPTY watch list the detector does no work at all", async () => {
   await flush();
   assert.deepEqual(down, []);
 });
+
+test("an off-cadence scan (a kill) never feeds the down-detector", async () => {
+  // `killPort` runs up to three fresh scans of its own. If those fed the outage
+  // detector, killing a watched port would look like an outage from inside the
+  // kill — and `lastGoodPorts` would be retired by a scan the cadence never saw.
+  const down: { worktreePath: string; port: number }[] = [];
+  const h = harness({
+    exec: killExec([true, false]).exec,
+    now: () => KILL_NOW,
+    watchedPorts: () => [{ worktreePath: "/repo/wt-a", port: 5173 }],
+    onPortDown: (w) => down.push(w),
+  });
+  await h.service.killPort(KILL_TARGET);
+  assert.deepEqual(down, [], "a kill's own scans are not observations");
+
+  // Same for the forward path's `scanNow`. (A fresh recorder: `assert.deepEqual`
+  // carries an `asserts` signature, so it narrows the first list to `never[]`.)
+  const downFromScanNow: { worktreePath: string; port: number }[] = [];
+  const h2 = harness({
+    exec: killExec([false]).exec,
+    now: () => KILL_NOW,
+    watchedPorts: () => [{ worktreePath: "/repo/wt-a", port: 5173 }],
+    onPortDown: (w) => downFromScanNow.push(w),
+  });
+  await h2.service.scanNow();
+  assert.deepEqual(downFromScanNow, []);
+});
+
+test("scanNow returns a fresh scan without needing a watcher", async () => {
+  // A capability decision (a forward) must not depend on somebody having a ports
+  // list open — the published cache only advances when the service broadcasts.
+  const h = harness({ now: () => KILL_NOW });
+  assert.equal(h.service.cachedSnapshot(), undefined, "nothing published yet");
+  const snapshot = await h.service.scanNow();
+  assert.equal(snapshot.scanOk, true);
+  assert.equal(snapshot.ports[0]?.port, 5173);
+});

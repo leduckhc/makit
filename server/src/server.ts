@@ -602,13 +602,23 @@ export function startWsServer(opts: ServerOpts) {
   // installed on both so the loopback/dev path works too — exactly like
   // `attachMediaRoute`.
   const forwardGrants = new ForwardGrants({ now: () => Date.now() });
+  /**
+   * Owner recorded for a grant minted by a bearer-less loopback client under
+   * `--no-auth`. Named once because four places must agree on it: the route's
+   * `loopbackDeviceId`, the mint, `stop`, and the drop-on-disconnect — and a
+   * mismatch there is invisible except as a grant that outlives its socket.
+   */
+  const LOOPBACK_DEVICE_ID = "loopback";
+  /** The identity a socket acts as: its paired device, or the loopback stand-in. */
+  const ownerOf = (deviceId?: string): string | undefined =>
+    deviceId ?? (trustLocalhost ? LOOPBACK_DEVICE_ID : undefined);
   const forwardDeps = {
     grants: forwardGrants,
     registry,
     trustLoopback: trustLocalhost,
     // Under `--no-auth` a loopback caller has no bearer; attribute it to the one
     // paired device so it can resolve the grant it just minted.
-    loopbackDeviceId: trustLocalhost ? "loopback" : undefined,
+    loopbackDeviceId: trustLocalhost ? LOOPBACK_DEVICE_ID : undefined,
   };
   attachForwardRoute(https, forwardDeps);
   if (localHttps) attachForwardRoute(localHttps, forwardDeps);
@@ -634,7 +644,7 @@ export function startWsServer(opts: ServerOpts) {
     if (!decision.ok) {
       return { refusal: forwardRefusalMessage(decision.refusal!) };
     }
-    const owner = deviceId ?? (trustLocalhost ? "loopback" : undefined);
+    const owner = ownerOf(deviceId);
     if (owner === undefined) return { refusal: "this device is not paired" };
     const grant = forwardGrants.mint({
       deviceId: owner,
@@ -752,6 +762,21 @@ export function startWsServer(opts: ServerOpts) {
       // ports popover open never sends `ports.watch {on:false}`.
       state.watchingPorts = false;
       recomputePortsWatchers();
+      // SPEC-44 D3: revoke this device's forward grants. A `browser:true` grant
+      // resolves on its id alone, so without this the URL would keep working for
+      // up to its TTL after the device that asked for it went away — and the
+      // device is the only thing that could have told us to stop.
+      // SPEC-44 D3: revoke this device's forward grants. A `browser:true` grant
+      // resolves on its id alone, so without this the URL would keep working for
+      // up to its TTL after the device that asked for it went away — and the
+      // device is the only thing that could have told us to stop.
+      //
+      // Under `--no-auth` every bearer-less loopback socket shares
+      // {@link LOOPBACK_DEVICE_ID}, so closing one dev window also drops another
+      // dev window's grants. Accepted: dev-only, and re-minting is one tap — a
+      // better failure than a live tunnel nobody can revoke.
+      const grantOwner = ownerOf(state.deviceId);
+      if (grantOwner !== undefined) forwardGrants.dropDevice(grantOwner);
       broadcastSnapshots();
     });
 
@@ -844,7 +869,7 @@ export function startWsServer(opts: ServerOpts) {
       setWatchedPort,
       forwardPort,
       stopForward: (grantId: string, deviceId?: string) =>
-        void forwardGrants.stop(grantId, deviceId ?? (trustLocalhost ? "loopback" : undefined)),
+        void forwardGrants.stop(grantId, ownerOf(deviceId)),
       rescanPorts: () => void portsService.rescanNow(),
     };
 

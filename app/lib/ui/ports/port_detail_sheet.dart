@@ -8,6 +8,7 @@
 /// rejects an inline kill in a scrollable list.
 library;
 
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -48,54 +49,68 @@ Future<void> showPortDetailSheet(
   required PortInfo port,
   required String branchLabel,
   required String? sessionLabel,
-}) => showModalBottomSheet<void>(
-  context: context,
-  showDragHandle: true,
-  isScrollControlled: true,
-  builder: (sheetCtx) => SafeArea(
-    child: PortDetailSheetBody(
-      port: port,
-      branchLabel: branchLabel,
-      sessionLabel: sessionLabel,
-      nowMs: DateTime.now().millisecondsSinceEpoch,
-      // SPEC-44 D7: only an OWNED port can be watched — the identity is
-      // `(worktreePath, port)`, so an unowned listener has nothing to key on.
-      onWatchChanged: port.worktreePath == null
-          ? null
-          : (on) => ref
-                .read(portsWatchPortProvider)
-                .set(worktreePath: port.worktreePath!, port: port.port, on: on),
-      // SPEC-44 P4b: only offered where `Open` cannot work — a loopback port on
-      // a device that is not the host. On the desktop the port is local, so
-      // forwarding it to yourself would be nonsense.
-      onForward: _isHandheld && portIsForwardable(port)
-          ? () => confirmAndForwardPort(sheetCtx, ref, port)
-          : null,
-      // An unverifiable port (no `startedAt`) gets NO kill row at all (D1).
-      onKill: portIsKillable(port)
-          ? () async {
-              final outcome = await confirmAndKillPort(
-                sheetCtx,
-                ref,
-                port,
-                branchLabel: branchLabel,
-              );
-              // Only close on a kill that actually freed the endpoint: after a
-              // refusal the facts on this sheet are what the user needs next.
-              if (outcome != null &&
-                  outcome.releasedThePort &&
-                  sheetCtx.mounted) {
-                Navigator.of(sheetCtx).pop();
+}) {
+  // Resolved once, here, rather than inside the switch's callback: that callback
+  // fires long after this frame, and `ref` belongs to the widget that opened the
+  // sheet (the same rule `port_kill_confirm.dart` follows).
+  final watcher = ref.read(portsWatchPortProvider);
+  return showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (sheetCtx) => SafeArea(
+      child: PortDetailSheetBody(
+        port: port,
+        branchLabel: branchLabel,
+        sessionLabel: sessionLabel,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+        // SPEC-44 D7: only an OWNED port can be watched — the identity is
+        // `(worktreePath, port)`, so an unowned listener has nothing to key on.
+        //
+        // The sheet owns the switch's position while it is open (see
+        // `_PortDetailSheetBodyState._watched`): `port` here is one immutable
+        // snapshot row, so a flip could not otherwise be seen until a fresh
+        // snapshot reopened the sheet. The callback reports whether the write
+        // LANDED, and the body reverts the switch if it did not.
+        onWatchChanged: port.worktreePath == null
+            ? null
+            : (on) => watcher.set(
+                worktreePath: port.worktreePath!,
+                port: port.port,
+                on: on,
+              ),
+        // SPEC-44 P4b: only offered where `Open` cannot work — a loopback port
+        // on a device that is not the host. On the desktop the port is local, so
+        // forwarding it to yourself would be nonsense.
+        onForward: _isHandheld && portIsForwardable(port)
+            ? () => confirmAndForwardPort(sheetCtx, ref, port)
+            : null,
+        // An unverifiable port (no `startedAt`) gets NO kill row at all (D1).
+        onKill: portIsKillable(port)
+            ? () async {
+                final outcome = await confirmAndKillPort(
+                  sheetCtx,
+                  ref,
+                  port,
+                  branchLabel: branchLabel,
+                );
+                // Only close on a kill that actually freed the endpoint: after a
+                // refusal the facts on this sheet are what the user needs next.
+                if (outcome != null &&
+                    outcome.releasedThePort &&
+                    sheetCtx.mounted) {
+                  Navigator.of(sheetCtx).pop();
+                }
               }
-            }
-          : null,
+            : null,
+      ),
     ),
-  ),
-);
+  );
+}
 
 /// The body of the port detail sheet. Pure (data in, no provider read) so it is
 /// directly pumpable in a widget test.
-class PortDetailSheetBody extends StatelessWidget {
+class PortDetailSheetBody extends StatefulWidget {
   const PortDetailSheetBody({
     super.key,
     required this.port,
@@ -120,13 +135,55 @@ class PortDetailSheetBody extends StatelessWidget {
 
   /// Toggles the "stopped listening" alert (SPEC-44). Null hides the switch —
   /// an unowned port has no `(worktreePath, port)` identity to watch by.
-  final ValueChanged<bool>? onWatchChanged;
+  ///
+  /// Returns whether the server accepted the write. A `Future<bool>`, not a
+  /// `void`: a watch that silently failed to persist is a notification the user
+  /// will wait for and never get, so the switch has to be able to go back.
+  final Future<bool> Function(bool on)? onWatchChanged;
 
   /// Hands the port to the system browser (SPEC-44 P4b). Non-null only when this
   /// device cannot reach the port directly, which is also when it REPLACES
   /// `Open`: offering a link to this device's own `127.0.0.1` would be a button
   /// that always fails.
   final VoidCallback? onForward;
+
+  @override
+  State<PortDetailSheetBody> createState() => _PortDetailSheetBodyState();
+}
+
+class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
+  /// The switch's position while this sheet is open, seeded from the snapshot row
+  /// and flipped optimistically so the control responds to the tap that caused
+  /// it. Reverted when the server refuses the write.
+  late bool _watched = widget.port.watched;
+
+  PortInfo get port => widget.port;
+  int get nowMs => widget.nowMs;
+  String get branchLabel => widget.branchLabel;
+  String? get sessionLabel => widget.sessionLabel;
+
+  Future<void> _toggleWatch(bool on) async {
+    final report = widget.onWatchChanged;
+    if (report == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _watched = on);
+    final ok = await report(on);
+    if (!mounted) return;
+    if (!ok) {
+      // Put the switch back where the server says it is, and say so — the whole
+      // point of the feature is an alert that actually arrives.
+      setState(() => _watched = !on);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            on
+                ? 'Could not start watching :${port.port}'
+                : 'Could not stop watching :${port.port}',
+          ),
+        ),
+      );
+    }
+  }
 
   Future<void> _open(BuildContext context) async {
     final url = port.openUrl;
@@ -206,18 +263,18 @@ class PortDetailSheetBody extends StatelessWidget {
           _fact(theme, 'bound', '${port.address}:${port.port}', mono: true),
           _fact(theme, 'probe', portHealthTooltip(port.health, nowMs: nowMs)),
           const Divider(height: 1),
-          if (onForward != null)
+          if (widget.onForward != null)
             _action(
               context,
               icon: PhosphorIconsLight.eye,
               label: portForwardLabel,
               primary: true,
-              onTap: onForward!,
+              onTap: widget.onForward!,
             ),
           if (hasUrl) ...[
             // Hidden when a forward is on offer: this device's loopback is not
             // the host's, so `Open` could only ever load a dead page here.
-            if (onForward == null)
+            if (widget.onForward == null)
               _action(
                 context,
                 icon: PhosphorIconsLight.arrowSquareOut,
@@ -234,11 +291,11 @@ class PortDetailSheetBody extends StatelessWidget {
           ],
           // Opt-in alerts (SPEC-44 D8): per port, never ambient — an always-on
           // port notification would fire on every rebuild.
-          if (onWatchChanged != null)
+          if (widget.onWatchChanged != null)
             SwitchListTile(
               key: kPortWatchToggle,
-              value: port.watched,
-              onChanged: onWatchChanged,
+              value: _watched,
+              onChanged: (on) => unawaited(_toggleWatch(on)),
               dense: true,
               title: const Text('Watch this port'),
               subtitle: const Text(
@@ -247,14 +304,14 @@ class PortDetailSheetBody extends StatelessWidget {
             ),
           // The danger zone (mockup §2b): last, fenced off, and still behind a
           // confirm. Nothing destructive shares a row group with Open/Copy.
-          if (onKill != null) ...[
+          if (widget.onKill != null) ...[
             const Divider(key: kPortKillDivider, height: 1),
             _action(
               context,
               icon: PhosphorIconsLight.stopCircle,
               label: portKillRowLabel,
               danger: true,
-              onTap: onKill!,
+              onTap: widget.onKill!,
             ),
           ],
           const SizedBox(height: kSpace16),

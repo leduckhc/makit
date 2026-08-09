@@ -55,8 +55,13 @@ void main() {
     await shot(tester, '04-sheet-danger-zone');
 
     // ── 3. the kill confirm (D8): it names the victim ──────────────────────
+    // A missing surface prints SHOT_SKIP and the shooter fails the run on it —
+    // the tolerance is so this path still runs against an older build, not so a
+    // deleted control can pass unnoticed.
     final killRow = find.text(portKillRowLabel);
-    if (killRow.evaluate().isNotEmpty) {
+    if (killRow.evaluate().isEmpty) {
+      debugPrint('SHOT_SKIP 05-kill-confirm (no kill row on the detail sheet)');
+    } else {
       await tester.tap(killRow.first, warnIfMissed: false);
       await waitFor(tester, find.textContaining('SIGTERM'));
       await shot(tester, '05-kill-confirm');
@@ -66,7 +71,11 @@ void main() {
 
     // ── 4. the browser hand-off confirm (SPEC-44 P4b) ──────────────────────
     final forward = find.text(portForwardLabel);
-    if (forward.evaluate().isNotEmpty) {
+    if (forward.evaluate().isEmpty) {
+      debugPrint(
+        'SHOT_SKIP 06-forward-confirm (no "$portForwardLabel" action)',
+      );
+    } else {
       await tester.tap(forward.first, warnIfMissed: false);
       await waitFor(tester, find.textContaining('certificate'));
       await shot(tester, '06-forward-confirm');
@@ -110,7 +119,9 @@ void main() {
       await shot(tester, '08-orphans-section');
 
       final killAll = find.byKey(kPortsKillAllOrphans);
-      if (killAll.evaluate().isNotEmpty) {
+      if (killAll.evaluate().isEmpty) {
+        debugPrint('SHOT_SKIP 09-kill-all-confirm (no bulk-kill button)');
+      } else {
         await tester.tap(killAll.first, warnIfMissed: false);
         await waitFor(tester, find.text('Kill all'));
         await shot(tester, '09-kill-all-confirm');

@@ -389,6 +389,13 @@ export class PortsService {
     this.scanning = true;
     try {
       const outcome = await this.doScan();
+      // The cadence path owns the outage side effects (see the note in
+      // `doScan`): only a scheduled scan may retire the last-good list or tell
+      // the down-detector what it saw.
+      if (outcome.scanOk) {
+        this.lastGoodPorts = outcome.ports;
+        this.downDetector.observe(outcome.ports, this.deps.watchedPorts?.() ?? []);
+      }
       if (this.watchers === 0) return; // last watcher left mid-scan → publish nothing
 
       const scannedAt = this.deps.now();
@@ -487,9 +494,9 @@ export class PortsService {
       // only ever apply to a listener the previous passes left unowned.
       const withDocker = await this.overlayDocker(annotated);
 
-      // SPEC-44: mark what the user asked to be told about, then let the
-      // down-detector see this scan. Both read the watch list fresh, so a toggle
-      // lands on the very next snapshot.
+      // SPEC-44: mark what the user asked to be told about. The annotation lives
+      // here because BOTH the cadence path and the on-demand paths (kill,
+      // forward) publish/judge these ports.
       const watched = this.deps.watchedPorts?.() ?? [];
       const withWatched =
         watched.length === 0
@@ -499,9 +506,13 @@ export class PortsService {
                 ? { ...port, watched: true }
                 : port,
             );
-      this.downDetector.observe(withWatched, watched);
 
-      this.lastGoodPorts = withWatched;
+      // NOTE: the outage detector and `lastGoodPorts` are deliberately NOT
+      // touched here. `doScan` is also called off-cadence by `killPort` (up to
+      // three times per kill) and by `scanNow` (every forward request), none of
+      // which hold the `scanning` guard — feeding the detector from those would
+      // let a kill's own mid-flight scans look like an outage. Both side effects
+      // live in `runScan`, the one path the cadence owns.
       return { ports: withWatched, scanOk: true, historyToSave, procs };
     } catch (err) {
       return {

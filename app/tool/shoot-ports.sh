@@ -31,29 +31,78 @@ xcrun simctl bootstatus "$SIM_ID" -b >/dev/null
 LOG="$(mktemp -t makit-shoot-ports.XXXXXX.log)"
 echo "sim=$SIM_ID out=$OUT log=$LOG"
 
+# Every scene the pass is expected to reach. A missing one is a FAILURE, not a
+# quiet skip: the camera path tolerates absent surfaces (it must, to keep running
+# on an older build), so without this list a regression that deletes the kill
+# confirm or the orphans section would still exit 0 with a handful of PNGs.
+REQUIRED_SHOTS=(
+  01-home-glyph 02-sheet-list 03-sheet-detail 04-sheet-danger-zone
+  05-kill-confirm 06-forward-confirm 07-ports-screen 07b-docker-row
+  08-orphans-section 09-kill-all-confirm 10-orphans-killed
+)
+
 "$FLUTTER_BIN" test integration_test/tour/ports_shots.dart -d "$SIM_ID" >"$LOG" 2>&1 &
 TEST_PID=$!
 trap 'kill "$TEST_PID" 2>/dev/null || true' EXIT INT TERM
 
-# Follow the log and shoot on each marker. `SHOT DONE` (or the test exiting) ends
-# the loop; a missing marker is reported rather than silently producing nothing.
+# Follow the log by LINE OFFSET rather than `tail -f`: BSD tail has no `--pid`,
+# and a blocking `tail -f` never returns to the liveness check, so a test that
+# dies early used to hang this script forever. Polling cannot block, and it
+# drains whatever the test wrote before it exited.
 shots=0
-while kill -0 "$TEST_PID" 2>/dev/null; do
+processed=0
+done_marker=0
+
+drain() {
+  local total line name
+  total="$(wc -l < "$LOG" | tr -d ' ')"
+  [ "$total" -gt "$processed" ] || return 0
   while IFS= read -r line; do
     case "$line" in
-      *"SHOT DONE"*) break 2 ;;
+      *"SHOT DONE"*) done_marker=1 ;;
+      *"SHOT_SKIP "*) echo "  skipped: ${line#*SHOT_SKIP }" >&2 ;;
       *"SHOT "*)
         name="$(printf '%s' "$line" | sed -E 's/.*SHOT ([A-Za-z0-9_.-]+).*/\1/')"
         # A beat, so the hold's first frames (and any dialog animation) are done.
         sleep 1.2
-        xcrun simctl io "$SIM_ID" screenshot --type=png "$OUT/$name.png" >/dev/null 2>&1 \
-          && { shots=$((shots + 1)); printf '  shot %-26s %s\n' "$name" "$OUT/$name.png"; } \
-          || echo "  FAILED to capture $name" >&2
+        if xcrun simctl io "$SIM_ID" screenshot --type=png "$OUT/$name.png" >/dev/null 2>&1; then
+          shots=$((shots + 1))
+          printf '  shot %-26s %s\n' "$name" "$OUT/$name.png"
+        else
+          echo "  FAILED to capture $name" >&2
+        fi
         ;;
     esac
-  done < <(tail -n +1 -f "$LOG")
+  done < <(sed -n "$((processed + 1)),${total}p" "$LOG")
+  processed="$total"
+}
+
+while :; do
+  drain
+  [ "$done_marker" -eq 1 ] && break
+  kill -0 "$TEST_PID" 2>/dev/null || { drain; break; }
+  sleep 0.3
 done
 
-wait "$TEST_PID" 2>/dev/null || true
+wait "$TEST_PID" 2>/dev/null; test_status=$?
+
 echo "captured $shots screenshots into $OUT"
-[ "$shots" -gt 0 ] || { echo "no screenshots captured — check $LOG" >&2; exit 1; }
+
+# A missing scene is a FAILURE, not a quiet skip: the camera path tolerates absent
+# surfaces (it must, to keep running against an older build), so without this
+# check a regression that deleted the kill confirm or the orphans section would
+# still exit 0 with a handful of PNGs.
+missing=()
+for name in "${REQUIRED_SHOTS[@]}"; do
+  [ -s "$OUT/$name.png" ] || missing+=("$name")
+done
+if [ "${#missing[@]}" -gt 0 ]; then
+  echo "MISSING scenes (a surface the pass expects is gone): ${missing[*]}" >&2
+  echo "test log: $LOG" >&2
+  exit 1
+fi
+if [ "$test_status" -ne 0 ]; then
+  echo "the camera path itself failed (exit $test_status) — see $LOG" >&2
+  exit "$test_status"
+fi
+echo "all ${#REQUIRED_SHOTS[@]} expected scenes present"

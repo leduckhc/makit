@@ -18,7 +18,12 @@ export interface ApnsAlert {
 export interface ApnsAps {
   alert: ApnsAlert;
   sound: string;
-  badge: number;
+  /**
+   * Absent leaves the app's current badge alone; a number REPLACES it (so `0`
+   * clears it). Only a payload that actually knows the pending count should send
+   * one — see {@link buildPortDownPayload}.
+   */
+  badge?: number;
   /** 1 → wake the app in the background (content-available). */
   "content-available": number;
 }
@@ -48,7 +53,9 @@ export function buildPortDownPayload({ port }: { port: number }): ApnsPayload {
     aps: {
       alert: { title: WAKE_ALERT_TITLE, body: `:${port} stopped listening` },
       sound: "default",
-      badge: 0,
+      // No `badge` on purpose: this alert knows nothing about pending requests,
+      // and APNs treats `badge: 0` as "clear it" — which would wipe the count a
+      // waiting turn had set. Absent leaves it untouched.
       "content-available": 1,
     },
   };

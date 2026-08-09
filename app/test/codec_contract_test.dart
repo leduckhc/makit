@@ -100,8 +100,10 @@ void main() {
       final decoded = WireCodec.decode(env);
       expect(decoded, isA<PortsSnapshotFrame>());
       final snap = (decoded as PortsSnapshotFrame).snapshot;
-      expect(snap.ports.length, 4);
-
+      // Deliberately NO count assertion: this file's own rule (see the comment
+      // above the P1 golden) is that `snapshots.json` is shared and later phases
+      // append ports to it, so a total turns every addition into a failure here.
+      // Each port under test is selected by number instead.
       final orphaned = snap.ports.firstWhere((p) => p.port == 5180);
       expect(orphaned.worktreePath, isNull);
       expect(orphaned.orphan, isNotNull);

@@ -16,6 +16,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { spawn, execFileSync } from "node:child_process";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -116,19 +118,22 @@ test(
       });
 
       listener = await startListener(worktree);
-      const snapshots: PortsSnapshotDTO[] = [];
-      const service = realService(worktree, (s) => snapshots.push(s));
+      const service = realService(worktree, () => {});
 
-      // One real scan through the service, to get the tuple the UI would show.
-      // `setWatchers(1)` starts it (a snapshot is only published while somebody
-      // is watching), so wait for the publish rather than racing it.
-      service.setWatchers(1);
-      for (let i = 0; i < 100 && snapshots.length === 0; i++) {
-        await new Promise((r) => setTimeout(r, 50));
+      // ONE awaited scan. The earlier version armed a watcher and polled for a
+      // published snapshot, which left that scan in flight while `killPort`
+      // started its own — two concurrent `lsof` runs, and on a loaded CI runner
+      // one of them exceeded the per-exec timeout, so the kill honestly refused
+      // with `scan_unavailable`. `scanNow` is a single, awaited scan.
+      const snapshot = await service.scanNow();
+      if (!snapshot.scanOk) {
+        // An environment whose sockets we cannot read proves nothing about
+        // killing. Say why and stop, rather than failing on an environment fact.
+        console.log(
+          `[ports/kill_acceptance] SKIPPED mid-test: scan unavailable here (${snapshot.scanError})`,
+        );
+        return;
       }
-      service.setWatchers(0);
-      const snapshot = snapshots.at(-1);
-      assert.ok(snapshot, "the service published a real scan");
       const row = snapshot.ports.find(
         (p) => p.pid === listener!.pid && p.port === listener!.port,
       );
@@ -147,7 +152,8 @@ test(
       });
       assert.ok(
         result.outcome === "released" || result.outcome === "force-killed",
-        `expected the port to be freed, got ${result.outcome}`,
+        `expected the port to be freed, got ${result.outcome}` +
+          ` (last scan: scanOk=${(await service.scanNow()).scanOk})`,
       );
 
       // The endpoint is genuinely gone: the second attempt has nothing to match.
@@ -175,26 +181,54 @@ test(
 );
 
 test(
-  "makit's OWN process is refused (refused_self) — the guard that saves the server",
+  "a listener owned by THIS process is refused (refused_self), never signalled",
   { skip: lsofMissing },
   async () => {
-    // This test process is not a listener, so build the refusal from the guard's
-    // own input: a kill aimed at `process.pid` can never be classified killable.
-    const worktree = mkdtempSync(join(tmpdir(), "ports-kill-self-"));
+    // The previous version aimed at port 1, where nothing listens — so
+    // `classifyKillTarget` returned `not_found` before the self guard ever ran
+    // and the test could pass without exercising the thing it names.
+    //
+    // This one listens IN THE TEST PROCESS: the scan then attributes a real
+    // listener to `process.pid`, which IS the server pid, so the guard is the
+    // only thing that can produce the refusal.
+    // The test process's OWN cwd stands in for the worktree, because the pid
+    // guards (R5-R7) are only reached once a listener is attributed to one:
+    // ownership (R4) is checked first, so an unowned self-listener reads
+    // `not_owned` and would never exercise this guard.
+    const worktree = process.cwd();
+    const server = createServer((_, res) => res.end("ok"));
     try {
+      await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+      const port = (server.address() as AddressInfo).port;
       const service = realService(worktree, () => {});
-      const result = await service.killPort({
-        address: "127.0.0.1",
-        port: 1,
-        pid: process.pid,
-        startedAt: Date.now(),
-      });
-      assert.ok(
-        result.outcome === "not_found" || result.outcome === "refused_self",
-        `never a signal to ourselves, got ${result.outcome}`,
+      const snapshot = await service.scanNow();
+      if (!snapshot.scanOk) {
+        console.log(
+          `[ports/kill_acceptance] SKIPPED mid-test: scan unavailable here (${snapshot.scanError})`,
+        );
+        return;
+      }
+      const row = snapshot.ports.find(
+        (p) => p.pid === process.pid && p.port === port,
       );
+      assert.ok(row, `the scan found the test process's own listener on :${port}`);
+      assert.equal(row.pid, process.pid, "the listener IS this process");
+
+      const result = await service.killPort({
+        address: row.address,
+        port: row.port,
+        pid: row.pid,
+        startedAt: row.startedAt ?? Date.now(),
+      });
+      assert.equal(
+        result.outcome,
+        "refused_self",
+        "killing our own listener must be refused by the guard, not attempted",
+      );
+      // Still listening: the refusal was real, not a kill that happened to fail.
+      assert.ok(server.listening, "the server was never signalled");
     } finally {
-      rmSync(worktree, { recursive: true, force: true });
+      await new Promise<void>((r) => server.close(() => r()));
     }
   },
 );

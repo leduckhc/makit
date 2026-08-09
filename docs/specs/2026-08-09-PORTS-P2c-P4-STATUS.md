@@ -41,9 +41,9 @@ tray, store and codec suites green.
    machine's sockets". `PortsService.scanNow()` now returns a fresh scan to the caller
    regardless of watchers; `killPort` already had this discipline via `doScan`.
 
-## Not started — and why
+## Decisions revised while implementing
 
-### D2 revised: system browser instead of an in-app WebView
+### D2: the system browser instead of an in-app WebView — **shipped**
 
 The user chose the system browser over the WebView, and the spec's own reasoning is
 what makes that the better shape rather than a compromise:
@@ -54,9 +54,10 @@ what makes that the better shape rather than a compromise:
   the app is suspended seconds after backgrounding, i.e. the moment a browser takes
   over. The WebView could only ever have worked because it kept the app in the
   foreground.
-- Going straight to the desktop deletes `webview_flutter`, `LocalForwardProxy`, the
-  countdown UI and a native dependency (`url_launcher` was already present), and
-  leaves the security work on the server where the tests can reach it.
+- Handing the URL to the system browser deletes `webview_flutter`,
+  `LocalForwardProxy`, the countdown UI and a native dependency (`url_launcher`
+  was already present), and leaves the security work on the server where the
+  tests can reach it.
 
 What that cost, recorded so it is not rediscovered as a bug:
 
@@ -68,6 +69,8 @@ What that cost, recorded so it is not rediscovered as a bug:
 Still worth doing later, and additive: an in-app **Stop** for a live forward (the
 grant id is returned to the caller, so it is one command away), and a
 `launchUrl` failure path on desktop if the Ports screen ever wants the same action.
+
+## Not started — and why
 
 ### SPEC-44 D9 — the notification's `Ignore this port` action
 

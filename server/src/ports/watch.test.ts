@@ -93,6 +93,18 @@ test("a REAL outage after a recovery re-arms and fires again", () => {
   assert.equal(h.fired.length, 2, "each outage is its own notification");
 });
 
+test("a port that is BOUND but TIMING OUT counts as down (D8)", () => {
+  // `isServing` treats `refused` and `timeout` alike — both mean "bound but you
+  // cannot use it". Only `refused` was covered, so dropping the timeout arm from
+  // that check stayed green.
+  const h = harness();
+  h.at(0, [listening()]);
+  const wedged = listening({ health: { kind: "timeout", probedAt: 1 } });
+  h.at(4_000, [wedged]);
+  h.at(4_000 + WATCH_DOWN_GRACE_MS, [wedged]);
+  assert.deepEqual(h.fired, WATCHED);
+});
+
 test("a port that is BOUND but refusing counts as down (D8)", () => {
   // "Stopped listening" is about usefulness, not about the socket table: a
   // crashed server still holding its socket is exactly the case worth telling

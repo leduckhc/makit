@@ -626,7 +626,10 @@ void main() {
             branchLabel: 'feat/open-ports',
             sessionLabel: null,
             nowMs: 100000,
-            onWatchChanged: flips.add,
+            onWatchChanged: (on) async {
+              flips.add(on);
+              return true;
+            },
           ),
         ),
       );
@@ -645,13 +648,72 @@ void main() {
             branchLabel: 'feat/open-ports',
             sessionLabel: null,
             nowMs: 100000,
-            onWatchChanged: (_) {},
+            onWatchChanged: (_) async => true,
           ),
         ),
       );
       expect(
         tester.widget<SwitchListTile>(find.byKey(kPortWatchToggle)).value,
         isTrue,
+      );
+    });
+
+    testWidgets('the switch MOVES on tap — it does not wait for a new snapshot', (
+      tester,
+    ) async {
+      // The sheet is built from one immutable snapshot row, so without local
+      // state the switch would stay where it was until a fresh `ports.snapshot`
+      // reopened the sheet — a control that ignores the tap that caused it.
+      await tester.pumpWidget(
+        _host(
+          PortDetailSheetBody(
+            port: _port(),
+            branchLabel: 'feat/open-ports',
+            sessionLabel: null,
+            nowMs: 100000,
+            onWatchChanged: (_) async => true,
+          ),
+        ),
+      );
+      expect(
+        tester.widget<SwitchListTile>(find.byKey(kPortWatchToggle)).value,
+        isFalse,
+      );
+      await tester.tap(find.byKey(kPortWatchToggle));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<SwitchListTile>(find.byKey(kPortWatchToggle)).value,
+        isTrue,
+        reason: 'the switch must reflect the flip immediately',
+      );
+    });
+
+    testWidgets('a REFUSED write puts the switch back and says so', (
+      tester,
+    ) async {
+      // A watch that silently failed to persist is a notification the user waits
+      // for and never gets.
+      await tester.pumpWidget(
+        _host(
+          PortDetailSheetBody(
+            port: _port(),
+            branchLabel: 'feat/open-ports',
+            sessionLabel: null,
+            nowMs: 100000,
+            onWatchChanged: (_) async => false,
+          ),
+        ),
+      );
+      await tester.tap(find.byKey(kPortWatchToggle));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<SwitchListTile>(find.byKey(kPortWatchToggle)).value,
+        isFalse,
+        reason: 'reverted to the server truth',
+      );
+      expect(
+        find.textContaining('Could not start watching :5173'),
+        findsOneWidget,
       );
     });
 
@@ -682,7 +744,7 @@ void main() {
             sessionLabel: null,
             nowMs: 100000,
             onKill: () {},
-            onWatchChanged: (_) {},
+            onWatchChanged: (_) async => true,
           ),
         ),
       );

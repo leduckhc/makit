@@ -70,6 +70,11 @@ Future<ForwardGrant?> confirmAndForwardPort(
   final worktreePath = port.worktreePath;
   if (worktreePath == null) return null;
 
+  // Resolved before the dialog and before every await: `ref` is the caller's,
+  // and reading it after the widget is disposed throws (see
+  // `port_kill_confirm.dart`). Both of these outlive the widget.
+  final forwarder = ref.read(portsForwarderProvider);
+  final origin = ref.read(mediaEndpointProvider)?.base;
   final messenger = ScaffoldMessenger.of(context);
   final confirmed = await showDialog<bool>(
     context: context,
@@ -97,9 +102,11 @@ Future<ForwardGrant?> confirmAndForwardPort(
   );
   if (confirmed != true) return null;
 
-  final result = await ref
-      .read(portsForwarderProvider)
-      .forward(worktreePath: worktreePath, port: port.port, browser: true);
+  final result = await forwarder.forward(
+    worktreePath: worktreePath,
+    port: port.port,
+    browser: true,
+  );
   final grant = result.grant;
   if (grant == null) {
     messenger.showSnackBar(
@@ -110,10 +117,10 @@ Future<ForwardGrant?> confirmAndForwardPort(
     return null;
   }
 
-  final url = forwardUrlFor(ref.read(mediaEndpointProvider)?.base, grant);
+  final url = forwardUrlFor(origin, grant);
   if (url == null) {
     // Nothing to open against: revoke rather than leave a live grant behind.
-    await ref.read(portsForwarderProvider).stop(grant.grantId);
+    await forwarder.stop(grant.grantId);
     messenger.showSnackBar(
       const SnackBar(
         content: Text('Not connected to a server, so there is nothing to open'),
@@ -128,7 +135,7 @@ Future<ForwardGrant?> confirmAndForwardPort(
   } catch (_) {
     // A grant nobody can use is a grant worth revoking immediately, rather than
     // leaving it to time out.
-    await ref.read(portsForwarderProvider).stop(grant.grantId);
+    await forwarder.stop(grant.grantId);
     messenger.showSnackBar(
       const SnackBar(content: Text('Could not open a browser')),
     );

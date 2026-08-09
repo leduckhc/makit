@@ -1,6 +1,12 @@
 /**
- * Ports-domain `cmd` handlers: `ports.watch {on}` (SPEC-41) and `ports.kill`
- * (SPEC-43).
+ * Ports-domain `cmd` handlers — all six of them:
+ *
+ *  * `ports.watch {on}`                        SPEC-41: hold/release the scan
+ *  * `ports.kill {address,port,pid,startedAt}` SPEC-43: terminate one listener
+ *  * `ports.killOrphans`                       SPEC-43 P3b: every orphan
+ *  * `ports.watchPort {worktreePath,port,on}`  SPEC-44 P4a: alert me if it stops
+ *  * `ports.forward {worktreePath,port,browser?}` SPEC-44 P4b: mint a grant
+ *  * `ports.forward.stop {grantId}`            SPEC-44 P4b: revoke one
  *
  * `ports.watch` mirrors `metrics.watch` exactly. Setting the flag changes the
  * port scanner's watcher count (a 4 s `lsof`/`ps` scan while any client watches,
@@ -26,6 +32,19 @@ import type { CommandDeps } from "./deps.js";
 /** Highest valid TCP port. */
 const MAX_PORT = 65_535;
 
+/** A real, finite, positive integer — a type predicate, so no cast follows it. */
+function isPositiveInt(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v > 0;
+}
+
+/**
+ * A usable TCP port number. Extracted because all three payload validators need
+ * exactly this check, and each one previously repeated it and then cast.
+ */
+function isValidPort(v: unknown): v is number {
+  return isPositiveInt(v) && v <= MAX_PORT;
+}
+
 /**
  * Read the kill tuple out of a `cmd` frame, or null when ANY field is missing or
  * not the right shape. Deliberately total and deliberately strict: this is the
@@ -39,16 +58,12 @@ export function parseKillTarget(env: Record<string, unknown>): PortKillTarget | 
     startedAt?: unknown;
   };
   if (typeof address !== "string" || address.length === 0) return null;
-  if (!isPositiveInt(port) || (port as number) > MAX_PORT) return null;
+  if (!isValidPort(port)) return null;
   if (!isPositiveInt(pid)) return null;
   // `startedAt` may legitimately be any epoch ms, but it must be a real finite
   // number: it is the field that makes pid reuse detectable (D1).
   if (typeof startedAt !== "number" || !Number.isFinite(startedAt)) return null;
-  return { address, port: port as number, pid: pid as number, startedAt };
-}
-
-function isPositiveInt(v: unknown): boolean {
-  return typeof v === "number" && Number.isInteger(v) && v > 0;
+  return { address, port, pid, startedAt };
 }
 
 export function register(r: CommandRouter, deps: CommandDeps): void {
@@ -93,12 +108,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   r.register("ports.forward", async (ctx) => {
     const worktreePath = ctx.env.worktreePath;
     const port = ctx.env.port;
-    if (
-      typeof worktreePath !== "string" ||
-      worktreePath.length === 0 ||
-      !isPositiveInt(port) ||
-      (port as number) > MAX_PORT
-    ) {
+    if (typeof worktreePath !== "string" || worktreePath.length === 0 || !isValidPort(port)) {
       ctx.err(WireErrorCode.BadRequest, "ports.forward needs {worktreePath, port}");
       return;
     }
@@ -106,10 +116,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // browser", which is what makes the id a capability. Anything but a literal
     // true is the strict mode — a truthy string must not weaken a grant.
     const browser = ctx.env.browser === true;
-    const result = await deps.forwardPort(
-      { worktreePath, port: port as number, browser },
-      ctx.client.deviceId,
-    );
+    const result = await deps.forwardPort({ worktreePath, port, browser }, ctx.client.deviceId);
     // A refusal is an `err` here, not an outcome: unlike a kill there is nothing
     // to report about a grant that was never minted, and the reason IS the
     // message the sheet shows.
@@ -141,14 +148,13 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     if (
       typeof worktreePath !== "string" ||
       worktreePath.length === 0 ||
-      !isPositiveInt(port) ||
-      (port as number) > MAX_PORT ||
+      !isValidPort(port) ||
       typeof on !== "boolean"
     ) {
       ctx.err(WireErrorCode.BadRequest, "ports.watchPort needs {worktreePath, port, on}");
       return;
     }
-    deps.setWatchedPort({ worktreePath, port: port as number }, on);
+    deps.setWatchedPort({ worktreePath, port }, on);
     ctx.ack();
   });
 

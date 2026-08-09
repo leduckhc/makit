@@ -755,15 +755,18 @@ class FakeServer {
         return;
       case 'ports.forward':
         final forwarded = env.body['port'];
+        // One id, used in both fields: the real route addresses a grant BY its
+        // id, so a fixed `path` would contradict the `grantId` beside it.
+        final grantId = 'demo-grant-${Ulid()}';
         _emit(
           Envelope(
             t: MsgType.ack,
             id: env.id,
             body: {
               'grant': {
-                'grantId': 'demo-grant-${Ulid()}',
+                'grantId': grantId,
                 'port': forwarded,
-                'path': '/forward/demo-grant/',
+                'path': '/forward/$grantId/',
                 'createdAt': DateTime.now().millisecondsSinceEpoch,
                 'expiresAt':
                     DateTime.now().millisecondsSinceEpoch + 30 * 60 * 1000,

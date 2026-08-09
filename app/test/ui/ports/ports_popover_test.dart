@@ -172,18 +172,21 @@ void main() {
       tester.view.physicalSize = window;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      // Through `_host`, not a bare MaterialApp: opening the popover builds
+      // `_PortRow`, which is a ConsumerWidget and therefore needs an ancestor
+      // ProviderScope. It happens to survive without one today only because
+      // nothing reads a provider during build — one `ref.watch` away from
+      // breaking every placement test for an unrelated reason.
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Stack(
-              children: [
-                Positioned(
-                  left: at.dx,
-                  top: at.dy,
-                  child: _popover(ports: ports),
-                ),
-              ],
-            ),
+        _host(
+          Stack(
+            children: [
+              Positioned(
+                left: at.dx,
+                top: at.dy,
+                child: _popover(ports: ports),
+              ),
+            ],
           ),
         ),
       );

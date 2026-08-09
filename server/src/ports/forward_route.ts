@@ -93,7 +93,7 @@ function handle(req: IncomingMessage, res: ServerResponse, deps: ForwardRouteDep
   const auth = authenticate(req, deps);
   // A bearer that was SUPPLIED and is wrong is a stale pairing — a different
   // fault from no bearer at all, and worth its own status.
-  if (auth === "invalid") {
+  if (auth.kind === "invalid") {
     res.writeHead(401, { "WWW-Authenticate": "Bearer", "content-type": "application/json" });
     res.end(JSON.stringify({ error: "unauthorized" }));
     return;
@@ -106,12 +106,15 @@ function handle(req: IncomingMessage, res: ServerResponse, deps: ForwardRouteDep
   }
   // `get` enforces the credential mode: a browser grant resolves on its id, a
   // strict one only for the device it was minted for.
-  const grant = deps.grants.get(parsed.grantId, auth === "anonymous" ? undefined : auth);
+  const grant = deps.grants.get(
+    parsed.grantId,
+    auth.kind === "device" ? auth.deviceId : undefined,
+  );
   if (grant === null) {
     // 401 when the caller could have authenticated and did not AND the grant is
     // strict; 403 otherwise — the grant, not the resource, is what is gone.
     const strictExists = deps.grants.isStrict(parsed.grantId);
-    if (auth === "anonymous" && strictExists) {
+    if (auth.kind === "anonymous" && strictExists) {
       res.writeHead(401, { "WWW-Authenticate": "Bearer", "content-type": "application/json" });
       res.end(JSON.stringify({ error: "unauthorized" }));
       return;
@@ -146,23 +149,33 @@ function handle(req: IncomingMessage, res: ServerResponse, deps: ForwardRouteDep
 }
 
 /**
- * How this request identified itself:
- *  - a device id — a valid bearer,
- *  - `"anonymous"` — no bearer at all (a system browser cannot send one),
- *  - `"invalid"` — a bearer that does not match any paired device.
+ * How this request identified itself.
+ *
+ * A tagged union, NOT `string | "anonymous" | "invalid"`: those literals are
+ * already members of `string`, so that type collapses and the compiler cannot
+ * check a sentinel comparison — and a device whose id happened to be
+ * `"anonymous"` would be mistaken for one. The tag makes both impossible.
  */
-function authenticate(req: IncomingMessage, deps: ForwardRouteDeps): string | "anonymous" | "invalid" {
+type CallerIdentity =
+  /** A valid paired-device bearer. */
+  | { kind: "device"; deviceId: string }
+  /** No bearer at all — which is all a system browser can do. */
+  | { kind: "anonymous" }
+  /** A bearer that matches no paired device (a stale pairing). */
+  | { kind: "invalid" };
+
+function authenticate(req: IncomingMessage, deps: ForwardRouteDeps): CallerIdentity {
   const bearer = bearerOf(req);
   if (bearer !== undefined) {
     const device = deps.registry.authenticate(bearer);
-    return device !== null ? device.id : "invalid";
+    return device !== null ? { kind: "device", deviceId: device.id } : { kind: "invalid" };
   }
   const remote = req.socket.remoteAddress ?? "";
   const isLoopback = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
   if (deps.trustLoopback === true && isLoopback && deps.loopbackDeviceId !== undefined) {
-    return deps.loopbackDeviceId;
+    return { kind: "device", deviceId: deps.loopbackDeviceId };
   }
-  return "anonymous";
+  return { kind: "anonymous" };
 }
 
 function bearerOf(req: IncomingMessage): string | undefined {

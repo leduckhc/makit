@@ -98,20 +98,23 @@ test("a real loopback dev server is forwarded over the WSS listener itself", asy
   const home = mkdtempSync(join(tmpdir(), "makit-fwd-home-"));
   const project = mkdtempSync(join(tmpdir(), "makit-fwd-proj-"));
   const prevHome = process.env.MAKIT_HOME;
-  process.env.MAKIT_HOME = home;
-
-  execFileSync("git", ["init", "-q"], { cwd: project });
-  execFileSync(
-    "git",
-    ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"],
-    { cwd: project },
-  );
 
   // A REAL dev server on loopback, in the worktree.
   let dev: Server | undefined;
   let srv: ReturnType<typeof startWsServer> | undefined;
   const c: { ws?: WebSocket; msgs: Record<string, unknown>[] } = { msgs: [] };
+  // Everything that can throw lives inside the `try`, including the env mutation
+  // and the git setup: a `git` that fails outside it would skip `finally` and
+  // leak both temp dirs plus a mutated MAKIT_HOME into every later test.
   try {
+    process.env.MAKIT_HOME = home;
+    execFileSync("git", ["init", "-q"], { cwd: project });
+    execFileSync(
+      "git",
+      ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"],
+      { cwd: project },
+    );
+
     dev = createServer((req, res) => {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(`<h1>your dev server</h1><p>${req.url}</p>`);
@@ -235,6 +238,36 @@ test("a real loopback dev server is forwarded over the WSS listener itself", asy
     await waitFor(client, (m) => m.t === "ack" && m.id === "s1");
     const afterStop = await getThroughProxy(wsPort, `${grant.path}index.html`);
     assert.equal(afterStop.status, 403);
+
+    // 4. A grant must not outlive the device that asked for it. Mint a second
+    // one, drop the socket, and it is gone — without this, a `browser:true` URL
+    // (which resolves on its id alone) would keep working for up to its TTL
+    // after the only party that could have revoked it disappeared.
+    client.ws.send(
+      JSON.stringify({
+        v: 1,
+        t: "cmd",
+        id: "f2",
+        kind: "ports.forward",
+        worktreePath: row.worktreePath,
+        port: devPort,
+        browser: true,
+      }),
+    );
+    const ack2 = await waitFor(client, (m) => m.t === "ack" && m.id === "f2");
+    const grant2 = ack2.grant as { path: string };
+    assert.equal((await getThroughProxy(wsPort, `${grant2.path}`)).status, 200);
+
+    client.ws.close();
+    for (let i = 0; i < 100; i++) {
+      if ((await getThroughProxy(wsPort, `${grant2.path}`)).status === 403) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.equal(
+      (await getThroughProxy(wsPort, `${grant2.path}`)).status,
+      403,
+      "the grant died with the socket that owned it",
+    );
   } finally {
     c.ws?.close();
     srv?.wss.close();
@@ -252,10 +285,10 @@ test("a database port is refused even when the client asks nicely", async () => 
   const home = mkdtempSync(join(tmpdir(), "makit-fwd2-home-"));
   const project = mkdtempSync(join(tmpdir(), "makit-fwd2-proj-"));
   const prevHome = process.env.MAKIT_HOME;
-  process.env.MAKIT_HOME = home;
   let srv: ReturnType<typeof startWsServer> | undefined;
   const client: { ws?: WebSocket } = {};
   try {
+    process.env.MAKIT_HOME = home;
     execFileSync("git", ["init", "-q"], { cwd: project });
     execFileSync(
       "git",

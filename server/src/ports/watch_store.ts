@@ -13,7 +13,14 @@
  * dev-server restart is the entire point of watching one.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { makitHome } from "../daemon/paths.js";
 import { log } from "../log.js";
@@ -56,13 +63,28 @@ export function loadWatchedPorts(file: string = watchedPortsFile()): WatchedPort
   }
 }
 
-/** Persist the watch list. A failure is logged and swallowed. */
+/**
+ * Persist the watch list. A failure is logged and swallowed.
+ *
+ * Written to a sibling temp file and renamed, because `writeFileSync` truncates
+ * first: a process that stops mid-write would leave a partial file, which
+ * {@link loadWatchedPorts} then degrades to an empty list — silently losing every
+ * watch the user had set. `rename` within a directory is atomic, so a reader sees
+ * either the old file or the new one.
+ */
 export function saveWatchedPorts(file: string, watched: WatchedPort[]): void {
+  const tmp = `${file}.${process.pid}.tmp`;
   try {
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, `${JSON.stringify(watched, null, 2)}\n`);
+    writeFileSync(tmp, `${JSON.stringify(watched, null, 2)}\n`);
+    renameSync(tmp, file);
   } catch (err) {
     log.warn(`[ports] could not save watched-ports: ${(err as Error).message}`);
+    try {
+      if (existsSync(tmp)) rmSync(tmp, { force: true });
+    } catch {
+      /* best-effort: a stray temp file must not escalate */
+    }
   }
 }
 
