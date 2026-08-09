@@ -5,6 +5,8 @@
  */
 
 import { WireErrorCode } from "../../protocol/codec.js";
+import type { SessionOrigin } from "../../protocol.js";
+import { isAgentScoped } from "../principal.js";
 import { log } from "../../log.js";
 import {
   isMediaId,
@@ -341,6 +343,33 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   r.register("session.spawn", async (ctx) => {
+    // SPEC-46 D9/D10: lineage is derived from the credential, NEVER from the
+    // wire. An agent-scoped token's parent IS its own session; a body
+    // `parentId` naming a different session is a forgery attempt and refused
+    // (not silently honoured, not silently overwritten). A human client (phone
+    // or CLI) carries no session, so it spawns a root and any body `parentId`
+    // is ignored — the wire is never a lineage source.
+    const principal = ctx.client.principal;
+    const bodyParentId = ctx.env.parentId ? String(ctx.env.parentId) : undefined;
+    const handoffReason = ctx.env.handoffReason ? String(ctx.env.handoffReason) : undefined;
+    let parentId: string | undefined;
+    let origin: SessionOrigin;
+    if (isAgentScoped(principal)) {
+      parentId = principal!.sessionId!;
+      if (bodyParentId !== undefined && bodyParentId !== parentId) {
+        ctx.err(
+          WireErrorCode.BadRequest,
+          "session.spawn parentId is derived from the calling session and cannot name a different session",
+        );
+        return;
+      }
+      origin = "agent";
+    } else {
+      // The `client` cap marks the CLI (D2); a full-access principal (no caps)
+      // is the app/phone. This is the only app-vs-CLI signal the wire carries.
+      parentId = undefined;
+      origin = principal?.caps?.includes("client") ? "cli" : "app";
+    }
     const projectId = String(ctx.env.projectId ?? "");
     const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
     // The worktree the client resolved (creating it first when the user asked
@@ -353,7 +382,11 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     const configOptions = parseConfigPicks(ctx.env.configOptions);
     // New sessions are DRAFTS: the agent is deferred until the first
     // substantive message names the session (see send.message).
-    const newSession = await manager.spawnPendingSession(projectId, agent, worktreePath, branch, configOptions);
+    const newSession = await manager.spawnPendingSession(projectId, agent, worktreePath, branch, configOptions, {
+      parentId,
+      handoffReason,
+      origin,
+    });
     // wireSession is invoked via the manager's "sessionCreated" listener
     // registered above — don't call it explicitly or every event fans out
     // twice.

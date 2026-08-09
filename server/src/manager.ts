@@ -16,7 +16,7 @@ import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/c
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
 import { sessionTokens } from "./ws/session_tokens.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO, type SessionOrigin } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
 import { buildAdapter, piAcpSpec } from "./agent_factory.js";
@@ -443,7 +443,7 @@ export class SessionManager extends EventEmitter {
    * dir (non-git project / unborn HEAD). Uses a {@link DetachedAdapter}
    * placeholder so the session wires + shows in snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[]): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[], lineage?: { parentId?: string; handoffReason?: string; origin?: SessionOrigin }): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
@@ -486,6 +486,11 @@ export class SessionManager extends EventEmitter {
       title: DEFAULT_SESSION_TITLE,
       adapter: new DetachedAdapter(agentId),
       store: this.store,
+      // SPEC-46 D10: lineage derived by the caller (session.spawn) from the
+      // credential, never the wire. Set once at construction.
+      parentId: lineage?.parentId,
+      handoffReason: lineage?.handoffReason,
+      origin: lineage?.origin,
     });
     session.beginDraft({
       agent: agentId,
