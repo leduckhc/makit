@@ -27,6 +27,12 @@ export interface StubWssOpts {
   /** When set, a `sub` is answered with an `err` frame (e.g. `no_such_session`). */
   subErr?: string;
   /**
+   * Answer `POST /media` (SPEC-33) with this `mediaId`, recording each upload on
+   * {@link StubWss.uploads}. Media rides the same HTTPS listener as the socket on
+   * the real server, so the stub serves it from the same place.
+   */
+  mediaId?: string;
+  /**
    * Called for each `cmd` frame; returns the ack payload to merge into the
    * reply. Return `{ __err: "message" }` to answer with an `err` frame instead
    * (e.g. `no_such_session`), which is how a plain command failure is tested.
@@ -36,6 +42,8 @@ export interface StubWssOpts {
 
 export interface StubWss {
   port: number;
+  /** One entry per `POST /media`, in arrival order. */
+  uploads: { mime: string; auth?: string; bytes: number }[];
   /** Push one live `session.event` to every connected client (for `tail -f`). */
   push: (event: Record<string, unknown>) => void;
   close: () => Promise<void>;
@@ -58,6 +66,24 @@ function testPems(): Promise<{ cert: string; private: string }> {
 export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
   const pems = await testPems();
   const https: Server = createServer({ cert: pems.cert, key: pems.private });
+  const uploads: { mime: string; auth?: string; bytes: number }[] = [];
+  https.on("request", (req, res) => {
+    if (req.method !== "POST" || (req.url ?? "").split("?")[0] !== "/media") return;
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => {
+      const body = Buffer.concat(chunks);
+      const mime = String(req.headers["content-type"] ?? "");
+      uploads.push({ mime, auth: req.headers.authorization, bytes: body.length });
+      if (opts.mediaId === undefined) {
+        res.writeHead(415, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "unsupported_media_type" }));
+        return;
+      }
+      res.writeHead(201, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ mediaId: opts.mediaId, mime, sizeBytes: body.length }));
+    });
+  });
   const wss = new WebSocketServer({ server: https });
   const live = new Set<WsSocket>();
   wss.on("connection", (ws: WsSocket) => {
@@ -117,6 +143,7 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
   const port = (https.address() as AddressInfo).port;
   return {
     port,
+    uploads,
     push: (event) => {
       const frame = JSON.stringify({ t: "event", id: `ev-${Date.now()}`, kind: "session.event", event });
       for (const ws of live) ws.send(frame);

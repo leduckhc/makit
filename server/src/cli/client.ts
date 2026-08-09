@@ -40,6 +40,12 @@ export interface SessionsSnapshot {
 }
 
 export interface MakitClient {
+  /**
+   * The credential this connection authenticated with. Exposed because `POST
+   * /media` (SPEC-33) rides the same listener with the same bearer, so a verb
+   * that attaches a file must not resolve a second one.
+   */
+  readonly bearer: string;
   /** Send `hello`; resolve on `hello.ack`, reject on `err`/close (never hang). */
   hello(): Promise<void>;
   /** Send a `cmd` and resolve the `ack` frame that matches its id; reject on `err`. */
@@ -161,6 +167,7 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
 
     ws.on("open", () => {
       resolve({
+        bearer: opts.bearer,
         hello() {
           return new Promise<void>((res, rej) => {
             if (closed) return rej(new Error("client closed"));
