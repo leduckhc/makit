@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SessionManager } from "../src/manager.js";
+import { createControlServer, type ControlBackend } from "../src/daemon/control-server.js";
+import { controlSocketPath } from "../src/daemon/paths.js";
 import { startWsServer } from "../src/server.js";
 import { startBridge } from "../src/bridge.js";
 import { loadOrCreateCert } from "../src/pairing/cert.js";
@@ -179,6 +181,27 @@ async function main(): Promise<void> {
 
   await manager.ensureDefaultSessions();
   if (args.mode === "real") assertFakeModelInEffect(manager);
+
+  // SPEC-46: every CLI session verb probes the control socket first (C4) — that
+  // is where it gets exit 3 and where `cli.grant` mints its credential. Without
+  // one here the keyless loop could not drive `makit new|tail|wait` at all, so
+  // the harness answers the two verbs the CLI actually uses.
+  const controlBackend = {
+    status: () => ({
+      pid: process.pid,
+      uptimeMs: 0,
+      host: "127.0.0.1",
+      port: args.port,
+      fingerprint: cert.fingerprint,
+      advertiseHost: "127.0.0.1",
+      pairedDevices: 1,
+      runningSessions: manager.allSessions().length,
+      version: "e2e",
+    }),
+    cliGrant: () => ({ deviceId: "e2e-cli", label: "cli@e2e", bearer: args.bearer, created: true }),
+  } as unknown as ControlBackend;
+  const control = await createControlServer({ socketPath: controlSocketPath(), backend: controlBackend });
+  void control;
 
   const printReady = () => {
     console.log(JSON.stringify({

@@ -230,6 +230,54 @@ test("askDevice rejects when there is no client to ask", async () => {
   await assert.rejects(rpc.askDevice({ kind: "askUserQuestion" }), /no subscribed clients to ask/);
 });
 
+// -------- D14: the prompt is self-describing --------------------------------
+
+test("D14: the srv.request carries the session caption for a client that never subscribed", async () => {
+  // Rung 3: nobody has this session (or its lineage) on a screen, so the prompt
+  // lands on a phone that never subscribed. It must carry enough to caption it.
+  const stranger = fakeClient({ subs: ["unrelated"] });
+  const rpc = new ReverseRpc({
+    clients: () => [stranger],
+    sessionCaption: (sid) =>
+      sid === "child"
+        ? {
+            title: "Fix the parser",
+            agent: "codex",
+            parentId: "parent",
+            handoffReason: "handed off for the risky refactor",
+            origin: "agent",
+          }
+        : undefined,
+  });
+
+  const p = rpc
+    .askDevice({ kind: "confirmAction" }, { sessionId: "child", timeoutMs: 50 })
+    .catch(() => {});
+  const env = reqs(stranger)[0]!;
+  assert.deepEqual(env.session, {
+    title: "Fix the parser",
+    agent: "codex",
+    parentId: "parent",
+    handoffReason: "handed off for the risky refactor",
+    origin: "agent",
+  });
+  const id = String(env.id);
+  rpc.handleResponse({ v: 1, t: "srv.response", id, approved: true } as Envelope, stranger);
+  await p;
+});
+
+test("D14 is additive: no sessionCaption dep leaves the envelope unchanged", async () => {
+  const client = fakeClient({ subs: ["child"] });
+  const rpc = new ReverseRpc({ clients: () => [client] });
+  const p = rpc
+    .askDevice({ kind: "confirmAction" }, { sessionId: "child", timeoutMs: 50 })
+    .catch(() => {});
+  assert.equal(reqs(client)[0]!.session, undefined, "no caption when the dep is absent");
+  const id = String(client.sent[0]!.id);
+  rpc.handleResponse({ v: 1, t: "srv.response", id, approved: true } as Envelope, client);
+  await p;
+});
+
 // -------- The lineage walk terminates on hostile data ------------------------
 
 test("the lineage walk terminates on a parentId cycle and falls through to rung 3", async () => {
