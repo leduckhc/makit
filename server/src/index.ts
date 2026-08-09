@@ -76,14 +76,14 @@ async function main() {
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
   const KNOWN = new Set([
     "serve", "pair", "qr", "devices", "ls", "sessions",
-    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "attach",
+    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "ask", "tree", "attach",
     ...LIFECYCLE,
   ]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
         `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|` +
-        `ls|new|send|tail|resume|rm|wait|run|handoff|attach [...]`,
+        `ls|tree|new|send|ask|tail|resume|rm|wait|run|handoff|attach [...]`,
     );
     process.exit(2);
   }
@@ -119,6 +119,19 @@ async function main() {
   if (cmd === "new") {
     const { runNew } = await import("./cli/new.js");
     await runNew(process.argv.slice(3));
+    return;
+  }
+
+  // `ask` is send + wait + print-just-the-answer, for one agent delegating to
+  // another; `tree` is a projection of D10 lineage — who spawned whom, and why.
+  if (cmd === "ask") {
+    const { runAsk } = await import("./cli/ask.js");
+    await runAsk(process.argv.slice(3));
+    return;
+  }
+  if (cmd === "tree") {
+    const { runTree } = await import("./cli/tree.js");
+    await runTree(process.argv.slice(3));
     return;
   }
 
