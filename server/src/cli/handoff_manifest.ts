@@ -9,6 +9,8 @@
  * deterministic (fixed section order, missing sections omitted) because it is
  * what a human reads on their phone to understand a session they never started.
  */
+import type { SessionEvent } from "../protocol.js";
+
 
 export interface HandoffManifest {
   goal?: string;
@@ -68,4 +70,23 @@ export function renderManifest(m: HandoffManifest): string {
     }
   }
   return blocks.length > 0 ? blocks.join("\n\n") + "\n" : "";
+}
+
+/**
+ * The `--carry last:N` excerpt: a fenced block of the parent's last events, as
+ * **quoted context in a message** — never replayed as agent state (D5). Fenced
+ * so the receiving agent cannot mistake the parent's turns for its own
+ * instructions, and one line per event so a phone can read it.
+ */
+export function renderTranscriptExcerpt(events: readonly SessionEvent[]): string {
+  if (events.length === 0) return "";
+  const lines = events.map((e) => {
+    const p = e.payload as Record<string, unknown>;
+    const text = [p.text, p.chunk, p.summary, p.name, p.message, p.status].find(
+      (v): v is string => typeof v === "string" && v.trim().length > 0,
+    );
+    const body = text ? ` ${text.replace(/\s+/g, " ").trim()}` : "";
+    return `[${e.seq}] ${e.kind}${body}`;
+  });
+  return `## Transcript excerpt (last ${events.length})\n\n\`\`\`\n${lines.join("\n")}\n\`\`\`\n`;
 }

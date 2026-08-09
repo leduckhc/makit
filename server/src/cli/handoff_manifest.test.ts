@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseManifest, renderManifest } from "./handoff_manifest.js";
+import { parseManifest, renderManifest, renderTranscriptExcerpt } from "./handoff_manifest.js";
 
 const FULL = {
   goal: "Make the migration idempotent",
@@ -88,4 +88,35 @@ test("a list that resolves to no valid entries omits its section", () => {
 
 test("goal that is blank or whitespace is omitted", () => {
   assert.equal(renderManifest(parseManifest({ goal: "   " })), "");
+});
+
+// ---------------------------------------------------------------------------
+// `--carry last:N` — the fenced excerpt (D5: quoted context, not agent state)
+// ---------------------------------------------------------------------------
+
+test("an empty excerpt renders nothing at all", () => {
+  assert.equal(renderTranscriptExcerpt([]), "");
+});
+
+test("golden: the excerpt is fenced, one line per event, seq-prefixed", () => {
+  const events = [
+    { seq: 11, sessionId: "s", ts: 1, kind: "user.message", payload: { text: "make it\n idempotent" } },
+    { seq: 12, sessionId: "s", ts: 2, kind: "tool.call.start", payload: { name: "bash" } },
+    { seq: 13, sessionId: "s", ts: 3, kind: "session.status", payload: { status: "idle" } },
+  ] as unknown as Parameters<typeof renderTranscriptExcerpt>[0];
+  assert.equal(
+    renderTranscriptExcerpt(events),
+    "## Transcript excerpt (last 3)\n\n```\n" +
+      "[11] user.message make it idempotent\n" +
+      "[12] tool.call.start bash\n" +
+      "[13] session.status idle\n" +
+      "```\n",
+  );
+});
+
+test("an event with no readable text still names its kind", () => {
+  const events = [{ seq: 1, sessionId: "s", ts: 1, kind: "agent.media", payload: { mime: 42 } }] as unknown as Parameters<
+    typeof renderTranscriptExcerpt
+  >[0];
+  assert.match(renderTranscriptExcerpt(events), /\[1\] agent\.media\n/);
 });

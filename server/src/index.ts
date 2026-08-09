@@ -74,11 +74,11 @@ function makeDaemon() {
 async function main() {
   const cmd = process.argv[2];
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "new", "attach", ...LIFECYCLE]);
+  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "new", "handoff", "attach", ...LIFECYCLE]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
-        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|new|attach [...]`,
+        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|new|handoff|attach [...]`,
     );
     process.exit(2);
   }
@@ -114,6 +114,15 @@ async function main() {
   if (cmd === "new") {
     const { runNew } = await import("./cli/new.js");
     await runNew(process.argv.slice(3));
+    return;
+  }
+
+  // `handoff` is `new`'s sibling for an agent that is out of context: it
+  // inherits the parent's tree and carries a manifest as the first message
+  // (SPEC-46 D5/D15/D16). Identity comes from the environment, not argv.
+  if (cmd === "handoff") {
+    const { runHandoff } = await import("./cli/handoff.js");
+    await runHandoff(process.argv.slice(3));
     return;
   }
 
