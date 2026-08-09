@@ -59,6 +59,12 @@ export const COMMAND_CAPABILITIES: Record<string, readonly DeviceCap[]> = {
   "repo.refresh": [],
   "session.archive": [],
   "session.attach": [],
+  // A fork names its source on the argv and is a human/CLI verb (no
+  // MAKIT_SESSION_ID). Unlike session.spawn, whose agent parentId is forced to
+  // the caller's own session, session.fork trusts the named source — so it is
+  // NOT agent-reachable (least privilege); a client / full-access principal
+  // only, exactly like session.kill/archive.
+  "session.fork": [],
   "session.kill": [],
   "session.list": [],
   "session.listArchived": [],

@@ -76,7 +76,7 @@ async function main() {
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
   const KNOWN = new Set([
     "serve", "pair", "qr", "devices", "ls", "sessions",
-    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "ask", "tree",
+    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "fork", "ask", "tree",
     "approve", "answer", "attach",
     ...LIFECYCLE,
   ]);
@@ -84,7 +84,7 @@ async function main() {
     console.error(
       `unknown command: ${cmd}\n` +
         `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|` +
-        `ls|tree|new|send|ask|tail|resume|rm|wait|run|handoff|approve|answer|attach [...]`,
+        `ls|tree|new|send|ask|tail|resume|rm|wait|run|handoff|fork|approve|answer|attach [...]`,
     );
     process.exit(2);
   }
@@ -155,6 +155,16 @@ async function main() {
   if (cmd === "handoff") {
     const { runHandoff } = await import("./cli/handoff.js");
     await runHandoff(process.argv.slice(3));
+    return;
+  }
+
+  // `fork` is `handoff`'s high-fidelity sibling (SPEC-46 U4/D6): an
+  // adapter-native branch of the SAME conversation (codex thread/fork), gated
+  // on the harness's fork capability and refused in a sentence where
+  // unsupported. Inherits the source's tree (D15 inverse) unless --worktree.
+  if (cmd === "fork") {
+    const { runFork } = await import("./cli/fork.js");
+    await runFork(process.argv.slice(3));
     return;
   }
 
