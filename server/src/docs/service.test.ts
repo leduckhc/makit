@@ -218,3 +218,62 @@ test("onGrantsChanged fires on unpublish and on a grants() that reaps the last g
   assert.equal(signals, 2, "listing must signal too — that is when an expiry is noticed");
 });
 
+// A live probe found this: the app sends `docs.watch {on:true}` from the home
+// screen's initState, which lands BEFORE the server's first `repos.snapshot`.
+// The 0→1 scan therefore sees NO worktrees and emits an empty index. If the scan
+// result were memoized, or if a later worktree list did not produce a fresh
+// walk, the Docs screen would stay permanently empty and never recover — which
+// is exactly what happened against the real server (0 docs instead of 1008).
+test("a re-index picks up worktrees that only appeared after the first scan", async () => {
+  let worktrees: DocWorktree[] = [];
+  const snapshots: DocsSnapshotDTO[] = [];
+  const timers: Array<() => void> = [];
+
+  const svc = new DocsService({
+    listWorktrees: () => worktrees,
+    exec: (async () => ({ code: 1, stdout: "" })) as unknown as Exec,
+    grants: new DocGrantStore(),
+    reach: async () => null,
+    now: () => 1,
+    onSnapshot: (s) => snapshots.push(s),
+    setTimer: ((fn: () => void) => {
+      timers.push(fn);
+      return 1 as unknown as ReturnType<typeof setTimeout>;
+    }) as never,
+    clearTimer: (() => {}) as never,
+    scan: (worktreePath): WorktreeScan => ({
+      docs: [
+        {
+          key: `${worktreePath}:mockups/b.html`,
+          relPath: "mockups/b.html",
+          title: "Board",
+          kind: "html",
+          bytes: 10,
+          modifiedAt: 1,
+          worktreePath,
+        } as DocDTO,
+      ],
+      scanOk: true,
+    }),
+  } as never);
+
+  // Watch turns on before any worktree is known — the real race. The 0→1 edge
+  // scans immediately (no debounce), which is why the empty result is what the
+  // client receives.
+  svc.setWatchers(1);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(snapshots.at(-1)?.docs.length, 0, "first walk legitimately finds nothing");
+
+  // The repos snapshot lands; server.ts calls onWorktreeChange().
+  worktrees = [{ worktreePath: "/repo/wt", baseBranch: "main", currentBranch: "feat/x" }];
+  svc.onWorktreeChange();
+  for (const fn of timers.splice(0)) fn();
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(
+    snapshots.at(-1)?.docs.length,
+    1,
+    "the re-index must walk again and find the newly-known worktree",
+  );
+});
+

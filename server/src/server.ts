@@ -911,6 +911,13 @@ export function startWsServer(opts: ServerOpts) {
       // enrichment (which may reject or never resolve) — attribution must work
       // regardless of `gh` health (finding 27).
       lastGitOnlyRepos = gitOnly;
+      // The doc index is keyed off this worktree list, so it must re-walk when the
+      // list first arrives or changes. Without this the common case is an EMPTY
+      // Docs screen that never recovers: the app sends `docs.watch {on:true}`
+      // from the home screen's initState, which lands BEFORE the first
+      // `repos.snapshot`, so the 0→1 scan sees no worktrees and nothing else
+      // ever triggers a re-index. Debounced inside the service (D11).
+      docsService.onWorktreeChange();
       emit(preserveLastKnownPrs(gitOnly));
     } catch (e) {
       if (generation === reposSnapshotGeneration) {
