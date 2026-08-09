@@ -84,6 +84,13 @@ export type SessionLifecycle =
        * session/thread starts and before the first prompt.
        */
       configPicks?: { id: string; value: string | boolean }[];
+      /**
+       * SPEC-46 U4: a forked thread's native id. When set, promotion resumes
+       * this thread (the adapter's `thread/resume`) instead of starting a fresh
+       * one, so the child continues the forked conversation rather than a new
+       * one that merely looks forked.
+       */
+      resumeAgentSessionId?: string;
     }
   | { phase: "started"; branch?: string; worktreePath?: string };
 
@@ -559,6 +566,7 @@ export class Session extends EventEmitter {
     pendingWorktreePath?: string;
     branch?: string;
     configPicks?: { id: string; value: string | boolean }[];
+    resumeAgentSessionId?: string;
   }): void {
     this._lifecycle = { phase: "draft", ...opts };
   }
