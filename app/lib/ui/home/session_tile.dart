@@ -198,8 +198,13 @@ class SessionTile extends ConsumerWidget {
   static String? _handoffCaption(Session session) {
     if (session.parentId == null) return null;
     final reason = session.handoffReason?.trim();
+    // Lineage with no reason is not necessarily a handoff: `makit fork` (U4)
+    // branches a conversation natively and deliberately writes no reason, because
+    // a fork is not a handoff (D6). "Continued from" is true of both; claiming a
+    // handoff would mislabel every forked session in the one place the user meets
+    // it.
     return reason == null || reason.isEmpty
-        ? 'Handed off from another session'
+        ? 'Continued from another session'
         : 'Handed off — $reason';
   }
 

@@ -184,6 +184,19 @@ void main() {
     expect(find.textContaining('stuck on a rebase'), findsOneWidget);
   });
 
+  // SPEC-46 U4: a *fork* sets `parentId` with no `handoffReason` — it is an
+  // adapter-native branch of the conversation, not a written handoff (D6). The
+  // fallback wording must therefore not claim a handoff happened, or every forked
+  // session is mislabelled in the one place the user meets it.
+  testWidgets('lineage without a reason does not claim a handoff', (
+    tester,
+  ) async {
+    await _pumpSession(tester, _session(parentId: 's0'));
+
+    expect(find.textContaining('Continued from'), findsOneWidget);
+    expect(find.textContaining('Handed off'), findsNothing);
+  });
+
   testWidgets('quit is published as a semantics action for screen readers', (
     tester,
   ) async {
