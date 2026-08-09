@@ -16,7 +16,7 @@ import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/c
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
 import { sessionTokens } from "./ws/session_tokens.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO, type SessionEvent, type SessionOrigin } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE, type ApprovalPolicy, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO, type SessionEvent, type SessionOrigin } from "./protocol.js";
 import { spawnBoundError, type LineageNode } from "./lineage.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
@@ -469,7 +469,7 @@ export class SessionManager extends EventEmitter {
    * dir (non-git project / unborn HEAD). Uses a {@link DetachedAdapter}
    * placeholder so the session wires + shows in snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[], lineage?: { parentId?: string; handoffReason?: string; origin?: SessionOrigin }): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[], lineage?: { parentId?: string; handoffReason?: string; origin?: SessionOrigin }, policy?: ApprovalPolicy): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
@@ -517,6 +517,9 @@ export class SessionManager extends EventEmitter {
       parentId: lineage?.parentId,
       handoffReason: lineage?.handoffReason,
       origin: lineage?.origin,
+      // SPEC-46 D13: a relaxed approval policy is human-gated at the command
+      // layer; undefined falls back to the Session default (`ask-on-risky`).
+      policy,
     });
     session.beginDraft({
       agent: agentId,
