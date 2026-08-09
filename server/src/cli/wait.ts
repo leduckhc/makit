@@ -77,8 +77,13 @@ function failUsage(message: string): never {
   return process.exit(EXIT_USAGE);
 }
 
-/** The exit code a non-running status maps to, or `undefined` if still running. */
-function codeForStatus(status: string): number | undefined {
+/**
+ * The exit code a non-running status maps to, or `undefined` if still running.
+ * Exported because `ask` needs the *same* rule: a session that is already blocked
+ * or exited must be reported, not waited on (D8), and a second copy of this
+ * mapping is a second thing to forget.
+ */
+export function codeForStatus(status: string): number | undefined {
   if (status === "idle") return 0;
   if (status === "awaiting-approval") return EXIT_APPROVAL;
   if (status === "awaiting-input") return EXIT_INPUT;
@@ -86,8 +91,18 @@ function codeForStatus(status: string): number | undefined {
   return undefined;
 }
 
-/** Whether an outcome is the one `--for` asked for. */
+/**
+ * Whether an outcome ends the wait.
+ *
+ * `--for` narrows which *ongoing* outcome you are waiting for — but it cannot make
+ * a dead session worth waiting on, so a **terminal** state always ends the wait.
+ * `exited` is terminal (the agent is gone; no later turn can happen), while `idle`
+ * and the two blocked states are not: a session that went idle may run again, and
+ * one blocked on a human may be answered and continue. Treating `exited` as
+ * narrowable is what let `wait --for idle` block forever on a crashed agent.
+ */
 function wanted(forWhat: WaitFor, code: number): boolean {
+  if (code === EXIT_EXITED) return true; // terminal, whatever was asked for
   if (forWhat === "any") return true;
   if (forWhat === "idle") return code === 0;
   if (forWhat === "approval") return code === EXIT_APPROVAL;

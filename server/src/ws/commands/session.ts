@@ -7,6 +7,7 @@
 import { WireErrorCode } from "../../protocol/codec.js";
 import type { ApprovalPolicy, SessionOrigin } from "../../protocol.js";
 import { isAgentScoped } from "../principal.js";
+import { canReadSession } from "../read_access.js";
 import { ForkPreconditionError } from "../../adapters/adapter.js";
 import { log } from "../../log.js";
 import {
@@ -365,6 +366,13 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     }
     const session = sid ? manager.getSession(sid) : undefined;
     if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    // D17: the `read` cap grants the *command*; the principal still has to own the
+    // session. Same answer as an absent session, so this does not become an oracle
+    // for which session ids exist.
+    if (!canReadSession(ctx.client.principal, sid, (id) => manager.getSession(id)?.parentId)) {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
     }

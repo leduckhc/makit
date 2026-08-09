@@ -160,7 +160,9 @@ export class ReverseRpc {
     targets: WsClient[];
     eligible?: Set<string>;
   } {
-    const authed = [...this.deps.clients()].filter((c) => c.authed);
+    // Agents are excluded from every rung: a prompt is a question for a human, and
+    // an agent that could see one would learn about work it cannot read (D17).
+    const authed = [...this.deps.clients()].filter((c) => c.authed && !isAgentScoped(c.principal));
     if (!sessionId) return { targets: authed, eligible: undefined };
 
     const own = authed.filter((c) => c.subscribed.has(sessionId));
@@ -182,6 +184,11 @@ export class ReverseRpc {
   /** True when `client` may receive a replay of / respond to `p` (D13b/c). */
   private isEligible(client: WsClient, p: PendingRequest): boolean {
     if (!client.authed) return false;
+    // D13c refuses an agent's *answer*; D17 also refuses it the *question*. Rung 3
+    // ("ask every authed client") stored no eligibility set, which read as
+    // "everyone" — so a connecting agent was handed a foreign session's prompt
+    // text plus D14's caption. It could never answer it; it should never see it.
+    if (isAgentScoped(client.principal)) return false;
     if (p.eligibleSessions === undefined) return true;
     for (const sid of p.eligibleSessions) if (client.subscribed.has(sid)) return true;
     return false;

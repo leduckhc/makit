@@ -469,3 +469,28 @@ test("U4: forking a session that does not exist is refused", async () => {
   assert.ok(err, "must refuse");
   assert.equal(h.spawnCalls.length, 0);
 });
+
+test("D17: session.transcript refuses a session the agent may not read", async () => {
+  // The `read` cap grants this command, which is correct — but the *subject* still
+  // has to own the session. Without this check a `read`-capped agent token could
+  // pull any session's last 200 events, which is the same leak `sub` had.
+  const h = harness({ principal: agent("mine"), transcript: [{ seq: 1, kind: "agent.message" }] });
+  await h.cmd({ kind: "session.transcript", sessionId: "someone-elses", limit: 5 });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "must refuse");
+  assert.equal(h.sent.some((f) => f.t === "ack"), false, "and must not return events");
+});
+
+test("D17: session.transcript serves the agent's OWN session", async () => {
+  const h = harness({ principal: agent("mine"), transcript: [{ seq: 1, kind: "agent.message" }] });
+  await h.cmd({ kind: "session.transcript", sessionId: "mine", limit: 5 });
+  const ack = h.sent.find((f) => f.t === "ack") as { events?: unknown[] } | undefined;
+  assert.ok(ack, "own session is readable");
+  assert.equal(ack!.events?.length, 1);
+});
+
+test("D17: a human credential reads any transcript, as before", async () => {
+  const h = harness({ principal: cli, transcript: [{ seq: 1, kind: "agent.message" }] });
+  await h.cmd({ kind: "session.transcript", sessionId: "anyones", limit: 5 });
+  assert.ok(h.sent.some((f) => f.t === "ack"));
+});

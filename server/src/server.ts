@@ -32,7 +32,7 @@
 
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Envelope, RepoDTO, GithubBudgetDTO } from "./protocol.js";
+import type { Envelope, RepoDTO, GithubBudgetDTO, SessionDTO } from "./protocol.js";
 import { PROTOCOL_VERSION, newId } from "./protocol.js";
 import { decodeFrame, encodeFrame, WireErrorCode } from "./protocol/codec.js";
 import type { SessionManager } from "./manager.js";
@@ -44,6 +44,7 @@ import type { OutgoingFrame, WsClient } from "./ws/client.js";
 import { AuthGate } from "./ws/auth_gate.js";
 import { sessionTokens } from "./ws/session_tokens.js";
 import { SubscriptionHub } from "./ws/subscription_hub.js";
+import { canReadSession } from "./ws/read_access.js";
 import { CommandRouter } from "./ws/command_router.js";
 import type { CommandDeps } from "./ws/commands/deps.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
@@ -552,7 +553,12 @@ export function startWsServer(opts: ServerOpts) {
 
   // -------- collaborators -------------------------------------------------
 
-  const hub = new SubscriptionHub({ manager });
+  const hub = new SubscriptionHub({
+    manager,
+    // D17 needs lineage to allow an agent its descendants (the sessions it
+    // handed work off to) without opening the rest of the machine.
+    parentOf: (id) => manager.getSession(id)?.parentId,
+  });
   // SPEC-07: the WakeCoordinator is built HERE (not in index.ts) because
   // `connectedDeviceIds` is a server.ts closure. When `askDevice` finds no live
   // subscribed socket, `onUndeliverable` wakes every paired token-bearing
@@ -767,9 +773,23 @@ export function startWsServer(opts: ServerOpts) {
     });
   }
 
+  /**
+   * SPEC-46 D17: the snapshot is a **read path**, and it is pushed the instant a
+   * socket authenticates — so an unfiltered one handed an agent token every
+   * session's id, title, preview, worktree and lineage before it sent a single
+   * command. A session-scoped principal sees only what `canReadSession` allows
+   * (its own session and its descendants); a human sees everything, unchanged.
+   */
+  function visibleSessions(client: WsClient): SessionDTO[] {
+    const all = manager.listSessions();
+    return all.filter((s) =>
+      canReadSession(client.principal, s.id, (id) => manager.getSession(id)?.parentId),
+    );
+  }
+
   function sendSnapshots(client: WsClient) {
     client.send({ t: "event", id: newId("snap"), kind: "projects.snapshot", projects: manager.listProjects() });
-    client.send({ t: "event", id: newId("snap"), kind: "sessions.snapshot", sessions: manager.listSessions() });
+    client.send({ t: "event", id: newId("snap"), kind: "sessions.snapshot", sessions: visibleSessions(client) });
     // Include the current budget so a freshly-connected client renders the
     // footer immediately, without waiting for the next level change (spec §6.6).
     client.send({ t: "event", id: newId("gh"), kind: "github.budget", budget: budgetDto() });
@@ -857,14 +877,22 @@ export function startWsServer(opts: ServerOpts) {
     for (const c of clients.values()) if (c.authed) sendSnapshots(c);
   }
 
+  /**
+   * D17: one shared frame cannot serve two principals with different visibility,
+   * so the live snapshot is built per client like the one pushed on auth. Humans
+   * (the overwhelming majority of sockets) all get the same array; only a
+   * session-scoped principal pays for a filter.
+   */
   function broadcastSessionsSnapshot() {
-    const frame: OutgoingFrame = {
-      t: "event",
-      id: newId("snap"),
-      kind: "sessions.snapshot",
-      sessions: manager.listSessions(),
-    };
-    for (const c of clients.values()) if (c.authed) c.send(frame);
+    for (const c of clients.values()) {
+      if (!c.authed) continue;
+      c.send({
+        t: "event",
+        id: newId("snap"),
+        kind: "sessions.snapshot",
+        sessions: visibleSessions(c),
+      });
+    }
   }
 
   // -------- concrete client ------------------------------------------------

@@ -110,6 +110,19 @@ export async function runHandoff(argv: string[]): Promise<void> {
   // Resolved before connecting: a malformed manifest must not leave a
   // half-made session behind.
   const manifest = resolveManifest(args);
+  // An empty manifest with nothing carried would send the child an empty first
+  // message — a session spawned to continue work and told nothing about it. The
+  // producer is usually an agent, which cannot ask what it was supposed to do.
+  const empty =
+    manifest.goal === undefined &&
+    manifest.done === undefined &&
+    manifest.next === undefined &&
+    manifest.files === undefined &&
+    manifest.gotchas === undefined &&
+    manifest.openQuestions === undefined;
+  if (empty && args.carry === undefined) {
+    return failUsage("nothing to hand over — give at least --goal, --next, --file, or --carry");
+  }
 
   const client = await connectCli(args);
   try {

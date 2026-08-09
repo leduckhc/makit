@@ -217,3 +217,34 @@ test("a REPLAYED running→idle pair from the log does not count as this turn's 
   }
   assert.equal(captured.code, EXIT_TIMEOUT, "history must not satisfy the edge");
 });
+
+// ---------------------------------------------------------------------------
+// A terminal state ends the wait whatever --for asked for
+// ---------------------------------------------------------------------------
+
+test("--for idle still exits 21 when the agent EXITS — nothing will ever go idle", async () => {
+  // `--for` narrows which *ongoing* outcome you are waiting for; it cannot make a
+  // dead session worth waiting on. Dropping `exited` here reintroduced exactly the
+  // hang D8 exists to remove: no default timeout, and an agent that crashes leaves
+  // the caller blocked forever.
+  // `--timeout 1` bounds the assertion: before the fix this returned 124 (it hung
+  // until the timer), after it returns 21. Without the bound the test would hang
+  // rather than fail, which is a worse test even when it is red for the right reason.
+  const r = await waitWith(["--for", "idle", "--timeout", "1"], "running", [statusEvent(1, "exited")]);
+  assert.equal(r.code, EXIT_EXITED, "an exited agent is terminal for any --for");
+});
+
+test("--for approval also exits 21 on an exited agent", async () => {
+  const r = await waitWith(["--for", "approval", "--timeout", "1"], "running", [statusEvent(1, "exited")]);
+  assert.equal(r.code, EXIT_EXITED);
+});
+
+test("--for approval still ignores a completed turn (the narrowing that IS wanted)", async () => {
+  const r = await waitWith(["--for", "approval", "--timeout", "1"], "running", [statusEvent(1, "idle")]);
+  assert.equal(r.code, EXIT_TIMEOUT, "idle is not terminal — a later turn may still block");
+});
+
+test("a session already EXITED when wait starts reports it immediately", async () => {
+  const r = await waitWith(["--for", "idle", "--timeout", "1"], "exited");
+  assert.equal(r.code, EXIT_EXITED);
+});

@@ -326,6 +326,16 @@ test("a refused spawn is a clean message, not a stack trace in the agent's shell
   assert.equal(sent(r.cmds, "send.message"), undefined, "and no message is sent to a session that was refused");
 });
 
+test("an empty manifest is refused rather than handing over a blank message", async () => {
+  // With no --goal/--next/--file and no --carry, the child's first message was the
+  // empty string: a session spawned to continue work, told nothing about it. Better
+  // to refuse than to hand an agent a blank brief it cannot ask about.
+  const r = await run([]);
+  assert.equal(r.code, 2);
+  assert.match(r.err, /goal|--file|nothing to hand/i);
+  assert.equal(sent(r.cmds, "session.spawn"), undefined, "and no session is created");
+});
+
 test("--json prints the child's id and nothing else", async () => {
   const r = await run(["--goal", "x", "--json"]);
   assert.equal(r.out, JSON.stringify({ sessionId: "child-sid" }) + "\n");

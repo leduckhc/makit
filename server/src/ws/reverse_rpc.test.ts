@@ -173,12 +173,19 @@ test("D13c: an srv.response from a client OUTSIDE the audience does not resolve 
   await p; // let the short timeout settle it (no hang)
 });
 
-test("D13c: an srv.response from an agent-scoped token is refused even if it is a target", async () => {
-  // The child's own agent token, subscribed to its session, must not self-approve.
+test("D13c: an agent cannot self-approve — it is not a target, and a stolen id still fails", async () => {
+  // Originally this test made the agent a *target* and proved its answer was
+  // refused. Excluding agents from every rung (D17) makes that setup impossible,
+  // so the invariant is now asserted in its stronger form: the child's own token
+  // is not sent the prompt at all, and even holding the id — which it could learn
+  // by other means — its answer does not resolve the request.
   const agentClient = fakeClient({ subs: ["child"], principal: agentToken("child") });
-  const rpc = new ReverseRpc({ clients: () => [agentClient], parentOf });
+  const human = fakeClient({ subs: ["child"] });
+  const rpc = new ReverseRpc({ clients: () => [agentClient, human], parentOf });
   const p = rpc.askDevice({ kind: "confirmAction" }, { sessionId: "child", timeoutMs: 50 }).catch(() => "settled");
-  const id = String(agentClient.sent[0]!.id);
+
+  assert.equal(agentClient.sent.length, 0, "the agent is never asked");
+  const id = String(human.sent[0]!.id);
 
   rpc.handleResponse({ v: 1, t: "srv.response", id, approved: true } as Envelope, agentClient);
   assert.equal(rpc.pendingCount, 1, "an agent granting itself access is refused");
@@ -292,4 +299,40 @@ test("the lineage walk terminates on a parentId cycle and falls through to rung 
   const id = String(a.sent[0]!.id);
   rpc.handleResponse({ v: 1, t: "srv.response", id, approved: true } as Envelope, a);
   await p;
+});
+
+test("D13: an agent token is never in the rung-3 audience, even though it cannot answer", async () => {
+  // Rung 3 ("ask every authed client") stored `eligibleSessions: undefined`, and
+  // `isEligible` read that as "everyone" — including agent-scoped principals. The
+  // response guard meant an agent could not *answer*, but it still received the
+  // question plus D14's caption (title, harness, handoffReason) for a session it
+  // has no business reading. Disclosure, not escalation — but D17 forbids it.
+  const agentClient = fakeClient({
+    principal: { deviceId: "a", label: "agent", caps: ["read", "send", "spawn"], sessionId: "a" },
+  });
+  const phone = fakeClient();
+  const rpc = new ReverseRpc({ clients: () => [agentClient, phone] });
+
+  // A short timeout + a swallowed rejection: an unsettled prompt is a promise that
+  // never resolves, and it keeps node --test's process alive until the runner's own
+  // timeout kills the whole file.
+  void rpc.askDevice({ kind: "confirmAction" }, { sessionId: "someone-elses", timeoutMs: 20 }).catch(() => {});
+
+  assert.equal(
+    agentClient.sent.filter((f) => f.t === "srv.request").length,
+    0,
+    "the agent must not receive a broadcast prompt",
+  );
+  assert.ok(phone.sent.some((f) => f.t === "srv.request"), "the human still does");
+});
+
+test("D13: replayPendingTo does not hand a broadcast prompt to a late-connecting agent", async () => {
+  const phone = fakeClient();
+  const rpc = new ReverseRpc({ clients: () => [phone] });
+  void rpc.askDevice({ kind: "confirmAction" }, { sessionId: "someone-elses", timeoutMs: 20 }).catch(() => {});
+
+  const latecomer = fakeClient({
+    principal: { deviceId: "a", label: "agent", caps: ["read"], sessionId: "a" },
+  });
+  assert.equal(rpc.replayPendingTo(latecomer), 0);
 });

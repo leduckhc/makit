@@ -111,3 +111,20 @@ test("approve refuses an INPUT prompt instead of answering the wrong shape", asy
   assert.match(r.err, /answer/, "and it names the verb that does fit");
   assert.equal(r.responses.length, 0, "nothing is sent");
 });
+
+test("approve finds its confirmAction even when an input prompt is replayed first", async () => {
+  // `replayPendingTo` re-sends ALL pending prompts for the session, in whatever
+  // order. Acting on the first match and failing on a kind mismatch meant arrival
+  // order decided whether `makit approve` worked — a wrong refusal, telling the user
+  // to use `makit answer` while an approvable prompt was pending all along.
+  const r = await run([SID], {
+    srvRequests: [
+      { id: "srv-input", kind: "input", sessionId: SID, title: "Which database?" },
+      { id: "srv-confirm", kind: "confirmAction", sessionId: SID, title: "Run rm -rf build?" },
+    ],
+  });
+  assert.equal(r.code, 0, r.err);
+  assert.equal(r.responses.length, 1);
+  assert.equal(r.responses[0]!.id, "srv-confirm", "it answered the confirmAction, not the input");
+  assert.equal(r.responses[0]!.approved, true);
+});

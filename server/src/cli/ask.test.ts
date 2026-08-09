@@ -46,6 +46,7 @@ const messageEvent = (seq: number, text: string) => ({
 async function ask(
   argv: string[],
   script: Record<string, unknown>[],
+  status = "idle",
 ): Promise<{ out: string; err: string; code: number; cmds: Record<string, unknown>[] }> {
   const cmds: Record<string, unknown>[] = [];
   let stub: StubWss | undefined;
@@ -53,7 +54,7 @@ async function ask(
   try {
     stub = await startStubWss({
       acceptBearer: "CACHED",
-      sessions: [SESSION],
+      sessions: [{ ...SESSION, status }],
       onCmd: (m) => {
         cmds.push(m);
         return {};
@@ -142,4 +143,20 @@ test("--json emits the answer as the wire's own event, for jq", async () => {
     statusEvent(3, "idle"),
   ]);
   assert.deepEqual(JSON.parse(r.out.trim()), messageEvent(2, "the answer"));
+});
+
+test("a session already blocked reports it instead of hanging (the docstring's own promise)", async () => {
+  // `ask` hard-coded `initialStatus: "idle"` and never looked at the real status, so
+  // a queued message could not start a turn, no running→non-running edge ever came,
+  // and — with no default timeout — `ask` hung. That is verbatim the failure D8 warns
+  // about for this verb: "an agent shelling out to `makit ask … --wait` would hang
+  // forever on an approval it cannot see." `wait` checks the snapshot; `ask` must too.
+  const r = await ask([SID, "-m", "hello", "--timeout", "1"], [], "awaiting-approval");
+  assert.equal(r.code, EXIT_APPROVAL);
+  assert.equal(r.out, "", "and prints no answer");
+});
+
+test("a session that has already exited is reported, not waited on", async () => {
+  const r = await ask([SID, "-m", "hello", "--timeout", "1"], [], "exited");
+  assert.equal(r.code, 21);
 });

@@ -14,7 +14,7 @@
  */
 import { connectCli } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
-import { awaitOutcome } from "./wait.js";
+import { awaitOutcome, codeForStatus } from "./wait.js";
 import type { SessionEvent } from "../protocol.js";
 
 export interface AskArgs {
@@ -55,13 +55,31 @@ export async function runAsk(argv: string[]): Promise<void> {
   const sessionId = args.sessionId;
 
   const client = await connectCli(args);
+
+  // A session that is already blocked or gone cannot answer: the message would sit
+  // in the queue, no turn would start, and with no default timeout `ask` would hang
+  // — the exact failure D8 names for this verb. `wait` checks the snapshot before
+  // waiting; so must this.
+  const current = (await client.awaitSnapshot()).sessions.find((s) => s.id === sessionId);
+  if (!current) {
+    console.error(`[makit] no such session: ${sessionId}`);
+    client.close();
+    return process.exit(1);
+  }
+  const already = codeForStatus(current.status);
+  if (already !== undefined && already !== 0) {
+    console.error(`[makit] session is ${current.status} — it cannot answer right now`);
+    client.close();
+    return process.exit(already);
+  }
+
   // Only the FINAL message is the answer: an agent narrates on the way there, and
   // an interim thought printed as the reply would be a wrong answer.
   let last: SessionEvent | undefined;
   const waiting = awaitOutcome(client, sessionId, {
     forWhat: "any",
     timeoutMs: args.timeoutMs,
-    initialStatus: "idle",
+    initialStatus: current.status,
     onEvent: (ev) => {
       if (ev.kind === "agent.message") last = ev;
     },

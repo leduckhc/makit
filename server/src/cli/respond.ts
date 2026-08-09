@@ -62,6 +62,13 @@ export async function respondToPrompt(args: RespondArgs, spec: RespondSpec): Pro
   await new Promise<void>((resolve) => {
     let settled = false;
     let grace: NodeJS.Timeout | undefined;
+    /**
+     * Prompt kinds that arrived but this verb cannot answer correctly. Guessing is
+     * not harmless: a text `value` sent to a `confirmAction` carries no `approved`
+     * field, so the server reads it as a **deny** — the user types an answer and
+     * unknowingly refuses the tool call.
+     */
+    const mismatched: string[] = [];
     const finish = () => {
       if (settled) return;
       settled = true;
@@ -89,12 +96,13 @@ export async function respondToPrompt(args: RespondArgs, spec: RespondSpec): Pro
         // never one that merely arrived on this socket.
         if (m.sessionId !== sid) return;
         const kind = typeof m.kind === "string" ? m.kind : "";
-        // A verb answers only the kinds whose reply shape it produces. Guessing
-        // is not harmless: a text `value` sent to a `confirmAction` carries no
-        // `approved` field, so the server reads it as a **deny** — the user types
-        // an answer and unknowingly refuses the tool call.
+        // A session can have several prompts pending, and the replay order is not
+        // ours to choose. Remember a kind we cannot answer and keep listening until
+        // the grace window closes — failing on the first mismatch made arrival order
+        // decide whether the verb worked, and told the user to use the other verb
+        // while an answerable prompt was still on its way.
         if (!spec.kinds.includes(kind)) {
-          fail(`the pending prompt is a ${kind || "prompt"} — answer it with \`makit ${spec.instead}\``);
+          if (!mismatched.includes(kind)) mismatched.push(kind);
           return;
         }
         // Close only once the response is on the wire, so teardown does not
@@ -105,7 +113,15 @@ export async function respondToPrompt(args: RespondArgs, spec: RespondSpec): Pro
       // The pending prompt (if any) follows this ack immediately; a short grace
       // is all the wait we ever do.
       if (m.t === "ack" && m.id === SUB_ID) {
-        grace = setTimeout(() => fail("no pending prompt"), REPLAY_GRACE_MS);
+        grace = setTimeout(() => {
+          if (mismatched.length > 0) {
+            fail(
+              `the pending prompt is a ${mismatched.join("/")} — answer it with \`makit ${spec.instead}\``,
+            );
+            return;
+          }
+          fail("no pending prompt");
+        }, REPLAY_GRACE_MS);
       }
     });
 
