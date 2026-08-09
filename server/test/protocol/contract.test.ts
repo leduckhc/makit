@@ -11,7 +11,7 @@ import {
   encodeFrame,
   WireErrorCode,
 } from "../../src/protocol/codec.js";
-import type { PortDTO, SessionEvent } from "../../src/protocol.js";
+import type { DocDTO, PortDTO, SessionEvent } from "../../src/protocol.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtures = join(here, "..", "fixtures");
@@ -163,4 +163,74 @@ test("ports.snapshot carries orphan and collision annotations", () => {
   const collision = ports.find((p) => p.collision !== undefined);
   assert.ok(collision, "fixture must cover a collision-annotated port");
   assert.equal(collision.collision?.withBranch, "chore/deps");
+});
+
+// ── SPEC-46 ────────────────────────────────────────────────────────────────
+// `docs.snapshot` is a HOST-WIDE broadcast (D11), so it lives in snapshots.json
+// and must be rejected by `decodeSessionEvent`. This mirrors the ports.snapshot
+// guard above, and the rejection genuinely depends on the runtime
+// `HOST_ONLY_KIND_FLAGS` entry — the type-level `SessionEventKind` exclusion
+// cannot enforce anything at runtime — without which a machine-wide document
+// index could be persisted into a session's append-only log and replayed on
+// every resume.
+//
+// Note on what this test canNOT prove: `decodeFrame` validates only `v`/`t`/`id`
+// and never looks at `kind`, so the frame assertion below does not depend on
+// `EVENT_KINDS` membership. Mutation-testing showed an earlier version of that
+// assertion was vacuous. `EVENT_KIND_FLAGS` in codec.ts is therefore typed as a
+// `Record<EventKind, true>` so the *compiler* catches a missing entry, which is
+// the only place that omission is detectable.
+test("docs.snapshot decodes as a frame but never as a session event", () => {
+  const frame = snapshots.find((f) => f.kind === "docs.snapshot");
+  assert.ok(frame, "snapshots.json is missing a docs.snapshot envelope");
+  assert.notEqual(
+    decodeFrame(JSON.stringify(frame)),
+    null,
+    "the host broadcast envelope must round-trip",
+  );
+  assert.equal(
+    decodeSessionEvent({ seq: 1, sessionId: "s1", ts: 1, kind: "docs.snapshot", payload: {} }),
+    null,
+    "docs.snapshot must be in HOST_ONLY_KINDS — a host broadcast may not enter a session log",
+  );
+});
+
+// Typed against `DocDTO` so the fixture cannot drift from the interface without
+// `tsc` failing. The third entry deliberately sets NO optional field: `changed`,
+// `docStatus` and `sessionId` must stay ABSENT rather than defaulting, because
+// "unknown" and "false"/"clean" mean different things (D14).
+test("docs.snapshot carries extracted titles, and absent optionals stay absent", () => {
+  const frame = snapshots.find((f) => f.kind === "docs.snapshot");
+  assert.ok(frame);
+  const docs = (frame as { snapshot: { docs: DocDTO[] } }).snapshot.docs;
+
+  const board = docs.find((d) => d.kind === "html");
+  assert.ok(board, "fixture must cover an HTML board");
+  assert.notEqual(
+    board.title,
+    "open-ports.html",
+    "the title must be the extracted <title>, never the basename (D4)",
+  );
+  assert.equal(board.changed, true);
+
+  const spec = docs.find((d) => d.relPath.includes("SPEC-44"));
+  assert.ok(spec, "fixture must cover a spec markdown");
+  assert.equal(spec.docStatus, "Draft");
+  assert.ok(spec.title.startsWith("SPEC-44 —"), "title comes from the H1");
+
+  const bare = docs.find((d) => d.relPath === "README.md");
+  assert.ok(bare, "fixture must cover a doc with no optional fields set");
+  assert.equal("changed" in bare, false, "absent must not become false");
+  assert.equal("docStatus" in bare, false, "absent must not become a guess");
+  assert.equal("sessionId" in bare, false);
+});
+
+// `key` is a snapshot key, never persisted (D3). Assert the shape the UI relies
+// on so nobody "improves" it into something storable.
+test("DocDTO.key is <worktreePath>:<relPath> and is derivable, not opaque", () => {
+  const frame = snapshots.find((f) => f.kind === "docs.snapshot");
+  assert.ok(frame);
+  for (const d of (frame as { snapshot: { docs: DocDTO[] } }).snapshot.docs) {
+    assert.equal(d.key, `${d.worktreePath}:${d.relPath}`);
+  }
 });

@@ -1,5 +1,135 @@
 [
-  { "v": 1, "t": "event", "id": "snap1", "kind": "projects.snapshot", "projects": [ { "id": "p1", "name": "makit", "path": "/repo/makit", "pinned": true, "lastActivityAt": 1000 } ] },
-  { "v": 1, "t": "event", "id": "snap2", "kind": "sessions.snapshot", "sessions": [ { "id": "s1", "projectId": "p1", "agent": "pi", "title": "work", "status": "running", "policy": "ask-on-risky", "lastActivityAt": 2000, "lastPreview": "hi" } ] },
-  { "v": 1, "t": "event", "id": "snap3", "kind": "ports.snapshot", "snapshot": { "ports": [ { "key": "48211:127.0.0.1:5173", "port": 5173, "address": "127.0.0.1", "reach": "loopback", "pid": 48211, "command": "node vite --port 5173", "startedAt": 1000, "worktreePath": "/repo/makit-wt", "sessionId": "s1", "health": { "kind": "ok", "status": 200, "probedAt": 2000 }, "openUrl": "http://127.0.0.1:5173" }, { "key": "51002:127.0.0.1:5180", "port": 5180, "address": "127.0.0.1", "reach": "loopback", "pid": 51002, "command": "node vite --port 5180", "startedAt": 900, "orphan": { "formerBranch": "feat/desktop-tabs", "formerWorktreePath": "/repo/makit-gone", "removedAt": 2500 } }, { "key": "48300:127.0.0.1:5174", "port": 5174, "address": "127.0.0.1", "reach": "loopback", "pid": 48300, "command": "node vite --port 5174", "startedAt": 950, "worktreePath": "/repo/makit-wt", "collision": { "withBranch": "chore/deps", "withWorktreePath": "/repo/makit-deps" } } ], "scannedAt": 3000, "scanOk": true } }
+  {
+    "v": 1,
+    "t": "event",
+    "id": "snap1",
+    "kind": "projects.snapshot",
+    "projects": [
+      {
+        "id": "p1",
+        "name": "makit",
+        "path": "/repo/makit",
+        "pinned": true,
+        "lastActivityAt": 1000
+      }
+    ]
+  },
+  {
+    "v": 1,
+    "t": "event",
+    "id": "snap2",
+    "kind": "sessions.snapshot",
+    "sessions": [
+      {
+        "id": "s1",
+        "projectId": "p1",
+        "agent": "pi",
+        "title": "work",
+        "status": "running",
+        "policy": "ask-on-risky",
+        "lastActivityAt": 2000,
+        "lastPreview": "hi"
+      }
+    ]
+  },
+  {
+    "v": 1,
+    "t": "event",
+    "id": "snap3",
+    "kind": "ports.snapshot",
+    "snapshot": {
+      "ports": [
+        {
+          "key": "48211:127.0.0.1:5173",
+          "port": 5173,
+          "address": "127.0.0.1",
+          "reach": "loopback",
+          "pid": 48211,
+          "command": "node vite --port 5173",
+          "startedAt": 1000,
+          "worktreePath": "/repo/makit-wt",
+          "sessionId": "s1",
+          "health": {
+            "kind": "ok",
+            "status": 200,
+            "probedAt": 2000
+          },
+          "openUrl": "http://127.0.0.1:5173"
+        },
+        {
+          "key": "51002:127.0.0.1:5180",
+          "port": 5180,
+          "address": "127.0.0.1",
+          "reach": "loopback",
+          "pid": 51002,
+          "command": "node vite --port 5180",
+          "startedAt": 900,
+          "orphan": {
+            "formerBranch": "feat/desktop-tabs",
+            "formerWorktreePath": "/repo/makit-gone",
+            "removedAt": 2500
+          }
+        },
+        {
+          "key": "48300:127.0.0.1:5174",
+          "port": 5174,
+          "address": "127.0.0.1",
+          "reach": "loopback",
+          "pid": 48300,
+          "command": "node vite --port 5174",
+          "startedAt": 950,
+          "worktreePath": "/repo/makit-wt",
+          "collision": {
+            "withBranch": "chore/deps",
+            "withWorktreePath": "/repo/makit-deps"
+          }
+        }
+      ],
+      "scannedAt": 3000,
+      "scanOk": true
+    }
+  },
+  {
+    "v": 1,
+    "t": "event",
+    "id": "snap4",
+    "kind": "docs.snapshot",
+    "snapshot": {
+      "docs": [
+        {
+          "key": "/repo/makit-wt:mockups/open-ports.html",
+          "relPath": "mockups/open-ports.html",
+          "title": "makit — Ports: what's listening, and whose branch owns it",
+          "kind": "html",
+          "bytes": 106538,
+          "modifiedAt": 2000,
+          "worktreePath": "/repo/makit-wt",
+          "sessionId": "s1",
+          "changed": true
+        },
+        {
+          "key": "/repo/makit-wt:docs/specs/2026-08-07-SPEC-44-ports-forward.md",
+          "relPath": "docs/specs/2026-08-07-SPEC-44-ports-forward.md",
+          "title": "SPEC-44 — Ports P4: forward a loopback port to the phone",
+          "kind": "md",
+          "bytes": 18422,
+          "modifiedAt": 1500,
+          "worktreePath": "/repo/makit-wt",
+          "docStatus": "Draft",
+          "changed": false
+        },
+        {
+          "key": "/repo/makit-main:README.md",
+          "relPath": "README.md",
+          "title": "Makit",
+          "kind": "md",
+          "bytes": 4096,
+          "modifiedAt": 900,
+          "worktreePath": "/repo/makit-main"
+        }
+      ],
+      "scannedAt": 2100,
+      "scanOk": true
+    }
+  }
 ]

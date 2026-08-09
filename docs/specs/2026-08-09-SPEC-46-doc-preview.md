@@ -56,7 +56,7 @@ Three facts make this far cheaper than it looks, and they are the reason the pha
 | D8 | **In P1, HTML is reachable only by tailnet publish.** No webview until P3. | It is free, it has perfect fidelity (real Safari, real JS, print-to-PDF), and it works on a device that has never paired with makit. It removes the pain in P1 without spending the webview dependency first. |
 | D9 | **The published URL is a capability URL: `/docs/<grantId>/<relPath>`**, where `grantId` is 32 bytes of CSPRNG. TTL 30 min, idle-reaped, revocable, and enumerable in one place ("3 docs are currently shared"). Reuse SPEC-44's grant record shape. | **This corrects the mockup**, which drew a plain `/docs/<branch>/<path>` URL. A URL that must open in Safari cannot carry a bearer *header*, so the capability has to be in the path. Publishing is therefore always explicit and always has an off switch. |
 | D10 | **The doc listener is a separate plain-HTTP listener bound to `127.0.0.1` only**, fronted by `tailscale serve`. It is never bound to `0.0.0.0` and never shares the pinned WSS listener. | `tailscale serve` terminates real TLS with a real cert on a stable hostname, which is the whole point of D8 — no port to remember, no cert wall. Keeping it off the pinned listener means a bug in static file serving cannot touch the authenticated control plane. |
-| D11 | **No new event kind.** `docs.watch {on}` is ref-counted exactly like `ports.watch`; snapshots stream on the existing channel. Re-index is driven by `worktree_watcher` with a 400 ms debounce — **no polling.** | SPEC-41 D8's reasoning: a host-wide snapshot is not a session event, and adding a kind means touching both the `Exclude<>` in `protocol.ts` and `HOST_ONLY_KINDS` in `protocol/codec.ts` for no gain. |
+| D11 | **`docs.snapshot` is a host-only event kind**, added to *both* the `SessionEventKind` `Exclude<>` in `protocol.ts` and `HOST_ONLY_KIND_FLAGS` in `protocol/codec.ts`. `docs.watch {on}` is ref-counted exactly like `ports.watch`. Re-index is driven by `worktree_watcher` with a 400 ms debounce — **no polling.** | Follows `ports.snapshot` precisely: a host-wide snapshot is not a session event and must never be persisted into a session log. `HOST_ONLY_KIND_FLAGS` is typed `Record<Exclude<EventKind, SessionEventKind>, true>`, so the compiler refuses to let the two lists drift — adding the kind in one place fails the build until it is added in the other. **Corrected from rev 0**, which claimed no new event kind was needed; that misread SPEC-44 (which adds none) as if it described SPEC-41 (which introduced `ports.snapshot`). |
 | D12 | **The preview is a widget, not a route.** `DocPreview(doc)` must render identically in a bottom sheet (P1), a modal from a chat card (P2), and a split pane (P3). | If P1 builds a route, P3 rewrites P1. This is the single decision that makes the phasing free. |
 | D13 | **No thumbnails, and no server-side headless Chrome, in P1 or P2.** | It would add a host binary dependency for decoration. The kind glyph carries the distinction; revisit only if the transcript card measurably reads as bare. |
 | D14 | **`docStatus` is parsed opportunistically** from a leading `**Status:** …` line and is **absent rather than guessed.** | This repo writes that line by convention, so it is free signal — but a spec without one must not be labelled. Same discipline as `PortDTO.startedAt`. |
@@ -159,7 +159,7 @@ Commands (all app → server, `cmd` frames):
 
 | Kind | Payload | Result |
 | --- | --- | --- |
-| `docs.watch` | `{ on: boolean }` | ref-counted; first `true` replies with the cached snapshot, then streams (D11) |
+| `docs.watch` | `{ on: boolean }` | ref-counted; first `true` replies with the cached snapshot, then streams `docs.snapshot` (D11) |
 | `docs.read` | `{ worktreePath, relPath }` | `{ text }` for `kind === "md"` only; errors for `html` (D7) |
 | `docs.publish` | `{ worktreePath, relPath }` | `DocGrantDTO`, or a stated reason (D15) |
 | `docs.unpublish` | `{ grantId }` | `{ ok }` |
@@ -183,7 +183,8 @@ Server, one file per module, red before green:
 - `docs/route.test.ts` — capability URL serves the file; wrong/expired `grantId` → 404 (not 403 —
   do not confirm existence); traversal attempt → 404; correct `Content-Type`; `HEAD` supported.
 - `contract.test.ts` — `DocsSnapshotDTO` in `snapshots.json`, **not** `events.json` (that file
-  asserts one entry per *session* kind).
+  asserts one entry per *session* kind and feeds each to `decodeSessionEvent`), plus a guard that
+  `docs.snapshot` is rejected by `decodeSessionEvent` and accepted by `decodeFrame`.
 
 App:
 
