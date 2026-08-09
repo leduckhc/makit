@@ -185,3 +185,36 @@ test("publish/unpublish/grants delegate to the grant store", async () => {
   assert.equal(pub.ok, false, "a non-doc extension is refused");
   assert.deepEqual(h.service.grants(), []);
 });
+
+// D10 rev 2: the lazily-bound doc port must be released when the last grant is
+// gone, and an EXPIRY has no event of its own — it is only discovered when
+// `grants.list()` reaps it. So both unpublish and grants() must signal.
+test("onGrantsChanged fires on unpublish and on a grants() that reaps the last grant", () => {
+  const grants = new DocGrantStore();
+  let signals = 0;
+  const svc = new DocsService({
+    listWorktrees: () => [],
+    exec: (async () => ({ code: 0, stdout: "" })) as never,
+    grants,
+    reach: async () => ({ origin: "http://100.1.1.1:1", reach: "tailnet" }),
+    onGrantsChanged: () => {
+      signals++;
+    },
+    emit: () => {},
+    setTimer: (() => null) as never,
+  } as never);
+
+  const g = grants.mint({
+    worktreePath: "/repo",
+    relPath: "a.md",
+    reach: "tailnet",
+    buildUrl: (id) => `http://x/docs/${id}/a.md`,
+  });
+
+  svc.unpublish(g.grantId);
+  assert.equal(signals, 1, "a revoke must signal so the port can be released");
+
+  svc.grants();
+  assert.equal(signals, 2, "listing must signal too — that is when an expiry is noticed");
+});
+

@@ -85,9 +85,8 @@ import { register as registerDocsCommands } from "./ws/commands/docs.js";
 import { DocsService, type DocWorktree } from "./docs/service.js";
 import { DocGrantStore } from "./docs/grants.js";
 import { attachDocRoute, attachDocNotFound } from "./docs/route.js";
+import { DocListener } from "./docs/listener.js";
 import type { DocReach } from "./docs/publish.js";
-import { createServer as createHttpServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { run as execRun } from "./git.js";
 import { stat as fsStat } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
@@ -317,34 +316,29 @@ export function startWsServer(opts: ServerOpts) {
     return out;
   };
 
-  // D10: a SEPARATE plain-HTTP listener for published docs — never the pinned
-  // WSS listener, never `0.0.0.0`. It binds to makit's own routable host (the
-  // tailnet or LAN address it already chose) on an ephemeral port, so a
-  // published doc is directly reachable there; a loopback/wildcard host has no
-  // usable address, so publish degrades loudly and shares nothing (D15).
+  // D10 rev 2: a SEPARATE plain-HTTP listener for published docs — never the
+  // pinned WSS listener, never `0.0.0.0`. It is bound LAZILY on the first
+  // publish and released once nothing is published, so makit holds no routable
+  // port open for a feature you are not using.
+  //
+  // Tailnet only: the capability lives in the URL path (D9), and rev 2 dropped
+  // the LAN fallback rather than let that capability cross a network WireGuard
+  // is not encrypting. No tailnet address ⇒ publish refuses with a reason (D15).
   const docGrants = new DocGrantStore();
-  const docHttp = createHttpServer();
-  attachDocRoute(docHttp, { grants: docGrants });
-  // Dedicated listener: nothing else answers, so unmatched paths (Safari's
-  // /favicon.ico, a probe of /) must 404 rather than hang the socket.
-  attachDocNotFound(docHttp);
-  const docReachLabel: "tailnet" | "lan" | null =
-    tailnetAddressFromBindHost(host) !== null ? "tailnet" : isLoopbackOrWildcard(host) ? null : "lan";
-  const docBindHost = docReachLabel === null ? "127.0.0.1" : host;
-  let docPort: number | undefined;
-  docHttp.on("error", (err: NodeJS.ErrnoException) =>
-    log.warn(`[makit] doc listener error on ${docBindHost}: ${err.message}`),
-  );
-  docHttp.listen(0, docBindHost, () => {
-    docPort = (docHttp.address() as AddressInfo).port;
-    log.info(`[makit] docs listening on http://${docBindHost}:${docPort} (reach=${docReachLabel ?? "none"})`);
+  const docListener = new DocListener({
+    bindHost: tailnetAddressFromBindHost(host),
+    attach: (server) => {
+      attachDocRoute(server, { grants: docGrants });
+      // Dedicated listener: nothing else answers, so unmatched paths (Safari's
+      // /favicon.ico, a probe of /) must 404 rather than hang the socket.
+      attachDocNotFound(server);
+    },
   });
-  // Verified reach: only offer a URL when the listener actually bound AND the
-  // bind host is routable. `reach` reflects what bound — never invented (D15).
-  const docReach = async (): Promise<DocReach | null> =>
-    docPort === undefined || docReachLabel === null
-      ? null
-      : { origin: `http://${host}:${docPort}`, reach: docReachLabel };
+  const docReach = (): Promise<DocReach | null> => docListener.ensureOrigin();
+  /** Free the port as soon as the last grant is revoked or reaped. */
+  const releaseDocsIfIdle = (): void => {
+    void docListener.releaseIfIdle(docGrants.list().length);
+  };
 
   const emitDocsSnapshot = (snapshot: unknown): OutgoingFrame => ({
     t: "event",
@@ -357,6 +351,7 @@ export function startWsServer(opts: ServerOpts) {
     exec: execRun,
     grants: docGrants,
     reach: docReach,
+    onGrantsChanged: releaseDocsIfIdle,
     onSnapshot: (snapshot) => {
       const frame = emitDocsSnapshot(snapshot);
       for (const c of clients.values()) if (c.authed && c.watchingDocs) c.send(frame);
@@ -368,7 +363,7 @@ export function startWsServer(opts: ServerOpts) {
   });
   https.on("close", () => {
     docsService.stop();
-    docHttp.close();
+    void docListener.close();
   });
 
   const countDocsWatchers = (): number => {

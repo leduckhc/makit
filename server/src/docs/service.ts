@@ -39,6 +39,12 @@ export interface DocsServiceDeps {
   grants: DocGrantStore;
   /** Establish/reuse a verified reachable origin for the doc listener (D10/D15). */
   reach: () => Promise<DocReach | null>;
+  /**
+   * Called after anything that can leave the grant set empty (a revoke, or a
+   * list that reaped the last expired grant). `server.ts` uses it to release the
+   * lazily-bound doc port, so an expiry frees it without a timer (D10 rev 2).
+   */
+  onGrantsChanged?: () => void;
   onSnapshot: (snapshot: DocsSnapshotDTO) => void;
   now: () => number;
   /** One-shot `setTimeout`-shaped: the debounce, NOT a repeating cadence. */
@@ -178,10 +184,16 @@ export class DocsService implements DocsCommandPort {
   }
 
   unpublish(grantId: string): boolean {
-    return this.deps.grants.revoke(grantId);
+    const removed = this.deps.grants.revoke(grantId);
+    this.deps.onGrantsChanged?.();
+    return removed;
   }
 
   grants(): DocGrantDTO[] {
-    return this.deps.grants.list();
+    // `list()` reaps expired/idle grants on the way through, so this is also the
+    // moment a TTL expiry can leave the set empty.
+    const live = this.deps.grants.list();
+    this.deps.onGrantsChanged?.();
+    return live;
   }
 }
