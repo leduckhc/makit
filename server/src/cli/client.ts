@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { makitHome } from "../daemon/paths.js";
 import type { CliGrantData, ControlResponse, ControlVerb } from "../daemon/protocol.js";
-import type { SessionDTO } from "../protocol.js";
+import type { ProjectDTO, SessionDTO } from "../protocol.js";
 
 export interface OpenClientOpts {
   host: string;
@@ -46,6 +46,8 @@ export interface MakitClient {
   cmd(kind: string, fields?: Record<string, unknown>): Promise<Record<string, unknown>>;
   /** Resolve with the cached `sessions.snapshot`, or the next one pushed. */
   awaitSnapshot(): Promise<SessionsSnapshot>;
+  /** Resolve with the cached `projects.snapshot`, or the next one pushed. */
+  awaitProjects(): Promise<ProjectDTO[]>;
   /** Send a raw frame (`sub`, `srv.response`, …) with no reply correlation. */
   send(frame: Record<string, unknown>): void;
   /**
@@ -80,6 +82,8 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
     let helloPending: Pending | undefined;
     let snapshot: SessionsSnapshot | undefined;
     let snapshotWaiter: ((s: SessionsSnapshot) => void) | undefined;
+    let projects: ProjectDTO[] | undefined;
+    let projectsWaiter: ((p: ProjectDTO[]) => void) | undefined;
     let frameCb: ((frame: Record<string, unknown>) => void) | undefined;
     /**
      * Frames that arrived before a caller registered `onFrame`. `hello` is sent
@@ -142,6 +146,11 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
         emit(m);
         return;
       }
+      if (m.t === "event" && m.kind === "projects.snapshot") {
+        projects = (m.projects as ProjectDTO[]) ?? [];
+        projectsWaiter?.(projects);
+        projectsWaiter = undefined;
+      }
       if (m.t === "event" && m.kind === "sessions.snapshot") {
         snapshot = { sessions: (m.sessions as SessionDTO[]) ?? [], frame: m };
         snapshotWaiter?.(snapshot);
@@ -172,6 +181,13 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
           if (closed) return Promise.reject(new Error("client closed"));
           return new Promise((res) => {
             snapshotWaiter = res;
+          });
+        },
+        awaitProjects() {
+          if (projects) return Promise.resolve(projects);
+          if (closed) return Promise.reject(new Error("client closed"));
+          return new Promise((res) => {
+            projectsWaiter = res;
           });
         },
         send(frame) {

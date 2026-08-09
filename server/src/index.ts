@@ -74,11 +74,11 @@ function makeDaemon() {
 async function main() {
   const cmd = process.argv[2];
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "attach", ...LIFECYCLE]);
+  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "new", "attach", ...LIFECYCLE]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
-        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|attach [...]`,
+        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|new|attach [...]`,
     );
     process.exit(2);
   }
@@ -106,6 +106,14 @@ async function main() {
     if (cmd === "sessions") console.error("[makit] `makit sessions` is deprecated — use `makit ls`");
     const { runLs } = await import("./cli/ls.js");
     await runLs(process.argv.slice(3));
+    return;
+  }
+
+  // `new` starts a session from the terminal: a worktree, a draft session, and
+  // (with -m) the first message that promotes it (SPEC-46 D4/D15).
+  if (cmd === "new") {
+    const { runNew } = await import("./cli/new.js");
+    await runNew(process.argv.slice(3));
     return;
   }
 

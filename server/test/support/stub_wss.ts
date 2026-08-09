@@ -16,6 +16,8 @@ export interface StubWssOpts {
   acceptBearer?: string;
   /** Pushed as a `sessions.snapshot` event right after `hello.ack`. */
   sessions?: unknown[];
+  /** Pushed as a `projects.snapshot` event right after `hello.ack`. */
+  projects?: unknown[];
   /** Called for each `cmd` frame; returns the ack payload to merge into the reply. */
   onCmd?: (m: Record<string, unknown>) => Record<string, unknown>;
 }
@@ -47,6 +49,9 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
           return;
         }
         ws.send(JSON.stringify({ t: "hello.ack", id: m.id, ok: true, deviceId: "d1" }));
+        if (opts.projects) {
+          ws.send(JSON.stringify({ t: "event", id: "psnap", kind: "projects.snapshot", projects: opts.projects }));
+        }
         if (opts.sessions) {
           ws.send(JSON.stringify({ t: "event", id: "snap", kind: "sessions.snapshot", sessions: opts.sessions }));
         }
