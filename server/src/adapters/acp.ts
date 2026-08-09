@@ -191,7 +191,14 @@ export class AcpAdapter extends SubprocessAdapter {
     // the SDK rejects the handshake with "ACP connection closed", which tells
     // the user nothing about the actual cause (a missing binary / a PATH that
     // does not contain it).
-    if (this.spawnsRealBinary && !onPath(this.spec.command)) {
+    //
+    // Resolve against the child's actual PATH, not the parent's: `spawnLineProcess`
+    // spawns with `{ ...process.env, ...opts.env }`, so an `opts.env.PATH` (or
+    // `spec.env.PATH`) override reaches the child. Passing the merged env here
+    // means a caller that widens PATH for the child is not spuriously rejected,
+    // and one that narrows it is caught before the useless SDK handshake error.
+    const preflightEnv = { ...process.env, ...env };
+    if (this.spawnsRealBinary && !onPath(this.spec.command, preflightEnv)) {
       throw new Error(
         `${this.spec.command} was not found on PATH — install it, or start makit from a shell where it resolves`,
       );

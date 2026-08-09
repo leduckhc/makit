@@ -99,6 +99,24 @@ test("resolveBinPath returns an absolute path for a resolvable binary, undefined
   assert.equal(resolveBinPath("definitely-not-a-real-binary-xyz"), undefined);
 });
 
+test("resolveBinPath / onPath honor an explicit env.PATH override", () => {
+  // The child that AcpAdapter spawns runs with `{ ...process.env, ...opts.env }`
+  // as its env, so a caller that widens PATH via opts.env must not be rejected
+  // by a preflight that reads only the parent process PATH. Mirror that: the
+  // env-scoped lookup finds a bin the process PATH does not, and misses one it
+  // deliberately excludes.
+  const bin = fakeBin("makit-resolve-test");
+  const dir = bin.slice(0, bin.lastIndexOf("/"));
+  assert.equal(resolveBinPath("makit-resolve-test", { PATH: dir }), bin);
+  assert.equal(onPath("makit-resolve-test", { PATH: dir }), true);
+  assert.equal(
+    resolveBinPath("makit-resolve-test", { PATH: "/usr/bin:/bin" }),
+    undefined,
+    "a PATH that excludes the dir must NOT resolve the bin",
+  );
+  assert.equal(onPath("makit-resolve-test", { PATH: "/usr/bin:/bin" }), false);
+});
+
 // ---------- fingerprint (SPEC-27) ------------------------------------------
 
 /** Create a fake config file with given contents and return its path. */

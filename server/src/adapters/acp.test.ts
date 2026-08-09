@@ -794,6 +794,42 @@ test("acp start fails with the missing binary's name, not a bare connection clos
   );
 });
 
+test("acp start preflight honors spec.env.PATH — not just the parent process PATH", async () => {
+  // `spawnLineProcess` runs the child with `{ ...process.env, ...opts.env }`
+  // as its env, so a spec-supplied PATH reaches the child. The preflight must
+  // mirror that: a bin only reachable via spec.env.PATH must not be falsely
+  // rejected as "not found on PATH". Otherwise a caller that intentionally
+  // widens PATH for the child never gets past start().
+  const dir = mkdtempSync(join(tmpdir(), "makit-acp-preflight-"));
+  const bin = join(dir, "makit-preflight-bin");
+  writeFileSync(bin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const savedPath = process.env.PATH;
+  process.env.PATH = "/usr/bin:/bin:/usr/sbin:/sbin"; // launchd-minimal
+  try {
+    const adapter = new AcpAdapter({
+      spec: { agent: "pi", command: "makit-preflight-bin", env: { PATH: dir } },
+    });
+    // The bin exits immediately so the SDK will fail the handshake with
+    // "ACP connection closed" — which is exactly the failure we want to reach,
+    // proving the preflight passed. Rejecting with "not found on PATH" would
+    // mean the preflight ignored spec.env.PATH.
+    await assert.rejects(
+      () => adapter.start({ cwd: process.cwd(), sessionId: "makit-1" }),
+      (e: Error) => {
+        assert.doesNotMatch(
+          e.message,
+          /not found on PATH/,
+          "preflight must consult spec.env.PATH",
+        );
+        return true;
+      },
+    );
+  } finally {
+    process.env.PATH = savedPath;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---- SPEC-26: ACP session config options ----------------------------------
 
 /** Build an adapter paired with an agent whose newSession returns `res`. */

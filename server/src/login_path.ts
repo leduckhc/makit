@@ -42,14 +42,19 @@ export interface LoginPathOptions {
   run?: (shell: string, args: string[]) => string;
 }
 
-/** Whether `path` carries nothing but launchd's system dirs (or is absent). */
+/** Whether `path` carries nothing but launchd's system dirs (or is absent).
+ *
+ * An empty PATH entry is POSIX-significant — it means “search the current
+ * working directory” — so a PATH like `/usr/bin:/bin:` is NOT system-only:
+ * a user who set it that way is expressing an intent we must not silently
+ * overwrite. We therefore classify any PATH that survives split with an empty
+ * entry as non-minimal. A completely absent or empty PATH still counts as
+ * minimal so a launchd-launched process with no PATH at all is repaired.
+ */
 export function isMinimalPath(path: string | undefined): boolean {
-  const dirs = (path ?? "")
-    .split(delimiter)
-    .map((d) => d.trim().replace(/\/+$/, ""))
-    .filter(Boolean);
-  if (dirs.length === 0) return true;
-  return dirs.every((d) => SYSTEM_ONLY_DIRS.has(d));
+  if (path === undefined || path === "") return true;
+  const dirs = path.split(delimiter).map((d) => d.trim().replace(/\/+$/, ""));
+  return dirs.every((d) => d.length > 0 && SYSTEM_ONLY_DIRS.has(d));
 }
 
 /**

@@ -22,6 +22,15 @@ test("isMinimalPath: one user dir is enough to be a real PATH", () => {
   assert.equal(isMinimalPath("/usr/bin:/bin:/Users/me/.local/bin"), false);
 });
 
+test("isMinimalPath: an empty PATH entry (POSIX PWD marker) is not minimal", () => {
+  // A trailing colon on POSIX means “also search the current directory”, and
+  // an intermediate empty entry means the same. A user (or their rc file) who
+  // set PATH this way is expressing intent, so we must not silently replace it.
+  assert.equal(isMinimalPath("/usr/bin:/bin:"), false);
+  assert.equal(isMinimalPath(":/usr/bin:/bin"), false);
+  assert.equal(isMinimalPath("/usr/bin::/bin"), false);
+});
+
 test("loginShellPath: extracts the PATH between markers, ignoring rc-file noise", () => {
   const seen: Array<{ shell: string; args: string[] }> = [];
   const got = loginShellPath({
