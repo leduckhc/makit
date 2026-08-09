@@ -76,14 +76,14 @@ async function main() {
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
   const KNOWN = new Set([
     "serve", "pair", "qr", "devices", "ls", "sessions",
-    "new", "send", "tail", "resume", "rm", "handoff", "attach",
+    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "attach",
     ...LIFECYCLE,
   ]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
         `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|` +
-        `ls|new|send|tail|resume|rm|handoff|attach [...]`,
+        `ls|new|send|tail|resume|rm|wait|run|handoff|attach [...]`,
     );
     process.exit(2);
   }
@@ -119,6 +119,19 @@ async function main() {
   if (cmd === "new") {
     const { runNew } = await import("./cli/new.js");
     await runNew(process.argv.slice(3));
+    return;
+  }
+
+  // `wait` blocks until a session's turn ends, and says how in its exit code
+  // (SPEC-46 D8). `run` is `new` + `wait` + print, the shape automation wants.
+  if (cmd === "wait") {
+    const { runWait } = await import("./cli/wait.js");
+    await runWait(process.argv.slice(3));
+    return;
+  }
+  if (cmd === "run") {
+    const { runRun } = await import("./cli/run.js");
+    await runRun(process.argv.slice(3));
     return;
   }
 

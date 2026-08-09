@@ -11,6 +11,7 @@
  * `renderEvent`, the same renderer `attach` uses, so the two cannot drift.
  */
 import { renderEvent, type RenderState } from "./render.js";
+import { stdout } from "./out.js";
 import { connectCli } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 import type { SessionEvent } from "../protocol.js";
@@ -83,7 +84,7 @@ export async function runTail(argv: string[]): Promise<void> {
         } else {
           const r = renderEvent(e, st);
           st = r.st;
-          if (r.out) process.stdout.write(r.out);
+          if (r.out) stdout.write(r.out);
         }
       }
     });

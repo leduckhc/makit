@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { cliCredentialPath } from "../../src/cli/client.js";
+import { stdout } from "../../src/cli/out.js";
 import { createControlServer, type ControlBackend } from "../../src/daemon/control-server.js";
 import { controlSocketPath } from "../../src/daemon/paths.js";
 
@@ -69,9 +70,13 @@ export interface Captured {
 }
 
 /**
- * Capture stdout (both `console.log` and raw `process.stdout.write`, which
- * `renderEvent` uses), stderr, and the exit code of one CLI run. `process.exit`
+ * Capture stdout (`console.log` plus the `cli/out.ts` seam that `renderEvent`
+ * output goes through), stderr, and the exit code of one CLI run. `process.exit`
  * is turned into a throw so the run unwinds instead of killing the test process.
+ *
+ * It deliberately does **not** touch `process.stdout.write`: `node --test`
+ * writes its own result stream there, and swallowing it drops whole tests from
+ * the report — the file then fails with no diagnostic at all.
  */
 export async function captureCli(run: () => Promise<void>): Promise<Captured> {
   let out = "";
@@ -79,7 +84,7 @@ export async function captureCli(run: () => Promise<void>): Promise<Captured> {
   let code = 0;
   const origLog = console.log;
   const origErr = console.error;
-  const origWrite = process.stdout.write;
+  const origWrite = stdout.write;
   const origExit = process.exit;
   console.log = (...a: unknown[]) => {
     out += a.join(" ") + "\n";
@@ -89,10 +94,9 @@ export async function captureCli(run: () => Promise<void>): Promise<Captured> {
     err += a.join(" ") + "\n";
     return true;
   };
-  process.stdout.write = ((chunk: unknown) => {
-    out += typeof chunk === "string" ? chunk : String(chunk);
-    return true;
-  }) as typeof process.stdout.write;
+  stdout.write = (chunk: string) => {
+    out += chunk;
+  };
   process.exit = ((c?: number) => {
     code = c ?? 0;
     throw new Error(`__exit__:${c}`);
@@ -104,7 +108,7 @@ export async function captureCli(run: () => Promise<void>): Promise<Captured> {
   } finally {
     console.log = origLog;
     console.error = origErr;
-    process.stdout.write = origWrite;
+    stdout.write = origWrite;
     process.exit = origExit;
   }
   return { out, err, code };

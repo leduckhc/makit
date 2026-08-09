@@ -41,11 +41,22 @@ export interface StubWss {
   close: () => Promise<void>;
 }
 
-export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
-  const pems = await selfsigned.generate([{ name: "commonName", value: "makit" }], {
+/**
+ * One self-signed key pair per test process. RSA keygen is slow and occasionally
+ * takes seconds, and a fresh cert per stub added that cost to every CLI test —
+ * the client does not verify it anyway (loopback, `rejectUnauthorized: false`).
+ */
+let pemsOnce: Promise<{ cert: string; private: string }> | undefined;
+function testPems(): Promise<{ cert: string; private: string }> {
+  pemsOnce ??= selfsigned.generate([{ name: "commonName", value: "makit" }], {
     keySize: 2048,
     algorithm: "sha256",
   });
+  return pemsOnce;
+}
+
+export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
+  const pems = await testPems();
   const https: Server = createServer({ cert: pems.cert, key: pems.private });
   const wss = new WebSocketServer({ server: https });
   const live = new Set<WsSocket>();

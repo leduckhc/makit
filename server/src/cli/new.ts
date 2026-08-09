@@ -16,6 +16,7 @@
  */
 import { connectCli } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
+import type { MakitClient } from "./client.js";
 import type { ProjectDTO } from "../protocol.js";
 
 export interface ConfigPick {
@@ -80,35 +81,50 @@ function resolveProject(projects: ProjectDTO[], wanted?: string): string {
   return failUsage(`several projects (${names}) — name one with --project`);
 }
 
+export interface SpawnedSession {
+  sessionId: string;
+  worktreePath: string;
+  branch?: string;
+}
+
+/**
+ * The worktree + spawn half of `new`, without the first message: `makit run`
+ * (T17) needs to subscribe *between* the spawn and the message so it cannot miss
+ * the turn it is about to wait for.
+ */
+export async function spawnFromArgs(client: MakitClient, args: NewArgs): Promise<SpawnedSession> {
+  const projectId = resolveProject(await client.awaitProjects(), args.projectId);
+
+  // D15: a worktree unless the user explicitly asked to stay put. A non-git
+  // repo or an unborn HEAD degrades to the repo dir server-side, with a null
+  // branch — which must be omitted rather than forwarded as null.
+  let worktreePath = process.cwd();
+  let branch: string | undefined;
+  if (!args.here) {
+    const created = await client.cmd("worktree.create", {
+      projectId,
+      branchName: args.branch ?? args.message,
+      baseBranch: args.base,
+    });
+    worktreePath = String(created.path);
+    branch = typeof created.branch === "string" ? created.branch : undefined;
+  }
+
+  const spawned = await client.cmd("session.spawn", {
+    projectId,
+    agent: args.agent,
+    worktreePath,
+    branch,
+    configOptions: args.configOptions.length ? args.configOptions : undefined,
+  });
+  return { sessionId: String(spawned.sessionId), worktreePath, branch };
+}
+
 export async function runNew(argv: string[]): Promise<void> {
   const args = parseNewArgs(argv);
   const client = await connectCli(args);
   try {
-    const projectId = resolveProject(await client.awaitProjects(), args.projectId);
-
-    // D15: a worktree unless the user explicitly asked to stay put. A non-git
-    // repo or an unborn HEAD degrades to the repo dir server-side, with a null
-    // branch — which must be omitted rather than forwarded as null.
-    let worktreePath = process.cwd();
-    let branch: string | undefined;
-    if (!args.here) {
-      const created = await client.cmd("worktree.create", {
-        projectId,
-        branchName: args.branch ?? args.message,
-        baseBranch: args.base,
-      });
-      worktreePath = String(created.path);
-      branch = typeof created.branch === "string" ? created.branch : undefined;
-    }
-
-    const spawned = await client.cmd("session.spawn", {
-      projectId,
-      agent: args.agent,
-      worktreePath,
-      branch,
-      configOptions: args.configOptions.length ? args.configOptions : undefined,
-    });
-    const sessionId = String(spawned.sessionId);
+    const { sessionId, worktreePath, branch } = await spawnFromArgs(client, args);
 
     // The first message is what promotes the draft; without one the session
     // stays pending, exactly as a session spawned from the app does.
