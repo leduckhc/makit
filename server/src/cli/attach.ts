@@ -8,16 +8,17 @@
  * live in both directions — type in the terminal, see it on the phone, and
  * vice-versa — with no second pi process fighting over the session file.
  *
- * Auth: reuses a paired device bearer from ~/.makit/devices.json. `makit attach`
- * runs on the same host as the server, so reading that file is no weaker than
- * the trust the local user already has.
+ * Auth: the CLI's own device credential (SPEC-46 D2) — `MAKIT_CLI_TOKEN` for an
+ * agent inside a session, else `~/.makit/cli.json`, minted via `cli.grant` on
+ * first use. It no longer borrows the *phone's* bearer from `devices.json`, so
+ * revoking the phone leaves the terminal working and vice-versa.
  */
-import { WebSocket } from "ws";
 import { createInterface, type Interface } from "node:readline";
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { renderEvent, type RenderState } from "./render.js";
+import { openClient, resolveBearer, AuthError, type MakitClient } from "./client.js";
+import { requireDaemon } from "./require-daemon.js";
+import { controlSocketPath } from "../daemon/paths.js";
+import { EXIT_AUTH } from "./exit-codes.js";
 
 interface AttachArgs {
   host: string;
@@ -40,20 +41,39 @@ function parseAttachArgs(argv: string[]): AttachArgs {
   return a;
 }
 
-export function readBearer(): string {
-  const f = join(homedir(), ".makit", "devices.json");
-  let arr: unknown;
+/**
+ * Connect to a running makit as the CLI's own device: probe the control socket
+ * first (so a dead daemon is exit `3`, C4), resolve the credential there, then
+ * open the WSS socket and `hello`. Any credential the server refuses is exit `4`.
+ */
+export async function connectAttach(args: { host: string; port: number }): Promise<MakitClient> {
+  const failAuth = (message: string): never => {
+    console.error(`[makit] ${message}`);
+    return process.exit(EXIT_AUTH);
+  };
+  const control = await requireDaemon(controlSocketPath());
+  let bearer: string;
   try {
-    arr = JSON.parse(readFileSync(f, "utf8"));
-  } catch {
-    throw new Error(`could not read ${f} — pair the app first`);
+    bearer = await resolveBearer(control);
+  } catch (e) {
+    return failAuth((e as Error).message);
+  } finally {
+    control.close();
   }
-  if (!Array.isArray(arr) || arr.length === 0) {
-    throw new Error("no paired devices — pair the app first, then retry");
+
+  let client: MakitClient;
+  try {
+    client = await openClient({ host: args.host, port: args.port, bearer });
+  } catch (e) {
+    return failAuth(`could not connect to ${args.host}:${args.port} — ${(e as Error).message}`);
   }
-  const bearer = (arr[0] as { bearer?: string }).bearer;
-  if (!bearer) throw new Error("no bearer in devices.json");
-  return bearer;
+  try {
+    await client.hello();
+  } catch (e) {
+    client.close();
+    return failAuth(e instanceof AuthError ? e.message : (e as Error).message);
+  }
+  return client;
 }
 
 interface SessionDTO {
@@ -70,10 +90,7 @@ interface ProjectDTO {
 
 export async function runAttach(argv: string[]): Promise<void> {
   const args = parseAttachArgs(argv);
-  const bearer = readBearer();
-  const ws = new WebSocket(`wss://${args.host}:${args.port}`, {
-    rejectUnauthorized: false,
-  });
+  const client = await connectAttach(args);
 
   let st: RenderState = {};
   let sessions: SessionDTO[] = [];
@@ -86,9 +103,7 @@ export async function runAttach(argv: string[]): Promise<void> {
   let promptChain: Promise<void> = Promise.resolve(); // serialize srv.requests
   const rl: Interface = createInterface({ input: process.stdin, output: process.stdout });
 
-  const send = (o: unknown) => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
-  };
+  const send = (o: Record<string, unknown>) => client.send(o);
   const ask = (q: string): Promise<string> =>
     new Promise((resolve) => rl.question(q, resolve));
   const C = {
@@ -99,23 +114,12 @@ export async function runAttach(argv: string[]): Promise<void> {
   };
   const s = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
 
-  ws.on("open", () => send({ v: 1, t: "hello", id: "h", bearer }));
-  ws.on("error", (e: Error) => {
-    console.error(`[makit] connection error: ${e.message}`);
-    process.exit(1);
-  });
-  ws.on("close", () => {
+  client.onClose(() => {
     console.log("\n[makit] disconnected.");
     process.exit(quitting ? 0 : 1);
   });
 
-  ws.on("message", (buf: Buffer) => {
-    let m: Record<string, unknown>;
-    try {
-      m = JSON.parse(buf.toString());
-    } catch {
-      return;
-    }
+  client.onFrame((m) => {
     if (m.kind === "projects.snapshot") {
       projects = (m.projects as ProjectDTO[]) ?? [];
       return;
@@ -204,7 +208,7 @@ export async function runAttach(argv: string[]): Promise<void> {
     });
     rl.on("SIGINT", () => {
       quitting = true;
-      ws.close();
+      client.close();
       process.exit(0);
     });
   }

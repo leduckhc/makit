@@ -46,6 +46,15 @@ export interface MakitClient {
   cmd(kind: string, fields?: Record<string, unknown>): Promise<Record<string, unknown>>;
   /** Resolve with the cached `sessions.snapshot`, or the next one pushed. */
   awaitSnapshot(): Promise<SessionsSnapshot>;
+  /** Send a raw frame (`sub`, `srv.response`, …) with no reply correlation. */
+  send(frame: Record<string, unknown>): void;
+  /**
+   * Every frame this client did not answer itself: events, `srv.request`, and
+   * acks nobody is awaiting. The streaming verbs (`attach`, `tail`) live here.
+   */
+  onFrame(cb: (frame: Record<string, unknown>) => void): void;
+  /** Called once when the socket closes, however it closed. */
+  onClose(cb: () => void): void;
   /** Close the socket and reject anything in flight. Idempotent. */
   close(): void;
 }
@@ -71,6 +80,19 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
     let helloPending: Pending | undefined;
     let snapshot: SessionsSnapshot | undefined;
     let snapshotWaiter: ((s: SessionsSnapshot) => void) | undefined;
+    let frameCb: ((frame: Record<string, unknown>) => void) | undefined;
+    /**
+     * Frames that arrived before a caller registered `onFrame`. `hello` is sent
+     * inside the connect step and the server pushes its snapshots immediately
+     * after `hello.ack`, so without this buffer a streaming caller would miss
+     * the very frames it connected for.
+     */
+    const early: Record<string, unknown>[] = [];
+    const emit = (m: Record<string, unknown>) => {
+      if (frameCb) frameCb(m);
+      else early.push(m);
+    };
+    let closeCb: (() => void) | undefined;
     let closed = false;
     let seq = 0;
 
@@ -105,7 +127,9 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
         if (p) {
           pending.delete(id);
           p.reject(new Error(message));
+          return;
         }
+        emit(m);
         return;
       }
       if (m.t === "ack") {
@@ -113,15 +137,17 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
         if (p) {
           pending.delete(id);
           p.resolve(m);
+          return;
         }
+        emit(m);
         return;
       }
       if (m.t === "event" && m.kind === "sessions.snapshot") {
         snapshot = { sessions: (m.sessions as SessionDTO[]) ?? [], frame: m };
         snapshotWaiter?.(snapshot);
         snapshotWaiter = undefined;
-        return;
       }
+      emit(m);
     });
 
     ws.on("open", () => {
@@ -148,6 +174,16 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
             snapshotWaiter = res;
           });
         },
+        send(frame) {
+          if (!closed && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ v: 1, ...frame }));
+        },
+        onFrame(cb) {
+          frameCb = cb;
+          for (const m of early.splice(0)) cb(m);
+        },
+        onClose(cb) {
+          closeCb = cb;
+        },
         close() {
           if (closed) return;
           closed = true;
@@ -166,6 +202,7 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
     ws.on("close", () => {
       closed = true;
       failAll(new Error("connection closed"));
+      closeCb?.();
     });
   });
 }
