@@ -321,7 +321,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                               )
                             : (trailer == TranscriptTrailer.ask
                                   ? AskCard(ask: pendingAsk!)
-                                  : const WorkingIndicator());
+                                  : WorkingIndicator(sessionId: sessionId));
                         // Center each row within the same readable-width cap as
                         // the composer, so the transcript column lines up with the
                         // input instead of stretching edge-to-edge. The ListView
