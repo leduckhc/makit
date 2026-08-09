@@ -937,6 +937,10 @@ export class SessionManager extends EventEmitter {
    */
   async promotePendingSession(session: Session, firstMessage: string): Promise<boolean> {
     if (!session.pending) return true;
+    // Name the harness in any failure. Promotion only STARTS the agent — the
+    // worktree was already created at draft time — so the error must not blame
+    // git for what is almost always a missing/failing agent binary.
+    const agentId = session.lifecycle.phase === "draft" ? session.lifecycle.agent : session.agent;
     // Collapse concurrent first-message promotions onto one in-flight promise:
     // two callers both seeing phase "draft" must NOT each create a worktree +
     // adapter. The second caller awaits the same result the first produces.
@@ -948,7 +952,7 @@ export class SessionManager extends EventEmitter {
         await this.startPendingSession(session.id, firstMessage);
         return true;
       } catch (e) {
-        session.recordError(`could not create worktree: ${(e as Error).message}`);
+        session.recordError(`could not start ${agentId}: ${(e as Error).message}`);
         return false;
       }
     })();

@@ -777,6 +777,23 @@ test("acp defaultConnect routes a spawn failure to onExit instead of crashing th
   assert.equal(code, null);
 });
 
+test("acp start fails with the missing binary's name, not a bare connection close", async () => {
+  // A GUI-launched daemon inherits launchd's PATH, so `pi-acp` does not resolve
+  // and the SDK rejects the handshake with the useless "ACP connection closed".
+  // The user needs to be told WHICH binary is missing.
+  const adapter = new AcpAdapter({
+    spec: { agent: "pi", command: "makit-nonexistent-binary-xyz" },
+  });
+  await assert.rejects(
+    () => adapter.start({ cwd: process.cwd(), sessionId: "makit-1" }),
+    (e: Error) => {
+      assert.match(e.message, /makit-nonexistent-binary-xyz/, "names the binary");
+      assert.match(e.message, /not found on PATH/, "says what is wrong");
+      return true;
+    },
+  );
+});
+
 // ---- SPEC-26: ACP session config options ----------------------------------
 
 /** Build an adapter paired with an agent whose newSession returns `res`. */
