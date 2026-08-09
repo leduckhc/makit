@@ -17,7 +17,7 @@ import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
 import { sessionTokens } from "./ws/session_tokens.js";
 import { DEFAULT_SESSION_TITLE, type ApprovalPolicy, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO, type SessionEvent, type SessionOrigin } from "./protocol.js";
-import { spawnBoundError, type LineageNode } from "./lineage.js";
+import { spawnBoundError, spawnDepth, type LineageNode } from "./lineage.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
 import { buildAdapter, piAcpSpec } from "./agent_factory.js";
@@ -368,11 +368,25 @@ export class SessionManager extends EventEmitter {
    * killed ones are gone) — never from the forgeable `MAKIT_SPAWN_DEPTH`.
    */
   checkSpawnBounds(parentId: string): string | null {
+    return spawnBoundError(parentId, this.lineageNodes());
+  }
+
+  /**
+   * How deep a session sits in the spawn tree: 0 for one nobody handed off, +1
+   * per ancestor link. Display only (D9) — the guard above is the enforcement.
+   */
+  private sessionDepth(sessionId: string): number {
+    const parentId = this.sessions.get(sessionId)?.parentId;
+    return parentId ? spawnDepth(parentId, this.lineageNodes()) : 0;
+  }
+
+  /** Every session's lineage fact, for the depth/fan-out walks. */
+  private lineageNodes(): Map<string, LineageNode> {
     const nodes = new Map<string, LineageNode>();
     for (const s of this.sessions.values()) {
       nodes.set(s.id, { id: s.id, parentId: s.parentId, archived: s.archived });
     }
-    return spawnBoundError(parentId, nodes);
+    return nodes;
   }
 
   /**
@@ -1287,10 +1301,7 @@ export class SessionManager extends EventEmitter {
     if (opts.backfill && opts.backfill.length > 0) session.backfill(opts.backfill);
 
     await activeAdapter.start(
-      this.startOpts(project.dto.path, session.id, opts.resumeSessionPath, undefined, {
-        projectId: project.dto.id,
-        worktree: session.worktreePath,
-      }),
+      this.startOpts(project.dto.path, session.id, opts.resumeSessionPath),
     );
     // Persist the live adapter's native session/thread id for restart-resume.
     session.captureAgentSessionId();
@@ -1308,16 +1319,21 @@ export class SessionManager extends EventEmitter {
     sessionId: string,
     resumeSessionPath?: string,
     resumeAgentSessionId?: string,
-    lineage?: { projectId: string; worktree?: string },
   ): import("./adapters/adapter.js").SpawnOpts {
+    // Lineage is read from the session, not passed in: three call sites launch an
+    // adapter (draft promotion, spawn-with-backfill, re-attach) and the one that
+    // every app and CLI session actually takes used to pass nothing, so the agent
+    // got an empty MAKIT_PROJECT_ID and a depth of 0 however deep it really was.
+    const session = this.sessions.get(sessionId);
     // SPEC-46 D3: the agent's environment carries a per-session scoped credential
     // plus its lineage context. The token is minted here (and re-minted on
     // re-attach, which drops the old one first) because env is a spawn-time
     // snapshot — it cannot be rotated in a running process, so its lifecycle is
     // tied to the adapter's. `MAKIT_SESSION_ID` was already injected; the rest
-    // is additive. `MAKIT_SPAWN_DEPTH` is display-only (D9: the server recomputes
-    // depth from persisted lineage and ignores a forged value); it is 0 until
-    // the lineage counter lands (T11).
+    // is additive. `MAKIT_SPAWN_DEPTH` is display-only (D9: the guard recomputes
+    // depth from persisted lineage and ignores a forged value) — which is exactly
+    // why the value handed out must still be honest: an agent reads it to decide
+    // whether handing off again is reasonable.
     return {
       cwd: projectPath,
       sessionId,
@@ -1330,9 +1346,9 @@ export class SessionManager extends EventEmitter {
             MAKIT_BRIDGE_TOKEN: this.bridge.token,
             MAKIT_SESSION_ID: sessionId,
             MAKIT_CLI_TOKEN: sessionTokens.mint(sessionId),
-            MAKIT_PROJECT_ID: lineage?.projectId ?? "",
-            MAKIT_WORKTREE: lineage?.worktree ?? projectPath,
-            MAKIT_SPAWN_DEPTH: "0",
+            MAKIT_PROJECT_ID: session?.projectId ?? "",
+            MAKIT_WORKTREE: session?.worktreePath ?? projectPath,
+            MAKIT_SPAWN_DEPTH: String(this.sessionDepth(sessionId)),
           }
         : undefined,
       extensions: this.bridge ? this.bridge.extensionPaths : [],
@@ -1457,10 +1473,7 @@ export class SessionManager extends EventEmitter {
       // old credential stops authenticating the instant it is superseded.
       sessionTokens.drop(session.id);
       await adapter.start(
-        this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId, {
-          projectId: session.projectId,
-          worktree: session.worktreePath,
-        }),
+        this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId),
       );
     } catch (e) {
       // Roll back to the cold placeholder. Leaving a never-started adapter in

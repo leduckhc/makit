@@ -2358,3 +2358,48 @@ test("a replaced adapter can no longer feed the session it was swapped out of", 
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test("SPEC-46 D9: MAKIT_SPAWN_DEPTH reports the session's real depth (display only)", async () => {
+  // D9 makes the *guard* recompute depth server-side and ignore this variable,
+  // precisely because an agent can forge it. That is exactly why it must still be
+  // honest: an agent reads it to decide whether to hand off again, and a value
+  // hardcoded to 0 tells every descendant it is a root.
+  const cwd = process.cwd();
+  const started: SpawnOpts[] = [];
+  const manager = new SessionManager({
+    projects: [cwd],
+    adapterFactory: () => stubAdapter(started),
+  });
+  // env is only injected once a bridge exists (it carries the agent's credentials).
+  manager.setBridge({ url: "http://127.0.0.1:1", token: "bridge-token", extensionPaths: [] });
+  const projectId = manager.listProjects()[0].id;
+
+  const root = await manager.spawnPendingSession(projectId, "stub", cwd, undefined, undefined, {
+    origin: "cli",
+  });
+  await manager.promotePendingSession(root, "root");
+
+  const child = await manager.spawnPendingSession(projectId, "stub", cwd, undefined, undefined, {
+    parentId: root.id,
+    origin: "agent",
+  });
+  await manager.promotePendingSession(child, "child");
+
+  const grandchild = await manager.spawnPendingSession(projectId, "stub", cwd, undefined, undefined, {
+    parentId: child.id,
+    origin: "agent",
+  });
+  await manager.promotePendingSession(grandchild, "grandchild");
+
+  const envOf = (sessionId: string) => started.find((o) => o.sessionId === sessionId)?.env;
+  assert.equal(envOf(root.id)?.MAKIT_SPAWN_DEPTH, "0", "a root session is at depth 0");
+  assert.equal(envOf(child.id)?.MAKIT_SPAWN_DEPTH, "1");
+  assert.equal(envOf(grandchild.id)?.MAKIT_SPAWN_DEPTH, "2");
+
+  // The same launch path owes the agent the rest of its context (D3). This is
+  // the *draft promotion* path — the one every app and CLI session takes — so an
+  // empty MAKIT_PROJECT_ID here means `makit handoff` cannot resolve its own
+  // project from the environment at all.
+  assert.equal(envOf(child.id)?.MAKIT_PROJECT_ID, projectId);
+  assert.equal(envOf(child.id)?.MAKIT_WORKTREE, cwd);
+});
