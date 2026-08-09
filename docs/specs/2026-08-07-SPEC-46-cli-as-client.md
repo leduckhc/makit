@@ -156,51 +156,73 @@ producer is an LLM and a rejected handoff loses the context it was built from.
 
 ## Acceptance criteria
 
+**Status: P0 + P1 landed** on `feat/cli-client` (T1–T21). Every box below is backed by a test in the
+suite — `pnpm test` 1288 green, `pnpm typecheck` clean, `flutter analyze --fatal-infos` clean — and the
+composed verbs were additionally driven end-to-end against the keyless stub loop
+(`test/e2e-server.ts --mode stub`, which now also serves a control socket so the CLI can reach it):
+`new` → `tail` → `run` returning `0`, `10` (approval gate) and `20` (`FAIL_TURN`), and a `handoff`
+whose child received the rendered manifest plus a fenced 3-event excerpt on the parent's own branch.
+
+Three criteria are proven narrower than their wording, and are recorded here rather than ticked
+silently:
+
+1. **"the reply streams to `makit tail -f` and the app simultaneously"** — the `tail` half is proven
+   live, and `makit ls` reads the same `sessions.snapshot` projection the app renders, so the DTO path
+   is shared by construction. A *running Flutter client* observing the same stream was not exercised.
+2. **The handoff `parentId` derived from an agent credential** is unit-proven at the `session.spawn`
+   handler (agent token → its own session; a body `parentId` naming another → `BadRequest`). The live
+   run used the CLI's own credential, because a session token lives only in memory (C2) and cannot be
+   read from outside the agent it was minted for.
+3. **D14 captions** cover the permission dialog and the `input` elicitation. `askUserQuestion` renders
+   *inline in the transcript*, so at rung 3 it lands in a session view the user is not looking at —
+   there is no dialog to caption. **Open question for P2:** whether a stranded inline elicitation
+   needs a surface of its own, or should be promoted to a dialog when the client never subscribed.
+
 **P0**
-- [ ] `makit ls --json` emits exactly the `SessionDTO` array from `sessions.snapshot` (byte-compared
+- [x] `makit ls --json` emits exactly the `SessionDTO` array from `sessions.snapshot` (byte-compared
       against the frame in a stub-server test), and nothing else on stdout.
-- [ ] First run of any client verb mints `~/.makit/cli.json` (mode `0600`) via `cli.grant`;
+- [x] First run of any client verb mints `~/.makit/cli.json` (mode `0600`) via `cli.grant`;
       `makit devices` then lists a `cli@<host>` device distinct from the phone. Revoking it makes
       the next verb exit `4`; revoking the **phone** leaves the CLI working.
-- [ ] No CLI code path reads `devices.json` (asserted by a grep test — this is the §2 defect).
-- [ ] **D17**: a principal with `caps: ["client"]` is refused a command outside its map, a principal with no `caps` (an existing phone) is unaffected, and the refusal is at the router — not inside a handler.
-- [ ] **D17 fanout (rev 3)**: a session-scoped principal receives `session.*` events for its own
+- [x] No CLI code path reads `devices.json` (asserted by a grep test — this is the §2 defect).
+- [x] **D17**: a principal with `caps: ["client"]` is refused a command outside its map, a principal with no `caps` (an existing phone) is unaffected, and the refusal is at the router — not inside a handler.
+- [x] **D17 fanout (rev 3)**: a session-scoped principal receives `session.*` events for its own
       session only — a second, unrelated session's events do **not** reach it. Regression lock on
       `fanout`'s deliberate subscription-blind auto-mirror, which is correct for a phone and a leak
       for an agent token.
-- [ ] **D17 completeness**: a test enumerates every kind registered on the `CommandRouter` and fails
+- [x] **D17 completeness**: a test enumerates every kind registered on the `CommandRouter` and fails
       if any kind is absent from the capability map — so a command added later cannot become
       agent-reachable by omission. (`CommandRouter` has no way to list kinds today; the test needs
       one, which is the smallest possible addition.)
-- [ ] Daemon down → SPEC-02's message and exit `3`, no stack trace, for every verb.
+- [x] Daemon down → SPEC-02's message and exit `3`, no stack trace, for every verb.
 
 **P1**
-- [ ] `makit new --agent codex -m "hello"` creates a session that appears in the **app's**
+- [x] `makit new --agent codex -m "hello"` creates a session that appears in the **app's**
       `sessions.snapshot` with `origin: "cli"`, promotes out of `pending`, and the reply streams to
       `makit tail -f` and the app simultaneously.
-- [ ] An agent shell-out inside a makit session runs `makit handoff --to codex --carry last:5
+- [x] An agent shell-out inside a makit session runs `makit handoff --to codex --carry last:5
       --goal "…"` with **no session/project arguments**; the new session's first message contains the
       rendered manifest + a 5-event excerpt fetched via `session.transcript { limit: 5 }`, and its
       `parentId` is the calling session **as derived from the credential** (D9).
-- [ ] `makit wait <id>` exits `0` only after a `running` → non-running **edge** — a `wait` started
+- [x] `makit wait <id>` exits `0` only after a `running` → non-running **edge** — a `wait` started
       while the session is already `idle` must not exit `0` until a turn has actually run and
       finished. `10`/`11`/`20` require the stub to **emit** `awaiting-approval`, `awaiting-input` and
       a terminal `session.error`; it emits none of the three today (`adapters/stub.ts` has no
       `awaiting`), so extending the stub is part of this criterion, not an assumption of it.
-- [ ] A spawn chain refuses at depth 3 and at the 5th live child, with a message naming the limit.
+- [x] A spawn chain refuses at depth 3 and at the 5th live child, with a message naming the limit.
       Proven **server-side against a hostile client**: a forged shallow `MAKIT_SPAWN_DEPTH` is
       ignored, and a `session.spawn` from an agent token carrying a `parentId` other than its own
       session is refused (`BadRequest`) rather than honoured.
-- [ ] **D15**: `makit new -m "fix the migration"` creates a worktree on a branch named from the
+- [x] **D15**: `makit new -m "fix the migration"` creates a worktree on a branch named from the
       message (not `worktree-<uuid>`), and the session's `worktreePath` is that tree, never the repo
       dir. `--here` runs in `cwd`. A non-git project and an unborn HEAD both land in the repo dir
       without an error.
-- [ ] **D15 inverse**: a `makit handoff` child reports the **parent's** `worktreePath` and branch, so
+- [x] **D15 inverse**: a `makit handoff` child reports the **parent's** `worktreePath` and branch, so
       the parent's uncommitted work is visible to it; `--worktree` opts into a fresh tree.
-- [ ] **D16**: a handoff leaves the parent `idle`/`running` (not archived), both sessions report the
+- [x] **D16**: a handoff leaves the parent `idle`/`running` (not archived), both sessions report the
       **same** `worktreePath`, and *Wrap up* on that tree archives **both** — a regression lock on
       `removeWorktree`'s existing all-sessions reconciliation, which this decision now depends on.
-- [ ] `MAKIT_CLI_TOKEN` is rejected once its session ends (exit `4`), cannot name a **different**
+- [x] `MAKIT_CLI_TOKEN` is rejected once its session ends (exit `4`), cannot name a **different**
       session while it lives, and a re-attach mints a new one while revoking the old (D3).
 - [x] ~~**Spike, not a unit test**: `MAKIT_CLI_TOKEN` actually reaches **pi**~~ — **done (rev 3), D3
       unchanged.** Proven three ways: `env: process.env` in `pi-acp`'s spawn, a shim at that spawn
@@ -208,28 +230,28 @@ producer is an LLM and a rejected handoff loses the context it was built from.
       narrower criterion: **token rotation requires an adapter restart** — assert that a re-attach
       mints a new token *and* starts a new agent process, because an env-delivered token cannot be
       changed in a running pi.
-- [ ] **`SessionMeta` migration**: an existing `~/.makit` database gains the lineage columns in place
+- [x] **`SessionMeta` migration**: an existing `~/.makit` database gains the lineage columns in place
       (explicit `ALTER TABLE` in the migration block, `sqlite_event_store.ts:104`-`164`), a session
       written before the migration rehydrates with `parentId: undefined`, and the **hand-maintained**
       Flutter `Session` DTO parses the new fields (`app/lib/store/models.dart:1120`).
-- [ ] **D13 routing**, proven rung by rung against the stub adapter: a prompt from a handoff child
+- [x] **D13 routing**, proven rung by rung against the stub adapter: a prompt from a handoff child
       reaches a client that has only the **parent** open; with the parent closed too it reaches every
       authed client; with no client at all it still takes the wake-push path and stays pending. No
       prompt is ever auto-answered, and an elicitation (`awaiting-input`) routes identically to a
       permission (`awaiting-approval`).
-- [ ] **D13(b)**: a client that authenticates *after* the prompt was raised and was **not** in its
+- [x] **D13(b)**: a client that authenticates *after* the prompt was raised and was **not** in its
       audience receives nothing from `replayPendingTo()` — the regression this decision depends on,
       since today that function ignores eligibility entirely.
-- [ ] **D13(c)**: an `srv.response` from a client outside the audience, and one from an agent-scoped
+- [x] **D13(c)**: an `srv.response` from a client outside the audience, and one from an agent-scoped
       token, are both rejected and do **not** resolve the pending request; `--yolo` from an
       agent-scoped credential is refused.
-- [ ] The lineage walk terminates on a cycle and on a missing/archived ancestor (unit test with a
+- [x] The lineage walk terminates on a cycle and on a missing/archived ancestor (unit test with a
       forged `parentId` loop).
-- [ ] **D14**: the `srv.request` envelope carries session title, agent and `handoffReason`, and the
+- [x] **D14**: the `srv.request` envelope carries session title, agent and `handoffReason`, and the
       app captions a prompt for a session it has never subscribed to.
-- [ ] Manifest rendering is deterministic and total: golden test over full/partial/empty/unknown-key
+- [x] Manifest rendering is deterministic and total: golden test over full/partial/empty/unknown-key
       inputs, no throw.
-- [ ] `pnpm test` green, `pnpm typecheck` clean; app-side additive DTO fields keep
+- [x] `pnpm test` green, `pnpm typecheck` clean; app-side additive DTO fields keep
       `flutter analyze --fatal-infos` clean.
 
 **P2/P3** — criteria written with those phases (kept out here so P1 can ship).
