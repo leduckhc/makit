@@ -380,7 +380,8 @@ destination and works out the steps.</p>
   <td>Pushing is not the point; the point is a reviewable PR. Committing and pushing were only ever
   the first two thirds of the job.</td></tr>
 <tr><td><b>no PR · 2 commits unpushed</b></td><td>Push</td><td><b>Ship it</b></td>
-  <td>Same destination, one fewer step to compose. The prompt lists two lines instead of three.</td></tr>
+  <td>Same destination, one step nearer it. The prompt is unchanged — one static wording whose
+  <code>skip any step that is already done</code> clause covers the commit it does not need.</td></tr>
 <tr><td><b>no PR · nothing outstanding</b></td><td>Create PR</td><td><b>Ship it</b></td>
   <td>Degenerates to exactly what <code>Create&nbsp;PR</code> did — one verb across the phase beats a
   button whose label changes as you work.</td></tr>
@@ -436,7 +437,7 @@ const st={
     num:'feat/pr-actions',tone:'attention',dot:{},
     lead:'3 files uncommitted',rest:[],
     cta:{label:'Ship it',icon:'rocket-launch',tone:'attention'}},
-  aheadNoPr:{cap:'no PR yet · committed but unpushed — same verb, fewer steps to compose',
+  aheadNoPr:{cap:'no PR yet · committed but unpushed — same verb, and the prompt skips the commit',
     num:'feat/pr-actions',tone:'attention',dot:{},
     lead:'2 commits unpushed',rest:[],
     cta:{label:'Ship it',icon:'rocket-launch',tone:'attention'}},

@@ -349,6 +349,29 @@ void main() {
       expect(find.textContaining('no commits to open a PR with'), findsNothing);
     });
 
+    testWidgets('a detached head is told the truth, not the primary reason', (
+      tester,
+    ) async {
+      // `canShipIt` is false for three different reasons — a PR exists, the primary
+      // checkout, or no branch at all. The menu only *removes* the entry for the
+      // first, so a detached head reached the disabled row and was told "the
+      // primary checkout is not a branch you ship from", which is simply false.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          branch: null,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.byTooltip('PR actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('this worktree is not on a branch'), findsOneWidget);
+      expect(
+        find.textContaining('primary checkout is not a branch you ship'),
+        findsNothing,
+      );
+    });
+
     testWidgets('a PR-less branch says so, rather than reporting a green build', (
       tester,
     ) async {

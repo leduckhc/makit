@@ -752,13 +752,17 @@ String _whyNot(PrPromptAction action, PrStatus status, {required bool ended}) {
       status.isPrimary
           ? 'the primary checkout is not a branch you open a pull request from'
           : 'this branch has no commits to open a PR with',
-    // Only ever blocked by the primary checkout: on any other branch without a
-    // pull request this is the CTA itself, and once one exists the menu drops it
-    // rather than explaining it. Worded differently from `createPr`'s identical
-    // block on purpose — both are listed here, and two rows repeating one
-    // sentence verbatim reads like a rendering bug.
+    // Blocked by two different states, and they need different sentences.
+    // `canShipIt` is false when a PR exists (the menu drops the entry rather than
+    // explaining it), on the primary checkout, *and* on a detached head — so
+    // returning the primary reason unconditionally told a detached worktree
+    // something plainly untrue. Worded differently from `createPr`'s otherwise
+    // identical primary block on purpose: both are listed here, and two rows
+    // repeating one sentence verbatim reads like a rendering bug.
     PrPromptAction.shipIt =>
-      'the primary checkout is not a branch you ship from',
+      status.isPrimary
+          ? 'the primary checkout is not a branch you ship from'
+          : 'this worktree is not on a branch',
     // On a PR-less branch these are all true but beside the point: there is no
     // build and no thread because there is no pull request. Say that instead.
     PrPromptAction.fixPr =>
