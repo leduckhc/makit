@@ -7,6 +7,9 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../widgets/pulse_spinner.dart';
 import 'chat_metrics.dart';
+import 'elapsed.dart';
+import 'live_now.dart';
+import 'timing_labels.dart';
 import 'transcript_expansion.dart';
 import 'tool_renderers.dart';
 
@@ -197,10 +200,108 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
           ),
         ),
         const SizedBox(width: kSpace8),
+        _durationSlot(),
         status,
         const SizedBox(width: kSpace8),
         caret,
       ],
     );
+  }
+
+  /// The trailing duration token, to the left of the status glyph (SPEC-47
+  /// D2/D6/D6a/D6b/D6c/D17). A finished (or turn-closed, D6a) row shows a static
+  /// figure gated at [kToolDurationFloor]; a running row in a live session shows
+  /// a live counter that escalates past 60 s. Empty otherwise (D19).
+  Widget _durationSlot() {
+    final item = widget.item;
+    final cs = Theme.of(context).colorScheme;
+    final baseStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: cs.onSurfaceVariant,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+
+    final sessionRunning =
+        widget.sessionId != null &&
+        ref.watch(
+              sessionsProvider.select((s) => s.byId(widget.sessionId!)?.status),
+            ) ==
+            SessionStatus.running;
+    final closeTs = _enclosingTurnCloseTs();
+
+    // A live counter watches the second-cadence ticker (D5), never PulseBuilder.
+    if (item.endedTs == null && closeTs == null && sessionRunning) {
+      final now = liveNowFor(ref, context);
+      return ValueListenableBuilder<int>(
+        valueListenable: now,
+        builder: (context, nowMs, _) {
+          final ms = elapsedMs(start: item.ts, end: nowMs);
+          if (ms == null) return const SizedBox.shrink();
+          final label = formatElapsed(ms);
+          if (label == null) return const SizedBox.shrink();
+          final hot = escalates(ms);
+          return _reserved(
+            Semantics(
+              // D17: a live counter is never a live region; past 60 s the
+              // escalation is spoken, not colour-only.
+              liveRegion: false,
+              label: hot ? 'running $label, taking longer than usual' : null,
+              child: Text(
+                label,
+                style: baseStyle?.copyWith(color: hot ? kStatusWarning : null),
+              ),
+            ),
+            baseStyle,
+          );
+        },
+      );
+    }
+
+    // Static (finished, or frozen at the turn's close — D6a).
+    final state = toolDurationState(
+      item: item,
+      enclosingTurnCloseTs: closeTs,
+      serverNowMs: 0,
+      sessionRunning: false,
+    );
+    final ms = state.ms;
+    if (ms == null || !showsFinishedDuration(ms)) {
+      return const SizedBox.shrink();
+    }
+    final label = formatElapsed(ms);
+    if (label == null) return const SizedBox.shrink();
+    return _reserved(
+      Semantics(
+        label: 'took $label',
+        child: Text(label, style: baseStyle),
+      ),
+      baseStyle,
+    );
+  }
+
+  /// Reserve the widest common duration width so a tick never re-ellipsizes the
+  /// summary (D6b): an invisible sizer holds the slot, the value is right-aligned.
+  Widget _reserved(Widget child, TextStyle? style) => Padding(
+    padding: const EdgeInsets.only(right: kSpace8),
+    child: Stack(
+      alignment: Alignment.centerRight,
+      children: [
+        Opacity(opacity: 0, child: Text(kDurationWidthSample, style: style)),
+        child,
+      ],
+    ),
+  );
+
+  /// The close `ts` of the completed turn enclosing this row, or null when no
+  /// closed turn contains it (D6a). Used to freeze a no-end row's counter.
+  int? _enclosingTurnCloseTs() {
+    final id = widget.sessionId;
+    if (id == null) return null;
+    final turns = ref.watch(sessionTurnsProvider(id));
+    for (final t in turns) {
+      if (widget.item.seq >= t.openSeq && widget.item.seq <= t.closeSeq) {
+        return t.closeTs;
+      }
+    }
+    return null;
   }
 }

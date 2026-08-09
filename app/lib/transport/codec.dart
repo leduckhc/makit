@@ -226,6 +226,9 @@ class WireCodec {
           lastActivityAt: j['lastActivityAt'] is num
               ? (j['lastActivityAt'] as num).toInt()
               : 0,
+          createdAt: j['createdAt'] is num
+              ? (j['createdAt'] as num).toInt()
+              : null,
           lastPreview: j['lastPreview'] is String
               ? j['lastPreview'] as String
               : '',
