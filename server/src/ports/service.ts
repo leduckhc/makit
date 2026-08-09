@@ -51,6 +51,17 @@ export const SCAN_INTERVAL_MS = 4_000;
  */
 const EXEC_TIMEOUT_MS = 3_000;
 
+/**
+ * How many extra times a POST-signal verification scan is retried while it comes
+ * back unusable. Two is enough: the window is the few hundred milliseconds in
+ * which the signalled process is mid-exit (see
+ * {@link PortsService.classifyFreshAfterSignal}).
+ */
+const POST_SIGNAL_SCAN_RETRIES = 2;
+
+/** Gap between those retries — long enough for an exiting process to be reaped. */
+const POST_SIGNAL_RETRY_MS = 250;
+
 /** The health probe surface the service drives (see health.ts). */
 export interface HealthProbeLike {
   refresh(ports: PortDTO[]): Promise<void>;
@@ -269,7 +280,7 @@ export class PortsService {
 
     await this.sleep(KILL_GRACE_MS);
 
-    const second = await this.classifyFresh(target);
+    const second = await this.classifyFreshAfterSignal(target);
     if (!second.signal) {
       // A scan we could not run says nothing about the outcome; claiming
       // "released" there would be the one lie this whole spec is against.
@@ -285,7 +296,7 @@ export class PortsService {
     if (kill === "gone") return finish("released");
     if (kill === "denied") return finish("survived");
 
-    const third = await this.classifyFresh(target);
+    const third = await this.classifyFreshAfterSignal(target);
     if (!third.signal && third.outcome === "scan_unavailable") {
       return finish("scan_unavailable");
     }
@@ -335,6 +346,32 @@ export class PortsService {
   private async classifyFresh(target: PortKillTarget) {
     const scan = await this.doScan();
     return classifyKillTarget(target, scan, this.killGuards(scan.procs));
+  }
+
+  /**
+   * The same check, but retried while the scan itself is unavailable — used ONLY
+   * after a signal has gone out.
+   *
+   * A process that has just been signalled is mid-exit, and a scan taken in that
+   * window can genuinely fail: the pid is still in the listener table when the
+   * pid list is built and gone (or a zombie) by the time `lsof -p` reads it, which
+   * on Linux yields a non-zero exit with no output — an unusable scan. Reporting
+   * that as `scan_unavailable` told the user "nothing was killed" about a kill
+   * that had in fact worked (CI caught this; macOS hid it, because its `lsof`
+   * prints partial output instead).
+   *
+   * The retry is bounded and short: the condition clears as soon as the process is
+   * fully reaped. A PRE-signal scan is never retried — R1 must refuse immediately
+   * rather than keep re-reading sockets before deciding to signal.
+   */
+  private async classifyFreshAfterSignal(target: PortKillTarget) {
+    let decision = await this.classifyFresh(target);
+    for (let attempt = 0; attempt < POST_SIGNAL_SCAN_RETRIES; attempt++) {
+      if (decision.signal || decision.outcome !== "scan_unavailable") break;
+      await this.sleep(POST_SIGNAL_RETRY_MS);
+      decision = await this.classifyFresh(target);
+    }
+    return decision;
   }
 
   /** This process, its ancestors, and every live agent root (D3 R5–R7). */

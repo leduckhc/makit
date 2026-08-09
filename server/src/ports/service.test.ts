@@ -987,3 +987,58 @@ test("scanNow returns a fresh scan without needing a watcher", async () => {
   assert.equal(snapshot.scanOk, true);
   assert.equal(snapshot.ports[0]?.port, 5173);
 });
+
+test("a post-signal scan that is momentarily unusable is RETRIED, not reported as a failure", async () => {
+  // The window this covers: SIGTERM lands, the process is mid-exit, and the
+  // verification scan taken in that instant fails (on Linux `lsof -p` for a pid
+  // that vanished between the listing and the read exits non-zero with no
+  // output). Reporting `scan_unavailable` there tells the user "nothing was
+  // killed" about a kill that worked — which is how CI caught it.
+  let scan = 0;
+  const h = harness({
+    now: () => KILL_NOW,
+    exec: async (cmd, args) => {
+      if (cmd === "lsof" && args.includes("-iTCP")) {
+        scan++;
+        // 1: the pre-signal verify. 2: unusable (the dying-process window).
+        // 3+: the process is reaped and the endpoint is free.
+        if (scan === 1) {
+          return {
+            code: 0,
+            stdout: ["p200", "u501", "PTCP", "n127.0.0.1:5173"].join("\n"),
+            stderr: "",
+          };
+        }
+        if (scan === 2) return { code: 127, stdout: "", stderr: "lsof: no such process" };
+        return { code: 0, stdout: "", stderr: "" };
+      }
+      if (cmd === "ps") return { code: 0, stdout: "  200 100 01:00:00 node vite", stderr: "" };
+      return { code: 0, stdout: ["p200", "fcwd", "n/repo/wt-a"].join("\n"), stderr: "" };
+    },
+  });
+
+  const result = await h.service.killPort(KILL_TARGET);
+  assert.equal(result.outcome, "released", "the retry saw the endpoint was freed");
+  assert.deepEqual(h.signals(), [{ pid: 200, sig: "SIGTERM" }], "no spurious SIGKILL");
+});
+
+test("a PRE-signal unusable scan still refuses immediately (R1 is not retried)", async () => {
+  // The retry is only for verifying a signal that already went out. Before one,
+  // an unreadable scan must refuse at once rather than keep re-reading sockets
+  // while deciding whether to signal.
+  let scans = 0;
+  const h = harness({
+    now: () => KILL_NOW,
+    exec: async (cmd, args) => {
+      if (cmd === "lsof" && args.includes("-iTCP")) {
+        scans++;
+        return { code: 127, stdout: "", stderr: "lsof: not found" };
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
+  const result = await h.service.killPort(KILL_TARGET);
+  assert.equal(result.outcome, "scan_unavailable");
+  assert.equal(scans, 1, "one look, then refuse");
+  assert.deepEqual(h.signals(), []);
+});

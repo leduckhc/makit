@@ -54,28 +54,35 @@ String portKillOrphansMessage(List<PortKillOutcome> outcomes) {
 /// What to tell the user after an attempt. Every outcome earns its own sentence:
 /// a refusal explains itself, and "released" is claimed only when the server
 /// actually verified the endpoint was freed.
-String portKillOutcomeMessage(PortKillOutcome outcome, {required int port}) =>
-    switch (outcome) {
-      PortKillOutcome.released => ':$port released.',
-      PortKillOutcome.forceKilled => ':$port ignored SIGTERM — force-killed.',
-      PortKillOutcome.survived =>
-        ':$port survived SIGKILL. It is not yours to kill — open a terminal.',
-      PortKillOutcome.notFound => ':$port was already gone.',
-      PortKillOutcome.identityMismatch =>
-        ':$port changed since you looked — nothing was killed. Rescan and try '
-            'again.',
-      PortKillOutcome.notOwned =>
-        ':$port belongs to no worktree, so makit will not signal it.',
-      PortKillOutcome.refusedProtected =>
-        ':$port is held by a system process — refused.',
-      PortKillOutcome.refusedSelf =>
-        ':$port is makit itself — refused. Stop the server instead.',
-      PortKillOutcome.refusedSession =>
-        ':$port belongs to an agent session — stop the session instead.',
-      PortKillOutcome.scanUnavailable =>
-        'Could not read this machine’s sockets, so nothing was killed.',
-      PortKillOutcome.failed => 'The kill did not go through.',
-    };
+String portKillOutcomeMessage(
+  PortKillOutcome outcome, {
+  required int port,
+}) => switch (outcome) {
+  PortKillOutcome.released => ':$port released.',
+  PortKillOutcome.forceKilled => ':$port ignored SIGTERM — force-killed.',
+  PortKillOutcome.survived =>
+    ':$port survived SIGKILL. It is not yours to kill — open a terminal.',
+  PortKillOutcome.notFound => ':$port was already gone.',
+  PortKillOutcome.identityMismatch =>
+    ':$port changed since you looked — nothing was killed. Rescan and try '
+        'again.',
+  PortKillOutcome.notOwned =>
+    ':$port belongs to no worktree, so makit will not signal it.',
+  PortKillOutcome.refusedProtected =>
+    ':$port is held by a system process — refused.',
+  PortKillOutcome.refusedSelf =>
+    ':$port is makit itself — refused. Stop the server instead.',
+  PortKillOutcome.refusedSession =>
+    ':$port belongs to an agent session — stop the session instead.',
+  // Deliberately "not confirmed", not "nothing was killed": the server
+  // returns this both BEFORE signalling (nothing happened) and when a
+  // post-signal verification could not be read, so the only sentence true in
+  // both cases is that the outcome is unknown.
+  PortKillOutcome.scanUnavailable =>
+    'Could not read this machine’s sockets, so :$port was not confirmed. '
+        'Rescan to see where it stands.',
+  PortKillOutcome.failed => 'The kill did not go through.',
+};
 
 /// Actions that already say what they do get no tooltip.
 String? portActionTooltip(PortAction action) => null;
