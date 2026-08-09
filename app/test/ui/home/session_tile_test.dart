@@ -72,7 +72,9 @@ Future<void> _pumpSession(WidgetTester tester, Session session) async {
           (ref) => _KillConnection(killFails: false),
         ),
       ],
-      child: MaterialApp(home: Scaffold(body: SessionTile(session: session))),
+      child: MaterialApp(
+        home: Scaffold(body: SessionTile(session: session)),
+      ),
     ),
   );
   await tester.pump();
@@ -158,10 +160,7 @@ void main() {
       _session(parentId: 's0', handoffReason: 'ran out of context'),
     );
 
-    expect(
-      find.textContaining('Handed off'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Handed off'), findsOneWidget);
     expect(find.textContaining('ran out of context'), findsOneWidget);
   });
 
