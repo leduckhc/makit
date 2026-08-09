@@ -407,7 +407,10 @@ class _CodeBlock extends StatelessWidget {
       decoration: BoxDecoration(
         color: dark ? const Color(0xFF282C34) : const Color(0xFFF0F1F4),
         borderRadius: BorderRadius.circular(kChatRadiusSmall),
-        border: Border.all(color: cs.outlineVariant),
+        border: Border.all(
+          color: cs.outlineVariant,
+          width: kChatCodeBorderWidth,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(

@@ -187,7 +187,10 @@ class ToolCodeBlock extends StatelessWidget {
       decoration: BoxDecoration(
         color: dark ? const Color(0xFF282C34) : const Color(0xFFF0F1F4),
         borderRadius: BorderRadius.circular(kChatRadiusSmall),
-        border: Border.all(color: error ? cs.error : cs.outlineVariant),
+        border: Border.all(
+          color: error ? cs.error : cs.outlineVariant,
+          width: kChatCodeBorderWidth,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(

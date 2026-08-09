@@ -25,6 +25,11 @@ const double kChatRadiusSmall = kRadius8;
 const double kChatRadiusMedium = kRadius12;
 const double kChatRadiusLarge = kRadius16;
 
+/// Hairline stroke for code-block panels (markdown fences + tool output). A
+/// full 1.0 logical px reads as a heavy frame around every snippet; 0.5 still
+/// resolves to a crisp device pixel on 2x/3x screens.
+const double kChatCodeBorderWidth = 0.5;
+
 /// Max height (logical px) of an expanded tool row's body before it scrolls
 /// internally — roughly 20 monospace lines plus section chrome. Keeps a long
 /// file read or command output from taking over the transcript.
