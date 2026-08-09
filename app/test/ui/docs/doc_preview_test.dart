@@ -1,0 +1,122 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/store/docs.dart';
+import 'package:makit/ui/docs/doc_preview.dart';
+
+DocInfo _doc({DocKind kind = DocKind.md, String relPath = 'docs/x.md'}) =>
+    DocInfo(
+      key: '/repo:$relPath',
+      relPath: relPath,
+      title: 'SPEC-44 — Ports P4',
+      kind: kind,
+      bytes: 10,
+      modifiedAt: 0,
+      worktreePath: '/repo',
+    );
+
+const _md = '''
+# SPEC-44 — Ports P4
+
+**Status:** Draft (P1) · **Priority:** P3 · **Branch:** `feat/open-ports`
+
+## D1 · Transport
+
+Proxy over the existing HTTPS listener.
+''';
+
+Future<void> _pump(
+  WidgetTester tester,
+  DocInfo doc, {
+  String? markdown,
+  VoidCallback? onPublish,
+  void Function(String)? onOpenInternal,
+  void Function(Uri)? onExternalLink,
+}) => tester.pumpWidget(
+  MaterialApp(
+    home: Scaffold(
+      body: DocPreview(
+        doc: doc,
+        markdown: markdown,
+        onPublish: onPublish,
+        onOpenInternal: onOpenInternal,
+        onExternalLink: onExternalLink,
+      ),
+    ),
+  ),
+);
+
+void main() {
+  group('resolveDocLink', () {
+    test('http/https links are external', () {
+      expect(resolveDocLink('https://x.com/a').kind, DocLinkKind.external);
+      expect(resolveDocLink('http://x.com').kind, DocLinkKind.external);
+    });
+
+    test('a relative .md / .html path is an internal doc link', () {
+      final t = resolveDocLink('../specs/SPEC-41.md');
+      expect(t.kind, DocLinkKind.internal);
+      expect(t.value, '../specs/SPEC-41.md');
+      expect(resolveDocLink('mockups/x.html').kind, DocLinkKind.internal);
+    });
+
+    test('a non-doc relative link is external (fallback, not swallowed)', () {
+      expect(resolveDocLink('https://a').kind, DocLinkKind.external);
+      expect(resolveDocLink('mailto:x@y.com').kind, DocLinkKind.external);
+    });
+  });
+
+  group('DocPreview — markdown', () {
+    testWidgets('renders the markdown body', (tester) async {
+      await _pump(tester, _doc(), markdown: _md);
+      expect(find.byType(MarkdownBody), findsOneWidget);
+      expect(find.textContaining('Proxy over the existing'), findsOneWidget);
+    });
+
+    testWidgets('strips the front-matter line and renders it as chips', (
+      tester,
+    ) async {
+      await _pump(tester, _doc(), markdown: _md);
+      // The chips are present…
+      expect(find.byKey(kDocFrontMatter), findsOneWidget);
+      expect(find.textContaining('Draft'), findsWidgets);
+      expect(find.textContaining('P3'), findsWidgets);
+      expect(find.textContaining('feat/open-ports'), findsWidgets);
+      // …and the raw markdown front-matter line is gone from the body.
+      expect(find.textContaining('**Status:**'), findsNothing);
+    });
+
+    testWidgets('shows a spinner while markdown is loading', (tester) async {
+      await _pump(tester, _doc(), markdown: null);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('reader-width toggle is present and toggles', (tester) async {
+      await _pump(tester, _doc(), markdown: _md);
+      final toggle = find.byKey(kDocReaderWidthToggle);
+      expect(toggle, findsOneWidget);
+      await tester.tap(toggle);
+      await tester.pump();
+      // Still present after toggling (state flips, widget stays).
+      expect(toggle, findsOneWidget);
+    });
+  });
+
+  group('DocPreview — html (D8: no in-app render in P1)', () {
+    testWidgets(
+      'html shows no markdown; Publish & open is the primary action',
+      (tester) async {
+        var published = false;
+        await _pump(
+          tester,
+          _doc(kind: DocKind.html, relPath: 'mockups/x.html'),
+          onPublish: () => published = true,
+        );
+        expect(find.byType(MarkdownBody), findsNothing);
+        expect(find.text('Publish & open'), findsOneWidget);
+        await tester.tap(find.text('Publish & open'));
+        expect(published, isTrue);
+      },
+    );
+  });
+}

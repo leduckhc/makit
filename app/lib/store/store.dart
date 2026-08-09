@@ -9,6 +9,7 @@ import '../transport/protocol.dart';
 import '../transport/ws_client.dart';
 import 'cached_commands.dart';
 import 'connection.dart';
+import 'docs.dart';
 import 'metrics.dart';
 import 'models.dart';
 import 'ports.dart';
@@ -92,6 +93,7 @@ class StoreState {
     this.githubBudget,
     this.metrics = const [],
     this.ports,
+    this.docs,
     this.sessionsLoaded = false,
   });
 
@@ -142,6 +144,11 @@ class StoreState {
   /// wholesale (it is the complete picture, not a delta).
   final PortsSnapshot? ports;
 
+  /// Latest host-wide docs snapshot (SPEC-46), or null before the first
+  /// `docs.snapshot` frame. Latest-wins: a snapshot replaces the last one
+  /// wholesale (it is the complete picture, not a delta).
+  final DocsSnapshot? docs;
+
   /// Whether a `sessions.snapshot` has been received. Distinguishes "the server
   /// has no sessions" from "we haven't heard from the server yet", which an
   /// empty [sessions] list alone cannot.
@@ -160,6 +167,7 @@ class StoreState {
     GithubBudget? githubBudget,
     List<MetricsSample>? metrics,
     PortsSnapshot? ports,
+    DocsSnapshot? docs,
     bool? sessionsLoaded,
   }) => StoreState(
     projects: projects ?? this.projects,
@@ -174,6 +182,7 @@ class StoreState {
     githubBudget: githubBudget ?? this.githubBudget,
     metrics: metrics ?? this.metrics,
     ports: ports ?? this.ports,
+    docs: docs ?? this.docs,
     sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
   );
 }
@@ -201,6 +210,8 @@ StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
   // Latest-wins: a ports snapshot is the whole picture, so it replaces the
   // last one wholesale rather than merging (SPEC-41, like `metrics` history).
   PortsSnapshotFrame(:final snapshot) => state.copyWith(ports: snapshot),
+  // Latest-wins: a docs snapshot is the whole picture (SPEC-46 D11).
+  DocsSnapshotFrame(:final snapshot) => state.copyWith(docs: snapshot),
   SessionsSnapshot(:final sessions) => state.copyWith(
     sessions: sessions,
     sessionsLoaded: true,
@@ -1152,6 +1163,62 @@ class StoreController extends StateNotifier<StoreState> {
     } catch (_) {
       // Swallow: a failed pause leaves polling as it was, which is safe.
     }
+  }
+
+  /// SPEC-46 D7: read one markdown document's text over the WSS channel.
+  /// Errors for `kind == "html"` server-side; the caller only invokes this for
+  /// markdown. Throws on transport error or a server `err` so the preview can
+  /// show the reason rather than a blank body.
+  Future<String> readDoc(String worktreePath, String relPath) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'docs.read', 'worktreePath': worktreePath, 'relPath': relPath},
+    );
+    final text = ack['text'];
+    if (text is! String) throw StateError('docs.read returned no text');
+    return text;
+  }
+
+  /// SPEC-46 D9/D15: publish one document over the tailnet, returning the
+  /// grant. Never invents a URL — a server `err` (no usable address,
+  /// `tailscale serve` unavailable) throws with the stated reason so the share
+  /// sheet degrades loudly instead of offering a dead link.
+  Future<DocGrant> publishDoc(String worktreePath, String relPath) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'docs.publish',
+        'worktreePath': worktreePath,
+        'relPath': relPath,
+      },
+    );
+    final grant = DocGrant.fromJson(ack);
+    if (grant == null) {
+      throw StateError('docs.publish returned an unusable grant');
+    }
+    return grant;
+  }
+
+  /// SPEC-46 D9: revoke a publication by `grantId` (Stop sharing).
+  Future<void> unpublishDoc(String grantId) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'docs.unpublish', 'grantId': grantId},
+    );
+  }
+
+  /// SPEC-46: list active publications, so the app can say "3 docs are shared".
+  Future<List<DocGrant>> listDocGrants() async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'docs.grants'},
+    );
+    final raw = (ack['grants'] as List?) ?? const [];
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map((m) => DocGrant.fromJson(Map<String, dynamic>.from(m)))
+        .whereType<DocGrant>()
+        .toList();
   }
 
   @override

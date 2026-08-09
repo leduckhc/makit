@@ -7,9 +7,12 @@ import '../../app/routes.dart';
 import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../store/models.dart';
+import '../../store/docs.dart';
 import '../../store/ports.dart';
 import '../../store/store.dart';
 import '../../ui/home/repo_chips.dart';
+import '../../ui/docs/docs_popover.dart';
+import '../../ui/docs/doc_preview.dart';
 import '../../ui/ports/ports_popover.dart';
 import '../../ui/ports/session_ports_glyph.dart';
 import '../../ui/widgets/pr_state_style.dart';
@@ -490,6 +493,11 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   // menu back to a diff pill under the cursor while the popover is open. The
   // popover reports its open-state through `onOpenChanged` (SPEC-41 §5 trap).
   bool _portsOpen = false;
+  bool _docsOpen = false;
+
+  // Hold the ref-counted docs watch while any worktree group is mounted (D11),
+  // the same discipline as the ports watch below.
+  late final DocsWatch _docsWatch = ref.read(docsWatchProvider);
 
   // Hold the ref-counted ports watch while any worktree group is mounted in the
   // sidebar, so the server polls `lsof` only while the sidebar is up (SPEC-41
@@ -501,11 +509,13 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   void initState() {
     super.initState();
     _portsWatch.watch();
+    _docsWatch.watch();
   }
 
   @override
   void dispose() {
     _portsWatch.release();
+    _docsWatch.release();
     super.dispose();
   }
 
@@ -612,7 +622,8 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                             if (_hovering ||
                                 _focused ||
                                 _menuOpen ||
-                                _portsOpen)
+                                _portsOpen ||
+                                _docsOpen)
                               _WorktreeMenuButton(
                                 worktree: worktree,
                                 onMenuOpened: () =>
@@ -697,6 +708,15 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                               // 22 × 16 target: wider than tall, so the fixed
                               // 16 pt sub-row does NOT grow. Renders nothing when
                               // the branch is serving nothing.
+                              // Docs glyph, sharing the trailing slot with the
+                              // ports plug (mockup Card 2 right frame). Renders
+                              // nothing when the branch owns no docs.
+                              _SubRowDocsGlyph(
+                                worktreePath: worktree.path,
+                                branch: branch,
+                                onOpenChanged: (open) =>
+                                    setState(() => _docsOpen = open),
+                              ),
                               _SubRowPortsGlyph(
                                 worktreePath: worktree.path,
                                 branch: branch,
@@ -875,6 +895,43 @@ class _WorktreeMenuButton extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The worktree sub-row's docs glyph (SPEC-46), desktop form. A 14 pt glyph in
+/// a fixed 22 × 16 hit target so the sub-row keeps its reserved height. Opens
+/// the docs popover; renders nothing when the branch owns no docs.
+class _SubRowDocsGlyph extends ConsumerWidget {
+  const _SubRowDocsGlyph({
+    required this.worktreePath,
+    required this.branch,
+    required this.onOpenChanged,
+  });
+
+  final String worktreePath;
+  final String branch;
+  final ValueChanged<bool> onOpenChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final docs = ref.watch(docsForWorktreeProvider(worktreePath));
+    if (docs.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      key: ValueKey('docsSubRowTarget-$worktreePath'),
+      width: 22,
+      height: 16,
+      child: Center(
+        child: DocsPopover(
+          branch: branch,
+          docs: docs,
+          onOpenChanged: onOpenChanged,
+          // The preview is a widget in a sheet (D12); Navigator.of works on the
+          // MaterialApp(home:) desktop shell — unlike `context.go`, which has no
+          // GoRouter there.
+          onOpenDoc: (doc) => showDocPreviewSheet(context, doc),
+        ),
+      ),
     );
   }
 }

@@ -25,5 +25,9 @@ const kRouteDiagnostics = '$kRouteRepos/diagnostics';
 /// optional `?repo=<id>` that pre-selects the *This repo* filter.
 const kRoutePorts = '$kRouteRepos/ports';
 
+/// The global Docs screen (SPEC-46 P1) — the repo's mockups and specs, grouped
+/// repo → worktree.
+const kRouteDocs = '$kRouteRepos/docs';
+
 /// A single session's screen.
 String routeForSession(String sessionId) => '$kRouteRepos/session/$sessionId';
