@@ -16,7 +16,8 @@ import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/c
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
 import { sessionTokens } from "./ws/session_tokens.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO, type SessionEvent, type SessionOrigin } from "./protocol.js";
+import { spawnBoundError, type LineageNode } from "./lineage.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
 import { buildAdapter, piAcpSpec } from "./agent_factory.js";
@@ -360,6 +361,31 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(id);
   }
 
+  /**
+   * SPEC-46 D9/T11: the reason a new child of `parentId` may not be spawned, or
+   * null when it may. Depth and live-child count are recomputed here from the
+   * persisted `parentId` links of every session (archived ones stay in the map,
+   * killed ones are gone) — never from the forgeable `MAKIT_SPAWN_DEPTH`.
+   */
+  checkSpawnBounds(parentId: string): string | null {
+    const nodes = new Map<string, LineageNode>();
+    for (const s of this.sessions.values()) {
+      nodes.set(s.id, { id: s.id, parentId: s.parentId, archived: s.archived });
+    }
+    return spawnBoundError(parentId, nodes);
+  }
+
+  /**
+   * SPEC-46 C3: a session's persisted events, read from the event store rather
+   * than the session's in-memory cache, so a bounded tail (session.transcript)
+   * never hydrates the whole log just to return its last few lines (D5). Falls
+   * back to the in-memory events when there is no store (M0 / tests).
+   */
+  readTranscript(sessionId: string): SessionEvent[] {
+    if (this.store) return this.store.read(sessionId);
+    return this.sessions.get(sessionId)?.events ?? [];
+  }
+
   /** Set the loopback bridge + askUser wiring so subsequently-spawned
    *  sessions can transport interactive prompts (`ctx.ui.*` / ACP
    *  permission/elicitation) to the app. */
@@ -443,7 +469,7 @@ export class SessionManager extends EventEmitter {
    * dir (non-git project / unborn HEAD). Uses a {@link DetachedAdapter}
    * placeholder so the session wires + shows in snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[]): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[], lineage?: { parentId?: string; handoffReason?: string; origin?: SessionOrigin }): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
@@ -486,6 +512,11 @@ export class SessionManager extends EventEmitter {
       title: DEFAULT_SESSION_TITLE,
       adapter: new DetachedAdapter(agentId),
       store: this.store,
+      // SPEC-46 D10: lineage derived by the caller (session.spawn) from the
+      // credential, never the wire. Set once at construction.
+      parentId: lineage?.parentId,
+      handoffReason: lineage?.handoffReason,
+      origin: lineage?.origin,
     });
     session.beginDraft({
       agent: agentId,

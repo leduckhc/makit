@@ -5,6 +5,8 @@
  */
 
 import { WireErrorCode } from "../../protocol/codec.js";
+import type { SessionOrigin } from "../../protocol.js";
+import { isAgentScoped } from "../principal.js";
 import { log } from "../../log.js";
 import {
   isMediaId,
@@ -17,6 +19,14 @@ import type { CommandDeps } from "./deps.js";
 
 /** Per-message attachment cap (SPEC-33 §3.3). A prompt, not a gallery. */
 export const MAX_ATTACHMENTS = 8;
+
+/**
+ * SPEC-46 C3: `session.transcript` clamps `limit` to this window. A bounded
+ * tail is the whole point of the command (D5) — an unbounded slice would defeat
+ * it — and 200 is generous for the "quote the last few turns" use it serves.
+ */
+const MIN_TRANSCRIPT_LIMIT = 1;
+const MAX_TRANSCRIPT_LIMIT = 200;
 
 /**
  * Label handed to `promotePendingSession` when an image-only turn promotes a
@@ -340,7 +350,68 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack({ sessions: await manager.listArchivedSessions() });
   });
 
+  // SPEC-46 C3 (D5): a BOUNDED transcript slice for `makit handoff --carry`.
+  // The last `limit` events, oldest-first, served from the event store (not the
+  // session's in-memory cache) and returned VERBATIM — the same wire shape as
+  // fanout, no projection (D7). Rendering the slice into a fenced block is CLI
+  // work, not the server's.
+  r.register("session.transcript", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const rawLimit = ctx.env.limit;
+    if (typeof rawLimit !== "number" || !Number.isFinite(rawLimit)) {
+      ctx.err(WireErrorCode.BadRequest, "session.transcript requires a numeric `limit`");
+      return;
+    }
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    const limit = Math.max(
+      MIN_TRANSCRIPT_LIMIT,
+      Math.min(MAX_TRANSCRIPT_LIMIT, Math.floor(rawLimit)),
+    );
+    // `slice(-limit)` is the last `limit`, oldest-first, and returns the whole
+    // log when it is shorter than `limit`.
+    const events = manager.readTranscript(sid);
+    ctx.ack({ events: events.slice(-limit) });
+  });
+
   r.register("session.spawn", async (ctx) => {
+    // SPEC-46 D9/D10: lineage is derived from the credential, NEVER from the
+    // wire. An agent-scoped token's parent IS its own session; a body
+    // `parentId` naming a different session is a forgery attempt and refused
+    // (not silently honoured, not silently overwritten). A human client (phone
+    // or CLI) carries no session, so it spawns a root and any body `parentId`
+    // is ignored — the wire is never a lineage source.
+    const principal = ctx.client.principal;
+    const bodyParentId = ctx.env.parentId ? String(ctx.env.parentId) : undefined;
+    const handoffReason = ctx.env.handoffReason ? String(ctx.env.handoffReason) : undefined;
+    let parentId: string | undefined;
+    let origin: SessionOrigin;
+    if (isAgentScoped(principal)) {
+      parentId = principal!.sessionId!;
+      if (bodyParentId !== undefined && bodyParentId !== parentId) {
+        ctx.err(
+          WireErrorCode.BadRequest,
+          "session.spawn parentId is derived from the calling session and cannot name a different session",
+        );
+        return;
+      }
+      origin = "agent";
+      // SPEC-46 D9/T11: depth + live-child count are recomputed server-side from
+      // persisted lineage; the forgeable MAKIT_SPAWN_DEPTH is display-only.
+      const boundError = manager.checkSpawnBounds(parentId);
+      if (boundError) {
+        ctx.err(WireErrorCode.BadRequest, boundError);
+        return;
+      }
+    } else {
+      // The `client` cap marks the CLI (D2); a full-access principal (no caps)
+      // is the app/phone. This is the only app-vs-CLI signal the wire carries.
+      parentId = undefined;
+      origin = principal?.caps?.includes("client") ? "cli" : "app";
+    }
     const projectId = String(ctx.env.projectId ?? "");
     const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
     // The worktree the client resolved (creating it first when the user asked
@@ -353,7 +424,11 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     const configOptions = parseConfigPicks(ctx.env.configOptions);
     // New sessions are DRAFTS: the agent is deferred until the first
     // substantive message names the session (see send.message).
-    const newSession = await manager.spawnPendingSession(projectId, agent, worktreePath, branch, configOptions);
+    const newSession = await manager.spawnPendingSession(projectId, agent, worktreePath, branch, configOptions, {
+      parentId,
+      handoffReason,
+      origin,
+    });
     // wireSession is invoked via the manager's "sessionCreated" listener
     // registered above — don't call it explicitly or every event fans out
     // twice.

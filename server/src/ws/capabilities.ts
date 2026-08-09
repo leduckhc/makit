@@ -8,9 +8,8 @@
  * three agent caps carve out the narrow surface a handoff child needs:
  *
  *  - `read`  → `sub`, `unsub`, `session.transcript`, `sessions.snapshot`
- *              (none are router commands: sub/unsub are handled before the
- *              router, sessions.snapshot is push-only, session.transcript is
- *              not registered yet — so `read` grants no `cmd` today, by design).
+ *              (sub/unsub are handled before the router, sessions.snapshot is
+ *              push-only; `session.transcript` is the one `cmd` `read` grants).
  *  - `send`  → `send.message`, `session.action`.
  *  - `spawn` → `session.spawn`, `worktree.create`.
  *
@@ -32,6 +31,8 @@ export const COMMAND_CAPABILITIES: Record<string, readonly DeviceCap[]> = {
   // spawn
   "session.spawn": ["spawn"],
   "worktree.create": ["spawn"],
+  // read
+  "session.transcript": ["read"],
   // client / full-access only (no agent cap grants these)
   "agents.list": [],
   "agents.refresh": [],
