@@ -74,11 +74,11 @@ function makeDaemon() {
 async function main() {
   const cmd = process.argv[2];
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "new", "attach", ...LIFECYCLE]);
+  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "new", "send", "attach", ...LIFECYCLE]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
-        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|new|attach [...]`,
+        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|new|send|attach [...]`,
     );
     process.exit(2);
   }
@@ -114,6 +114,14 @@ async function main() {
   if (cmd === "new") {
     const { runNew } = await import("./cli/new.js");
     await runNew(process.argv.slice(3));
+    return;
+  }
+
+  // `send` posts a message to a session (SPEC-46 T14) — a thin client of
+  // `send.message`.
+  if (cmd === "send") {
+    const { runSend } = await import("./cli/send.js");
+    await runSend(process.argv.slice(3));
     return;
   }
 
