@@ -81,6 +81,13 @@ import { PortsService } from "./ports/service.js";
 import { loadHistory, saveHistory, historyFile } from "./ports/history_store.js";
 import { PortHealthProbe, createNetConnector } from "./ports/health.js";
 import { tailnetAddressFromBindHost } from "./ports/attribute.js";
+import { register as registerDocsCommands } from "./ws/commands/docs.js";
+import { DocsService, type DocWorktree } from "./docs/service.js";
+import { DocGrantStore } from "./docs/grants.js";
+import { attachDocRoute, attachDocNotFound } from "./docs/route.js";
+import type { DocReach } from "./docs/publish.js";
+import { createServer as createHttpServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { run as execRun } from "./git.js";
 import { stat as fsStat } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
@@ -297,11 +304,96 @@ export function startWsServer(opts: ServerOpts) {
     return null;
   };
 
+  // -------- docs index + publish (SPEC-46) --------------------------------
+  //
+  // Worktrees to index, with the two branches the merge-base `changed` diff
+  // needs (D5), from the CACHED git-only repos snapshot — never a git shell-out
+  // per walk, exactly like the ports scanner's worktree source.
+  const listDocWorktrees = (): DocWorktree[] => {
+    const out: DocWorktree[] = [];
+    for (const repo of lastGitOnlyRepos ?? [])
+      for (const wt of repo.worktrees)
+        out.push({ worktreePath: wt.path, baseBranch: repo.defaultBranch, currentBranch: wt.branch });
+    return out;
+  };
+
+  // D10: a SEPARATE plain-HTTP listener for published docs — never the pinned
+  // WSS listener, never `0.0.0.0`. It binds to makit's own routable host (the
+  // tailnet or LAN address it already chose) on an ephemeral port, so a
+  // published doc is directly reachable there; a loopback/wildcard host has no
+  // usable address, so publish degrades loudly and shares nothing (D15).
+  const docGrants = new DocGrantStore();
+  const docHttp = createHttpServer();
+  attachDocRoute(docHttp, { grants: docGrants });
+  // Dedicated listener: nothing else answers, so unmatched paths (Safari's
+  // /favicon.ico, a probe of /) must 404 rather than hang the socket.
+  attachDocNotFound(docHttp);
+  const docReachLabel: "tailnet" | "lan" | null =
+    tailnetAddressFromBindHost(host) !== null ? "tailnet" : isLoopbackOrWildcard(host) ? null : "lan";
+  const docBindHost = docReachLabel === null ? "127.0.0.1" : host;
+  let docPort: number | undefined;
+  docHttp.on("error", (err: NodeJS.ErrnoException) =>
+    log.warn(`[makit] doc listener error on ${docBindHost}: ${err.message}`),
+  );
+  docHttp.listen(0, docBindHost, () => {
+    docPort = (docHttp.address() as AddressInfo).port;
+    log.info(`[makit] docs listening on http://${docBindHost}:${docPort} (reach=${docReachLabel ?? "none"})`);
+  });
+  // Verified reach: only offer a URL when the listener actually bound AND the
+  // bind host is routable. `reach` reflects what bound — never invented (D15).
+  const docReach = async (): Promise<DocReach | null> =>
+    docPort === undefined || docReachLabel === null
+      ? null
+      : { origin: `http://${host}:${docPort}`, reach: docReachLabel };
+
+  const emitDocsSnapshot = (snapshot: unknown): OutgoingFrame => ({
+    t: "event",
+    id: newId("docs"),
+    kind: "docs.snapshot",
+    snapshot,
+  });
+  const docsService = new DocsService({
+    listWorktrees: listDocWorktrees,
+    exec: execRun,
+    grants: docGrants,
+    reach: docReach,
+    onSnapshot: (snapshot) => {
+      const frame = emitDocsSnapshot(snapshot);
+      for (const c of clients.values()) if (c.authed && c.watchingDocs) c.send(frame);
+    },
+    now: () => Date.now(),
+    // One-shot debounce, NOT a cadence: docs re-index only on a worktree change.
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (h) => clearTimeout(h as NodeJS.Timeout),
+  });
+  https.on("close", () => {
+    docsService.stop();
+    docHttp.close();
+  });
+
+  const countDocsWatchers = (): number => {
+    let n = 0;
+    for (const c of clients.values()) if (c.authed && c.watchingDocs) n++;
+    return n;
+  };
+  // Recompute after a `docs.watch` toggle or a socket close: the 0→1 edge runs
+  // one immediate walk, the 1→0 edge cancels any pending debounce.
+  const recomputeDocsWatchers = (): void => docsService.setWatchers(countDocsWatchers());
+  const sendDocsSnapshot = (client: WsClient): void => {
+    const cached = docsService.cachedSnapshot();
+    if (cached !== undefined) client.send(emitDocsSnapshot(cached));
+  };
+
   // Watch each project's git worktrees so a `git worktree add`/`remove` done
   // outside makit pushes a fresh repos.snapshot instead of waiting for the
   // next client reconnect. Kept in sync with the project set inside
   // broadcastReposSnapshot; closed when the listeners shut down.
-  const worktreeWatcher = watchWorktrees(() => void broadcastReposSnapshot());
+  const worktreeWatcher = watchWorktrees(() => {
+    void broadcastReposSnapshot();
+    // Same trigger drives the doc re-index (debounced 400ms inside the service);
+    // no polling loop of its own (D11).
+    docsService.onWorktreeChange();
+  });
   worktreeWatcher.sync(manager.listProjects().map((p) => p.path));
   https.on("close", () => worktreeWatcher.close());
 
@@ -623,6 +715,10 @@ export function startWsServer(opts: ServerOpts) {
       // ports popover open never sends `ports.watch {on:false}`.
       state.watchingPorts = false;
       recomputePortsWatchers();
+      // SPEC-46: same leak guard for the doc index — a window killed with the
+      // Docs screen open never sends `docs.watch {on:false}`.
+      state.watchingDocs = false;
+      recomputeDocsWatchers();
       broadcastSnapshots();
     });
 
@@ -709,6 +805,9 @@ export function startWsServer(opts: ServerOpts) {
       sendMetricsHistory,
       onPortsWatchersChanged: recomputePortsWatchers,
       sendPortsSnapshot,
+      onDocsWatchersChanged: recomputeDocsWatchers,
+      sendDocsSnapshot,
+      docs: docsService,
     };
 
     registerSessionCommands(r, deps);
@@ -718,6 +817,7 @@ export function startWsServer(opts: ServerOpts) {
     registerGithubCommands(r, deps);
     registerMetricsCommands(r, deps);
     registerPortsCommands(r, deps);
+    registerDocsCommands(r, deps);
 
     // In-app logging: ingest client diagnostics into the server log. Always on
     // (not dev-gated) — field crash reports from iOS are a production need.
@@ -875,6 +975,7 @@ export function startWsServer(opts: ServerOpts) {
       isLocal,
       watchingMetrics: false,
       watchingPorts: false,
+      watchingDocs: false,
       subscribed: new Set<string>(),
       send(frame: OutgoingFrame) {
         if (ws.readyState !== ws.OPEN) return;

@@ -1,0 +1,129 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { DocGrantStore } from "./grants.js";
+import { publishDoc } from "./publish.js";
+import type { DocReach } from "./publish.js";
+
+function fixture(): string {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "makit-publish-")));
+  mkdirSync(join(root, "mockups"), { recursive: true });
+  writeFileSync(join(root, "mockups", "board.html"), "<title>Board</title>");
+  return root;
+}
+
+const tailnet = async (): Promise<DocReach> => ({ origin: "https://host.ts.net", reach: "tailnet" });
+const lan = async (): Promise<DocReach> => ({ origin: "http://192.168.1.9:8123", reach: "lan" });
+const none = async (): Promise<DocReach | null> => null;
+
+test("publishes a resolvable doc, minting a tailnet grant with the reachable url", async () => {
+  const root = fixture();
+  const grants = new DocGrantStore();
+  const result = await publishDoc(
+    { worktreePath: root, relPath: "mockups/board.html" },
+    { grants, reach: tailnet },
+  );
+  assert.ok(result.ok);
+  assert.equal(result.grant.reach, "tailnet");
+  assert.equal(
+    result.grant.url,
+    `https://host.ts.net/docs/${result.grant.grantId}/mockups/board.html`,
+  );
+  // The grant is enumerable afterwards.
+  assert.equal(grants.list().length, 1);
+});
+
+test("falls back to a lan-labelled url when tailscale is unavailable (D15)", async () => {
+  const root = fixture();
+  const grants = new DocGrantStore();
+  const result = await publishDoc(
+    { worktreePath: root, relPath: "mockups/board.html" },
+    { grants, reach: lan },
+  );
+  assert.ok(result.ok);
+  assert.equal(result.grant.reach, "lan");
+  assert.match(result.grant.url, /^http:\/\/192\.168\.1\.9:8123\/docs\//);
+});
+
+test("with no usable address, publishes NOTHING and states the reason (D15)", async () => {
+  const root = fixture();
+  const grants = new DocGrantStore();
+  const result = await publishDoc(
+    { worktreePath: root, relPath: "mockups/board.html" },
+    { grants, reach: none },
+  );
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && result.reason.length > 0);
+  assert.equal(grants.list().length, 0, "no grant was minted for an unreachable publish");
+});
+
+test("refuses an unresolvable doc without minting a grant", async () => {
+  const root = fixture();
+  const grants = new DocGrantStore();
+  const result = await publishDoc(
+    { worktreePath: root, relPath: "../../etc/passwd" },
+    { grants, reach: tailnet },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(grants.list().length, 0);
+});
+
+test("does not consult reach when the doc cannot be resolved", async () => {
+  const root = fixture();
+  const grants = new DocGrantStore();
+  let reachCalls = 0;
+  await publishDoc(
+    { worktreePath: root, relPath: "does-not-exist.md" },
+    {
+      grants,
+      reach: async () => {
+        reachCalls++;
+        return { origin: "https://host.ts.net", reach: "tailnet" };
+      },
+    },
+  );
+  assert.equal(reachCalls, 0, "an invalid doc must be refused before probing reachability");
+});
+
+// A published URL is copied, QR-encoded and opened in Safari, so it must be a
+// VALID url. An unencoded space is malformed, and an unencoded "#" or "?" would
+// truncate the path at the fragment/query — the route would then resolve a
+// different relPath than the grant was minted for and answer 404, i.e. the
+// publish button would silently produce a dead link for an ordinarily-named file.
+test("publishDoc percent-encodes each path segment of the URL", async () => {
+  const grants = new DocGrantStore();
+  const relPath = "mockups/my notes #2 & draft.md";
+  const res = await publishDoc(
+    { worktreePath: "/repo", relPath },
+    {
+      grants,
+      reach: async () => ({ origin: "http://100.1.1.1:8123", reach: "tailnet" }),
+      resolveDoc: () => ({
+        ok: true,
+        absPath: `/repo/${relPath}`,
+        relPath,
+        kind: "md",
+        bytes: 10,
+      }),
+    },
+  );
+  assert.equal(res.ok, true);
+  const url = res.ok ? res.grant.url : "";
+
+  assert.ok(!url.includes(" "), `url must not contain a raw space: ${url}`);
+  assert.ok(!url.includes("#"), `url must not contain a raw '#': ${url}`);
+
+  // The decoded path must round-trip back to exactly the granted relPath, which
+  // is what the route compares against.
+  const parsed = new URL(url);
+  const prefix = parsed.pathname.split("/").slice(0, 3).join("/"); // "" + "docs" + grantId
+  const decoded = decodeURIComponent(parsed.pathname.slice(prefix.length + 1));
+  assert.equal(decoded, relPath);
+
+  // Slashes stay slashes — encoding must be per segment, not over the whole path.
+  assert.ok(parsed.pathname.includes("/mockups/"), `segments must stay separate: ${parsed.pathname}`);
+});
+

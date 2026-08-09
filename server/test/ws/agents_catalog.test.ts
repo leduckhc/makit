@@ -27,6 +27,7 @@ function fakeClient(): FakeClient {
     subscribed: new Set<string>(),
     watchingMetrics: false,
     watchingPorts: false,
+    watchingDocs: false,
     isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},
@@ -61,6 +62,14 @@ function routerWith(manager: Partial<CommandDeps["manager"]>): { router: Command
       sendMetricsHistory: () => {},
       onPortsWatchersChanged: () => {},
       sendPortsSnapshot: () => {},
+      onDocsWatchersChanged: () => {},
+      sendDocsSnapshot: () => {},
+      docs: {
+        read: () => ({ ok: false as const, message: "" }),
+        publish: async () => ({ ok: false as const, reason: "" }),
+        unpublish: () => false,
+        grants: () => [],
+      },
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
   register(router, deps);

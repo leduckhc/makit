@@ -35,6 +35,7 @@ function fakeClient(): FakeClient {
     // without it would ACK `ports.watch` and then never scan), so every fake
     // client declares it. This domain does not exercise ports.
     watchingPorts: false,
+    watchingDocs: false,
     isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},
@@ -61,6 +62,14 @@ function routerWith(manager: Partial<CommandDeps["manager"]>) {
     // SPEC-41: required members, inert here — the PR domain sends no ports frames.
     onPortsWatchersChanged: () => {},
     sendPortsSnapshot: () => {},
+    onDocsWatchersChanged: () => {},
+    sendDocsSnapshot: () => {},
+    docs: {
+      read: () => ({ ok: false as const, message: "" }),
+      publish: async () => ({ ok: false as const, reason: "" }),
+      unpublish: () => false,
+      grants: () => [],
+    },
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
   register(router, deps);

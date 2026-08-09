@@ -18,6 +18,7 @@ function fakeClient(authed = true): FakeClient {
     subscribed: new Set<string>(),
     watchingMetrics: false,
     watchingPorts: false,
+    watchingDocs: false,
     isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},
