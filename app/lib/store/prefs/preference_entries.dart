@@ -135,6 +135,14 @@ const PreferenceEntry<String> prPushPromptPreference = PreferenceEntry(
   decode: _decodeString,
 );
 
+/// User override for the "Ship it" canned prompt (empty = built-in default).
+const PreferenceEntry<String> prShipItPromptPreference = PreferenceEntry(
+  id: 'chat.prPrompt.shipIt',
+  defaultValue: '',
+  encode: _encodeString,
+  decode: _decodeString,
+);
+
 /// User override for the magic "Fix" preamble (empty = built-in). The list of
 /// outstanding problems is appended to it at run time and is not overridable —
 /// it is data, not wording.
@@ -253,6 +261,7 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   prResolveCommentsPromptPreference,
   prCommitPushPromptPreference,
   prPushPromptPreference,
+  prShipItPromptPreference,
   prMagicFixPromptPreference,
   prPullPromptPreference,
   budgetHistoryExpandedPreference,

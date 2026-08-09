@@ -345,11 +345,16 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                 ),
                               if (session?.pane != null &&
                                   prStatus != null &&
-                                  !prStatus.isQuiet)
+                                  prStatus.hasSomethingToOffer)
                                 const SizedBox(width: kSpace6),
-                              // A clean primary checkout has nothing to report,
-                              // so it gets no chip.
-                              if (prStatus != null && !prStatus.isQuiet)
+                              // A clean primary checkout has nothing to report and
+                              // nothing to offer, so it gets no chip. Anything with
+                              // an actionable CTA does, even when it is otherwise
+                              // quiet — this chip is the only way into the CTA on
+                              // mobile, so `isQuiet` would hide "Ship it" on a
+                              // branch that is ready to ship.
+                              if (prStatus != null &&
+                                  prStatus.hasSomethingToOffer)
                                 SessionPrChip(
                                   status: prStatus,
                                   pr: pr,

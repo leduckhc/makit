@@ -269,6 +269,11 @@ objection to it (“that hides facts”) is answered by what the disclosure <em>
 list, each row with its own remedy button. The bar stays quiet; nothing becomes unreachable. The
 secondary facts cost one extra tap — that is B1's honest price, and it is written into the scorecard
 in §7.</div>
+<div class="callout" style="border-color:#3b5875"><b style="color:#a8cdf1">Latest addition:
+<code>Ship&nbsp;it</code></b>, a composite <i>ask the agent</i> action that owns the whole pre-PR phase
+— commit, push, open the pull request. It displaced <code>Commit&nbsp;&amp;&nbsp;push</code>,
+<code>Push</code> and <code>Create&nbsp;PR</code> as the CTA on every branch that does not have a pull
+request yet. See §11 for the rule and the full before/after.</div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <section>
@@ -359,6 +364,52 @@ number, <code>&lt;base&gt;</code> is the PR's own <code>baseRefName</code>.</p>
 <div class="gap" id="gaps"></div>
 </section>
 
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>11 · Ship it — the pre-PR phase, one verb <span class="tag new">as built</span></h2>
+<p class="lede">The lifecycle had a composite verb in the middle (<code>Fix</code>, when a PR has two or
+more problems) and two endings (<code>Wrap up</code>, <code>Discard worktree</code>), but the
+<em>opening</em> was still a two-step dance: <code>Commit&nbsp;&amp;&nbsp;push</code>, then wait for the
+branch to have commits and no PR, then <code>Create&nbsp;PR</code>. <b>Ship it</b> collapses it. The
+destination on a PR-less branch is always the same — an open pull request — so the button names the
+destination and works out the steps.</p>
+
+<div class="rules"><table>
+<tr><th style="width:30%">state</th><th style="width:26%">CTA before</th><th style="width:22%">CTA now</th><th>why</th></tr>
+<tr><td><b>no PR · 3 files uncommitted</b></td><td>Commit &amp; push</td><td><b>Ship it</b></td>
+  <td>Pushing is not the point; the point is a reviewable PR. Committing and pushing were only ever
+  the first two thirds of the job.</td></tr>
+<tr><td><b>no PR · 2 commits unpushed</b></td><td>Push</td><td><b>Ship it</b></td>
+  <td>Same destination, one fewer step to compose. The prompt lists two lines instead of three.</td></tr>
+<tr><td><b>no PR · nothing outstanding</b></td><td>Create PR</td><td><b>Ship it</b></td>
+  <td>Degenerates to exactly what <code>Create&nbsp;PR</code> did — one verb across the phase beats a
+  button whose label changes as you work.</td></tr>
+<tr><td><b>no PR · uncommitted <i>and</i> unpushed</b></td><td>Fix <i>(magic, ≥2 problems)</i></td><td><b>Ship it</b></td>
+  <td>Ship it outranks the magic Fix here. Both bundle; only one says where it is going.</td></tr>
+<tr><td>PR open · uncommitted work</td><td>Commit &amp; push</td><td><i>unchanged</i></td>
+  <td><b>Ship it never appears once a PR exists.</b> This is why <code>commitAndPush</code> and
+  <code>push</code> survive as actions in their own right rather than being absorbed.</td></tr>
+<tr><td>primary checkout (<code>main</code>)</td><td><i>(none — CTA rests)</i></td><td><i>unchanged</i></td>
+  <td>Inherits <code>createPr</code>'s guard: you do not raise a pull request for <code>main</code>.</td></tr>
+</table></div>
+
+<div class="callout"><b>The gate is one condition, already computed.</b>
+<code>canShipIt = pr == null &amp;&amp; !isPrimary &amp;&amp; branch != null</code> — the same flag
+<code>_ctaFor</code> already took as <code>canCreatePr</code>, plus the branch it already required. No
+new data is fetched and no new state is derived; the check sits <i>above</i> the one that selects
+<code>MagicRemedy</code>, which is what makes Ship it outrank it. The <code>PrSignal</code>s
+themselves are untouched, which is what keeps the detail list honest — and
+<code>_ctaFor</code>’s standing <code>Create&nbsp;PR</code> offer is left in place as the honest
+fallback rather than deleted, so the rule lives in one function instead of two.</div>
+
+<div class="callout"><b>What it does not do.</b> It is an <i>ask the agent</i> action, so it inserts
+the prompt and stops — <code>Ship&nbsp;it</code> sounds like a button that acts, and it is a button
+that types. The alternative (a direct op) was rejected because both halves need prose a command
+cannot invent: a commit message, and a PR title and body. <code>gh pr create --fill</code> would reuse
+the commit subject for both, which is exactly the low-effort PR description this action exists to
+avoid.</div>
+</section>
+
 <script>
 const TONE={blocking:'var(--fail)',attention:'var(--pending)',quiet:'var(--outline)',landed:'var(--merged)'};
 const ic=(n,w='light')=>`<i class="ph-${w} ph-${n}"></i>`;
@@ -377,14 +428,18 @@ const st={
     num:'main',tone:'quiet',dot:{cls:'hollow'},quiet:true,
     lead:'clean',rest:[],
     cta:{label:'Ask the agent',icon:'sparkle',tone:'quiet',idle:true}},
-  noPrClean:{cap:'a branch with no PR and nothing outstanding — also no chip',
+  noPrClean:{cap:'a branch with no PR and nothing outstanding — also no chip, but the bar\'s standing offer is <b>Ship it</b>',
     num:'feat/pr-actions',tone:'quiet',dot:{cls:'hollow'},quiet:true,
     lead:'ready for a PR',rest:[],
-    cta:{label:'Create PR',icon:PR,tone:'attention'}},
-  dirty:{cap:'no PR yet · uncommitted work',
+    cta:{label:'Ship it',icon:'rocket-launch',tone:'attention'}},
+  dirty:{cap:'no PR yet · uncommitted work — the destination is a PR, not a pushed branch',
     num:'feat/pr-actions',tone:'attention',dot:{},
     lead:'3 files uncommitted',rest:[],
-    cta:{label:'Commit & push',icon:'arrow-up',tone:'attention'}},
+    cta:{label:'Ship it',icon:'rocket-launch',tone:'attention'}},
+  aheadNoPr:{cap:'no PR yet · committed but unpushed — same verb, fewer steps to compose',
+    num:'feat/pr-actions',tone:'attention',dot:{},
+    lead:'2 commits unpushed',rest:[],
+    cta:{label:'Ship it',icon:'rocket-launch',tone:'attention'}},
   green:{cap:'open · green, nothing pressing',
     num:'#142',tone:'quiet',dot:{c:'var(--pass)'},
     lead:'12 checks passed',rest:[],leadTone:'quiet',
@@ -586,7 +641,8 @@ el('ladder').innerHTML=Object.values(st).map(m=>
       // to rows with nothing to report and made repo cards tall enough to push
       // their own "Show less" control off screen.
       ? `<div style="padding:6px 8px;font-size:11.5px;color:var(--outline)">
-           <i class="ph-light ph-minus-circle"></i> nothing rendered \u2014 <code>PrStatus.isQuiet</code></div>`
+           <i class="ph-light ph-minus-circle"></i> no chip in dense lists — <code>PrStatus.isQuiet</code>;
+           the desktop bar always renders, so it keeps its CTA</div>`
       : bHTML(m,'B1')}</div>`).join('');
 
 /* ═══ 4 · detail popover + menu ════════════════════════════════════ */
@@ -917,6 +973,11 @@ const ACTS=[
       '<span class="c"># sessions reconciled as in Wrap up. No base sync \u2014 nothing landed.</span>',
   note:'Symmetric with Wrap up minus the base-branch leg. Deleting the branch is safe enough to be the default: a pull request cannot exist without a pushed head, so the commits remain on <code>origin/&lt;branch&gt;</code> and a local delete is recoverable by re-fetch. The confirm names the branch, so declining is available.'},
 
+ {n:'Ship it',i:'rocket-launch',kind:'a',ship:true,prop:true,
+  when:'<b>no pull request</b> · not the primary checkout<br>whatever else is outstanding',
+  cmd:null,
+  note:'Owns the <b>whole pre-PR phase</b>: it is the CTA on every state where a branch could still become a pull request, and the <code>skip any step that is already done</code> clause is what makes one wording correct in all three of them — three steps to do on a dirty branch, two once it is committed, one on a branch that just needs the PR raised. <b>Not composed from the signals</b> the way the magic <code>Fix</code> is, and the difference is the point: Fix has to enumerate because a static prompt cannot know which checks failed or how many threads are open, whereas these three steps are fixed, named above, and the agent must read <code>git status</code> to carry any of them out anyway. So this stays an ordinary overridable prompt rather than a second remedy type with its own dispatch case. Like Fix it <i>is</i> <b>CTA-level</b>, never a per-fact remedy: the facts keep their own verbs (<code>Commit &amp; push</code>, <code>Push</code>) in the detail list, or the list would show two rows both offering “Ship it” and neither clearing the row it sat on. It <b>outranks the magic Fix</b> on a PR-less branch — both bundle, but Fix stops at “no longer broken”, which is not where a branch with no pull request is trying to get to. Inserts a prompt like every other <i>ask the agent</i> action, so nothing is sent for you: the name promises more urgency than the mechanism delivers, which is the accepted cost of the no-auto-send rule.'},
+
  {n:'Fix',i:'magic-wand',kind:'a',magic:true,
   when:'<b>two or more</b> prompt-backed facts \u2014 <b>and no direct op outstanding</b>',
   cmd:null,
@@ -941,6 +1002,8 @@ const PROMPTS={
 
 const MAGIC='This branch has several outstanding problems. Work through all of them, in whatever order makes sense, and push when done. Do not stop after the first one. Reply with a short summary of what you changed.';
 
+const SHIP='Get this branch shipped as a pull request. Commit anything still uncommitted with a clear, conventional commit message; push to the remote, setting the upstream if the branch has none; then open a pull request with `gh pr create`, giving it a clear title and a description that covers what changed, why, and how it was tested. Skip any step that is already done. Reply with the PR URL when done.';
+
 const esc=(t)=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 el('acts').innerHTML=ACTS.map(a=>{
@@ -952,6 +1015,9 @@ el('acts').innerHTML=ACTS.map(a=>{
       '<b>- 3 threads open</b>\n'+
       '<b>- 1 commit unpushed</b>\n'+
       '<span class="c">   \u2191 generated from the current signals, each with its detail when known</span>';
+  } else if(a.ship){
+    bodyLabel='prompt inserted in the composer (never sent)';
+    bodyContent=esc(SHIP);
   } else if(a.prompt){
     bodyLabel='prompt inserted in the composer (never sent)';
     bodyContent=esc(PROMPTS[a.prompt]);
@@ -965,6 +1031,7 @@ el('acts').innerHTML=ACTS.map(a=>{
       <span class="nm">${a.n}</span>
       <span class="kind ${a.kind}">${a.kind==='d'?'do now':'ask the agent'}</span>
       ${a.confirm?'<span class="cf">asks first</span>':''}
+      ${a.prop?'<span class="tag new">as built</span>':''}
       <span class="when">${a.when}</span>
     </header>
     <div class="body">

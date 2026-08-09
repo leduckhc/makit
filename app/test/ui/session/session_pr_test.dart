@@ -379,8 +379,11 @@ void main() {
         reason: 'nothing elided, nothing to hide',
       );
       // Exactly one: the pinned button. The fact is the headline, so it does not
-      // also appear as a list row with a duplicate button.
-      expect(find.text('Commit & push'), findsOneWidget);
+      // also appear as a list row with a duplicate button. "Ship it" rather than
+      // the fact's own "Commit & push": with no PR the whole pre-PR phase is the
+      // one action, and the button names the destination.
+      expect(find.text('Ship it'), findsOneWidget);
+      expect(find.text('Commit & push'), findsNothing);
       expect(find.textContaining('never sends for you'), findsOneWidget);
     });
 
@@ -855,6 +858,18 @@ void main() {
         branch: 'main',
       );
       expect(find.byType(SessionPrChip), findsNothing);
+    });
+
+    testWidgets('a clean PR-less branch still offers Ship it here', (
+      tester,
+    ) async {
+      // The chip used to be gated on `isQuiet`, which is a dense-list rule: this
+      // branch has no PR and nothing outstanding, so it was quiet and no chip
+      // rendered — leaving the mobile user with no way to reach Ship it on
+      // exactly the branch that was ready to ship. Desktop never had the problem
+      // because its composer bar always renders.
+      await pumpScreen(tester, worktreePath: '/repo/wt', branch: 'feat');
+      expect(find.byType(SessionPrChip), findsOneWidget);
     });
 
     testWidgets('shows nothing before the session has a worktree', (
