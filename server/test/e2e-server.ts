@@ -107,10 +107,41 @@ function seedDeviceRegistry(home: string, bearer: string): void {
   writeFileSync(resolve(home, "devices.json"), JSON.stringify([device], null, 2), { mode: 0o600 });
 }
 
+/**
+ * Refuse to start when another harness already owns this port's control socket.
+ *
+ * Without this, a second instance that loses the race for the WSS port still runs
+ * far enough to tear down the *first* instance's control socket on its way out —
+ * leaving a live WSS server whose socket file is stale, so every CLI verb reports
+ * "makit is not running" against a server that is plainly listening.
+ */
+async function refuseIfControlSocketIsLive(socketPath: string): Promise<void> {
+  const { connect } = await import("node:net");
+  const alive = await new Promise<boolean>((resolve) => {
+    const sock = connect(socketPath);
+    const done = (v: boolean) => {
+      sock.destroy();
+      resolve(v);
+    };
+    sock.once("connect", () => done(true));
+    sock.once("error", () => done(false));
+  });
+  if (alive) {
+    console.error(
+      `e2e-server: another harness already owns ${socketPath} — stop it first (its WSS port is in use too)`,
+    );
+    process.exit(2);
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const makitHome = resolve(tmpdir(), `makit-e2e-${args.port}`);
   process.env.MAKIT_HOME = makitHome;
+  // Before anything is bound or written: a second harness must refuse, not race.
+  // Losing the WSS race later still tears down the winner's control socket on the
+  // way out, which leaves a live server that every CLI verb reports as down.
+  await refuseIfControlSocketIsLive(controlSocketPath());
   seedDeviceRegistry(makitHome, args.bearer);
 
   const cert = await loadOrCreateCert();
