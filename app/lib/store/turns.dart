@@ -85,7 +85,8 @@ class TurnSpan {
   final int closeSeq;
 
   /// Time spent blocked on a gate (`awaiting-approval`/`awaiting-input`) inside
-  /// this turn — the sum of every gate-entry→next-`running` interval.
+  /// this turn — the sum of every gate-entry→next-`running` interval, plus an
+  /// open gate closed directly by `idle`.
   final int gatedMs;
 
   /// How many tool calls started inside the turn.
@@ -149,8 +150,9 @@ List<TurnSpan> deriveTurns(Iterable<SessionEvent> events) {
             }
           case 'awaiting-approval':
           case 'awaiting-input':
-            // Entering a gate: start accumulating until the next `running`. A
-            // repeated gate status keeps the first entry (do not reset).
+            // Entering a gate: start accumulating until the next `running` or
+            // the closing `idle`. A repeated gate status keeps the first entry
+            // (do not reset).
             open?.gateEnteredTs ??= e.ts;
           case 'idle':
             if (open != null) {
@@ -208,13 +210,18 @@ int? openTurnStartMs(Iterable<SessionEvent> events) {
 /// turn is not honestly renderable (D10a content gate, D10b backwards span).
 TurnSpan? _finish(_OpenTurn open, SessionEvent idle) {
   if (idle.ts < open.openTs) return null; // D10b
+  var gatedMs = open.gatedMs;
+  if (open.gateEnteredTs case final entered?) {
+    if (idle.ts < entered) return null; // D10b
+    gatedMs += idle.ts - entered;
+  }
   if (open.toolCount == 0 && !open.hasAgentMessage) return null; // D10a
   return TurnSpan(
     openTs: open.openTs,
     closeTs: idle.ts,
     openSeq: open.openSeq,
     closeSeq: idle.seq,
-    gatedMs: open.gatedMs,
+    gatedMs: gatedMs,
     toolCount: open.toolCount,
     hasAgentMessage: open.hasAgentMessage,
   );
@@ -235,14 +242,20 @@ List<ChatItem> withTurnReceipts(List<ChatItem> items, List<TurnSpan> spans) {
   if (spans.isEmpty) return items;
 
   // seq of the row a receipt must follow → the span it reports. A turn's last
-  // row is the highest-seq item below its closing status event.
+  // row is the highest-seq item below its closing status event. The map keeps
+  // the existing lastSeq collision behavior: a later span overwrites an earlier
+  // one for the same key.
   final receiptAfter = <int, TurnSpan>{};
+  var itemIndex = 0;
   for (final span in spans) {
+    while (itemIndex < items.length && items[itemIndex].seq < span.openSeq) {
+      itemIndex++;
+    }
+
     int? lastSeq;
-    for (final item in items) {
-      if (item.seq >= span.openSeq && item.seq < span.closeSeq) {
-        lastSeq = item.seq;
-      }
+    while (itemIndex < items.length && items[itemIndex].seq < span.closeSeq) {
+      lastSeq = items[itemIndex].seq;
+      itemIndex++;
     }
     if (lastSeq != null) receiptAfter[lastSeq] = span;
   }

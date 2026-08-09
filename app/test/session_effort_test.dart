@@ -95,6 +95,7 @@ void main() {
       createdAt: 0,
       nowMs: _day,
     );
+    expect(find.text('Turns'), findsOneWidget);
     expect(find.text('Median turn'), findsNothing);
     expect(find.text('Age'), findsOneWidget);
   });

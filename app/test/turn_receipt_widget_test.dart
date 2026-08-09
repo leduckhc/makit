@@ -80,10 +80,16 @@ void main() {
     t,
   ) async {
     await _pump(t, _receipt(wallMs: 400000, gatedMs: 252000), width: 340);
-    // Two Text runs stacked in a Column rather than one Row that wraps.
-    expect(find.byType(Column), findsWidgets);
-    expect(find.textContaining('waiting on you'), findsOneWidget);
-    expect(find.textContaining('6m 40s'), findsOneWidget);
+    final headline = find.textContaining('6m 40s');
+    final gate = find.textContaining('waiting on you');
+    expect(headline, findsOneWidget);
+    expect(gate, findsOneWidget);
+
+    expect(
+      t.getTopLeft(gate).dy,
+      greaterThan(t.getTopLeft(headline).dy),
+      reason: 'the gate token must be below the headline on narrow surfaces',
+    );
   });
 
   testWidgets('D17: the receipt reads as one sentence to a screen reader', (

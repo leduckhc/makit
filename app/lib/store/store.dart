@@ -344,6 +344,7 @@ class StoreController extends StateNotifier<StoreState> {
         _replayBuffer.clear();
         _historyLoaded.clear();
         _fullReplay.clear();
+        _serverClockOffset = 0;
         _watchingGithubBudget = false;
         state = StoreState.empty();
         // SPEC-45 D9: the per-(agent, project) command cache belonged to the old

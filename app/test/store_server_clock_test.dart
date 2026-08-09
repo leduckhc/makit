@@ -77,20 +77,38 @@ class _Storage implements SecureStore {
 void main() {
   const deviceNow = 1_000_000;
 
-  ProviderContainer containerFor(_Transport transport) {
+  Map<String, dynamic> serverJson({
+    required String fingerprint,
+    required String host,
+    required String label,
+  }) => {
+    'host': host,
+    'port': 8443,
+    'fingerprint': fingerprint,
+    'bearer': 'b',
+    'label': label,
+  };
+
+  ProviderContainer containerFor(
+    _Transport transport, {
+    Map<String, String>? storageData,
+  }) {
     final container = ProviderContainer(
       overrides: [
         connectionControllerProvider.overrideWith(
           (ref) => ConnectionController(
-            _Storage({
-              'paired_server': jsonEncode({
-                'host': '192.168.1.10',
-                'port': 8443,
-                'fingerprint': 'f' * 64,
-                'bearer': 'b',
-                'label': 'desktop',
-              }),
-            }),
+            _Storage(
+              storageData ??
+                  {
+                    'paired_server': jsonEncode(
+                      serverJson(
+                        fingerprint: 'f' * 64,
+                        host: '192.168.1.10',
+                        label: 'desktop',
+                      ),
+                    ),
+                  },
+            ),
             transportFactory: () => transport,
             browseLan:
                 ({Duration timeout = const Duration(seconds: 3)}) async =>
@@ -118,6 +136,36 @@ void main() {
 
     expect(store.serverClockOffset, 30000);
     expect(store.serverNowMs(), deviceNow + 30000);
+  });
+
+  test('switching active servers resets the clock offset', () async {
+    final transport = _Transport();
+    final fpA = 'a' * 64;
+    final fpB = 'b' * 64;
+    final container = containerFor(
+      transport,
+      storageData: {
+        'paired_servers': jsonEncode({
+          'servers': [
+            serverJson(fingerprint: fpA, host: '192.168.1.10', label: 'A'),
+            serverJson(fingerprint: fpB, host: '10.0.0.2', label: 'B'),
+          ],
+          'activeId': fpA,
+        }),
+      },
+    );
+    final store = container.read(storeControllerProvider.notifier);
+    await Future<void>.delayed(Duration.zero);
+
+    transport.pushEvent(1, deviceNow + 30000);
+    await Future<void>.delayed(Duration.zero);
+    expect(store.serverClockOffset, 30000);
+
+    await container.read(connectionControllerProvider.notifier).switchTo(fpB);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(store.serverClockOffset, 0);
+    expect(store.serverNowMs(), deviceNow);
   });
 
   test('a replayed event does NOT advance the offset (D15)', () async {

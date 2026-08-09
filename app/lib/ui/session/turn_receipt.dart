@@ -53,9 +53,8 @@ class TurnReceipt extends StatelessWidget {
       color: cs.onSurfaceVariant,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
-    final headline =
-        '${formatElapsed(item.wallMs) ?? ''} · '
-        '${toolCountLabel(item.toolCount)}';
+    final elapsed = formatElapsed(item.wallMs) ?? 'an unknown time';
+    final headline = '$elapsed · ${toolCountLabel(item.toolCount)}';
     final gate = gateLabel(item.gatedMs);
 
     return Semantics(

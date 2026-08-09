@@ -80,6 +80,35 @@ void main() {
       expect(t.agentMs, 5000);
     });
 
+    test('a repeated gate status keeps the first gate entry', () {
+      final turns = deriveTurns([
+        _user(1),
+        _status(2, 'running'),
+        _tool(3),
+        _status(4, 'awaiting-approval'),
+        _status(5, 'awaiting-approval'),
+        _status(7, 'running'), // still 3s gated (4000 → 7000)
+        _agent(8),
+        _status(9, 'idle'),
+      ]);
+      expect(turns.single.gatedMs, 3000);
+    });
+
+    test('a gate that closes directly on idle is still gated time', () {
+      final turns = deriveTurns([
+        _user(1),
+        _status(2, 'running'),
+        _tool(3),
+        _status(4, 'awaiting-approval'),
+        _status(9, 'idle'), // 5s gated (4000 → 9000)
+      ]);
+      expect(turns.length, 1);
+      final t = turns.single;
+      expect(t.wallMs, 8000);
+      expect(t.gatedMs, 5000);
+      expect(t.agentMs, 3000);
+    });
+
     test('awaiting-input also gates and never closes the turn', () {
       final turns = deriveTurns([
         _user(1),

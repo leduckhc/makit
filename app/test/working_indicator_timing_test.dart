@@ -32,7 +32,7 @@ void main() {
       ProviderScope(
         overrides: [
           eventsProvider.overrideWithValue(events),
-          liveNowProvider(1).overrideWithValue(now),
+          liveNowProvider(kLiveTickCadence.inSeconds).overrideWithValue(now),
         ],
         child: MaterialApp(
           theme: makitDarkTheme,

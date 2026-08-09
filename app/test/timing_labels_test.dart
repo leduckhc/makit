@@ -36,6 +36,17 @@ void main() {
       expect(s.live, isTrue);
     });
 
+    test('a backwards live span is unrepresentable (D10b)', () {
+      final s = toolDurationState(
+        item: _tool(ts: 5000),
+        enclosingTurnCloseTs: null,
+        serverNowMs: 1000,
+        sessionRunning: true,
+      );
+      expect(s.ms, isNull);
+      expect(s.live, isTrue);
+    });
+
     test('a no-end call whose turn closed FREEZES at the idle (D6a)', () {
       final s = toolDurationState(
         item: _tool(ts: 1000),
