@@ -852,9 +852,9 @@
               </svg>
             </div>
             <div style="flex:1;min-width:0">
-              <div class="cap" style="margin-bottom:5px">Link</div>
+              <div class="cap" style="margin-bottom:5px">Link · capability URL</div>
               <div class="mono" style="font-size:10.5px;color:var(--on-surface-variant);line-height:1.5;word-break:break-all">
-                https://mac.tail9f2c.ts.net/docs/<wbr>feat-serving-html/<wbr>mockups/open-ports.html
+                https://mac.tail9f2c.ts.net/docs/<wbr><span style="color:var(--orange)">7f3a…4e1c</span>/<wbr>mockups/open-ports.html
               </div>
               <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
                 <span class="reach tailnet">tailnet</span>
@@ -876,6 +876,15 @@
           <b>The QR is the sleeper feature</b> — it puts the board on an iPad or a colleague's laptop in one scan, and
           makit already owns QR rendering from device pairing.
         </p>
+        <div class="note warn" style="margin-top:14px">
+          <strong>⚠ Corrected during spec review (SPEC-46 D9).</strong> This frame first drew
+          <code>/docs/&lt;branch&gt;/&lt;path&gt;</code>. That cannot work: a URL that must open in <b>Safari</b> cannot
+          carry a bearer <em>header</em>, so the capability has to live in the <b>path</b> —
+          <code>/docs/<span style="color:var(--orange)">&lt;grantId&gt;</span>/&lt;relPath&gt;</code>, 32 bytes of CSPRNG.
+          The <code>grantId</code> <em>is</em> the secret, which is exactly why publishing is explicit, expires, and has
+          a <em>Stop sharing</em> button. A wrong or expired id returns <b>404, not 403</b> — 403 would confirm the file
+          exists.
+        </div>
       </div>
 
       <div class="frame" style="max-width:440px">
