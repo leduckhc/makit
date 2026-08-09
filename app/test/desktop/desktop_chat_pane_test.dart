@@ -1193,14 +1193,13 @@ void main() {
         'message draft behind it', (tester) async {
       final container = await pumpAnswering(tester);
 
-      await tester.tap(find.text('Commit & push'));
+      // The CTA on this fixture's PR-less branch — which prompt it is does not
+      // matter here, only where the text lands.
+      await tester.tap(find.text('Ship it'));
       await tester.pumpAndSettle();
 
       // Visible: the only mounted composer is the answer composer.
-      expect(
-        find.text(PrPromptAction.commitAndPush.defaultPrompt),
-        findsOneWidget,
-      );
+      expect(find.text(PrPromptAction.shipIt.defaultPrompt), findsOneWidget);
       // And the hidden message draft is left alone — it is not what the user is
       // looking at, and it would surface the text later, out of nowhere.
       expect(container.read(composerDraftsProvider)['s1'], isNull);

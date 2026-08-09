@@ -724,8 +724,11 @@ List<Widget> buildPrActionMenu(
         ),
       ),
     for (final action in PrPromptAction.values)
-      // "Create PR" is meaningless once one exists.
-      if (!(hasPr && action == PrPromptAction.createPr))
+      // "Create PR" and "Ship it" are meaningless once one exists — both aim at
+      // raising it. Removed rather than greyed, for the reason in the docstring.
+      if (!(hasPr &&
+          (action == PrPromptAction.createPr ||
+              action == PrPromptAction.shipIt)))
         _PromptMenuItem(
           action: action,
           // Applies when the current facts asked for it. Everything else stays
@@ -749,6 +752,17 @@ String _whyNot(PrPromptAction action, PrStatus status, {required bool ended}) {
       status.isPrimary
           ? 'the primary checkout is not a branch you open a pull request from'
           : 'this branch has no commits to open a PR with',
+    // Blocked by two different states, and they need different sentences.
+    // `canShipIt` is false when a PR exists (the menu drops the entry rather than
+    // explaining it), on the primary checkout, *and* on a detached head — so
+    // returning the primary reason unconditionally told a detached worktree
+    // something plainly untrue. Worded differently from `createPr`'s otherwise
+    // identical primary block on purpose: both are listed here, and two rows
+    // repeating one sentence verbatim reads like a rendering bug.
+    PrPromptAction.shipIt =>
+      status.isPrimary
+          ? 'the primary checkout is not a branch you ship from'
+          : 'this worktree is not on a branch',
     // On a PR-less branch these are all true but beside the point: there is no
     // build and no thread because there is no pull request. Say that instead.
     PrPromptAction.fixPr =>

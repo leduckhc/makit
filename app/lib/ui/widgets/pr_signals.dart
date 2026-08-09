@@ -260,11 +260,29 @@ class PrStatus {
   /// actually outstanding.
   ///
   /// Deliberately ignores the CTA. A clean branch with no PR still *offers*
-  /// "Create PR", but that is an invitation, not a fact — putting it on every
+  /// "Ship it", but that is an invitation, not a fact — putting it on every
   /// branch of every repo card added a meta line to rows that had nothing to
   /// report and pushed the card's own controls off screen. The desktop bar always
   /// renders, so it keeps the offer; the list stays quiet.
+  ///
+  /// **This is a dense-list rule only.** A surface that is itself the entry point
+  /// to the CTA must use [hasSomethingToOffer] instead — see its docstring for
+  /// what gating a session on this cost.
   bool get isQuiet => !hasPr && !signals.any((s) => s.remedy != null);
+
+  /// Whether a surface that can *act* has anything to show.
+  ///
+  /// [isQuiet] answers "is this worth a line in a list", and its reasoning leans
+  /// on the desktop bar always rendering so the offer is never lost. Mobile has
+  /// no always-rendered bar: the session chip is the only way into the CTA, so
+  /// gating it on [isQuiet] hid the button on exactly the branch that was ready
+  /// to ship — no PR, nothing outstanding, and "Ship it" waiting behind a chip
+  /// that never drew.
+  ///
+  /// So an offer counts here even though it is not a fact. Only a state with
+  /// neither — a clean primary checkout, a detached head with nothing to do —
+  /// stays hidden, because there the CTA rests too.
+  bool get hasSomethingToOffer => !isQuiet || !cta.isIdle;
 }
 
 /// `N thing` / `N things`.
@@ -568,15 +586,35 @@ PrStatus prStatus({
   // undone behind a button that claims otherwise — better to name one verb.
   final actionable = signals.where((s) => s.remedy != null).toList();
   final promptBacked = actionable.where((s) => s.remedy is PromptRemedy).length;
-  final cta = promptBacked >= 2 && promptBacked == actionable.length
+  // Before either of those: a branch that could still become a pull request has
+  // one destination, so the button names *it* rather than whichever step happens
+  // to be next. Ship it composes commit + push + create, skipping what is done.
+  //
+  // It outranks the magic Fix deliberately. Both bundle several steps, but Fix
+  // stops at "no longer broken" — on a branch with no pull request that is not
+  // where the work is trying to get to. Keyed off `pr`, not `open`: a PR in a
+  // state this derivation does not recognise still exists, and offering to raise
+  // a second one is the trap "Create PR" fell into.
+  //
+  // CTA-level only, never a signal's remedy: two facts each offering "Ship it"
+  // in the detail list would be two buttons doing the same whole-branch job and
+  // neither clearing the row it sat on. The facts keep `Commit & push`/`Push`.
+  final canShipIt = pr == null && !isPrimary && branch != null;
+  final cta = canShipIt
+      ? PrCta(
+          'Ship it',
+          ctaTone,
+          remedy: const PromptRemedy(PrPromptAction.shipIt),
+        )
+      : promptBacked >= 2 && promptBacked == actionable.length
       ? PrCta('Fix', ctaTone, remedy: const MagicRemedy())
       : _ctaFor(
           loud,
           tone: ctaTone,
-          // "Create PR" is only ever offered for a branch that could have one —
-          // keyed off the PR itself, not off `open`: a PR in a state this
-          // derivation does not recognise leaves `open` null while very much
-          // having one.
+          // Unreachable while [canShipIt] covers every PR-less secondary branch,
+          // and kept as the honest fallback rather than deleted: the standing
+          // offer belongs to `_ctaFor`, and inlining its condition here would put
+          // the same rule in two places.
           canCreatePr: pr == null && !isPrimary,
           branch: branch,
         );
@@ -672,6 +710,7 @@ String prRemedyLabel(PrRemedy remedy) => switch (remedy) {
     PrPromptAction.commitAndPush => 'Commit & push',
     PrPromptAction.resolveComments => 'Resolve',
     PrPromptAction.createPr => 'Create PR',
+    PrPromptAction.shipIt => 'Ship it',
   },
   DirectRemedy(op: PrDirectOp.wrapUp) => 'Wrap up',
   DirectRemedy(op: PrDirectOp.discardWorktree) => 'Discard worktree',
