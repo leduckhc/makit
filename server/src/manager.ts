@@ -15,6 +15,7 @@ import type { AskUser } from "./uicall.js";
 import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/catalog.js";
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
+import { sessionTokens } from "./ws/session_tokens.js";
 import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
@@ -1251,7 +1252,12 @@ export class SessionManager extends EventEmitter {
     // Seed history BEFORE the adapter goes live so it precedes new events.
     if (opts.backfill && opts.backfill.length > 0) session.backfill(opts.backfill);
 
-    await activeAdapter.start(this.startOpts(project.dto.path, session.id, opts.resumeSessionPath));
+    await activeAdapter.start(
+      this.startOpts(project.dto.path, session.id, opts.resumeSessionPath, undefined, {
+        projectId: project.dto.id,
+        worktree: session.worktreePath,
+      }),
+    );
     // Persist the live adapter's native session/thread id for restart-resume.
     session.captureAgentSessionId();
     this.sessions.set(session.id, session);
@@ -1268,7 +1274,16 @@ export class SessionManager extends EventEmitter {
     sessionId: string,
     resumeSessionPath?: string,
     resumeAgentSessionId?: string,
+    lineage?: { projectId: string; worktree?: string },
   ): import("./adapters/adapter.js").SpawnOpts {
+    // SPEC-46 D3: the agent's environment carries a per-session scoped credential
+    // plus its lineage context. The token is minted here (and re-minted on
+    // re-attach, which drops the old one first) because env is a spawn-time
+    // snapshot — it cannot be rotated in a running process, so its lifecycle is
+    // tied to the adapter's. `MAKIT_SESSION_ID` was already injected; the rest
+    // is additive. `MAKIT_SPAWN_DEPTH` is display-only (D9: the server recomputes
+    // depth from persisted lineage and ignores a forged value); it is 0 until
+    // the lineage counter lands (T11).
     return {
       cwd: projectPath,
       sessionId,
@@ -1280,6 +1295,10 @@ export class SessionManager extends EventEmitter {
             MAKIT_BRIDGE_URL: this.bridge.url,
             MAKIT_BRIDGE_TOKEN: this.bridge.token,
             MAKIT_SESSION_ID: sessionId,
+            MAKIT_CLI_TOKEN: sessionTokens.mint(sessionId),
+            MAKIT_PROJECT_ID: lineage?.projectId ?? "",
+            MAKIT_WORKTREE: lineage?.worktree ?? projectPath,
+            MAKIT_SPAWN_DEPTH: "0",
           }
         : undefined,
       extensions: this.bridge ? this.bridge.extensionPaths : [],
@@ -1398,7 +1417,17 @@ export class SessionManager extends EventEmitter {
       );
     }
     try {
-      await adapter.start(this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId));
+      // SPEC-46 D3: re-attach restarts the adapter, which is the only moment an
+      // env-delivered token can change. Drop the pre-restart token and mint a
+      // fresh one in the same step (startOpts mints), so the resumed agent's
+      // old credential stops authenticating the instant it is superseded.
+      sessionTokens.drop(session.id);
+      await adapter.start(
+        this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId, {
+          projectId: session.projectId,
+          worktree: session.worktreePath,
+        }),
+      );
     } catch (e) {
       // Roll back to the cold placeholder. Leaving a never-started adapter in
       // place would make the session look live while silently swallowing input,

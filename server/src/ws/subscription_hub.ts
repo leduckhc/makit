@@ -17,6 +17,7 @@ import { newId } from "../protocol.js";
 import { WireErrorCode } from "../protocol/codec.js";
 import { log } from "../log.js";
 import type { WsClient } from "./client.js";
+import { isAgentScoped } from "./principal.js";
 
 /** The slice of the session manager the hub depends on. */
 export interface SubscriptionManager {
@@ -72,14 +73,21 @@ export class SubscriptionHub {
    * is NOT required to receive live events — the `subscribed` set only governs
    * history replay on `sub` and prompt routing (see {@link ReverseRpc}).
    * Returns the send count.
+   *
+   * SPEC-46 D17 (rev 3): the auto-mirror is correct for a phone but a leak for
+   * an agent — `fanout` is not a command, so the router's capability check does
+   * not cover it, and a session-scoped token that merely connected would
+   * otherwise receive every session's transcript. A session-scoped principal
+   * therefore receives ONLY its own session's events; a `client`/no-caps
+   * principal keeps today's behaviour unchanged.
    */
-  fanout(_sessionId: string, event: SessionEvent): number {
+  fanout(sessionId: string, event: SessionEvent): number {
     let sent = 0;
     for (const c of this.clients) {
-      if (c.authed) {
-        this.sendEvent(c, event);
-        sent++;
-      }
+      if (!c.authed) continue;
+      if (isAgentScoped(c.principal) && c.principal!.sessionId !== sessionId) continue;
+      this.sendEvent(c, event);
+      sent++;
     }
     return sent;
   }

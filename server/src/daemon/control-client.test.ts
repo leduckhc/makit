@@ -32,6 +32,7 @@ function fakeBackend(over: Partial<ControlBackend> = {}): ControlBackend {
     devicesList: () => ({ devices: [] }),
     devicesRevoke: () => ({ removed: false }),
     sessionsList: () => ({ sessions: [] }),
+    cliGrant: () => ({ deviceId: "cli-1", label: "cli@host", bearer: "beef", created: true }),
     serverStop: () => ({ stopping: true }),
     logsTail: () => undefined,
     ...over,
