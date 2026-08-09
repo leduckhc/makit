@@ -396,6 +396,23 @@ test("U4: pi is refused with D6's precise sentence naming handoff, never a bare 
   assert.equal(h.spawnCalls.length, 0, "no child is created when fork is unsupported");
 });
 
+test("U4: a harness that is not run under pi-acp is refused without inventing a component", async () => {
+  // D6's sentence names `pi-acp` because pi genuinely runs under it. Deriving
+  // "<agent>-acp" for every harness makes makit cite a binary that does not
+  // exist ("stub-acp", "codex-acp") — a refusal a user cannot act on and cannot
+  // search for.
+  const h = harness({
+    principal: cli,
+    session: { id: "src", agent: "stub", pending: false, adapter: { capabilities: { fork: false } } },
+  });
+  await h.cmd({ kind: "session.fork", sessionId: "src" });
+  const err = h.sent.find((f) => f.t === "err");
+  const message = String((err as { message?: string }).message);
+  assert.doesNotMatch(message, /stub-acp/, "no fabricated component name");
+  assert.match(message, /stub cannot fork/);
+  assert.match(message, /makit handoff/, "and it still names the way forward");
+});
+
 test("U4: a session that has not completed a turn is refused in plain words (rollout precondition)", async () => {
   const noTurn = forkable({
     adapter: {

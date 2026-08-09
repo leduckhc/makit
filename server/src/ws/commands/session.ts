@@ -504,12 +504,18 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     }
     const adapter = source.adapter;
     if (!adapter.capabilities.fork || !adapter.forkSession) {
-      // D6's precise sentence: name the harness and the alternative. For pi this
-      // reads "pi cannot fork: pi-acp advertises no `session/fork` — use `makit
-      // handoff` instead"; codex advertises fork and never reaches here.
+      // D6's precise sentence: name the harness, why it cannot, and the way
+      // forward. The `pi-acp` half is named only for pi, which genuinely runs
+      // under that bridge — deriving "<agent>-acp" for every harness would cite a
+      // binary that does not exist ("stub-acp", "codex-acp"), which a user can
+      // neither act on nor search for.
+      const because =
+        source.agent === "pi"
+          ? "pi-acp advertises no `session/fork`"
+          : "its back end advertises no native fork";
       ctx.err(
         WireErrorCode.BadRequest,
-        `${source.agent} cannot fork: ${source.agent}-acp advertises no \`session/fork\` — use \`makit handoff\` instead`,
+        `${source.agent} cannot fork: ${because} — use \`makit handoff\` instead`,
       );
       return;
     }
