@@ -200,6 +200,48 @@ void main() {
     expect(find.text('Approve'), findsOneWidget);
   });
 
+  testWidgets(
+    'confirmAction captions a prompt for a session the app never subscribed to',
+    (tester) async {
+      // The store holds NO session with this id (sessionsProvider is empty),
+      // so a caption that appears must have come from the envelope's `session`
+      // block — not from cached state. This is the D14 fallback: a phone reached
+      // at rung 3 of the ladder that never opened the session.
+      final (transport, notifications, _) = await pumpHandler(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      transport.emit(
+        Envelope(
+          t: MsgType.srvRequest,
+          id: 'req-caption',
+          body: {
+            'kind': 'confirmAction',
+            'title': 'Allow rm -rf build?',
+            'sessionId': 'ghost-session',
+            'session': {
+              'title': 'Fix the parser',
+              'agent': 'codex',
+              'parentId': 'parent-session',
+              'handoffReason': 'risky refactor',
+              'origin': 'agent',
+            },
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(notifications.shown, isEmpty);
+      expect(find.text('Allow rm -rf build?'), findsOneWidget);
+      // The caption is sourced from the envelope, proving the phone can describe
+      // a session it has never seen.
+      expect(find.textContaining('Fix the parser'), findsOneWidget);
+      expect(find.textContaining('codex'), findsOneWidget);
+      expect(find.textContaining('risky refactor'), findsOneWidget);
+    },
+  );
+
   testWidgets('uses the navigator key supplied by the desktop app', (
     tester,
   ) async {

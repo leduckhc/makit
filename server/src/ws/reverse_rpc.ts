@@ -15,9 +15,22 @@
  * audience, never from an agent-scoped token (D13c).
  */
 
-import type { Envelope } from "../protocol.js";
+import type { Envelope, SessionOrigin } from "../protocol.js";
 import type { WsClient } from "./client.js";
 import { isAgentScoped } from "./principal.js";
+
+/**
+ * SPEC-46 D14 — the fields the app needs to caption a prompt for a session it
+ * may never have subscribed to: the session's title, the agent/harness driving
+ * it, and D10's handoff origin (`parentId`/`handoffReason`/`origin`).
+ */
+export interface SessionCaption {
+  title: string;
+  agent: string;
+  parentId?: string;
+  handoffReason?: string;
+  origin?: SessionOrigin;
+}
 
 export interface ReverseRpcDeps {
   /** The live set of connected clients at call time. */
@@ -32,6 +45,14 @@ export interface ReverseRpcDeps {
    * no lineage routing (today's session-subscribers-or-everyone behaviour).
    */
   parentOf?: (sessionId: string) => string | undefined;
+  /**
+   * SPEC-46 D14 — the self-describing caption for `sessionId`'s prompt: title,
+   * agent/harness and handoff origin, attached to the `srv.request` so a client
+   * reached at rung 3 (never subscribed, no cached session) can still caption
+   * it. Absent, or returning `undefined` for an unknown/archived session, keeps
+   * today's bare envelope.
+   */
+  sessionCaption?: (sessionId: string) => SessionCaption | undefined;
   /**
    * Invoked when an `srv.request` reached NO live subscribed socket
    * (`sent === 0`). Returns the keep-pending gate: `true` keeps the request
@@ -172,11 +193,15 @@ export class ReverseRpc {
   ): Promise<Envelope> {
     const id = `srv-${Date.now()}-${++this.reqCounter}`;
     const timeoutMs = opts.timeoutMs ?? this.deps.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const caption = opts.sessionId ? this.deps.sessionCaption?.(opts.sessionId) : undefined;
     const envelope = {
       t: "srv.request" as const,
       id,
       ...body,
       ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+      // SPEC-46 D14: make the prompt self-describing for a client reached at
+      // rung 3 that never subscribed to (or has no cached copy of) the session.
+      ...(caption ? { session: caption } : {}),
     } as Envelope;
 
     return new Promise<Envelope>((resolve, reject) => {
