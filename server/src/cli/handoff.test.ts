@@ -72,7 +72,7 @@ interface Run {
  */
 async function run(
   argv: string[],
-  opts: { env?: Record<string, string | undefined>; events?: unknown[] } = {},
+  opts: { env?: Record<string, string | undefined>; events?: unknown[]; spawnErr?: string } = {},
 ): Promise<Run> {
   const cmds: Record<string, unknown>[] = [];
   const stub = await startStubWss({
@@ -81,7 +81,9 @@ async function run(
     projects: [{ id: "p1", name: "makit", path: "/tmp/repo", pinned: false, lastActivityAt: 0 }],
     onCmd: (m) => {
       cmds.push(m);
-      if (m.kind === "session.spawn") return { sessionId: "child-sid" };
+      if (m.kind === "session.spawn") {
+        return opts.spawnErr ? { __err: opts.spawnErr } : { sessionId: "child-sid" };
+      }
       if (m.kind === "worktree.create") return { path: "/tmp/repo-wt/fresh", branch: "fresh" };
       if (m.kind === "session.transcript") return { events: opts.events ?? [] };
       return {};
@@ -182,11 +184,16 @@ test("outside a makit session it is a usage error, and nothing is created", asyn
   assert.equal(r.cmds.length, 0);
 });
 
-test("the child is spawned with no parentId on the wire — the server derives it (D9)", async () => {
+test("the child names the session it was handed off from, so the chain is visible", async () => {
+  // An **agent** credential has its parent derived server-side and may not name a
+  // different one (D9). A human running `makit handoff` from a terminal has no
+  // session of its own, so it states the parent instead — otherwise the child
+  // records a reason with no origin, and neither `makit tree` nor the app's
+  // "handed off from …" caption has anything to show.
   const r = await run(["--goal", "make it idempotent"]);
   assert.equal(r.code, 0, r.err);
   const spawn = sent(r.cmds, "session.spawn")!;
-  assert.equal(spawn.parentId, undefined, "a forged parentId must never be sent");
+  assert.equal(spawn.parentId, "parent-sid");
   assert.equal(spawn.projectId, "p1");
 });
 
@@ -306,6 +313,17 @@ test("the parent is neither archived nor killed", async () => {
 test("the spawn records why the handoff happened (D10)", async () => {
   const r = await run(["--goal", "make it idempotent"]);
   assert.match(String(sent(r.cmds, "session.spawn")!.handoffReason), /make it idempotent/);
+});
+
+test("a refused spawn is a clean message, not a stack trace in the agent's shell", async () => {
+  // The depth bound (D9) refuses a handoff for real, and the caller is usually an
+  // agent's `bash` — so an unhandled rejection here means a wall of node frames in
+  // the transcript instead of "the session tree is at its maximum depth of 3".
+  const r = await run(["--goal", "x"], { spawnErr: "spawn refused: the session tree is at its maximum depth of 3" });
+  assert.notEqual(r.code, 0);
+  assert.match(r.err, /maximum depth of 3/);
+  assert.doesNotMatch(r.err, /\bat .*\(/, "no stack frames");
+  assert.equal(sent(r.cmds, "send.message"), undefined, "and no message is sent to a session that was refused");
 });
 
 test("--json prints the child's id and nothing else", async () => {

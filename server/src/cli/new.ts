@@ -14,7 +14,8 @@
  * (`uniqueBranch`), so this file must not pre-slugify. `--here` is the explicit
  * opt-out for "run in the tree I'm standing in".
  */
-import { connectCli } from "./connect.js";
+import { connectCli, failCommand } from "./connect.js";
+import { WireError } from "./client.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 import type { MakitClient } from "./client.js";
 import type { ProjectDTO } from "../protocol.js";
@@ -138,6 +139,11 @@ export async function runNew(argv: string[]): Promise<void> {
     }
     const where = branch ? ` on ${branch}` : "";
     console.log(`[makit] session ${sessionId}${where}  ${worktreePath}`);
+  } catch (e) {
+    // Only a refusal from the server is reported as a sentence; a real bug keeps
+    // its stack.
+    if (e instanceof WireError) return failCommand(e);
+    throw e;
   } finally {
     client.close();
   }

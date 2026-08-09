@@ -23,6 +23,20 @@ export interface ConnectArgs {
   port: number;
 }
 
+/**
+ * Print a command failure and exit `1`, with no stack trace.
+ *
+ * A refusal from the server ("the session tree is at its maximum depth of 3") is
+ * an *answer*, not a crash — and the caller is often an agent's `bash`, where an
+ * unhandled rejection means a wall of node frames in the transcript instead of the
+ * one sentence that explains what happened. Exit `1` because D8 reserves its codes
+ * for outcomes a script must distinguish; a refused command is none of them.
+ */
+export function failCommand(e: unknown): never {
+  console.error(`[makit] ${(e as Error).message}`);
+  return process.exit(1);
+}
+
 /** Print the reason and exit `4` — any credential the server would not take. */
 export function failAuth(message: string): never {
   console.error(`[makit] ${message}`);

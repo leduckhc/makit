@@ -67,6 +67,19 @@ export interface MakitClient {
   close(): void;
 }
 
+/**
+ * A command the server refused (an `err` frame answering a `cmd`) — a spawn past
+ * the depth bound, an unknown session, a capability the principal lacks. Distinct
+ * from a thrown Error so a verb can report the refusal as a sentence and leave
+ * genuine bugs to surface with their stack.
+ */
+export class WireError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WireError";
+  }
+}
+
 /** An auth failure (`hello` rejected). Callers map this to exit code 4 (C4/D8). */
 export class AuthError extends Error {
   constructor(message: string) {
@@ -136,7 +149,7 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
         const p = pending.get(id);
         if (p) {
           pending.delete(id);
-          p.reject(new Error(message));
+          p.reject(new WireError(message));
           return;
         }
         emit(m);

@@ -11,7 +11,8 @@
  * terminates. A session that silently vanished from this view, or a renderer that
  * recursed forever on a forged loop, would both be worse than a flat list.
  */
-import { connectCli } from "./connect.js";
+import { connectCli, failCommand } from "./connect.js";
+import { WireError } from "./client.js";
 import { stdout } from "./out.js";
 import type { SessionDTO } from "../protocol.js";
 
@@ -102,6 +103,11 @@ export async function runTree(argv: string[]): Promise<void> {
       return;
     }
     stdout.write(renderTree(sessions));
+  } catch (e) {
+    // Only a refusal from the server is reported as a sentence; a real bug keeps
+    // its stack.
+    if (e instanceof WireError) return failCommand(e);
+    throw e;
   } finally {
     client.close();
   }

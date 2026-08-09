@@ -18,11 +18,16 @@
  *   - **D16** — the parent is left running. No archive, no warning: two agents
  *     in one tree is a decision, and `makit ls` shows the sharing.
  *
- * `parentId` is deliberately **not** sent: the server derives it from the
- * credential (D9), so nothing here can forge ancestry or escape the depth bound.
+ * `parentId` **is** sent — and is then checked, not trusted. An agent credential
+ * has its parent derived from its own session and cannot name another (D9); a
+ * human credential (this CLI) states the session it is handing off from, which the
+ * server verifies exists and puts through the same depth/fan-out bound. Without
+ * that the child would record a handoff *reason* with no parent: nothing for
+ * `makit tree` to nest and nothing for the app to caption.
  */
 import { readFileSync } from "node:fs";
-import { connectCli } from "./connect.js";
+import { connectCli, failCommand } from "./connect.js";
+import { WireError } from "./client.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 import { parseManifest, renderManifest, renderTranscriptExcerpt, type HandoffManifest } from "./handoff_manifest.js";
 import type { SessionDTO, SessionEvent } from "../protocol.js";
@@ -140,8 +145,10 @@ export async function runHandoff(argv: string[]): Promise<void> {
       agent: args.to,
       worktreePath,
       branch,
-      // D10: why this session exists, so the app can caption it and the guard
-      // can attribute it. parentId is NOT sent — the server derives it (D9).
+      // D10: where this session came from and why, so the app can caption it and
+      // the spawn guard can attribute it. An agent token's `parentId` is derived
+      // server-side from its own session; ours is stated and then verified.
+      parentId,
       handoffReason: manifest.goal ?? `handoff from ${parentId.slice(0, 8)}`,
     });
     const sessionId = String(spawned.sessionId);
@@ -156,6 +163,11 @@ export async function runHandoff(argv: string[]): Promise<void> {
     const to = args.to ? ` to ${args.to}` : "";
     const where = branch ? ` on ${branch}` : "";
     console.log(`[makit] handed off${to} — session ${sessionId}${where}`);
+  } catch (e) {
+    // Only a refusal from the server is reported as a sentence; a real bug keeps
+    // its stack.
+    if (e instanceof WireError) return failCommand(e);
+    throw e;
   } finally {
     client.close();
   }

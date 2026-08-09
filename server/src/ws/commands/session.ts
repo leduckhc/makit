@@ -378,12 +378,24 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   r.register("session.spawn", async (ctx) => {
-    // SPEC-46 D9/D10: lineage is derived from the credential, NEVER from the
-    // wire. An agent-scoped token's parent IS its own session; a body
-    // `parentId` naming a different session is a forgery attempt and refused
-    // (not silently honoured, not silently overwritten). A human client (phone
-    // or CLI) carries no session, so it spawns a root and any body `parentId`
-    // is ignored — the wire is never a lineage source.
+    // SPEC-46 D9/D10 — lineage by subject, not by field:
+    //
+    // - An **agent-scoped** token's parent IS its own session. A body `parentId`
+    //   naming a different session is a forgery attempt and is refused (not
+    //   silently honoured, not silently overwritten). That is D9's whole point:
+    //   an agent cannot attach a child to an unrelated session, build a cycle, or
+    //   forge shallow ancestry to escape the depth bound.
+    // - A **human** credential (the CLI's `client` cap, or a phone with no caps)
+    //   may state the parent it handed off from. It gains nothing by lying: D17
+    //   already grants it every session, so a forged parent discloses nothing it
+    //   could not read anyway. Refusing it, on the other hand, made every
+    //   `makit handoff` from a terminal record a `handoffReason` with no parent —
+    //   the mystery session D10 exists to prevent, with nothing to caption and
+    //   nothing for `makit tree` to nest.
+    //
+    // Both paths are bounded identically below: a stated parent must exist, and
+    // the depth/fan-out guard is recomputed from persisted lineage either way, so
+    // the CLI is not a way around the anti-runaway limit.
     const principal = ctx.client.principal;
     const bodyParentId = ctx.env.parentId ? String(ctx.env.parentId) : undefined;
     const handoffReason = ctx.env.handoffReason ? String(ctx.env.handoffReason) : undefined;
@@ -409,8 +421,19 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     } else {
       // The `client` cap marks the CLI (D2); a full-access principal (no caps)
       // is the app/phone. This is the only app-vs-CLI signal the wire carries.
-      parentId = undefined;
       origin = principal?.caps?.includes("client") ? "cli" : "app";
+      parentId = bodyParentId;
+      if (parentId !== undefined) {
+        if (!manager.getSession(parentId)) {
+          ctx.err(WireErrorCode.BadRequest, `no such parent session: ${parentId}`);
+          return;
+        }
+        const boundError = manager.checkSpawnBounds(parentId);
+        if (boundError) {
+          ctx.err(WireErrorCode.BadRequest, boundError);
+          return;
+        }
+      }
     }
     const projectId = String(ctx.env.projectId ?? "");
     const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;

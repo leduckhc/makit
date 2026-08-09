@@ -118,12 +118,9 @@ test("T10: a body parentId equal to the credential's session is accepted", async
   assert.ok(h.sent.some((f) => f.t === "ack"));
 });
 
-test("T10: a CLI (client) principal spawns a root with origin=cli", async () => {
-  const h = harness({ principal: cli });
-  await h.cmd({ kind: "session.spawn", projectId: "p", parentId: "ignored" });
-  assert.equal(h.spawnCalls[0]?.lineage?.parentId, undefined, "no parent from the wire");
-  assert.equal(h.spawnCalls[0]?.lineage?.origin, "cli");
-});
+// T10 originally asserted that a `client` principal's body `parentId` was
+// *ignored*. That rule was superseded in P2 — see the "human credential may name
+// the parent it handed off from" block below for why, and for its replacement.
 
 test("T10: a full-access (phone/app) principal spawns a root with origin=app", async () => {
   const h = harness({ principal: phone });
@@ -285,4 +282,55 @@ test("T13: a read-scoped agent token may call session.transcript", async () => {
   const h = harness({ principal: { deviceId: "S", label: "a", caps: ["read"], sessionId: "S" }, transcript: [evt(1)] });
   await h.cmd({ kind: "session.transcript", sessionId: "S", limit: 5 });
   assert.ok(h.sent.some((f) => f.t === "ack"), "read grants transcript");
+});
+
+// ---- U-phase: a human credential may state the parent it handed off from ----
+
+test("a human credential may name the parent it handed off from", async () => {
+  // D9 refuses lineage *from the wire* to stop a confused or hostile **agent**
+  // forging ancestry. A human credential is a different subject: by D17 it already
+  // has full access to every session, so honouring the parent it states grants it
+  // nothing new — while refusing it makes `makit handoff` from a terminal record a
+  // `handoffReason` with no parent, which is exactly the mystery session D10 exists
+  // to prevent (nothing to caption, nothing for `makit tree` to nest).
+  const h = harness({ principal: cli });
+  await h.cmd({ kind: "session.spawn", projectId: "p", parentId: "P", handoffReason: "out of context" });
+  assert.equal(h.spawnCalls[0]?.lineage?.parentId, "P");
+  assert.equal(h.spawnCalls[0]?.lineage?.handoffReason, "out of context");
+  assert.equal(h.spawnCalls[0]?.lineage?.origin, "cli");
+});
+
+test("a phone may state a parent too — the app captions handoffs it initiates", async () => {
+  const h = harness({ principal: phone });
+  await h.cmd({ kind: "session.spawn", projectId: "p", parentId: "P" });
+  assert.equal(h.spawnCalls[0]?.lineage?.parentId, "P");
+  assert.equal(h.spawnCalls[0]?.lineage?.origin, "app");
+});
+
+test("a human spawn with no parentId is still a root", async () => {
+  const h = harness({ principal: cli });
+  await h.cmd({ kind: "session.spawn", projectId: "p" });
+  assert.equal(h.spawnCalls[0]?.lineage?.parentId, undefined);
+});
+
+test("a human-stated parent that does not exist is refused, not persisted dangling", async () => {
+  // Honouring a stated parent is not trusting any string: a dangling parentId
+  // would persist lineage pointing at nothing, which the D13 ladder walks and
+  // `tree` then has to special-case.
+  const h = harness({ principal: cli, session: undefined });
+  await h.cmd({ kind: "session.spawn", projectId: "p", parentId: "ghost" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "must refuse");
+  assert.equal(h.spawnCalls.length, 0);
+});
+
+test("the depth/fan-out bound applies to a human-stated parent too", async () => {
+  // Otherwise the CLI is a hole in the anti-runaway guard: an agent refused at
+  // depth 3 could shell out to a human-credentialled handoff instead.
+  const h = harness({ principal: cli, boundError: "spawn refused: at maximum depth of 3" });
+  await h.cmd({ kind: "session.spawn", projectId: "p", parentId: "P" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "must refuse");
+  assert.match(String((err as { message?: string }).message), /maximum depth/);
+  assert.equal(h.spawnCalls.length, 0);
 });

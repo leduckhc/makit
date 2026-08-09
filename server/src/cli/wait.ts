@@ -44,6 +44,9 @@ export const EXIT_TIMEOUT = 124;
 
 export type WaitFor = "idle" | "approval" | "input" | "any";
 
+/** Frame id for our `sub`, so its ack (end of replay) is recognisable. */
+const SUB_ID = "wait-sub";
+
 export interface WaitArgs {
   host: string;
   port: number;
@@ -103,6 +106,14 @@ export interface WaitOutcome {
  *
  * `onEvent` sees every event of the session while waiting — that is how `run`
  * prints the reply without a second subscription.
+ *
+ * **Everything before the `sub` ack is ignored.** `sub` replays the whole
+ * persisted log before acking, so any session that has ever completed a turn
+ * hands us a `running` → `idle` pair the instant we subscribe. Counting that
+ * would exit `0` having waited for nothing — D8's false success by another route —
+ * and would make `makit ask` print the answer to the *previous* question. The ack
+ * is the only end-of-replay signal on the wire (`tail` uses it for the same
+ * reason); there is no `latestSeq` on any DTO to subtract from.
  */
 export function awaitOutcome(
   client: MakitClient,
@@ -111,6 +122,7 @@ export function awaitOutcome(
 ): Promise<WaitOutcome> {
   return new Promise<WaitOutcome>((resolve) => {
     let sawRunning = opts.initialStatus === "running";
+    let replayed = false;
     let timer: NodeJS.Timeout | undefined;
     if (opts.timeoutMs !== undefined) {
       timer = setTimeout(() => resolve({ code: EXIT_TIMEOUT, message: "timed out waiting" }), opts.timeoutMs);
@@ -123,6 +135,11 @@ export function awaitOutcome(
 
     client.onClose(() => settle({ code: 1, message: "connection closed while waiting" }));
     client.onFrame((m) => {
+      if (m.t === "ack" && m.id === SUB_ID) {
+        replayed = true;
+        return;
+      }
+      if (!replayed) return; // history, not this turn
       if (m.kind !== "session.event" || !m.event) return;
       const ev = m.event as SessionEvent;
       if (ev.sessionId !== sessionId) return;
@@ -148,7 +165,7 @@ export function awaitOutcome(
       settle({ code });
     });
 
-    client.send({ t: "sub", id: "sub", sessionId });
+    client.send({ t: "sub", id: SUB_ID, sessionId });
   });
 }
 

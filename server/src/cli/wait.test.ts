@@ -187,3 +187,33 @@ test("--timeout is a distinct code, never confused with a completed turn", async
   assert.notEqual(EXIT_TIMEOUT, 0);
   assert.match(r.err, /timed out/i);
 });
+
+// ---------------------------------------------------------------------------
+// Replay is not a turn (found by driving `ask` against a session with history)
+// ---------------------------------------------------------------------------
+
+test("a REPLAYED running→idle pair from the log does not count as this turn's edge", async () => {
+  // `sub` replays the whole persisted log before acking, so a session that has
+  // ever completed a turn hands the client a running→idle pair the instant it
+  // subscribes. Treating that as the edge is the same false success D8 warns
+  // about, arriving by a different route: `wait` would exit 0 having waited for
+  // nothing, and `ask` would print the answer to the PREVIOUS question.
+  let stub: StubWss | undefined;
+  let captured = { out: "", err: "", code: 0 };
+  try {
+    stub = await startStubWss({
+      acceptBearer: "CACHED",
+      sessions: [session("idle")],
+      events: [statusEvent(1, "running"), statusEvent(2, "idle")], // history, replayed on sub
+    });
+    const port = stub.port;
+    await withCliHome(async () => {
+      captured = await captureCli(async () => {
+        await runWait([SID, "--port", String(port), "--timeout", "1"]);
+      });
+    });
+  } finally {
+    await stub?.close();
+  }
+  assert.equal(captured.code, EXIT_TIMEOUT, "history must not satisfy the edge");
+});
