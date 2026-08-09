@@ -13,10 +13,8 @@
  *     server refuses is exit `4`. That probe is also where `cli.grant` mints the
  *     CLI's own device, so liveness and credential are one round trip.
  */
-import { requireDaemon } from "./require-daemon.js";
-import { controlSocketPath } from "../daemon/paths.js";
-import { openClient, resolveBearer, AuthError, type MakitClient } from "./client.js";
-import { EXIT_AUTH } from "./exit-codes.js";
+import { AuthError } from "./client.js";
+import { connectCli, failAuth } from "./connect.js";
 import { renderSessionLine } from "./render.js";
 import type { SessionDTO } from "../protocol.js";
 
@@ -41,37 +39,11 @@ export function parseLsArgs(argv: string[]): LsArgs {
   return a;
 }
 
-/** Print the message and exit `4` — any credential the server would not take. */
-function failAuth(message: string): never {
-  console.error(`[makit] ${message}`);
-  process.exit(EXIT_AUTH);
-}
-
 export async function runLs(argv: string[]): Promise<void> {
   const args = parseLsArgs(argv);
 
-  // C4: liveness (exit 3) before the socket, and the credential in the same trip.
-  const control = await requireDaemon(controlSocketPath());
-  let bearer: string;
+  const client = await connectCli(args);
   try {
-    bearer = await resolveBearer(control);
-  } catch (e) {
-    return failAuth((e as Error).message);
-  } finally {
-    control.close();
-  }
-
-  let client: MakitClient;
-  try {
-    client = await openClient({ host: args.host, port: args.port, bearer });
-  } catch (e) {
-    // The daemon answered on its control socket but its WSS port did not: from
-    // the caller's side that is indistinguishable from a refused credential.
-    return failAuth(`could not connect to ${args.host}:${args.port} — ${(e as Error).message}`);
-  }
-
-  try {
-    await client.hello();
     const sessions = args.archived
       ? ((await client.cmd("session.listArchived")).sessions as SessionDTO[]) ?? []
       : (await client.awaitSnapshot()).sessions;

@@ -15,10 +15,7 @@
  */
 import { createInterface, type Interface } from "node:readline";
 import { renderEvent, type RenderState } from "./render.js";
-import { openClient, resolveBearer, AuthError, type MakitClient } from "./client.js";
-import { requireDaemon } from "./require-daemon.js";
-import { controlSocketPath } from "../daemon/paths.js";
-import { EXIT_AUTH } from "./exit-codes.js";
+import { connectCli } from "./connect.js";
 
 interface AttachArgs {
   host: string;
@@ -41,41 +38,6 @@ function parseAttachArgs(argv: string[]): AttachArgs {
   return a;
 }
 
-/**
- * Connect to a running makit as the CLI's own device: probe the control socket
- * first (so a dead daemon is exit `3`, C4), resolve the credential there, then
- * open the WSS socket and `hello`. Any credential the server refuses is exit `4`.
- */
-export async function connectAttach(args: { host: string; port: number }): Promise<MakitClient> {
-  const failAuth = (message: string): never => {
-    console.error(`[makit] ${message}`);
-    return process.exit(EXIT_AUTH);
-  };
-  const control = await requireDaemon(controlSocketPath());
-  let bearer: string;
-  try {
-    bearer = await resolveBearer(control);
-  } catch (e) {
-    return failAuth((e as Error).message);
-  } finally {
-    control.close();
-  }
-
-  let client: MakitClient;
-  try {
-    client = await openClient({ host: args.host, port: args.port, bearer });
-  } catch (e) {
-    return failAuth(`could not connect to ${args.host}:${args.port} — ${(e as Error).message}`);
-  }
-  try {
-    await client.hello();
-  } catch (e) {
-    client.close();
-    return failAuth(e instanceof AuthError ? e.message : (e as Error).message);
-  }
-  return client;
-}
-
 interface SessionDTO {
   id: string;
   title: string;
@@ -90,7 +52,7 @@ interface ProjectDTO {
 
 export async function runAttach(argv: string[]): Promise<void> {
   const args = parseAttachArgs(argv);
-  const client = await connectAttach(args);
+  const client = await connectCli(args);
 
   let st: RenderState = {};
   let sessions: SessionDTO[] = [];
