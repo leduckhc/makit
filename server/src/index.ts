@@ -74,11 +74,11 @@ function makeDaemon() {
 async function main() {
   const cmd = process.argv[2];
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "new", "send", "tail", "attach", ...LIFECYCLE]);
+  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "new", "send", "tail", "resume", "attach", ...LIFECYCLE]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
-        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|new|send|tail|attach [...]`,
+        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|new|send|tail|resume|attach [...]`,
     );
     process.exit(2);
   }
@@ -128,6 +128,12 @@ async function main() {
   if (cmd === "tail") {
     const { runTail } = await import("./cli/tail.js");
     await runTail(process.argv.slice(3));
+    return;
+  }
+  // `resume` brings a cold, resumable session back to a live agent (T14).
+  if (cmd === "resume") {
+    const { runResume } = await import("./cli/resume.js");
+    await runResume(process.argv.slice(3));
     return;
   }
 
