@@ -16,7 +16,7 @@ import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/c
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
 import { sessionTokens } from "./ws/session_tokens.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO, type SessionOrigin } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO, type SessionEvent, type SessionOrigin } from "./protocol.js";
 import { spawnBoundError, type LineageNode } from "./lineage.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
@@ -373,6 +373,17 @@ export class SessionManager extends EventEmitter {
       nodes.set(s.id, { id: s.id, parentId: s.parentId, archived: s.archived });
     }
     return spawnBoundError(parentId, nodes);
+  }
+
+  /**
+   * SPEC-46 C3: a session's persisted events, read from the event store rather
+   * than the session's in-memory cache, so a bounded tail (session.transcript)
+   * never hydrates the whole log just to return its last few lines (D5). Falls
+   * back to the in-memory events when there is no store (M0 / tests).
+   */
+  readTranscript(sessionId: string): SessionEvent[] {
+    if (this.store) return this.store.read(sessionId);
+    return this.sessions.get(sessionId)?.events ?? [];
   }
 
   /** Set the loopback bridge + askUser wiring so subsequently-spawned

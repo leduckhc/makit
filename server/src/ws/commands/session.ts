@@ -21,6 +21,14 @@ import type { CommandDeps } from "./deps.js";
 export const MAX_ATTACHMENTS = 8;
 
 /**
+ * SPEC-46 C3: `session.transcript` clamps `limit` to this window. A bounded
+ * tail is the whole point of the command (D5) — an unbounded slice would defeat
+ * it — and 200 is generous for the "quote the last few turns" use it serves.
+ */
+const MIN_TRANSCRIPT_LIMIT = 1;
+const MAX_TRANSCRIPT_LIMIT = 200;
+
+/**
  * Label handed to `promotePendingSession` when an image-only turn promotes a
  * draft session. The first message names the branch/worktree, and "" would
  * produce an unusable name.
@@ -340,6 +348,33 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   // request/ack so archived sessions only load when the user asks.
   r.register("session.listArchived", async (ctx) => {
     ctx.ack({ sessions: await manager.listArchivedSessions() });
+  });
+
+  // SPEC-46 C3 (D5): a BOUNDED transcript slice for `makit handoff --carry`.
+  // The last `limit` events, oldest-first, served from the event store (not the
+  // session's in-memory cache) and returned VERBATIM — the same wire shape as
+  // fanout, no projection (D7). Rendering the slice into a fenced block is CLI
+  // work, not the server's.
+  r.register("session.transcript", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const rawLimit = ctx.env.limit;
+    if (typeof rawLimit !== "number" || !Number.isFinite(rawLimit)) {
+      ctx.err(WireErrorCode.BadRequest, "session.transcript requires a numeric `limit`");
+      return;
+    }
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    const limit = Math.max(
+      MIN_TRANSCRIPT_LIMIT,
+      Math.min(MAX_TRANSCRIPT_LIMIT, Math.floor(rawLimit)),
+    );
+    // `slice(-limit)` is the last `limit`, oldest-first, and returns the whole
+    // log when it is shorter than `limit`.
+    const events = manager.readTranscript(sid);
+    ctx.ack({ events: events.slice(-limit) });
   });
 
   r.register("session.spawn", async (ctx) => {

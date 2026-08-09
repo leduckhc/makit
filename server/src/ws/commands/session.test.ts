@@ -1,10 +1,13 @@
 /**
- * SPEC-46 T10 — session.spawn lineage (D9/D10): `parentId` and `origin` are
- * derived from the credential, never taken from the wire.
+ * SPEC-46 — session.spawn lineage (T10, D9/D10), the depth/fan-out guard (T11)
+ * and the bounded session.transcript command (T13, contract C3).
  *
- * Drives a fake manager (the queue.test.ts pattern) so the lineage a spawn
- * actually records, and the forgery refusal, are observable at the
- * `cmd`/`ack`/`err` seam without a live agent.
+ * The handler tests drive a fake manager (the queue.test.ts pattern): the
+ * lineage a spawn actually records, and the refusals, are observable at the
+ * `cmd`/`ack`/`err` seam without a live agent. The hostile-data walk (a forged
+ * `parentId` cycle, a missing/archived ancestor) is unit-tested against the
+ * pure functions in `lineage.ts` directly, so it exercises the real code rather
+ * than a stub.
  */
 
 import assert from "node:assert/strict";
@@ -85,6 +88,8 @@ const agent = (sessionId: string): Principal => ({
 });
 const cli: Principal = { deviceId: "d", label: "cli@host", caps: ["client"] };
 const phone: Principal = { deviceId: "d", label: "phone" }; // no caps = full access
+
+// ---- T10: parentId comes from the credential, never the wire ---------------
 
 test("T10: an agent-scoped spawn records the token's session as parent, origin=agent", async () => {
   const h = harness({ principal: agent("S") });
@@ -201,4 +206,49 @@ test("T11 walk: spawnBoundError names the fan-out limit at the (max+1)th live ch
   const m = nodes([{ id: "P" }, ...children]);
   const err = spawnBoundError("P", m);
   assert.ok(err && err.includes(String(MAX_LIVE_CHILDREN)));
+});
+
+// ---- T13: session.transcript (contract C3) ---------------------------------
+
+const evt = (seq: number) => ({ seq, sessionId: "s", kind: "agent.message", ts: seq, text: `e${seq}` });
+
+test("T13: returns the LAST `limit` events, oldest-first, verbatim", async () => {
+  const all = [evt(1), evt(2), evt(3), evt(4), evt(5)];
+  const h = harness({ principal: phone, transcript: all });
+  await h.cmd({ kind: "session.transcript", sessionId: "s", limit: 3 });
+  const ack = h.sent.find((f) => f.t === "ack") as { events?: unknown[] } | undefined;
+  assert.deepEqual(ack?.events, [evt(3), evt(4), evt(5)]);
+});
+
+test("T13: a session shorter than `limit` returns all of it", async () => {
+  const all = [evt(1), evt(2)];
+  const h = harness({ principal: phone, transcript: all });
+  await h.cmd({ kind: "session.transcript", sessionId: "s", limit: 50 });
+  const ack = h.sent.find((f) => f.t === "ack") as { events?: unknown[] } | undefined;
+  assert.deepEqual(ack?.events, all);
+});
+
+test("T13: limit is clamped to 1..200", async () => {
+  const all = Array.from({ length: 250 }, (_, i) => evt(i + 1));
+  const low = harness({ principal: phone, transcript: all });
+  await low.cmd({ kind: "session.transcript", sessionId: "s", limit: 0 });
+  const lowAck = low.sent.find((f) => f.t === "ack") as { events?: unknown[] } | undefined;
+  assert.equal(lowAck?.events?.length, 1, "0 clamps up to 1");
+
+  const high = harness({ principal: phone, transcript: all });
+  await high.cmd({ kind: "session.transcript", sessionId: "s", limit: 9999 });
+  const highAck = high.sent.find((f) => f.t === "ack") as { events?: unknown[] } | undefined;
+  assert.equal(highAck?.events?.length, 200, "9999 clamps down to 200");
+});
+
+test("T13: an unknown session errors", async () => {
+  const h = harness({ principal: phone, session: undefined });
+  await h.cmd({ kind: "session.transcript", sessionId: "ghost", limit: 5 });
+  assert.ok(h.sent.some((f) => f.t === "err"));
+});
+
+test("T13: a read-scoped agent token may call session.transcript", async () => {
+  const h = harness({ principal: { deviceId: "S", label: "a", caps: ["read"], sessionId: "S" }, transcript: [evt(1)] });
+  await h.cmd({ kind: "session.transcript", sessionId: "S", limit: 5 });
+  assert.ok(h.sent.some((f) => f.t === "ack"), "read grants transcript");
 });
