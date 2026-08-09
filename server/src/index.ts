@@ -74,11 +74,16 @@ function makeDaemon() {
 async function main() {
   const cmd = process.argv[2];
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-  const KNOWN = new Set(["serve", "pair", "qr", "devices", "ls", "sessions", "new", "handoff", "attach", ...LIFECYCLE]);
+  const KNOWN = new Set([
+    "serve", "pair", "qr", "devices", "ls", "sessions",
+    "new", "send", "tail", "resume", "rm", "handoff", "attach",
+    ...LIFECYCLE,
+  ]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
-        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|ls|new|handoff|attach [...]`,
+        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|` +
+        `ls|new|send|tail|resume|rm|handoff|attach [...]`,
     );
     process.exit(2);
   }
@@ -123,6 +128,32 @@ async function main() {
   if (cmd === "handoff") {
     const { runHandoff } = await import("./cli/handoff.js");
     await runHandoff(process.argv.slice(3));
+    return;
+  }
+
+  // `send` posts a message to a session (SPEC-46 T14) — a thin client of
+  // `send.message`.
+  if (cmd === "send") {
+    const { runSend } = await import("./cli/send.js");
+    await runSend(process.argv.slice(3));
+    return;
+  }
+  // `tail` replays a session's events and, with -f, keeps streaming (T14).
+  if (cmd === "tail") {
+    const { runTail } = await import("./cli/tail.js");
+    await runTail(process.argv.slice(3));
+    return;
+  }
+  // `resume` brings a cold, resumable session back to a live agent (T14).
+  if (cmd === "resume") {
+    const { runResume } = await import("./cli/resume.js");
+    await runResume(process.argv.slice(3));
+    return;
+  }
+  // `rm` ends a session: archive by default (recoverable), kill only with --kill.
+  if (cmd === "rm") {
+    const { runRm } = await import("./cli/rm.js");
+    await runRm(process.argv.slice(3));
     return;
   }
 
