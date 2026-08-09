@@ -569,6 +569,20 @@ export function startWsServer(opts: ServerOpts) {
     // its own. `parentId` is persisted on the session (D10); a missing/archived
     // ancestor returns undefined and ends the walk.
     parentOf: (sessionId) => manager.getSession(sessionId)?.parentId,
+    // SPEC-46 D14: caption a stranded prompt from the session's own metadata
+    // (title, agent, D10 handoff origin), so a client reached at rung 3 sees
+    // what it is approving. Undefined for an unknown/archived session.
+    sessionCaption: (sessionId) => {
+      const s = manager.getSession(sessionId);
+      if (!s) return undefined;
+      return {
+        title: s.title,
+        agent: s.agent,
+        parentId: s.parentId,
+        handoffReason: s.handoffReason,
+        origin: s.origin,
+      };
+    },
     onUndeliverable: (env, ctx) => wakeCoordinator.wake(env, ctx),
   });
   const askDevice = rpc.askDevice.bind(rpc);
