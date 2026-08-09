@@ -5,7 +5,7 @@
  */
 
 import { WireErrorCode } from "../../protocol/codec.js";
-import type { SessionOrigin } from "../../protocol.js";
+import type { ApprovalPolicy, SessionOrigin } from "../../protocol.js";
 import { isAgentScoped } from "../principal.js";
 import { log } from "../../log.js";
 import {
@@ -422,13 +422,31 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // the cached catalog by the manager (unknown ids/values dropped) and applied
     // at first-message launch.
     const configOptions = parseConfigPicks(ctx.env.configOptions);
+    // SPEC-46 D13: the approval policy may be RELAXED (`yolo`) only by a human
+    // credential. An agent setting `yolo` would be granting itself the
+    // unsupervised shell access the audience ladder exists to keep under a
+    // human's eye, so it is refused (not silently downgraded). A stricter
+    // policy from an agent is harmless and allowed; an unknown value is
+    // dropped so the session falls back to the default (`ask-on-risky`).
+    const VALID_POLICIES: readonly ApprovalPolicy[] = ["yolo", "ask-on-risky", "ask-always"];
+    const requestedPolicy = ctx.env.policy ? String(ctx.env.policy) : undefined;
+    if (requestedPolicy === "yolo" && isAgentScoped(principal)) {
+      ctx.err(
+        WireErrorCode.BadRequest,
+        "session.spawn policy 'yolo' may only be set by a human credential, not an agent token",
+      );
+      return;
+    }
+    const policy = VALID_POLICIES.includes(requestedPolicy as ApprovalPolicy)
+      ? (requestedPolicy as ApprovalPolicy)
+      : undefined;
     // New sessions are DRAFTS: the agent is deferred until the first
     // substantive message names the session (see send.message).
     const newSession = await manager.spawnPendingSession(projectId, agent, worktreePath, branch, configOptions, {
       parentId,
       handoffReason,
       origin,
-    });
+    }, policy);
     // wireSession is invoked via the manager's "sessionCreated" listener
     // registered above — don't call it explicitly or every event fans out
     // twice.

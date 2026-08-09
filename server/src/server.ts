@@ -565,6 +565,10 @@ export function startWsServer(opts: ServerOpts) {
   });
   const rpc = new ReverseRpc({
     clients: () => clients.values(),
+    // SPEC-46 D13a: climb the lineage when a spawned session has no watcher of
+    // its own. `parentId` is persisted on the session (D10); a missing/archived
+    // ancestor returns undefined and ends the walk.
+    parentOf: (sessionId) => manager.getSession(sessionId)?.parentId,
     onUndeliverable: (env, ctx) => wakeCoordinator.wake(env, ctx),
   });
   const askDevice = rpc.askDevice.bind(rpc);
@@ -703,7 +707,7 @@ export function startWsServer(opts: ServerOpts) {
         state.send({ t: "pong", id: env.id, ts: env.ts });
         return;
       case "srv.response":
-        rpc.handleResponse(env);
+        rpc.handleResponse(env, state);
         return;
       default:
         return;

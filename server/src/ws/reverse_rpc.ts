@@ -2,23 +2,36 @@
  * ReverseRpc — server → app request/response correlation (the "askDevice"
  * seam used by the UI-transport bridge and dev commands).
  *
- * Sends an `srv.request` to every authed client (optionally scoped to the
- * subscribers of a `sessionId`) and resolves with the first matching
- * `srv.response`. Times out after `timeoutMs` (default 5 min) and rejects if
- * there is no client to ask.
+ * Sends an `srv.request` up an audience ladder (SPEC-46 D13a): the session's
+ * own subscribers, then the nearest ancestor's subscribers via `parentOf`,
+ * then every authed client, then the wake push (`onUndeliverable`). It resolves
+ * with the first *authorized* `srv.response` (D13c). Times out after
+ * `timeoutMs` (default 5 min) and keeps pending / rejects per `onUndeliverable`
+ * when no live client is reached.
  *
- * Behaviour is preserved bit-for-bit from the original god-function so the
- * bridge and e2e path see no difference.
+ * A prompt is never auto-answered. The resolved audience is stored on the
+ * pending request so a newly-authed client is only replayed a prompt it was
+ * eligible for (D13b) and a response is accepted only from a client in that
+ * audience, never from an agent-scoped token (D13c).
  */
 
 import type { Envelope } from "../protocol.js";
 import type { WsClient } from "./client.js";
+import { isAgentScoped } from "./principal.js";
 
 export interface ReverseRpcDeps {
   /** The live set of connected clients at call time. */
   clients: () => Iterable<WsClient>;
   /** Default request timeout; overridable per call. */
   defaultTimeoutMs?: number;
+  /**
+   * Nearest-ancestor lookup for the D13a audience ladder: the parent session
+   * of `sessionId`, or `undefined` at a root (and for a missing/archived
+   * ancestor). Used to climb the lineage when nobody has the spawned session
+   * itself on a screen — the parent's watcher owns the consequence. Absent =
+   * no lineage routing (today's session-subscribers-or-everyone behaviour).
+   */
+  parentOf?: (sessionId: string) => string | undefined;
   /**
    * Invoked when an `srv.request` reached NO live subscribed socket
    * (`sent === 0`). Returns the keep-pending gate: `true` keeps the request
@@ -39,6 +52,14 @@ interface PendingRequest {
   envelope: Envelope;
   /** Clients this request has already been delivered to (de-dupes replay). */
   deliveredTo: Set<WsClient>;
+  /**
+   * SPEC-46 D13b — the resolved audience, stored so a newly-authed client is
+   * only replayed a prompt it was eligible for, and D13c can authorize the
+   * response. A set of session ids: a client is eligible iff it is subscribed
+   * to one of them. `undefined` means every authed client was the audience
+   * (rung 3 / the wake path), so any authed non-agent client is eligible.
+   */
+  eligibleSessions?: Set<string>;
 }
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
@@ -66,6 +87,10 @@ export class ReverseRpc {
     let count = 0;
     for (const p of this.pending.values()) {
       if (p.deliveredTo.has(client)) continue;
+      // SPEC-46 D13b: re-send only what this client was eligible for. Without
+      // this a device that was never in a prompt's audience would receive it
+      // anyway on auth/`sub`.
+      if (!this.isEligible(client, p)) continue;
       client.send(p.envelope);
       p.deliveredTo.add(client);
       count++;
@@ -73,10 +98,20 @@ export class ReverseRpc {
     return count;
   }
 
-  /** Route an incoming `srv.response` to its awaiting request (first wins). */
-  handleResponse(env: Envelope): void {
+  /**
+   * Route an incoming `srv.response` to its awaiting request (first wins).
+   *
+   * SPEC-46 D13c: the answer is authorized against the sender. It is refused
+   * from an agent-scoped token (an agent approving its own tool call is the
+   * supervision gap the ladder exists to close) and from any client outside
+   * the prompt's stored audience. An unauthorized response is dropped, leaving
+   * the request pending for a legitimate answer.
+   */
+  handleResponse(env: Envelope, client: WsClient): void {
     const pending = this.pending.get(env.id);
     if (pending) {
+      if (isAgentScoped(client.principal)) return;
+      if (!this.isEligible(client, pending)) return;
       // Clear the timeout BEFORE deleting: the promise's `.finally` looks the
       // entry up by id, so once it's gone the timer would otherwise leak until
       // it fires (up to 5 min) on every successful askDevice.
@@ -87,10 +122,50 @@ export class ReverseRpc {
   }
 
   /**
-   * Ask any authed client (typically the user's phone) something and wait for
-   * an `srv.response`. Sends to every subscribed client of [sessionId] (or all
-   * authed clients if no sessionId). The first response wins.
+   * Ask a client (typically the user's phone) something and wait for an
+   * authorized `srv.response`. The audience is resolved by the D13a ladder
+   * (see {@link resolveAudience}); the first authorized response wins.
    */
+  /**
+   * SPEC-46 D13a — resolve the audience for a prompt as a ladder:
+   *   1. the session's own subscribers;
+   *   2. else the nearest ancestor's subscribers, climbing via `parentOf`;
+   *   3. else every authed client.
+   * The wake push (rung 4) is left to `onUndeliverable` when this yields no
+   * live target. Returns the targets and the eligibility (session ids) stored
+   * on the pending request; `eligible: undefined` means "every authed client".
+   */
+  private resolveAudience(sessionId?: string): {
+    targets: WsClient[];
+    eligible?: Set<string>;
+  } {
+    const authed = [...this.deps.clients()].filter((c) => c.authed);
+    if (!sessionId) return { targets: authed, eligible: undefined };
+
+    const own = authed.filter((c) => c.subscribed.has(sessionId));
+    if (own.length > 0) return { targets: own, eligible: new Set([sessionId]) };
+
+    // Climb the lineage. `seen` terminates a forged cycle; an undefined parent
+    // (root, or a missing/archived ancestor) ends the walk. Never throws.
+    const seen = new Set<string>([sessionId]);
+    let current = this.deps.parentOf?.(sessionId);
+    while (current !== undefined && !seen.has(current)) {
+      seen.add(current);
+      const subs = authed.filter((c) => c.subscribed.has(current!));
+      if (subs.length > 0) return { targets: subs, eligible: new Set([sessionId, current]) };
+      current = this.deps.parentOf?.(current);
+    }
+    return { targets: authed, eligible: undefined };
+  }
+
+  /** True when `client` may receive a replay of / respond to `p` (D13b/c). */
+  private isEligible(client: WsClient, p: PendingRequest): boolean {
+    if (!client.authed) return false;
+    if (p.eligibleSessions === undefined) return true;
+    for (const sid of p.eligibleSessions) if (client.subscribed.has(sid)) return true;
+    return false;
+  }
+
   askDevice(
     body: Record<string, unknown>,
     opts: { sessionId?: string; timeoutMs?: number } = {},
@@ -110,12 +185,11 @@ export class ReverseRpc {
         reject(new Error(`srv.request timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       const deliveredTo = new Set<WsClient>();
-      this.pending.set(id, { resolve, timer, envelope, deliveredTo });
+      const { targets, eligible } = this.resolveAudience(opts.sessionId);
+      this.pending.set(id, { resolve, timer, envelope, deliveredTo, eligibleSessions: eligible });
 
       let sent = 0;
-      for (const c of this.deps.clients()) {
-        if (!c.authed) continue;
-        if (opts.sessionId && !c.subscribed.has(opts.sessionId)) continue;
+      for (const c of targets) {
         c.send(envelope);
         deliveredTo.add(c);
         sent++;

@@ -30,6 +30,7 @@ import {
 interface SpawnCall {
   projectId: string;
   lineage?: { parentId?: string; handoffReason?: string; origin?: string };
+  policy?: string;
 }
 
 function harness(opts?: {
@@ -49,8 +50,9 @@ function harness(opts?: {
         _branch?: string,
         _configOptions?: unknown,
         lineage?: SpawnCall["lineage"],
+        policy?: string,
       ) => {
-        spawnCalls.push({ projectId, lineage });
+        spawnCalls.push({ projectId, lineage, policy });
         return { id: "child-1" };
       },
       checkSpawnBounds: (_parentId: string) => opts?.boundError ?? null,
@@ -128,6 +130,38 @@ test("T10: a full-access (phone/app) principal spawns a root with origin=app", a
   await h.cmd({ kind: "session.spawn", projectId: "p" });
   assert.equal(h.spawnCalls[0]?.lineage?.parentId, undefined);
   assert.equal(h.spawnCalls[0]?.lineage?.origin, "app");
+});
+
+// ---- T20/D13: --yolo (a relaxed approval policy) is human-only --------------
+
+test("T20/D13: policy=yolo from an agent-scoped credential is refused, not honoured", async () => {
+  const h = harness({ principal: agent("S") });
+  await h.cmd({ kind: "session.spawn", projectId: "p", policy: "yolo" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "an agent may not relax its own approval policy");
+  assert.equal((err as { code?: string }).code, "bad_request");
+  assert.equal(h.spawnCalls.length, 0, "the forged relaxation must not reach the manager");
+});
+
+test("T20/D13: a human CLI credential may set policy=yolo", async () => {
+  const h = harness({ principal: cli });
+  await h.cmd({ kind: "session.spawn", projectId: "p", policy: "yolo" });
+  assert.ok(h.sent.some((f) => f.t === "ack"));
+  assert.equal(h.spawnCalls[0]?.policy, "yolo");
+});
+
+test("T20/D13: an agent MAY set a stricter policy (ask-always) — only relaxation is gated", async () => {
+  const h = harness({ principal: agent("S") });
+  await h.cmd({ kind: "session.spawn", projectId: "p", policy: "ask-always" });
+  assert.ok(h.sent.some((f) => f.t === "ack"));
+  assert.equal(h.spawnCalls[0]?.policy, "ask-always");
+});
+
+test("T20/D13: an unknown policy value is dropped, not stored", async () => {
+  const h = harness({ principal: cli });
+  await h.cmd({ kind: "session.spawn", projectId: "p", policy: "bogus" });
+  assert.ok(h.sent.some((f) => f.t === "ack"));
+  assert.equal(h.spawnCalls[0]?.policy, undefined);
 });
 
 // ---- T11: the spawn handler refuses past the bounds ------------------------
