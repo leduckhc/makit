@@ -17,6 +17,7 @@ import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
 import { sessionTokens } from "./ws/session_tokens.js";
 import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO, type SessionOrigin } from "./protocol.js";
+import { spawnBoundError, type LineageNode } from "./lineage.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
 import { buildAdapter, piAcpSpec } from "./agent_factory.js";
@@ -358,6 +359,20 @@ export class SessionManager extends EventEmitter {
 
   getSession(id: string): Session | undefined {
     return this.sessions.get(id);
+  }
+
+  /**
+   * SPEC-46 D9/T11: the reason a new child of `parentId` may not be spawned, or
+   * null when it may. Depth and live-child count are recomputed here from the
+   * persisted `parentId` links of every session (archived ones stay in the map,
+   * killed ones are gone) — never from the forgeable `MAKIT_SPAWN_DEPTH`.
+   */
+  checkSpawnBounds(parentId: string): string | null {
+    const nodes = new Map<string, LineageNode>();
+    for (const s of this.sessions.values()) {
+      nodes.set(s.id, { id: s.id, parentId: s.parentId, archived: s.archived });
+    }
+    return spawnBoundError(parentId, nodes);
   }
 
   /** Set the loopback bridge + askUser wiring so subsequently-spawned

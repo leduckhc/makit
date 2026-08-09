@@ -15,6 +15,14 @@ import type { OutgoingFrame, WsClient } from "../client.js";
 import type { Principal } from "../principal.js";
 import type { CommandDeps } from "./deps.js";
 import { register as registerSession } from "./session.js";
+import {
+  spawnDepth,
+  liveChildCount,
+  spawnBoundError,
+  MAX_SPAWN_DEPTH,
+  MAX_LIVE_CHILDREN,
+  type LineageNode,
+} from "../../lineage.js";
 
 interface SpawnCall {
   projectId: string;
@@ -115,4 +123,82 @@ test("T10: a full-access (phone/app) principal spawns a root with origin=app", a
   await h.cmd({ kind: "session.spawn", projectId: "p" });
   assert.equal(h.spawnCalls[0]?.lineage?.parentId, undefined);
   assert.equal(h.spawnCalls[0]?.lineage?.origin, "app");
+});
+
+// ---- T11: the spawn handler refuses past the bounds ------------------------
+
+test("T11: a spawn refused by the bound guard errors and never reaches the manager", async () => {
+  const h = harness({ principal: agent("S"), boundError: `spawn refused: maximum depth ${MAX_SPAWN_DEPTH}` });
+  await h.cmd({ kind: "session.spawn", projectId: "p" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err);
+  assert.match(String((err as { message?: string }).message), new RegExp(String(MAX_SPAWN_DEPTH)));
+  assert.equal(h.spawnCalls.length, 0);
+});
+
+// ---- T11: the lineage walk over hostile persisted data ---------------------
+
+function nodes(list: LineageNode[]): Map<string, LineageNode> {
+  return new Map(list.map((n) => [n.id, n]));
+}
+
+test("T11 walk: depth counts one per ancestor link up to the root", () => {
+  const m = nodes([
+    { id: "a" },
+    { id: "b", parentId: "a" },
+    { id: "c", parentId: "b" },
+  ]);
+  assert.equal(spawnDepth("a", m), 1, "child of a root is depth 1");
+  assert.equal(spawnDepth("c", m), 3);
+});
+
+test("T11 walk: a forged parentId CYCLE terminates the walk instead of looping", () => {
+  const m = nodes([
+    { id: "a", parentId: "c" },
+    { id: "b", parentId: "a" },
+    { id: "c", parentId: "b" },
+  ]);
+  // Every node is visited at most once, so the walk returns and does not hang.
+  assert.equal(spawnDepth("a", m), 3);
+});
+
+test("T11 walk: a missing (killed) ancestor ends the walk without throwing", () => {
+  const m = nodes([{ id: "b", parentId: "gone" }]);
+  assert.equal(spawnDepth("b", m), 2, "b + the dangling link, then it stops");
+});
+
+test("T11 walk: an archived ancestor is walked through, not a crash", () => {
+  const m = nodes([
+    { id: "a", archived: true },
+    { id: "b", parentId: "a" },
+  ]);
+  assert.equal(spawnDepth("b", m), 2);
+});
+
+test("T11 walk: liveChildCount excludes archived children", () => {
+  const list: LineageNode[] = [
+    { id: "x1", parentId: "P" },
+    { id: "x2", parentId: "P", archived: true },
+    { id: "x3", parentId: "P" },
+    { id: "y", parentId: "Q" },
+  ];
+  assert.equal(liveChildCount("P", list), 2);
+});
+
+test("T11 walk: spawnBoundError names the depth limit past MAX_SPAWN_DEPTH", () => {
+  // A chain root→1→2→3: the child of the deepest node would be depth 4.
+  const chain: LineageNode[] = [{ id: "n0" }];
+  for (let i = 1; i <= MAX_SPAWN_DEPTH; i++) chain.push({ id: `n${i}`, parentId: `n${i - 1}` });
+  const m = nodes(chain);
+  const err = spawnBoundError(`n${MAX_SPAWN_DEPTH}`, m);
+  assert.ok(err && err.includes(String(MAX_SPAWN_DEPTH)));
+  assert.equal(spawnBoundError(`n${MAX_SPAWN_DEPTH - 1}`, m), null, "one level shallower is allowed");
+});
+
+test("T11 walk: spawnBoundError names the fan-out limit at the (max+1)th live child", () => {
+  const children: LineageNode[] = [];
+  for (let i = 0; i < MAX_LIVE_CHILDREN; i++) children.push({ id: `c${i}`, parentId: "P" });
+  const m = nodes([{ id: "P" }, ...children]);
+  const err = spawnBoundError("P", m);
+  assert.ok(err && err.includes(String(MAX_LIVE_CHILDREN)));
 });

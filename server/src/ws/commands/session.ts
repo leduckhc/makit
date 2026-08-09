@@ -364,6 +364,13 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
         return;
       }
       origin = "agent";
+      // SPEC-46 D9/T11: depth + live-child count are recomputed server-side from
+      // persisted lineage; the forgeable MAKIT_SPAWN_DEPTH is display-only.
+      const boundError = manager.checkSpawnBounds(parentId);
+      if (boundError) {
+        ctx.err(WireErrorCode.BadRequest, boundError);
+        return;
+      }
     } else {
       // The `client` cap marks the CLI (D2); a full-access principal (no caps)
       // is the app/phone. This is the only app-vs-CLI signal the wire carries.
