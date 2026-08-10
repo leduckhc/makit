@@ -60,6 +60,25 @@ test("with no usable address, publishes NOTHING and states the reason (D15)", as
   assert.equal(grants.list().length, 0, "no grant was minted for an unreachable publish");
 });
 
+// D15 rev 2 makes the tailnet the ONLY publishable reach and explicitly drops the
+// LAN fallback, so `--lan` cannot make publishing work: it binds a 192.168/10.x
+// host, which `tailnetAddressFromBindHost` rejects, and publish refuses again.
+// Naming it as the remedy is the one thing D15 forbids — a refusal that lies.
+test("the refusal states a remedy that can actually work, never --lan (D15 rev 2)", async () => {
+  const root = fixture();
+  const result = await publishDoc(
+    { worktreePath: root, relPath: "mockups/board.html" },
+    { grants: new DocGrantStore(), reach: none },
+  );
+  assert.equal(result.ok, false);
+  const reason = result.ok ? "" : result.reason;
+  assert.ok(
+    !reason.includes("--lan"),
+    `the LAN fallback is dropped, so the reason must not offer it: ${reason}`,
+  );
+  assert.match(reason, /Tailscale/, "the one remedy that works must be named");
+});
+
 test("refuses an unresolvable doc without minting a grant", async () => {
   const root = fixture();
   const grants = new DocGrantStore();

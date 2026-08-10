@@ -54,7 +54,7 @@ export async function publishDoc(
     return {
       ok: false,
       reason:
-        "no reachable address: makit is loopback-only. Start Tailscale (or pass --lan) and try again.",
+        "no reachable address: makit is loopback-only. Start Tailscale and try again.",
     };
   }
 
