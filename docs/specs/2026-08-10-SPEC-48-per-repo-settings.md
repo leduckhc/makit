@@ -1,6 +1,6 @@
 # SPEC-48 — Per-repo settings: one Settings section per repository
 
-**Status:** Draft (rev 1) — **REVIEW FAILED, rev 2 required. Do not implement.** · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
+**Status:** Draft (rev 2) · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
 **Depends on:** SPEC-11 (repo-centric home — `RepoDTO`, `repos.snapshot`, the repo card and its
 `dotsThree` menu), SPEC-19 (`SettingsResetButton` as the one shared "reset to default" widget, and
 `SettingsGroup` as the grouped-list idiom), and the forge-detection work already on this branch
@@ -178,3 +178,69 @@ requirement; P4; and "pixel-perfect" as an acceptance gate rather than design ev
    shippable P1 is the worktree-root override end-to-end. The request was explicitly UI-first. These
    conflict; rev 2 needs one of them chosen.
 2. **Write authorization** for non-script settings (above).
+
+
+---
+
+# Rev 2 — supersedes the rev 1 Decisions and Phasing tables
+
+Both blocking decisions are answered, and the eleven confirmed errors are corrected. Where rev 1 and
+rev 2 disagree, **rev 2 wins**; the rev 1 tables are kept only as the record of what was reviewed.
+
+## The two answers
+
+**Phasing — UI first, plus one editable row.** P1 ships the Settings section pixel-audited *and* makes
+Worktree root editable end-to-end. This keeps the requested sequencing while removing the reviewer's
+"ornamental" objection: the page can do exactly one real thing on day one, and that one thing is the
+setting the feature exists for.
+
+**Write authorization — host only, enforced at the transport.** And the mechanism already exists, which
+is what makes this decidable rather than aspirational: `WsClient.isLocal` (`ws/client.ts:46`) is set
+from the real socket address in `server.ts:733` (`127.0.0.1`, `::1`, `::ffff:127.0.0.1`), and it already
+gates a privileged input — the app's reported pid in `hello` (SPEC-37 decision 6): *"a non-loopback
+client must connect normally but may not ask us to sample an arbitrary pid."* Per-repo writes take the
+same shape: **any paired device may read; only a loopback client may write.** This answers the
+reviewer's objection that "host" needs an enforceable role rather than a UI assertion.
+
+## Decisions (rev 2)
+
+Rev 1's D1, D2, D4, D5, D7, D8 (as amended), D10, D12, D13, D14 (as amended) stand. Changed, added and
+withdrawn below.
+
+| # | Decision | Why |
+| --- | --- | --- |
+| **D3′** | The Git provider row is a **read-out with no override in any phase of this spec**. | Detection is authoritative and verified against four live forges. An override creates a second truth that would have to be threaded through routing, auth lookup *and* PR rendering — the reviewer's point, accepted. |
+| **D6′** | Two badge families, not one vocabulary. **Provenance** (`detected`, `from remote`, `from name`) is a fact about where a value was read. **Resolution** (`inherited`, `from environment`, `overridden`) is a fact about configuration precedence, and only `overridden` carries a `SettingsResetButton`. | They are different things; forcing one "closed vocabulary" was uniformity for its own sake. |
+| **D8′** | Resolution is **three levels**, not four: `repo override → env var → built-in default`. | There is no global settings store to inherit from. A four-level chain was a framework for a level that does not exist. |
+| **D16** | **Only a loopback client may write per-repo settings.** A non-loopback client receives an explicit refusal, not a silent no-op. Reads are unrestricted. | `worktreeRoot` is a path the daemon creates directories under and, via prune, removes. A remote device that can set it directs host filesystem operations. Precedent: SPEC-37 D6 / `WsClient.isLocal`. |
+| **D17** | Every path-valued setting is **canonicalised** (`realpath`-resolved, `..` collapsed) before use, and rejected if it is not absolute. Validation happens **server-side on write**, and again on read-back before use. | Validating only on write trusts a file a user can edit by hand; `projects.json` is plain JSON in `$MAKIT_HOME`. |
+| **D18** | `RepoDTO.forge` is **genuinely pending-able**. Routing only happens when a gateway PR operation calls `pick`, so a repo with no eligible worktree may never be routed. Absent `forge` renders **no row**, and the row appears when detection lands — it is never guessed. | Rev 1 assumed every repo would be routed. Confirmed false. |
+| **D19** | `repo_service` receives a **narrow `ForgeInspector`** (`softwareFor(repoPath)`), not the router. | `listRepos` takes `GithubGateway` (`repo_service.ts:62`) and `manager._gateway` is typed the same, so a router-only accessor is invisible across that boundary. Widening the gateway contract to carry inspection would put two responsibilities on one interface; a separate narrow port is the SOLID answer. |
+| **D20** | `authed` means **"a credential is configured for this host"** — for Forgejo, `forgejoRefFromRemote(...).token !== undefined`; for GitHub, **omitted entirely**. | `gh`'s budget snapshot is not host-specific authentication. Reporting it as `authed` would be a guess dressed as a fact. |
+| **D21** | The Settings taxonomy becomes a **function of the repo list**: `sectionsFor(repos)`. Section id is `repo:<projectId>` (the persisted id, not the path). If the selected repo disappears from the snapshot, selection falls back to `General`. Search entries are generated per repo section. | `kSettingsSections` is a static `final List` (`settings_registry.dart:24`) resolved statically by `settings_window.dart`. This is foundational, not incidental. |
+| **D22** | Settings open state carries an **optional target section id**, replacing the bare `bool` (`window_overlays.dart:28`). | There is otherwise no way to open Settings *at* a repo. |
+| **D23** | The P1 entry point is **desktop only**. `RepoCard` is the *mobile* home card (`home_screen.dart:53`); mobile Settings is a separate `/repos/settings` route. A mobile destination is out of scope for P1. | Rev 1's T4.1 targeted the wrong shell. Stating the scope is honest; pretending one task covers both is not. |
+| **~~D11~~** | **Withdrawn as specified.** "Unknown keys preserved" is not free: `project-store.ts:81`/`:99` reconstruct and emit only `{id, path}`, and `manager.ts:204` copies only those into `ProjectDTO`. Rev 2 requires a *lossless round-trip for the `settings` object*, with an explicit test, in all three places — not an aspiration in a table. | |
+
+## Cut from the spec entirely (accepted YAGNI)
+
+The disabled Lifecycle Scripts group in P1 (advertises a dangerous feature before its trust model
+exists); provider and default-branch overrides (D3′); the copy button; two-line rows as a blanket
+mandate — subtitles only where they distinguish state; the monogram's hue determinism as a *tested*
+requirement (keep the glyph, test fixed name→output fixtures); P4; and "pixel-perfect" as an
+**acceptance gate** — the visual audit remains as *evidence*, alongside golden tests for geometry.
+
+## Phasing (rev 2)
+
+| Phase | Contents | Gate |
+| --- | --- | --- |
+| **P0 · foundations** | Router keeps a per-repo forge decision record; `ForgeInspector` port (D19); `sectionsFor(repos)` + `repo:<id>` ids + fallback (D21); Settings open-target (D22); lossless `settings` round-trip through store *and* manager (~~D11~~) | rev 2 reviewed |
+| **P1 · the page, with one live control** | The section rendered from real data; Worktree root editable end-to-end — persisted, canonicalised (D17), loopback-gated (D16), and routed through `addWorktree`, `addWorktreeForPr` **and** `uniqueWorktreeDir`; desktop entry point (D23); widget + integration tests; visual audit; real-app run | P0 |
+| **P2 · the rest of the rows** | Branch prefix; mobile destination; whatever the P1 page proves is missing | P1 shipped |
+| **P3 · lifecycle scripts** | Unchanged, and still gated on D13(a)/(b) — plus the reviewer's additions: no script text sent to paired devices, config file ownership/permissions, interpreter, child-process-tree termination, output redaction, pre-prune veto timeout and override | D13 confirmed |
+
+## What rev 2 explicitly does not do
+
+No provider override, ever (D3′). No global settings store, so no four-level chain (D8′). No mobile
+repo-settings destination in P1 (D23). No script execution (P3). No GitLab provider. No custom logo
+image. No `All repositories…` overflow.
