@@ -767,6 +767,10 @@ const NOUNS = {
 
 /* Versioned interpreters normalise to their family name. */
 const VERSIONED = new Set(['python','pip','php','ruby','perl','node','clang','gcc','g++','llvm-config']);
+/* The version separator sits OUTSIDE the capture, and the capture allows
+   internal hyphens: with `-` in a flat character class the capture kept it
+   (`clang-`), and without the `(?:-word)*` group `llvm-config-15` could not
+   match at all, making that entry dead. */
 
 /* Tokens that can be a subcommand: a bare lowercase word (no slash, no dot, not a flag). */
 const SUBWORD = /^[a-z][a-z0-9:_+-]*$/;
@@ -810,11 +814,18 @@ function splitSegments(cmd){
     if((c === '$' && cmd[i+1] === '(') || c === '`'){
       const openLen = c === '`' ? 1 : 2;
       const closeCh = c === '`' ? '`' : ')';
-      let depth = 1, j = i + openLen, body = '';
+      /* Quote-aware: counting parens alone let a `)` inside a quoted argument
+         close the substitution early, and the stray quote then swallowed the
+         rest — `echo $(grep ')' file) && rm -rf build` lost the `rm`. */
+      let depth = 1, j = i + openLen, body = '', bq = null;
       while(j < cmd.length && depth > 0){
-        if(cmd[j] === '(' && closeCh === ')') depth++;
-        else if(cmd[j] === closeCh){ depth--; if(!depth) break; }
-        body += cmd[j]; j++;
+        const d = cmd[j];
+        if(d === '\\' && bq !== "'" && j + 1 < cmd.length){ body += d + cmd[j+1]; j += 2; continue; }
+        if(bq){ if(d === bq) bq = null; body += d; j++; continue; }
+        if(d === "'" || d === '"'){ bq = d; body += d; j++; continue; }
+        if(d === '(' && closeCh === ')') depth++;
+        else if(d === closeCh){ depth--; if(!depth) break; }
+        body += d; j++;
       }
       nested.push(body);
       buf += ' ';                       /* the substitution is not a token here */
@@ -851,7 +862,7 @@ function tokenize(seg){
 const basename = t => { const p = t.replace(/\/+$/,'').split('/'); return p[p.length-1] || t; };
 
 function normalise(name){
-  const m = /^([A-Za-z_+-]+?)[0-9]+(?:\.[0-9]+)*$/.exec(name);
+  const m = /^([A-Za-z_+]+(?:-[A-Za-z_+]+)*)-?[0-9]+(?:\.[0-9]+)*$/.exec(name);
   if(m && VERSIONED.has(m[1])) return m[1];
   return name;
 }
@@ -946,7 +957,10 @@ const VERB = {read:'Read', write:'Write', edit:'Edit', bash:'Run', grep:'Grep', 
 const PAST = {read:'Read', write:'Wrote', edit:'Edited', bash:'Ran', grep:'Grep', skill:'Skill',
   ask:'Ask the user', memory:'Memory'};
 
-function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+/* `'` is escaped too: the playground feeds arbitrary user text through here into
+   innerHTML, and it is one refactor away from landing in a single-quoted
+   attribute. */
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* row spec: {tool, cmd|arg, dur, st:'ok'|'fail'|'run', past, names, tip, body} */
 function rowHtml(r, o){
@@ -998,6 +1012,8 @@ const CORPUS = [
   'grep -rn a app && grep -rn b app && grep -rn c app && wc -l app/lib/**/*.dart',
   'cd server && pnpm typecheck > /tmp/tc.log 2>&1 && grep -c error /tmp/tc.log',
   'env >&2 pnpm typecheck && 2>&1 grep -rn TODO app/lib',
+  "echo $(grep ')' server/src/protocol.ts) && rm -rf build",
+  'clang-15 -c a.c && ocr review --audience agent',
   'cd /Users/le/.worktrees/makit/feat-chat-content && grep -rn "serve" server/src && gh pr view 154 --json title && sed -i \'\' \'s/7800/7810/\' server/src/ports.ts && makit serve --port 7810 & python3 tool/wait.py | head -3 ; lsof -nP -i:7810',
 ];
 

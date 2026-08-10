@@ -267,14 +267,15 @@ const Set<String> _multiplexers = {
   'dart', 'flutter', 'xcrun', 'swift', 'pod', 'fastlane', 'gradle',
   // package managers / version managers
   'brew', 'apt', 'apt-get', 'dnf', 'pacman', 'nix', 'mise', 'asdf', 'pyenv',
+  'nvm',
   // system
   'systemctl', 'launchctl', 'journalctl', 'defaults', 'security', 'scutil',
   'networksetup', 'pmset', 'tailscale',
   // clouds
   'aws', 'gcloud', 'az', 'fly', 'vercel', 'wrangler', 'supabase', 'heroku',
   // task runners / agents
-  'make', 'just', 'task', 'rake', 'mvn', 'tmux', 'screen', 'pi', 'codex',
-  'claude', 'makit', 'openssl',
+  'make', 'just', 'task', 'rake', 'mvn', 'tmux', 'screen', 'code', 'pi',
+  'codex', 'claude', 'makit', 'ocr', 'openssl', 'systemd-run',
 };
 
 /// Interpreters whose trailing version is noise (`python3.12` → `python`).
@@ -287,6 +288,8 @@ const Set<String> _versionedTools = {
   'node',
   'clang',
   'gcc',
+  'g++',
+  'llvm-config',
 };
 
 /// Names shown before the list is truncated to `… +N`. A safety valve for a
@@ -318,7 +321,16 @@ final RegExp _redirection = RegExp(r'^(?:[0-9]*(?:>>?|<)|&>>?)');
 final RegExp _bareRedirection = RegExp(r'^(?:[0-9]*(?:>>?|<)&?|&>>?)$');
 
 /// A trailing version on an interpreter name: `python3`, `python3.12`, `pip3`.
-final RegExp _trailingVersion = RegExp(r'^([A-Za-z_+-]+?)[0-9]+(?:\.[0-9]+)*$');
+/// The separator is matched *outside* the captured group: with `-` inside the
+/// character class the capture kept it (`clang-`), so `clang-15` never matched a
+/// name in [_versionedTools].
+final RegExp _trailingVersion = RegExp(
+  r'^([A-Za-z_+]+(?:-[A-Za-z_+]+)*)-?[0-9]+(?:\.[0-9]+)*$',
+);
+
+/// Trailing slashes stripped before taking a basename. Hoisted so it compiles
+/// once instead of on every token of every segment.
+final RegExp _trailingSlashes = RegExp(r'/+$');
 
 /// The distinct commands [command] runs, in first-seen order, joined with
 /// `, ` — the payload of a collapsed shell row. Empty when the command is
@@ -380,8 +392,31 @@ List<String> _splitForNames(String command) {
       var depth = 1;
       var j = i + substitution;
       final body = StringBuffer();
+      // Quote-aware, like the outer loop. Counting parentheses alone let a `)`
+      // inside a quoted argument close the substitution early, and the stray
+      // quote then swallowed the rest of the command:
+      // `echo $(grep ')' file) && rm -rf build` lost the `rm` completely.
+      String? bodyQuote;
       while (j < command.length) {
         final d = command[j];
+        if (d == r'\' && bodyQuote != "'" && j + 1 < command.length) {
+          body.write(d);
+          body.write(command[j + 1]);
+          j += 2;
+          continue;
+        }
+        if (bodyQuote != null) {
+          if (d == bodyQuote) bodyQuote = null;
+          body.write(d);
+          j++;
+          continue;
+        }
+        if (d == "'" || d == '"') {
+          bodyQuote = d;
+          body.write(d);
+          j++;
+          continue;
+        }
         if (d == '(' && close == ')') {
           depth++;
         } else if (d == close) {
@@ -459,7 +494,7 @@ List<String> _words(String segment) {
 
 /// `~/flutter/bin/flutter` → `flutter`; `./scripts/deploy.sh` → `deploy.sh`.
 String _basename(String token) {
-  final trimmed = token.replaceAll(RegExp(r'/+$'), '');
+  final trimmed = token.replaceAll(_trailingSlashes, '');
   final slash = trimmed.lastIndexOf('/');
   final name = slash < 0 ? trimmed : trimmed.substring(slash + 1);
   return name.isEmpty ? token : name;

@@ -216,6 +216,21 @@ void main() {
       expect(commandNames('kill `lsof -t -i:9787`'), 'kill, lsof');
     });
 
+    // The substitution scanner counted parentheses without honouring quotes, so
+    // a `)` inside a quoted argument closed the substitution early and the stray
+    // quote swallowed the rest of the command — including, in the worst case, a
+    // destructive segment the row exists to show.
+    test('T2 a quoted paren does not truncate a substitution', () {
+      expect(
+        commandNames("echo \$(grep ')' file) && rm -rf build"),
+        'echo, rm, grep',
+      );
+      expect(
+        commandNames("echo \$(basename 'a)b') && curl https://x"),
+        'echo, curl, basename',
+      );
+    });
+
     test('T3 drops the cd/export/source/set prologue', () {
       expect(
         commandNames(
@@ -248,6 +263,19 @@ void main() {
       expect(commandNames('python3 -c "print(1)"'), 'python');
       expect(commandNames('python3.12 tool/wait.py'), 'python');
       expect(commandNames('pip3 install -r requirements.txt'), 'pip install');
+    });
+
+    // `clang-15`, `gcc-13`, `llvm-config-15`: the hyphen was inside the regex's
+    // character class, so the capture kept it (`clang-`) and missed the lookup.
+    test('T4 normalises a hyphen-versioned interpreter', () {
+      expect(commandNames('clang-15 -c a.c'), 'clang');
+      expect(commandNames('gcc-13 --version'), 'gcc');
+      // An internal hyphen has to survive the version strip.
+      expect(commandNames('llvm-config-15 --libs'), 'llvm-config');
+      expect(commandNames('g++-12 -c a.cc'), 'g++');
+      // Not a known interpreter: left exactly as it came.
+      expect(commandNames('mytool-9 run'), 'mytool-9');
+      expect(commandNames('llvm-config --libs'), 'llvm-config');
     });
 
     test('T4 keeps an inline env assignment out of the name', () {
@@ -350,6 +378,18 @@ void main() {
       );
     });
 
+    // The reference board and the shipped set must list the same multiplexers;
+    // these four were in the board's JS only.
+    test('T5 the multiplexer set matches the reference board', () {
+      expect(commandNames('ocr review --audience agent'), 'ocr review');
+      expect(commandNames('nvm use 22'), 'nvm use');
+      expect(commandNames('code app/lib/main.dart'), 'code');
+      expect(
+        commandNames('systemd-run --scope make build'),
+        'systemd-run make',
+      );
+    });
+
     test('an unknown binary renders as its bare name', () {
       expect(commandNames('dbvr datasource list'), 'dbvr');
     });
@@ -380,7 +420,7 @@ void main() {
       expect(p.rest, '');
     });
 
-    test('does not weight a line that does not start with the verb', () {
+    test('does not emphasise a line that does not start with the verb', () {
       final p = splitVerb('some_mcp_tool foo', 'Run');
       expect(p.verb, '');
       expect(p.rest, 'some_mcp_tool foo');

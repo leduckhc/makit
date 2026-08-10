@@ -21,6 +21,14 @@ const TEXT = textArg > -1 ? String(process.argv[textArg + 1]) : "TOOLS";
 const sock = new WebSocket(`wss://127.0.0.1:${PORT}`, { rejectUnauthorized: false });
 const send = (o: unknown) => sock.send(JSON.stringify(o));
 
+// A driver that hangs for 60 s with no output is worse than one that fails: the
+// usual cause is simply that the server is not running.
+sock.on("error", (err: Error) => {
+  console.error(`[error] ${err.message}`);
+  console.error(`        is the e2e server up on :${PORT}? (docs/DEVELOPMENT.md)`);
+  process.exit(1);
+});
+
 let sessionId = "";
 let sawRunning = false;
 const started: string[] = [];
@@ -62,7 +70,11 @@ const done = new Promise<void>((resolve) => {
   });
 });
 
-await Promise.race([done, new Promise((r) => setTimeout(r, 60_000))]);
+const outcome = await Promise.race([
+  done.then(() => "turn finished"),
+  new Promise((r) => setTimeout(() => r("TIMED OUT after 60s"), 60_000)),
+]);
+console.log(`\n${outcome}`);
 console.log(`\nstarted=${started.length} ended=${ended.length} → ${started.join(", ")}`);
 sock.close();
 process.exit(started.length > 0 && started.length === ended.length ? 0 : 1);

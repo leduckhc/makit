@@ -243,6 +243,11 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
    */
   private async runToolScript(): Promise<void> {
     this.emit("status", "running");
+    // Release any script still in flight first. The token below would stop it
+    // emitting, but its pending timer is a shared field: left running, that
+    // timer fires later and nulls THIS script's handles, so a subsequent cancel
+    // has nothing to clear and the script cannot be aborted at all.
+    this.abortToolScript();
     const run = ++this.toolRun;
     const live = () => this.toolRun === run;
     // The two long calls exist so the duration token clears SPEC-47's 2 s floor

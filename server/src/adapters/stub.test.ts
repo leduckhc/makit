@@ -306,6 +306,51 @@ test("a cancelled script stays cancelled when the next turn starts first", async
   assert.equal(replies, 1, "only the new turn reports a closing reply");
 });
 
+/**
+ * A second TOOLS turn while the first is still in flight. Bumping the run token
+ * stops the old script from *emitting*, but the timer handle and the wait
+ * resolver are shared fields: the old script stayed parked on a live timer,
+ * whose callback then nulled the NEW script's handles (verified by probe — it
+ * really does fire while run 2 is live), leaving a window in which the new
+ * script could not be aborted at all.
+ *
+ * The crisp, race-free invariant: starting a turn releases the previous script
+ * at once, well before its own timer would have fired.
+ */
+test("a re-send releases the previous script immediately", async (t) => {
+  process.env.MAKIT_STUB_TOOL_SCALE = "0.05";
+  t.after(() => {
+    delete process.env.MAKIT_STUB_TOOL_SCALE;
+  });
+  const stub = new StubAdapter();
+  const events: AdapterEvent[] = [];
+  stub.on("event", (e) => events.push(e));
+  await stub.start({ sessionId: "s-resend", cwd: "/tmp" });
+
+  await stub.send({ text: "TOOLS" });
+  await startsSeen(events, 2); // script 1 is inside its 2.6 s × 0.05 wait
+  const first = stub.toolScript!;
+
+  await stub.send({ text: "TOOLS" });
+  const released = await Promise.race([
+    first.then(() => "released"),
+    new Promise((r) => setTimeout(() => r("parked"), 40)),
+  ]);
+  assert.equal(
+    released,
+    "released",
+    "the previous script must not stay parked on a timer that outlives it",
+  );
+
+  // And the new script is still fully abortable afterwards.
+  await stub.cancel();
+  const settled = await Promise.race([
+    stub.toolScript!.then(() => "settled"),
+    new Promise((r) => setTimeout(() => r("hung"), 500)),
+  ]);
+  assert.equal(settled, "settled");
+});
+
 test("kill stops the TOOLS script mid-flight", async (t) => {
   process.env.MAKIT_STUB_TOOL_SCALE = "0.05";
   t.after(() => {

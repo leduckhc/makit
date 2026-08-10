@@ -282,17 +282,41 @@ class _DemoAppState extends ConsumerState<_DemoApp> {
           '${Theme.of(context).brightness.name} · '
           '${_width?.toStringAsFixed(0) ?? 'full'}pt',
         ),
-        _chip('dark', _dark, () => setState(() => _dark = !_dark)),
-        _chip('430', _width == 430, () => setState(() => _width = 430)),
-        _chip('560', _width == 560, () => setState(() => _width = 560)),
-        _chip('full', _width == null, () => setState(() => _width = null)),
-        _chip('ruler', _ruler, () => setState(() => _ruler = !_ruler)),
-        _chip('unfold', _unfolded, () => _toggleAll(ref)),
+        _chip(context, 'dark', _dark, () => setState(() => _dark = !_dark)),
+        _chip(
+          context,
+          '430',
+          _width == 430,
+          () => setState(() => _width = 430),
+        ),
+        _chip(
+          context,
+          '560',
+          _width == 560,
+          () => setState(() => _width = 560),
+        ),
+        _chip(
+          context,
+          'full',
+          _width == null,
+          () => setState(() => _width = null),
+        ),
+        _chip(context, 'ruler', _ruler, () => setState(() => _ruler = !_ruler)),
+        _chip(context, 'unfold', _unfolded, () => _toggleAll(ref)),
       ],
     ),
   );
 
-  Widget _chip(String label, bool on, VoidCallback onTap) => InkWell(
+  /// Takes the context explicitly: the State's own `context` sits ABOVE
+  /// `MaterialApp`, so `Theme.of` there resolves the stock Material theme rather
+  /// than the app's. That is why these chips rendered in Material purple while
+  /// the transcript below them was correctly makit-green.
+  Widget _chip(
+    BuildContext context,
+    String label,
+    bool on,
+    VoidCallback onTap,
+  ) => InkWell(
     onTap: onTap,
     borderRadius: BorderRadius.circular(kRadius8),
     child: Container(
@@ -332,16 +356,26 @@ class _RowProbe extends StatefulWidget {
 class _RowProbeState extends State<_RowProbe> {
   final GlobalKey _key = GlobalKey();
   double? _height;
+  bool _measuring = false;
 
   @override
   Widget build(BuildContext context) {
     if (!widget.enabled) return KeyedSubtree(key: _key, child: widget.child);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final box = _key.currentContext?.findRenderObject();
-      if (box is RenderBox && box.hasSize && _height != box.size.height) {
-        setState(() => _height = box.size.height);
-      }
-    });
+    // Guarded: build can run several times in one frame, and each unguarded
+    // registration re-measures the same box.
+    if (!_measuring) {
+      _measuring = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _measuring = false;
+        // The ruler can be switched off in the same frame, taking this State
+        // with it — setState on an unmounted State throws.
+        if (!mounted) return;
+        final box = _key.currentContext?.findRenderObject();
+        if (box is RenderBox && box.hasSize && _height != box.size.height) {
+          setState(() => _height = box.size.height);
+        }
+      });
+    }
     final cs = Theme.of(context).colorScheme;
     return Stack(
       children: [

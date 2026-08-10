@@ -41,8 +41,15 @@ Future<void> _pumpBody(WidgetTester tester, ToolCallItem item) async {
       theme: makitDarkTheme,
       home: Scaffold(
         body: Builder(
-          builder: (ctx) =>
-              ListView(children: rendererFor(item)!.body(ctx, item)),
+          builder: (ctx) {
+            final renderer = rendererFor(item);
+            // A bare `!` here fails with "Null check operator used on a null
+            // value", which says nothing about which tool lost its renderer.
+            if (renderer == null) {
+              fail('no renderer registered for tool "${item.name}"');
+            }
+            return ListView(children: renderer.body(ctx, item));
+          },
         ),
       ),
     ),
@@ -265,8 +272,14 @@ void main() {
           (tester.getTopLeft(find.text(key)).dx +
               tester.getSize(find.text(key)).width);
 
-      expect(gapAfter('pattern', 'TODO'), moreOrLessEquals(4, epsilon: 0.5));
-      expect(gapAfter('glob', '*.dart'), moreOrLessEquals(4, epsilon: 0.5));
+      expect(
+        gapAfter('pattern', 'TODO'),
+        moreOrLessEquals(kSpace4, epsilon: 0.5),
+      );
+      expect(
+        gapAfter('glob', '*.dart'),
+        moreOrLessEquals(kSpace4, epsilon: 0.5),
+      );
       // And the two pairs do not share a column start.
       expect(
         tester.getTopLeft(find.text('TODO')).dx,
@@ -302,10 +315,11 @@ void main() {
     // block still rendered atom-one-dark's #282C34, because HighlightView paints
     // `theme['root'].backgroundColor` INSIDE it. Colouring the container is not
     // enough — the highlight theme's own panel has to be stripped.
-    testWidgets('the highlight theme contributes no background of its own', (
-      tester,
-    ) async {
-      for (final theme in [makitDarkTheme, makitLightTheme]) {
+    // One test per theme: a single loop would have hidden the light theme
+    // entirely behind a dark-theme failure.
+    for (final theme in [makitDarkTheme, makitLightTheme]) {
+      testWidgets('the highlight theme contributes no background of its own '
+          '(${theme.brightness.name})', (tester) async {
         await tester.pumpWidget(
           MaterialApp(
             theme: theme,
@@ -317,12 +331,10 @@ void main() {
         expect(
           view.theme['root']?.backgroundColor,
           anyOf(isNull, Colors.transparent),
-          reason:
-              '${theme.brightness.name}: the panel is the app\'s, not the '
-              'highlighter\'s',
+          reason: 'the panel is the app\'s, not the highlighter\'s',
         );
-      }
-    });
+      });
+    }
   });
 
   group('the header keeps its subject while expanded', () {
