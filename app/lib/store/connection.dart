@@ -522,6 +522,8 @@ class ConnectionController extends StateNotifier<MakitConnState> {
 
     final ws = _transportFactory();
     _ws = ws;
+    // Reset serverIsLocal on each new connection; it will be set from hello.ack if local.
+    state = state.copyWith(serverIsLocal: false);
     _wsSub = ws.frames.listen((env) {
       // D8 rev 2: the server states whether we share its machine. Captured here,
       // before fan-out, so it is set by the time any screen reads it.

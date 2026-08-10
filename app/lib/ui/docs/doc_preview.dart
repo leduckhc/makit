@@ -130,6 +130,7 @@ class DocPreview extends StatefulWidget {
     super.key,
     required this.doc,
     this.markdown,
+    this.markdownError,
     this.onPublish,
     this.onOpenLocal,
     this.onOpenInternal,
@@ -140,6 +141,9 @@ class DocPreview extends StatefulWidget {
 
   /// The markdown text, when loaded. Null → spinner (md) / ignored (html).
   final String? markdown;
+
+  /// The markdown read error, when the load fails.
+  final String? markdownError;
 
   /// Publish & open — the html primary action for a REMOTE client (D9/D15), and
   /// the secondary "Share to a device…" for a local one.
@@ -208,6 +212,36 @@ class _DocPreviewState extends State<DocPreview> {
       return _HtmlNotice(
         onPublish: widget.onPublish,
         onOpenLocal: widget.onOpenLocal,
+      );
+    }
+    if (widget.markdownError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(kSpace32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                PhosphorIcons.warning,
+                size: 48,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              const SizedBox(height: kSpace16),
+              Text(
+                'Could not read',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: kSpace8),
+              Text(
+                widget.markdownError!,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
     final markdown = widget.markdown;
@@ -593,13 +627,23 @@ class _DocPreviewSheetState extends ConsumerState<_DocPreviewSheet> {
     }
     return FutureBuilder<String>(
       future: _markdownFuture,
-      builder: (context, snap) => DocPreview(
-        doc: _doc,
-        markdown: snap.data,
-        onPublish: _publish,
-        onOpenLocal: isLocal ? _openLocal : null,
-        onOpenInternal: _openInternal,
-      ),
+      builder: (context, snap) {
+        String? markdown;
+        String? error;
+        if (snap.hasData) {
+          markdown = snap.data;
+        } else if (snap.hasError) {
+          error = snap.error.toString();
+        }
+        return DocPreview(
+          doc: _doc,
+          markdown: markdown,
+          markdownError: error,
+          onPublish: _publish,
+          onOpenLocal: isLocal ? _openLocal : null,
+          onOpenInternal: _openInternal,
+        );
+      },
     );
   }
 }

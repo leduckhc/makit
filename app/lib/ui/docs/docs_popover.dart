@@ -417,6 +417,7 @@ class _DocsPopoverPanelState extends State<_DocsPopoverPanel> {
                   padding: EdgeInsets.zero,
                   itemCount: visible.length,
                   itemBuilder: (context, i) => DecoratedBox(
+                    key: ValueKey(visible[i].key),
                     decoration: BoxDecoration(
                       border: Border(
                         top: BorderSide(color: cs.outlineVariant),
