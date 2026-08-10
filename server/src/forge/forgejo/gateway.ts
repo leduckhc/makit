@@ -51,6 +51,12 @@ export interface HttpRequest {
 export interface HttpResponse {
   status: number;
   body: string;
+  /**
+   * Response headers, keys lower-cased. Only `retry-after` is read today, but a
+   * throttled response is useless without it: guessing a backoff either ignores
+   * the server's instruction or parks the poller far longer than it asked for.
+   */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -119,6 +125,30 @@ const MUTATION_TIMEOUT_MS = 60_000;
 const TTL_PR_MS = 20_000;
 const TTL_OPEN_PRS_MS = 60_000;
 
+/**
+ * Statuses that mean "stop asking": 429 from a rate limiter, 503 from a server
+ * shedding load. Forgejo core has no rate limiter, but instances routinely sit
+ * behind nginx `limit_req`, Cloudflare or an anti-scraper gate.
+ */
+const THROTTLE_STATUSES = new Set([429, 503]);
+/** Backoff when the server throttles us without saying for how long. */
+const DEFAULT_BACKOFF_MS = 60_000;
+/**
+ * Ceiling on an honoured `Retry-After`. A misconfigured proxy (or a hostile one)
+ * can answer `86400`, and obeying that literally would silently disable PR
+ * polling for a day with no way for the user to tell why.
+ */
+const MAX_BACKOFF_MS = 5 * 60_000;
+
+/** Parse `Retry-After`: delta-seconds or an HTTP date. Null when unusable. */
+function parseRetryAfter(value: string | undefined, now: number): number | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+  const at = Date.parse(trimmed);
+  return Number.isFinite(at) ? Math.max(0, at - now) : null;
+}
+
 interface CacheEntry {
   value: unknown;
   expiresAt: number;
@@ -158,6 +188,21 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
   const wipPrefixes = deps.wipPrefixes ?? DEFAULT_WIP_PREFIXES;
   const cache = new Map<string, CacheEntry>();
   const stats: GatewayStats = { execs: 0, exemptExecs: 0, cacheHits: 0 };
+  /** Epoch ms until which background requests are withheld. 0 = not throttled. */
+  let backoffUntil = 0;
+
+  /** True while a server-requested pause is in force. */
+  const throttled = (): boolean => backoffUntil > now();
+
+  /**
+   * Record a throttling response. Interactive callers are still allowed through
+   * (a button press must reach the server), so this only gates polling.
+   */
+  function noteThrottle(res: HttpResponse): void {
+    const asked = parseRetryAfter(res.headers?.["retry-after"], now());
+    const wait = Math.min(asked ?? DEFAULT_BACKOFF_MS, MAX_BACKOFF_MS);
+    backoffUntil = now() + Math.max(wait, 1);
+  }
 
   function cacheGet<T>(key: string): T | undefined {
     const hit = cache.get(key);
@@ -195,8 +240,9 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
     const method = opts.method ?? "GET";
     const body = opts.body === undefined ? undefined : JSON.stringify(opts.body);
     stats.execs += 1;
+    let res: HttpResponse;
     try {
-      return await deps.http({
+      res = await deps.http({
         url,
         method,
         headers: headers(ref, body !== undefined),
@@ -204,8 +250,13 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
         timeoutMs: opts.timeoutMs ?? READ_TIMEOUT_MS,
       });
     } catch {
-      return { status: 0, body: "" };
+      res = { status: 0, body: "" };
     }
+    if (THROTTLE_STATUSES.has(res.status)) noteThrottle(res);
+    // Any completed, non-throttled answer means the server is talking to us
+    // again -- holding the backoff after that would throttle us on our own.
+    else if (res.status !== 0) backoffUntil = 0;
+    return res;
   }
 
   const prKey = (repoPath: string, branch: string) => `pr:${repoPath}:${branch}`;
@@ -228,12 +279,20 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
         stats.cacheHits += 1;
         return hit;
       }
+      // The server asked us to wait. `throttled`, not `none`: a pause is not
+      // evidence that the branch has no PR (SPEC-32 §6.5).
+      if (throttled()) return { kind: "unknown", reason: "throttled" };
     }
 
     const listed = await call(ref, prForBranchUrl(ref.baseUrl, ref.owner, ref.repo, branch), {
       timeoutMs: BRANCH_LOOKUP_TIMEOUT_MS,
     });
-    if (!isOk(listed)) return { kind: "unknown", reason: "error" };
+    if (!isOk(listed)) {
+      return {
+        kind: "unknown",
+        reason: THROTTLE_STATUSES.has(listed.status) ? "throttled" : "error",
+      };
+    }
     const rows = parseJson(listed.body);
     // A non-array body is a malformed or error response, not an empty repo.
     if (!Array.isArray(rows)) return { kind: "unknown", reason: "error" };
@@ -291,6 +350,7 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
         stats.cacheHits += 1;
         return hit;
       }
+      if (throttled()) return [];
     }
 
     const res = await call(ref, openPrsUrl(ref.baseUrl, ref.owner, ref.repo, limit), {
@@ -410,7 +470,10 @@ export function createFetchHttp(): Http {
         body: req.body,
         signal: AbortSignal.timeout(req.timeoutMs),
       });
-      return { status: res.status, body: await res.text() };
+      const headers: Record<string, string> = {};
+      const retryAfter = res.headers.get("retry-after");
+      if (retryAfter !== null) headers["retry-after"] = retryAfter;
+      return { status: res.status, body: await res.text(), headers };
     } catch {
       return { status: 0, body: "" };
     }

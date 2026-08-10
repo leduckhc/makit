@@ -84,6 +84,23 @@ export interface BudgetReporting {
   onBudgetChange(fn: (s: never) => void): () => void;
 }
 
+/** The providers this build can route to. */
+export type ForgeProviderId = "github" | "forgejo";
+
+/**
+ * Reports which providers are actually in play, learned from the repos routed so
+ * far. Consumed by the poll cadence: GitHub's degradation ladder must not
+ * throttle a setup that contains no GitHub repos (see `cadence.ts`).
+ */
+export interface ProviderMix {
+  providersInUse(): ReadonlySet<ForgeProviderId>;
+}
+
+/** Whether a gateway can report which providers it is routing to. */
+export function hasProviderMix<G>(gateway: G): gateway is G & ProviderMix {
+  return typeof (gateway as Partial<ProviderMix>).providersInUse === "function";
+}
+
 /**
  * Whether a gateway can report quota. Use this before wiring budget events or
  * the budget UI, rather than assuming every provider has a quota to report.

@@ -29,7 +29,7 @@
 import type { Exec } from "../github/gateway.js";
 import { createGithubGateway, type GithubGateway } from "../github/gateway.js";
 import type { OpenPr } from "../git.js";
-import type { ForgeGateway, GatewayStats, PrLookup, PrMutation } from "./types.js";
+import type { ForgeGateway, ForgeProviderId, GatewayStats, PrLookup, PrMutation, ProviderMix } from "./types.js";
 import { createFetchHttp, createForgejoGateway, type ForgejoRepoRef } from "./forgejo/gateway.js";
 import { parseForgejoRemote } from "./forgejo/map.js";
 
@@ -136,21 +136,33 @@ export interface ForgeRouterDeps {
   resolveHost: (repoPath: string) => Promise<string | null>;
 }
 
-export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway {
+export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & ProviderMix {
   /**
    * Cache of the chosen provider per repo. Stores the PROMISE, not the resolved
    * value, so the home-screen fan-out — which hits every worktree of a repo at
    * once — shares one `git remote` read instead of spawning one per worktree.
    */
   const chosen = new Map<string, Promise<ForgeGateway>>();
+  /**
+   * Providers actually reached. Recorded rather than inferred from config because
+   * only routing knows the truth, and the poll cadence depends on it.
+   */
+  const inUse = new Set<ForgeProviderId>();
 
   function pick(repoPath: string): Promise<ForgeGateway> {
     const hit = chosen.get(repoPath);
     if (hit !== undefined) return hit;
     const p = deps
       .resolveHost(repoPath)
-      .then((host) => (host === null || isGitHubHost(host) ? deps.github : deps.forgejo))
-      .catch(() => deps.github);
+      .then((host) => {
+        const useGithub = host === null || isGitHubHost(host);
+        inUse.add(useGithub ? "github" : "forgejo");
+        return useGithub ? deps.github : deps.forgejo;
+      })
+      .catch(() => {
+        inUse.add("github");
+        return deps.github;
+      });
     chosen.set(repoPath, p);
     return p;
   }
@@ -188,8 +200,10 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway {
         cacheHits: a.cacheHits + b.cacheHits,
       };
     },
+    providersInUse: () => new Set(inUse),
     close(): void {
       chosen.clear();
+      inUse.clear();
       deps.github.close();
       deps.forgejo.close();
     },

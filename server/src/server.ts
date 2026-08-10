@@ -68,7 +68,7 @@ import { watchWorktrees } from "./worktree_watcher.js";
 import { watchPrs } from "./pr_watcher.js";
 import { watchBudget } from "./github/budget_watch.js";
 import { fetchOpenPr } from "./git.js";
-import { decide } from "./github/policy.js";
+import { forgePollIntervalMs } from "./forge/cadence.js";
 import { attachMediaRoute } from "./media/route.js";
 import { sharedMediaStore } from "./media/store.js";
 import {
@@ -345,7 +345,7 @@ export function startWsServer(opts: ServerOpts) {
     // quota burn (≥2N calls every 5s); feeding the policy's pollIntervalMs lets
     // the 5s→30s→120s→paused ladder actually take effect. `Infinity` (paused)
     // stops polling rather than busy-looping.
-    intervalMs: () => decide(gateway.budget()).pollIntervalMs,
+    intervalMs: () => forgePollIntervalMs(gateway),
   });
   https.on("close", () => prWatcher.close());
 

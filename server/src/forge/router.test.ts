@@ -245,3 +245,29 @@ test("forgejoRefFromRemote returns null for a remote it cannot read", () => {
   assert.equal(forgejoRefFromRemote("", {}), null);
   assert.equal(forgejoRefFromRemote("https://git.example.com/only-owner", {}), null);
 });
+
+// ---------------------------------------------------------------------------
+// Which providers are actually in play. The poll cadence needs this: GitHub's
+// degradation ladder exists to ration GitHub quota, and must not throttle a
+// Forgejo-only setup where there is no quota to ration.
+// ---------------------------------------------------------------------------
+
+test("providersInUse is empty until a repo has been routed", () => {
+  const { router } = harness({ "/fj": "git.example.com" });
+  assert.deepEqual([...router.providersInUse()], []);
+});
+
+test("providersInUse learns each provider as repos are routed", async () => {
+  const { router } = harness({ "/fj": "git.example.com", "/gh": "github.com" });
+  await router.prForBranch("/fj", "b");
+  assert.deepEqual([...router.providersInUse()], ["forgejo"]);
+  await router.prForBranch("/gh", "b");
+  assert.deepEqual([...router.providersInUse()].sort(), ["forgejo", "github"]);
+});
+
+test("close() forgets the provider mix along with the routing cache", async () => {
+  const { router } = harness({ "/fj": "git.example.com" });
+  await router.prForBranch("/fj", "b");
+  router.close();
+  assert.deepEqual([...router.providersInUse()], []);
+});

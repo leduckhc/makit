@@ -19,7 +19,10 @@ interface Call {
 }
 
 /** Build a gateway over a scripted HTTP seam. Routes are matched by substring. */
-function harness(routes: Array<[string, { status?: number; json?: unknown; body?: string }]>, ref = REF) {
+function harness(
+  routes: Array<[string, { status?: number; json?: unknown; body?: string; headers?: Record<string, string> }]>,
+  ref = REF,
+) {
   const calls: Call[] = [];
   const http: Http = async (req: HttpRequest) => {
     calls.push({ url: req.url, method: req.method, headers: req.headers, body: req.body, timeoutMs: req.timeoutMs });
@@ -28,10 +31,11 @@ function harness(routes: Array<[string, { status?: number; json?: unknown; body?
         return {
           status: res.status ?? 200,
           body: res.body ?? JSON.stringify(res.json ?? null),
+          headers: res.headers ?? {},
         };
       }
     }
-    return { status: 404, body: '{"message":"not found"}' };
+    return { status: 404, body: '{"message":"not found"}', headers: {} };
   };
   let nowMs = 1_000;
   const gateway = createForgejoGateway({
@@ -368,4 +372,105 @@ test("stats counts network calls and close() is safe to call twice", async () =>
   assert.equal(gateway.stats().execs, 2);
   gateway.close();
   gateway.close();
+});
+
+// ---------------------------------------------------------------------------
+// Throttling. Forgejo itself has no rate limiter -- no /rate_limit endpoint, no
+// rate-limit headers, no config knob -- but an instance behind nginx `limit_req`,
+// Cloudflare or an anti-scraper gate certainly does, and a slow query can shed
+// load with a 503. Answering those by polling at the same cadence leans on a
+// server that just asked us to stop.
+// ---------------------------------------------------------------------------
+
+test("a 429 puts background lookups into backoff without further requests", async () => {
+  const { gateway, calls } = harness([["/pulls?", { status: 429, body: "slow down" }]]);
+  assert.deepEqual(await gateway.prForBranch("/repo", "b"), { kind: "unknown", reason: "throttled" });
+  const n = calls.length;
+  // A second background poll must not spend a request while told to wait.
+  assert.deepEqual(await gateway.prForBranch("/repo", "b"), { kind: "unknown", reason: "throttled" });
+  assert.equal(calls.length, n, "must not re-request while in backoff");
+});
+
+test("the backoff is reported as throttled, never as `none`", async () => {
+  // `none` would erase the PR pill on a server that merely asked us to wait.
+  const { gateway } = harness([["/pulls?", { status: 503, body: "" }]]);
+  const first = await gateway.prForBranch("/repo", "b");
+  assert.equal(first.kind, "unknown");
+  assert.equal(first.kind === "unknown" && first.reason, "throttled");
+});
+
+test("Retry-After in seconds is honoured, and the window then expires", async () => {
+  const { gateway, calls, tick } = harness([
+    ["/pulls?", { status: 429, headers: { "retry-after": "30" } }],
+  ]);
+  await gateway.prForBranch("/repo", "b");
+  const n = calls.length;
+  tick(29_000);
+  await gateway.prForBranch("/repo", "b");
+  assert.equal(calls.length, n, "still inside the Retry-After window");
+  tick(2_000);
+  await gateway.prForBranch("/repo", "b");
+  assert.ok(calls.length > n, "the window must expire");
+});
+
+test("an absurd Retry-After is capped rather than parking the poller for a day", async () => {
+  const { gateway, calls, tick } = harness([
+    ["/pulls?", { status: 429, headers: { "retry-after": "86400" } }],
+  ]);
+  await gateway.prForBranch("/repo", "b");
+  const n = calls.length;
+  tick(10 * 60_000);
+  await gateway.prForBranch("/repo", "b");
+  assert.ok(calls.length > n, "a hostile or buggy header must not disable polling");
+});
+
+test("a garbage Retry-After falls back to the default backoff", async () => {
+  const { gateway, calls, tick } = harness([
+    ["/pulls?", { status: 429, headers: { "retry-after": "next tuesday" } }],
+  ]);
+  await gateway.prForBranch("/repo", "b");
+  const n = calls.length;
+  tick(1_000);
+  await gateway.prForBranch("/repo", "b");
+  assert.equal(calls.length, n, "a default backoff still applies");
+});
+
+test("an interactive call is still attempted during backoff", async () => {
+  // A button press must reach the server and surface its real answer; silently
+  // returning a cached refusal would read as a dead button.
+  const { gateway, calls } = harness([["/pulls?", { status: 429, body: "" }]]);
+  await gateway.prForBranch("/repo", "b");
+  const n = calls.length;
+  await gateway.prForBranch("/repo", "b", { interactive: true });
+  assert.ok(calls.length > n);
+});
+
+test("a successful response clears the backoff", async () => {
+  const routes: Array<[string, { status?: number; json?: unknown; headers?: Record<string, string> }]> = [
+    ["/pulls?", { status: 429, headers: { "retry-after": "30" } }],
+  ];
+  const { gateway, calls, tick } = harness(routes);
+  await gateway.prForBranch("/repo", "b");
+  tick(31_000);
+  routes[0] = ["/pulls?", { json: [] }];
+  assert.deepEqual(await gateway.prForBranch("/repo", "b"), { kind: "none" });
+  const n = calls.length;
+  await gateway.prForBranch("/repo", "x");
+  assert.ok(calls.length > n, "no residual backoff after a success");
+});
+
+test("a short-circuited poll is not counted as a network call", async () => {
+  const { gateway } = harness([["/pulls?", { status: 429, body: "" }]]);
+  await gateway.prForBranch("/repo", "b");
+  const after = gateway.stats().execs;
+  await gateway.prForBranch("/repo", "b");
+  assert.equal(gateway.stats().execs, after, "backoff must not inflate the exec count");
+});
+
+test("openPrs also respects the backoff and returns an empty list", async () => {
+  const { gateway, calls } = harness([["/pulls?", { status: 429, body: "" }]]);
+  await gateway.openPrs("/repo", 30);
+  const n = calls.length;
+  assert.deepEqual(await gateway.openPrs("/repo", 30), []);
+  assert.equal(calls.length, n);
 });

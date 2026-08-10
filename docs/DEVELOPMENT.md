@@ -165,9 +165,20 @@ never does.
 
 ### Differences you will see versus GitHub
 
-- **No quota panel.** Forgejo exposes no `/api/v1/rate_limit` and no rate-limit
-  headers, so there is nothing to ration or display. The GitHub budget footer
-  keeps showing GitHub's quota only.
+- **No quota panel.** Forgejo has no request rate limiting at all: no
+  `/api/v1/rate_limit`, no rate-limit response headers, and no limiter anywhere in
+  its configuration (its `quota` feature meters *storage* — repo/LFS/package
+  bytes — not requests). So there is nothing to ration or display, and the budget
+  footer keeps showing GitHub's quota only. A Forgejo-only setup therefore polls
+  at the fast 5s rung rather than being throttled by GitHub's ladder.
+  In a **mixed** setup GitHub's ladder still governs the shared poll timer for
+  every repo; per-repo cadence would need reworking `pr_watcher`.
+- **Throttling still happens, just not from Forgejo.** An instance behind nginx
+  `limit_req`, Cloudflare or an anti-scraper gate can answer `429`, and a slow
+  query can shed load with `503`. Those are honoured: the provider backs off for
+  `Retry-After` (capped at 5 minutes so a bad header cannot park polling for a
+  day), withholds background polls while waiting, still lets a button press
+  through, and reports `throttled` rather than "no PR".
 - **"Mark ready" rewrites the title.** Forgejo derives `draft` from a
   `WORK_IN_PROGRESS_PREFIXES` title prefix (default `WIP:`, `[WIP]`,
   case-insensitive, configurable per instance) and its API has no `draft` field.
