@@ -53,7 +53,7 @@ Three facts make this far cheaper than it looks, and they are the reason the pha
 | D5 | **`changed` means "differs from the merge base", not "dirty in the working tree".** | It is the review question — *what did this branch add or touch* — and it reuses the `git diff` already run for the worktree row's `+412/−38` badge. A dirty-tree flag would go green the moment you commit, which is exactly backwards. |
 | D6 | **Archived / removed worktrees are excluded entirely.** No orphan badge. | Unlike a port, a removed worktree's files are gone from disk, so the row could only ever be a dead link. Ports needed orphans because a *listener* outlives its worktree; a file does not. |
 | D7 | **Markdown is delivered as text over the existing WSS channel** (`docs.read`), capped at 1 MB. HTML is **never** sent over WSS. | A spec file is smaller than the transcript it would sit next to, so it needs no second transport. HTML is only useful when a browser engine renders it, so shipping its bytes to Dart would be pointless. |
-| D8 | **In P1, HTML is reachable only by tailnet publish.** No webview until P3. | It is free, it has perfect fidelity (real Safari, real JS, print-to-PDF), and it works on a device that has never paired with makit. It removes the pain in P1 without spending the webview dependency first. |
+| D8 | **rev 2. HTML opens in a real browser; *where the viewer is* decides how.** A **local** client (loopback connection) gets `docs.open`, which hands the path to the host's OS opener — no HTTP, no grant, no TTL, no Tailscale, no listener. A **remote** client publishes to the tailnet (D9/D10/D15). Publish stays available to a local client as a secondary action. No webview until P3. | **rev 1 said "reachable only by tailnet publish"**, which forced the same-machine case through a network round trip it does not need: with Tailscale off, a board sitting on the very machine you are looking at was unopenable, and the failure read `Could not publish`. The document lives on the server's filesystem, so the only real question is whether the viewer is on that host. `isLocal` is already computed per client from the remote address (`server.ts`), and it must be **per client, not per server** — one server serves a loopback desktop app and a tailnet phone at the same moment. The mockup had drawn `Open · Browser · Reveal` from the start; rev 1 dropped two of the three. Opening on the host is a new server capability, so it is gated to local clients and still routed through D2's single path boundary: a remote client asking for it is refused, never served. |
 | D9 | **The published URL is a capability URL: `/docs/<grantId>/<relPath>`**, where `grantId` is 32 bytes of CSPRNG. TTL 30 min, idle-reaped, revocable, and enumerable in one place ("3 docs are currently shared"). Reuse SPEC-44's grant record shape. | **This corrects the mockup**, which drew a plain `/docs/<branch>/<path>` URL. A URL that must open in Safari cannot carry a bearer *header*, so the capability has to be in the path. Publishing is therefore always explicit and always has an off switch. |
 | D10 | **rev 2.** The doc listener is a **separate plain-HTTP listener, bound lazily on the first publish** to makit's tailnet address, and **released as soon as the last grant is gone**. Never `0.0.0.0`, never the pinned WSS listener. No `tailscale serve`. | rev 1 said "loopback-only, fronted by `tailscale serve`", which **conflicted with D15's LAN fallback** — a loopback-only listener is unreachable over the LAN, so the fallback was impossible as written. Resolved in favour of the tighter option: tailnet only. Plain HTTP is sufficient because the tailnet already encrypts (WireGuard), and a `ts.net` hostname buys nothing here — **the URL is never typed by a human**, it is tapped, copied, or scanned from a QR — so it would not justify a `tailscale serve` setup/teardown lifecycle. Binding lazily removes rev 1's always-on routable port: makit holds no doc port open for a feature you are not using. |
 | D11 | **`docs.snapshot` is a host-only event kind**, added to *both* the `SessionEventKind` `Exclude<>` in `protocol.ts` and `HOST_ONLY_KIND_FLAGS` in `protocol/codec.ts`. `docs.watch {on}` is ref-counted exactly like `ports.watch`. Re-index is driven by `worktree_watcher` with a 400 ms debounce — **no polling.** | Follows `ports.snapshot` precisely: a host-wide snapshot is not a session event and must never be persisted into a session log. `HOST_ONLY_KIND_FLAGS` is typed `Record<Exclude<EventKind, SessionEventKind>, true>`, so the compiler refuses to let the two lists drift — adding the kind in one place fails the build until it is added in the other. **Corrected from rev 0**, which claimed no new event kind was needed; that misread SPEC-44 (which adds none) as if it described SPEC-41 (which introduced `ports.snapshot`). |
@@ -66,7 +66,7 @@ Three facts make this far cheaper than it looks, and they are the reason the pha
 
 | Phase | Ships | New deps |
 | --- | --- | --- |
-| **P1** | The index (`docs.watch` / `docs.list` / `docs.read`), the global **Docs screen** (grouped, filtered, searchable), the **markdown preview widget**, **tailnet publish** for HTML with the grant list and *Stop sharing*, and the worktree-row glyph + desktop popover. | **none** |
+| **P1** | The index (`docs.watch` / `docs.list` / `docs.read`), the global **Docs screen** (grouped, filtered, searchable), the **markdown preview widget**, **HTML in a real browser** — `docs.open` on the host for a local client, **tailnet publish** for a remote one with the grant list and *Stop sharing*, and the worktree-row glyph + desktop popover. | **none** |
 | **P2** | **Artifact cards + inline chips** in the transcript (`makit-doc:` scheme, extending the existing media rewriter), and **Quick Open** (⌘⇧O on desktop, pull-to-search on mobile). | none |
 | **P3** | `webview_flutter` + the pinned loopback proxy **shared with SPEC-44** → HTML in-app; then **Canvas** (split pane on desktop, second page on mobile) with **live reload** off `worktree_watcher`. | `webview_flutter` |
 
@@ -161,7 +161,8 @@ Commands (all app → server, `cmd` frames):
 | --- | --- | --- |
 | `docs.watch` | `{ on: boolean }` | ref-counted; first `true` replies with the cached snapshot, then streams `docs.snapshot` (D11) |
 | `docs.read` | `{ worktreePath, relPath }` | `{ text }` for `kind === "md"` only; errors for `html` (D7) |
-| `docs.publish` | `{ worktreePath, relPath }` | `DocGrantDTO`, or a stated reason (D15) |
+| `docs.open` | `{ worktreePath, relPath }` | `{ ok }` after handing the path to the host's OS opener — **local clients only** (D8 rev 2); a remote client is refused with a stated reason |
+| `docs.publish` | `{ worktreePath, relPath }` | `{ grant: DocGrantDTO }` — **nested**, or a stated reason (D15) |
 | `docs.unpublish` | `{ grantId }` | `{ ok }` |
 | `docs.grants` | — | `{ grants: DocGrantDTO[] }` — so the app can say "3 shared" |
 
@@ -213,9 +214,15 @@ Every new test's bite is proven by reverting only the production line and watchi
 2. `cd app && flutter analyze --fatal-infos --no-pub` reports no issues; `flutter test --no-pub`
    all-green against the known-flaky baseline (compare counts, and `grep -v ": loading "` must be
    empty).
-3. A real-machine probe: index this very worktree and compare the count against
-   `find mockups docs -name '*.md' -o -name '*.html'` by eye. Expect 27 boards and 70 specs.
-4. Publish `mockups/open-ports.html`, then `curl -sI` the tailnet URL for `200`, `curl` a wrong
+3. A real-machine probe: index this very worktree and compare the count against what git lists —
+   `git ls-files --cached --others --exclude-standard | grep -iE '\.(md|markdown|html?)$' | grep -vE '(^|/)\.'`
+   (D1 rev 2). At the time of writing that is **143** here and **69** in `~/Work/teachme`, whose docs
+   live outside `mockups/`+`docs/` and which rev 1 indexed 3 of. Assert no dotfile, `.git/`,
+   `node_modules/` or ignored-`build/` path appears.
+4. **With Tailscale off**, open `mockups/open-ports.html` from the desktop app: it must open in the
+   real browser anyway (D8 rev 2 — no grant, no listener). Confirm no doc port appears in Ports.
+5. Publish `mockups/open-ports.html`, then `curl -sI` the tailnet URL for `200`, `curl` a wrong
    `grantId` for `404`, and open the real URL on the phone. Then *Stop sharing* and `curl` again
-   for `404`.
-5. `docs.read` a spec on the phone and confirm the front-matter chips and code blocks render.
+   for `404`. A doc port must appear on publish and disappear once the last grant is gone (D10 rev 2).
+6. From the **phone**, ask for `docs.open`: it must be refused with a reason, never served.
+7. `docs.read` a spec on the phone and confirm the front-matter chips and code blocks render.

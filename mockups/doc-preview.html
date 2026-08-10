@@ -1030,11 +1030,18 @@
           </thead>
           <tbody>
             <tr class="best">
-              <td><b>tailnet publish</b><br><span class="dim">Option D · <code style="white-space:nowrap">tailscale serve</code></span></td>
+              <td><b>open on the host</b><br><span class="dim">same machine · LaunchServices</span></td>
               <td class="y">perfect<br><span class="dim">real Safari, JS, print</span></td>
               <td class="y">none</td>
               <td class="n">no</td>
-              <td><b>Ship in P1.</b> Zero-cost, full fidelity, works on unpaired devices. The escape hatch that is also the fast path.</td>
+              <td><b>Ship in P1 — the default on desktop.</b> When the viewer is already on the machine holding the file, nothing needs to cross a network: hand the path to the OS. No HTTP, no grant, no TTL, no Tailscale, no listener.</td>
+            </tr>
+            <tr class="best">
+              <td><b>tailnet publish</b><br><span class="dim">Option D · plain-HTTP listener, bound lazily</span></td>
+              <td class="y">perfect<br><span class="dim">real Safari, JS, print</span></td>
+              <td class="y">none</td>
+              <td class="n">no</td>
+              <td><b>Ship in P1 — for a different device.</b> The phone is not the machine holding the file, so the bytes must be served. Zero-cost, full fidelity, works on unpaired devices.</td>
             </tr>
             <tr class="best">
               <td><b>webview + pinned loopback proxy</b><br><span class="dim">SPEC-44's design, retargeted at files</span></td>
@@ -1060,11 +1067,40 @@
           </tbody>
         </table>
         <div class="note" style="margin-top:16px">
-          <strong>✓ The resolution.</strong> <b>Markdown in-app from day one</b> (free). <b>HTML via tailnet publish in
-          P1</b> (free, perfect fidelity, one tap). <b>HTML in-app via webview in P3</b>, sharing SPEC-44's proxy so the
-          cost is paid once for both features. Use the screenshot trick only for <b>thumbnails</b>, where static is
-          exactly right.
+          <strong>✓ The resolution (rev 2).</strong> <b>Markdown in-app from day one</b> (free). For <b>HTML</b>, the
+          question is not <em>how to render</em> but <b>where the viewer is</b>: on the <b>same machine</b> as the
+          server, open it on the host — no HTTP at all; on <b>another device</b>, publish it to the tailnet. Both are
+          real Safari, both ship in P1. <b>HTML in-app via webview in P3</b>, sharing SPEC-44's proxy so the cost is paid
+          once for both features. Use the screenshot trick only for <b>thumbnails</b>, where static is exactly right.
         </div>
+
+        <div class="cap" style="margin-top:18px">The same sheet, two primary actions · decided per client, not per server</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <div class="panel" style="width:300px;padding:14px;text-align:center">
+            <div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Desktop · loopback client</div>
+            <div style="font-size:12.5px;margin-bottom:4px">HTML renders in a real browser.</div>
+            <div class="dim" style="font-size:11.5px;margin-bottom:12px">This file is on this machine — opening it needs no server.</div>
+            <div><span class="btn pri">Open in browser</span></div>
+            <div style="margin-top:8px"><span class="btn ghost">Reveal in Finder</span> <span class="btn ghost">Share to a device…</span></div>
+          </div>
+          <div class="panel" style="width:300px;padding:14px;text-align:center">
+            <div class="dim" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Phone · tailnet client</div>
+            <div style="font-size:12.5px;margin-bottom:4px">HTML renders in a real browser.</div>
+            <div class="dim" style="font-size:11.5px;margin-bottom:12px">Publish it to your tailnet and open it with full fidelity.</div>
+            <div><span class="btn pri">Publish &amp; open</span></div>
+            <div style="margin-top:8px"><span class="dim" style="font-size:11px">no local open — the file is on another machine</span></div>
+          </div>
+        </div>
+        <p class="why">
+          <b>Per client, not per server.</b> One server can hold a desktop app on loopback and a phone on the tailnet at
+          the same moment, so “local” is a property of the <em>connection</em> — which the server already computes
+          (<code>isLocal</code>, from the remote address). A local client gets <b>Open in browser</b> and never needs
+          Tailscale running; a remote client gets <b>Publish &amp; open</b> and the grant machinery (D9/D10/D15) exactly
+          as before. <b>Publish stays available locally</b> as a secondary action — that is how you get a board onto your
+          phone from the desk. <span class="dim">Opening on the host is a server capability, so it is gated to local
+          clients and still routed through the one path boundary (D2) — a remote client asking for it is refused, not
+          served.</span>
+        </p>
       </div>
     </div>
   </div>
@@ -1087,7 +1123,8 @@
           <td><span class="phase ph1">P1</span></td>
           <td>
             <b>The index</b> (Card 1) + <b>Docs screen</b> (Option A) + <b>markdown preview in-app</b> (free) +
-            <b>tailnet publish for HTML</b> (Option D, with the grant list and <em>Stop sharing</em>)
+            <b>HTML in a real browser</b>: opened on the host when the viewer is on the same machine, or
+            <b>published to the tailnet</b> for another device (Option D, with the grant list and <em>Stop sharing</em>)
           </td>
           <td class="y">none</td>
           <td>Both of today's paths die. Specs and plans read natively on the phone; a mockup is one tap from a real
