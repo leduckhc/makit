@@ -43,7 +43,22 @@ class _ClosedSidebarViewState extends ConsumerState<ClosedSidebarView> {
   // Guard for the live-sync listener below: the set of active session ids the
   // last snapshot carried, so routine activity/status churn doesn't trigger a
   // reload — only an actual close/reopen (which adds/removes an id) does.
-  Set<String>? _lastActiveIds;
+  //
+  // Seeded in [initState] rather than left null, for the same reason the mobile
+  // ClosedScreen seeds it: the listener only fires on a *change*, so an unseeded
+  // baseline swallows the FIRST one — close a session from a chat pane with this
+  // view open and the list stayed stale until a manual toggle. Seeding it *empty*
+  // is not enough either, or the next snapshot always looks like a change and
+  // reloads for nothing, so it starts from what the store already holds.
+  late Set<String> _lastActiveIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastActiveIds = {
+      for (final s in ref.read(sessionsProvider).sessions) s.id,
+    };
+  }
 
   void _refresh() {
     if (!mounted) return;
@@ -83,8 +98,7 @@ class _ClosedSidebarViewState extends ConsumerState<ClosedSidebarView> {
     ref.listen<SessionsState>(sessionsProvider, (_, next) {
       final ids = {for (final s in next.sessions) s.id};
       final prev = _lastActiveIds;
-      if (prev != null &&
-          (ids.length != prev.length || !ids.containsAll(prev))) {
+      if (ids.length != prev.length || !ids.containsAll(prev)) {
         _refresh();
       }
       _lastActiveIds = ids;
