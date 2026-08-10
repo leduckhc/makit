@@ -265,6 +265,47 @@ test("a cancelled TOOLS script settles instead of hanging", async () => {
   assert.equal(settled, "settled", "the script resumed and returned");
 });
 
+/**
+ * A cancelled script must stay cancelled even if the NEXT turn starts before it
+ * resumes. `cancel()` settles the pending wait (queueing the script's
+ * continuation) and then emits `idle` synchronously; the session layer flushes
+ * its queue on `idle`, so a queued TOOLS turn could begin — and a shared
+ * `toolAborted` flag would be reset to false before the old script resumed,
+ * letting it emit the rest of its calls interleaved with the new turn.
+ */
+test("a cancelled script stays cancelled when the next turn starts first", async (t) => {
+  process.env.MAKIT_STUB_TOOL_SCALE = "0.05";
+  t.after(() => {
+    delete process.env.MAKIT_STUB_TOOL_SCALE;
+  });
+  const stub = new StubAdapter();
+  const events: AdapterEvent[] = [];
+  stub.on("event", (e) => events.push(e));
+  await stub.start({ sessionId: "s-requeue", cwd: "/tmp" });
+
+  await stub.send({ text: "TOOLS" });
+  await startsSeen(events, 2);
+
+  // Exactly what the session layer does: start the queued turn on idle, in the
+  // same tick, before the cancelled script has resumed.
+  let requeued = false;
+  stub.on("status", (status) => {
+    if (status === "idle" && !requeued) {
+      requeued = true;
+      void stub.send({ text: "TOOLS" });
+    }
+  });
+  await stub.cancel();
+  await new Promise((r) => setTimeout(r, 1200));
+
+  const starts = events.filter((e) => e.kind === "tool.call.start").length;
+  const replies = events.filter((e) => e.kind === "agent.message").length;
+  // 2 from the cancelled script + 6 from the new one. More means the cancelled
+  // script resumed and kept going.
+  assert.equal(starts, 8, "the cancelled script contributed no further calls");
+  assert.equal(replies, 1, "only the new turn reports a closing reply");
+});
+
 test("kill stops the TOOLS script mid-flight", async (t) => {
   process.env.MAKIT_STUB_TOOL_SCALE = "0.05";
   t.after(() => {

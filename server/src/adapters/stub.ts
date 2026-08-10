@@ -50,7 +50,18 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
    * `kill()` those land on an adapter that already reported `exit`.
    */
   private toolTimeout?: ReturnType<typeof setTimeout>;
-  private toolAborted = false;
+  /**
+   * Identity of the TOOLS script currently allowed to emit, bumped on every
+   * start and every abort. A script captures its own value and stops the moment
+   * it stops matching.
+   *
+   * Deliberately not a boolean: `cancel()` settles the pending wait (which only
+   * *queues* the script's continuation) and then emits `idle` synchronously, and
+   * the session layer starts a queued turn on `idle` — so a shared flag was
+   * reset to false before the cancelled script resumed, and it went on to emit
+   * the rest of its calls interleaved with the new turn.
+   */
+  private toolRun = 0;
   /**
    * Resolver for the wait currently in flight. Clearing the timer is not enough:
    * its callback is the only thing that resolves the wait, so an aborted script
@@ -232,7 +243,8 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
    */
   private async runToolScript(): Promise<void> {
     this.emit("status", "running");
-    this.toolAborted = false;
+    const run = ++this.toolRun;
+    const live = () => this.toolRun === run;
     // The two long calls exist so the duration token clears SPEC-47's 2 s floor
     // in the live loop. A unit test only cares about the event shape, so the
     // scale is overridable rather than the script being duplicated.
@@ -334,7 +346,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     ];
 
     for (const [i, call] of calls.entries()) {
-      if (this.toolAborted) return;
+      if (!live()) return;
       const callId = `stub-tool-${Date.now()}-${i}`;
       this.emitEvent({
         ts: Date.now(),
@@ -345,7 +357,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       // Closing the call is not optional — a dangling start spins forever — but
       // an aborted script must not open the next one either, so the guard sits
       // on both sides of the wait.
-      if (this.toolAborted) return;
+      if (!live()) return;
       this.emitEvent({
         ts: Date.now(),
         kind: "tool.call.end",
@@ -358,7 +370,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       });
       await wait(40);
     }
-    if (this.toolAborted) return;
+    if (!live()) return;
 
     this.emitEvent({
       ts: Date.now(),
@@ -384,7 +396,9 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   /** Stop an in-flight TOOLS script: clear its pending wait, block the rest. */
   private abortToolScript(): void {
-    this.toolAborted = true;
+    // Bumping the token invalidates the in-flight script for good: a later start
+    // takes a new value, so the cancelled one can never be revalidated.
+    this.toolRun++;
     if (this.toolTimeout !== undefined) {
       clearTimeout(this.toolTimeout);
       this.toolTimeout = undefined;
