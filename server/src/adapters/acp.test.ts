@@ -1572,3 +1572,34 @@ test("start() leaves the agent's model alone when it already matches, or is unkn
   assert.ok(statuses.includes("idle"), "the session still started");
   await a2.kill();
 });
+
+/**
+ * A wedged agent is the single most important case for close-then-reap: it is
+ * exactly the agent that needs killing. If `session/close` never answers,
+ * `close()` must still settle, or `manager.closeSession` never reaches `kill()`
+ * — the RSS is never reclaimed and the idle sweeper stays wedged forever.
+ */
+test("close() gives up on a session/close that never answers", async () => {
+  const { transport } = pair((conn) => {
+    const a = new ScriptedAgent(conn, async () => {});
+    (a as unknown as { initialize: () => Promise<unknown> }).initialize = async () => ({
+      protocolVersion: 1 as const,
+      agentCapabilities: { sessionCapabilities: { close: {} } },
+    });
+    // Never resolves — a hung agent, not a rejecting one.
+    (a as unknown as { closeSession: () => Promise<unknown> }).closeSession = () =>
+      new Promise(() => {});
+    return a;
+  });
+
+  const adapter = new AcpAdapter({
+    spec: { agent: "codex", command: "x" },
+    connect: () => transport,
+    closeTimeoutMs: 30,
+  });
+  await adapter.start({ cwd: "/tmp" });
+
+  const started = Date.now();
+  await adapter.close(); // must settle, not hang
+  assert.ok(Date.now() - started < 2000, "close() must not block on a hung agent");
+});

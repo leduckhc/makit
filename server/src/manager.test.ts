@@ -2626,3 +2626,126 @@ test("startIdleSweeper arms the injected timer and stopIdleSweeper clears it", a
     store.close();
   }
 });
+
+/**
+ * The guards must be re-checked immediately before each close, not once when the
+ * victim list is built. A sweep is SLOW — every close awaits an agent round-trip
+ * plus up to the SIGTERM grace period — so with several sessions the window is
+ * tens of seconds. A message arriving in that window flips a later victim to
+ * `running`; closing it anyway would tear the agent out from under a live turn,
+ * which is exactly the data loss the guards exist to prevent.
+ */
+test("sweepIdleSessions re-checks each victim after the awaits (no close mid-turn)", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-idle-race-"));
+  try {
+    const bySession = new Map<string, any>();
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: (ctx) => {
+        const a: any = stubAdapter([]);
+        bySession.set(ctx.sessionId!, a);
+        return a;
+      },
+      idleCloseMs: 60_000,
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const first = await mgr.spawnPiSession(projectId, "closes-slowly", "pi");
+    const second = await mgr.spawnPiSession(projectId, "gets-a-message", "pi");
+
+    const idle = Date.now() - 10 * 60_000;
+    for (const s of [first, second]) {
+      s.lastActivityAt = idle;
+      s.status = "idle";
+    }
+
+    // While the FIRST session is being closed, a user message lands on the
+    // second: its turn starts and its activity refreshes.
+    bySession.get(first.id).close = async () => {
+      second.status = "running";
+      second.lastActivityAt = Date.now();
+    };
+
+    const closed = await mgr.sweepIdleSessions(Date.now());
+
+    assert.deepEqual(closed, [first.id], "only the genuinely idle session may be closed");
+    assert.equal(second.closed, false, "must not close a session that started a turn mid-sweep");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+/**
+ * Contract enforcement, not politeness: `AgentAdapter.close()` must never throw
+ * AND never hang. The manager cannot trust an implementation to honour that, and
+ * the consequence of a hang is severe — `kill()` is never reached (the RSS this
+ * branch exists to reclaim stays held) and `sweeping` never clears, so the idle
+ * sweeper is disabled for the lifetime of the daemon.
+ */
+test("closeSession reaps even when the agent's close() never settles", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-close-hang-"));
+  try {
+    const calls: string[] = [];
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a: any = stubAdapter([], calls);
+        a.close = () => {
+          calls.push("close");
+          return new Promise<void>(() => {}); // hangs forever
+        };
+        return a;
+      },
+      idleCloseMs: 60_000,
+      closeGraceMs: 30,
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "hung-agent", "pi");
+
+    const started = Date.now();
+    await mgr.closeSession(s.id);
+
+    assert.ok(Date.now() - started < 2000, "must not block on a hung close()");
+    assert.deepEqual(calls, ["close", "kill"], "the reap must still happen");
+    assert.equal(s.closed, true);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+test("a hung close does not wedge the sweeper for later sessions", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-close-hang-sweep-"));
+  try {
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a: any = stubAdapter([]);
+        a.close = () => new Promise<void>(() => {});
+        return a;
+      },
+      idleCloseMs: 60_000,
+      closeGraceMs: 20,
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const first = await mgr.spawnPiSession(projectId, "hangs", "pi");
+    first.lastActivityAt = Date.now() - 10 * 60_000;
+    first.status = "idle";
+    assert.deepEqual(await mgr.sweepIdleSessions(Date.now()), [first.id]);
+
+    // A later sweep must still work — `sweeping` cannot be left stuck true.
+    const second = await mgr.spawnPiSession(projectId, "also-idle", "pi");
+    second.lastActivityAt = Date.now() - 10 * 60_000;
+    second.status = "idle";
+    assert.deepEqual(await mgr.sweepIdleSessions(Date.now()), [second.id]);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});

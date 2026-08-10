@@ -37,6 +37,7 @@ import { sharedMediaStore, type MediaStore } from "../media/store.js";
 import { LocalMediaResolver, rewriteMarkdownImages } from "../media/local.js";
 import { prepareTurnOrFail } from "../media/attach.js";
 import { spawnLineProcess } from "./child_transport.js";
+import { bestEffort } from "./deadline.js";
 import { onPath } from "./catalog.js";
 import { mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord } from "./wire.js";
@@ -80,6 +81,12 @@ export interface AcpAdapterOpts {
    */
   connect?: (cwd: string, env: Record<string, string>) => AcpTransport;
   /**
+   * Deadline for the graceful `session/close` (default
+   * {@link ACP_HANDSHAKE_TIMEOUT}). A hung agent must not be able to stall
+   * teardown — see {@link AcpAdapter.close}. Tests shorten it.
+   */
+  closeTimeoutMs?: number;
+  /**
    * Blob store for assistant display media (SPEC-22). Defaults to the shared
    * `~/.makit/media` store the `/media` route serves from; tests inject a
    * temp-dir store (or none, to skip ingestion).
@@ -91,6 +98,8 @@ export class AcpAdapter extends SubprocessAdapter {
   readonly agent: string;
 
   private readonly spec: AcpSpawnSpec;
+  /** Deadline for the graceful `session/close` (see {@link close}). */
+  private readonly closeTimeoutMs: number;
   private readonly connectFn: (cwd: string, env: Record<string, string>) => AcpTransport;
   /**
    * True when this adapter spawns {@link AcpSpawnSpec.command} for real, so
@@ -137,6 +146,7 @@ export class AcpAdapter extends SubprocessAdapter {
     this.agent = opts.spec.agent;
     this.connectFn = opts.connect ?? defaultConnect(opts.spec);
     this.spawnsRealBinary = opts.connect === undefined;
+    this.closeTimeoutMs = opts.closeTimeoutMs ?? ACP_HANDSHAKE_TIMEOUT;
     const media = (this.media = opts.media ?? sharedMediaStore());
     this.mapper = new AcpEventMapper({
       emit: (e) => this.emit("event", e),
@@ -501,17 +511,23 @@ export class AcpAdapter extends SubprocessAdapter {
   /**
    * Graceful ACP `session/close`: cancels any in-flight turn agent-side and
    * frees the session's resources, leaving it listable/resumable. Best-effort
-   * by contract — a rejection here must not stop {@link kill} from reclaiming
-   * the process, which is what actually returns the memory.
+   * by contract — neither a rejection NOR a hang here may stop {@link kill} from
+   * reclaiming the process, which is what actually returns the memory.
+   *
+   * The deadline is the load-bearing part: a wedged agent is exactly the one
+   * that needs killing, and `conn.closeSession()` against it never settles. An
+   * unbounded await would strand teardown before `kill()` and leave the caller's
+   * sweep permanently in-flight. Mirrors codex's bounded `thread/unsubscribe`.
    */
   async close(): Promise<void> {
     if (!this.conn || !this.acpSessionId) return;
     if (!this.capabilities.close || !this.conn.closeSession) return;
-    try {
-      await this.conn.closeSession({ sessionId: this.acpSessionId });
-    } catch (e) {
-      log.warn(`[makit] ACP session/close failed: ${(e as Error).message}`);
-    }
+    await bestEffort(
+      () => this.conn!.closeSession({ sessionId: this.acpSessionId! }).then(() => undefined),
+      this.closeTimeoutMs,
+      "ACP session/close",
+      (why) => log.warn(`[makit] ACP session/close gave up: ${why}`),
+    );
   }
 
   async kill(): Promise<void> {

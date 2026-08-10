@@ -18,6 +18,7 @@ import { Session } from "./session.js";
 import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
+import { bestEffort } from "./adapters/deadline.js";
 import { buildAdapter, piAcpSpec } from "./agent_factory.js";
 import { listAcpSessions } from "./adapters/acp.js";
 import { listCodexThreads } from "./adapters/codex.js";
@@ -138,6 +139,14 @@ export interface ManagerOpts {
    * reopens the session transparently ({@link SessionManager.ensureLiveForInput}).
    */
   idleCloseMs?: number;
+  /**
+   * Deadline for the graceful `adapter.close()` inside {@link SessionManager.closeSession}
+   * (default 10s). Enforces the half of the {@link AgentAdapter.close} contract
+   * an implementation cannot be trusted with: it must not HANG. A hang would
+   * strand teardown before `kill()` — holding the very RSS close exists to free
+   * — and leave an idle sweep permanently in flight.
+   */
+  closeGraceMs?: number;
   /** How often the sweeper runs. Defaults to a quarter of {@link idleCloseMs}. */
   idleSweepMs?: number;
   /** Injectable clock, for tests. */
@@ -203,6 +212,8 @@ export class SessionManager extends EventEmitter {
   private capabilityCache?: CapabilityCache;
   /** Idle auto-close threshold; 0 = disabled (SPEC-29 option D). */
   private readonly idleCloseMs: number;
+  /** Deadline for a graceful `adapter.close()` before we reap regardless. */
+  private readonly closeGraceMs: number;
   /** Sweep interval. */
   private readonly idleSweepMs: number;
   private readonly now: () => number;
@@ -224,6 +235,7 @@ export class SessionManager extends EventEmitter {
     this.store = opts.store;
     this.capabilityCache = opts.capabilityCache;
     this.idleCloseMs = opts.idleCloseMs ?? 0;
+    this.closeGraceMs = opts.closeGraceMs ?? 10_000;
     // Sweep four times per window: prompt enough that a cold session is released
     // soon after it goes quiet, coarse enough to cost nothing.
     this.idleSweepMs = opts.idleSweepMs ?? Math.max(30_000, Math.floor((opts.idleCloseMs ?? 0) / 4));
@@ -1225,15 +1237,21 @@ export class SessionManager extends EventEmitter {
     // neither a rejecting close() nor a rejecting kill() may abort the close —
     // or the reconciliation of the remaining sessions. A wedged agent must
     // never be able to keep its memory.
-    try {
-      await session.adapter.close();
-    } catch (e) {
-      log.warn(`[makit] closeSession(${id}): agent close failed: ${(e as Error).message}`);
-    }
+    // BOUNDED, because `close()` talks to the agent. A wedged agent is exactly
+    // the one that needs reaping, and an unbounded await would strand us here:
+    // `kill()` would never run (the RSS stays held) and a sweep would never
+    // finish. The adapter contract says close() must neither throw nor hang;
+    // this enforces the second half, which no implementation can be trusted with.
+    await bestEffort(
+      () => session.adapter.close(),
+      this.closeGraceMs,
+      `closeSession(${id.slice(0, 8)}) agent close`,
+      (why) => log.warn(`[makit] closeSession(${id.slice(0, 8)}): agent close gave up: ${why}`),
+    );
     try {
       await session.adapter.kill();
     } catch (e) {
-      log.warn(`[makit] closeSession(${id}): kill failed: ${(e as Error).message}`);
+      log.warn(`[makit] closeSession(${id}): kill failed: ${reason(e)}`);
     }
     session.replaceAdapter(new DetachedAdapter(session.agent));
     session.setClosed(true);
@@ -1309,6 +1327,25 @@ export class SessionManager extends EventEmitter {
    *    would cost the user the session. Held deliberately; a manual close still
    *    works.
    */
+  /**
+   * Is this session safe to auto-close right now? A stale timestamp is never
+   * enough on its own — see {@link sweepIdleSessions} for why each exclusion is
+   * here. Extracted so the sweep can re-evaluate it immediately before every
+   * close, not just when the candidate list is built.
+   */
+  private isIdleClosable(session: Session, now: number): boolean {
+    return (
+      !session.closed &&
+      !session.pending &&
+      !(session.adapter instanceof DetachedAdapter) &&
+      session.status !== "running" &&
+      session.status !== "awaiting-input" &&
+      session.status !== "awaiting-approval" &&
+      session.resumable &&
+      now - session.lastActivityAt > this.idleCloseMs
+    );
+  }
+
   async sweepIdleSessions(now = this.now()): Promise<string[]> {
     if (this.idleCloseMs <= 0) return [];
     // A close awaits the agent, so a slow sweep could otherwise overlap the next
@@ -1316,24 +1353,28 @@ export class SessionManager extends EventEmitter {
     if (this.sweeping) return [];
     this.sweeping = true;
     try {
-      const victims = [...this.sessions.values()].filter(
-        (s) =>
-          !s.closed &&
-          !s.pending &&
-          !(s.adapter instanceof DetachedAdapter) &&
-          s.status !== "running" &&
-          s.status !== "awaiting-input" &&
-          s.status !== "awaiting-approval" &&
-          s.resumable &&
-          now - s.lastActivityAt > this.idleCloseMs,
-      );
+      const candidates = [...this.sessions.values()].filter((s) => this.isIdleClosable(s, now));
       const closed: string[] = [];
-      for (const session of victims) {
+      for (const session of candidates) {
+        // Re-check against a FRESH clock. Every close awaits an agent round-trip
+        // plus up to the SIGTERM grace period, so this loop can run for tens of
+        // seconds across several sessions — easily long enough for a message to
+        // arrive and start a turn on a session further down the list. Closing it
+        // on the strength of a stale check would tear the agent out from under a
+        // live turn.
+        const checkedAt = this.now();
+        if (!this.isIdleClosable(session, checkedAt)) {
+          log.info(
+            `[makit] idle auto-close: skipping ${session.id.slice(0, 8)} — became active during the sweep`,
+          );
+          continue;
+        }
         try {
+          const idleMin = Math.round((checkedAt - session.lastActivityAt) / 60_000);
           await this.closeSession(session.id);
           closed.push(session.id);
           log.info(
-            `[makit] idle auto-close: ${session.id.slice(0, 8)} ("${session.title}") idle ${Math.round((now - session.lastActivityAt) / 60_000)}min — agent released, reopen to resume`,
+            `[makit] idle auto-close: ${session.id.slice(0, 8)} ("${session.title}") idle ${idleMin}min — agent released, reopen to resume`,
           );
         } catch (e) {
           // One stuck session must not stop the rest from being reclaimed.

@@ -20,6 +20,7 @@ import { join, resolve } from "node:path";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { CodexEventMapper } from "./codex-map.js";
 import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js";
+import { RequestTimeoutError, withDeadline } from "./deadline.js";
 import { confirmViaUser, mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord, parseJsonLine } from "./wire.js";
 import { sharedMediaStore, type MediaStore } from "../media/store.js";
@@ -38,26 +39,6 @@ export type CodexTransport = ChildLineTransport;
  * ACP adapter's `ACP_HANDSHAKE_TIMEOUT`.
  */
 const CODEX_HANDSHAKE_TIMEOUT = 15_000;
-
-/** Thrown when a JSON-RPC request times out waiting for a response. */
-class RequestTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "RequestTimeoutError";
-  }
-}
-
-/** Rejects with a labelled error when [p] doesn't settle within [ms]. */
-function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const deadline = new Promise<T>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new RequestTimeoutError(`${label} timed out after ${ms}ms`)),
-      ms,
-    );
-  });
-  return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
-}
 
 /**
  * Fallback reasoning-effort levels for the `thought_level` config option when a
