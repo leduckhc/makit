@@ -310,8 +310,9 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
-  // Archive (SPEC-29): hide from the active list but keep it resumable. The
-  // fresh snapshot omits closed sessions; reopen restores it.
+  // Close (SPEC-29): release the agent and reclaim its process, keeping the
+  // session resumable. The fresh snapshot omits closed sessions; reopen
+  // restores it.
   r.register("session.close", async (ctx) => {
     const sid = String(ctx.env.sessionId ?? "");
     try {

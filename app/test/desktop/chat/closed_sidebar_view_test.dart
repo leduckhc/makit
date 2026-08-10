@@ -134,7 +134,7 @@ void main() {
         ),
       ]);
 
-      expect(find.text('ARCHIVED'), findsOneWidget);
+      expect(find.text('CLOSED'), findsOneWidget);
       expect(find.text('makit'), findsOneWidget); // repo group header
       expect(find.text('Adapter resume'), findsOneWidget);
       expect(find.text('Ghostty rebuild'), findsOneWidget);
@@ -270,6 +270,6 @@ void main() {
     await tester.tap(find.byTooltip('Show closed sessions'));
     await tester.pumpAndSettle();
     expect(container.read(sidebarClosedProvider), isTrue);
-    expect(find.text('ARCHIVED'), findsOneWidget);
+    expect(find.text('CLOSED'), findsOneWidget);
   });
 }

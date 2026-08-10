@@ -1192,8 +1192,7 @@ class _Footer extends ConsumerWidget {
     final server = ref.watch(connectionProvider).server;
     final endpoint = formatEndpoint(server?.host, server?.port);
     final theme = Theme.of(context);
-    final closed = ref.watch(sidebarClosedProvider) as bool?;
-    final showClosed = closed ?? false;
+    final showClosed = ref.watch(sidebarClosedProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(

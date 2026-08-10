@@ -505,7 +505,7 @@ test("reopen of a session whose worktree is still live preserves its binding (SP
     const boundBranch = before.branch;
     assert.ok(boundPath !== undefined, "session is bound to the worktree");
 
-    // Archive WITHOUT removing the worktree, so the recorded path stays live.
+    // Close WITHOUT removing the worktree, so the recorded path stays live.
     await manager.closeSession(draft.id);
     assert.equal((await manager.listClosedSessions()).find((d) => d.id === draft.id)!.orphaned, false);
 

@@ -162,10 +162,11 @@ export class Session extends EventEmitter {
   agentSessionId?: string;
 
   /**
-   * Closed (SPEC-29): a soft, recoverable hide. An closed session is
-   * excluded from the active session list (`SessionManager.listSessions`) but
-   * keeps its full event log + resume handle and can be restored. Persisted so
-   * it stays closed across a restart.
+   * Closed (SPEC-29): the agent has been released and its process reclaimed.
+   * A closed session is excluded from the active session list
+   * (`SessionManager.listSessions`) but keeps its full event log + resume
+   * handle, so `session.reopen` — or simply sending a message — resumes it.
+   * Persisted so it stays closed across a restart.
    */
   closed = false;
 

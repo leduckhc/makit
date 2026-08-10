@@ -133,7 +133,7 @@ class _ClosedSidebarViewState extends ConsumerState<ClosedSidebarView> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'ARCHIVED',
+              'CLOSED',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(

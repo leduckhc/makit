@@ -724,7 +724,7 @@ export interface SessionDTO {
   /**
    * Orphaned (SPEC-29): a closed session whose recorded worktree is no longer
    * an active worktree of its project (e.g. the worktree was removed). Only set
-   * on the `session.listArchived` result; undefined elsewhere. The branch ref
+   * on the `session.listClosed` result; undefined elsewhere. The branch ref
    * usually still exists, so resume can offer to recreate the worktree.
    */
   orphaned?: boolean;
