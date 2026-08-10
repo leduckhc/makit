@@ -1312,10 +1312,12 @@ test("close() is a no-op when the agent does not advertise session/close", async
 });
 
 /**
- * A close that rejects (agent already wedged) must never block teardown — the
- * caller still has to reap the process, or we are back to leaking RSS.
+ * The adapter makes the plain request and lets a failure surface;
+ * `SessionManager.closeSession` owns bounding and swallowing it (and reaps
+ * regardless). Asserted so the contract cannot quietly drift back to each
+ * adapter half-handling teardown policy on its own.
  */
-test("close() swallows a failing session/close so teardown can proceed", async () => {
+test("close() propagates a failing session/close for the manager to absorb", async () => {
   const { transport } = pair((conn) => {
     const a = new ScriptedAgent(conn, async () => {});
     (a as unknown as { initialize: () => Promise<unknown> }).initialize = async () => ({
@@ -1331,7 +1333,7 @@ test("close() swallows a failing session/close so teardown can proceed", async (
   const adapter = new AcpAdapter({ spec: { agent: "codex", command: "x" }, connect: () => transport });
   await adapter.start({ cwd: "/tmp" });
 
-  await adapter.close(); // must not throw
+  await assert.rejects(() => adapter.close());
 });
 
 test("start({resumeAgentSessionId}) loads and drops the replayed history (silent mode, SPEC-29)", async () => {
@@ -1573,33 +1575,3 @@ test("start() leaves the agent's model alone when it already matches, or is unkn
   await a2.kill();
 });
 
-/**
- * A wedged agent is the single most important case for close-then-reap: it is
- * exactly the agent that needs killing. If `session/close` never answers,
- * `close()` must still settle, or `manager.closeSession` never reaches `kill()`
- * — the RSS is never reclaimed and the idle sweeper stays wedged forever.
- */
-test("close() gives up on a session/close that never answers", async () => {
-  const { transport } = pair((conn) => {
-    const a = new ScriptedAgent(conn, async () => {});
-    (a as unknown as { initialize: () => Promise<unknown> }).initialize = async () => ({
-      protocolVersion: 1 as const,
-      agentCapabilities: { sessionCapabilities: { close: {} } },
-    });
-    // Never resolves — a hung agent, not a rejecting one.
-    (a as unknown as { closeSession: () => Promise<unknown> }).closeSession = () =>
-      new Promise(() => {});
-    return a;
-  });
-
-  const adapter = new AcpAdapter({
-    spec: { agent: "codex", command: "x" },
-    connect: () => transport,
-    closeTimeoutMs: 30,
-  });
-  await adapter.start({ cwd: "/tmp" });
-
-  const started = Date.now();
-  await adapter.close(); // must settle, not hang
-  assert.ok(Date.now() - started < 2000, "close() must not block on a hung agent");
-});

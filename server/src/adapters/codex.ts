@@ -365,15 +365,9 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    */
   async close(): Promise<void> {
     if (!this.transport || !this.threadId) return;
-    try {
-      await withDeadline(
-        this.request("thread/unsubscribe", { threadId: this.threadId }),
-        CODEX_HANDSHAKE_TIMEOUT,
-        "codex thread/unsubscribe",
-      );
-    } catch (e) {
-      log.warn(`[makit] codex thread/unsubscribe failed: ${(e as Error).message}`);
-    }
+    // Plain request: `request()` already carries its own per-call timeout, and
+    // `SessionManager.closeSession` owns the bound-and-swallow policy.
+    await this.request("thread/unsubscribe", { threadId: this.threadId });
   }
 
   async kill(): Promise<void> {

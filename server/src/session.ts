@@ -8,6 +8,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
+import { DetachedAdapter } from "./adapters/detached.js";
 import type {
   ApprovalPolicy,
   QueuedMessageDTO,
@@ -551,6 +552,18 @@ export class Session extends EventEmitter {
    * path. Mirrors exactly what {@link SessionManager.reattachSession} accepts —
    * one predicate, so the DTO can never advertise less than the server will do.
    */
+  /**
+   * No live agent process backs this session: it holds the detached placeholder
+   * (rehydrated after a restart, closed, or a draft awaiting promotion).
+   *
+   * The honest signal, and the canonical one — an agent that merely exited keeps
+   * its real adapter, so `status` alone cannot tell the two apart. Callers ask
+   * here rather than each re-deriving it from the adapter's class.
+   */
+  get cold(): boolean {
+    return this.adapter instanceof DetachedAdapter;
+  }
+
   get resumable(): boolean {
     return this.agentSessionId != null || this.resumeSessionPath != null;
   }

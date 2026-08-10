@@ -171,14 +171,16 @@ export interface AgentAdapter extends EventEmitter {
   sendAction?(action: string, args?: Record<string, unknown>): Promise<void>;
   cancel(): Promise<void>;
   /**
-   * Gracefully release the agent-side session before the process is reaped
-   * (ACP `session/close`, codex `thread/unsubscribe`). Per ACP this implies a
-   * cancel of any in-flight turn, then frees the session's resources while
-   * leaving it listable and resumable.
+   * Ask the agent to release this session before its process is reaped (ACP
+   * `session/close`, codex `thread/unsubscribe`). Per ACP this implies a cancel
+   * of any in-flight turn, then frees the session's resources while leaving it
+   * listable and resumable. A back end without the capability no-ops.
    *
-   * MUST NOT throw: it is the courtesy half of a teardown whose second half
-   * ({@link kill}) is what actually reclaims memory, so a wedged agent must not
-   * be able to block the reap. A back end without the capability no-ops.
+   * MAY reject and MAY hang: this is the courtesy half of a teardown whose
+   * second half ({@link kill}) is what actually reclaims memory.
+   * `SessionManager.closeSession` is the single owner of that policy — it bounds
+   * this call and swallows the outcome, then reaps regardless — so adapters
+   * implement the plain request and nothing more.
    */
   close(): Promise<void>;
   kill(signal?: NodeJS.Signals): Promise<void>;

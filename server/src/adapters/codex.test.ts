@@ -869,13 +869,13 @@ test("close() before start is a no-op (no thread to unsubscribe)", async () => {
 });
 
 /**
- * A wedged codex must not be able to block the reap — otherwise the RSS this
- * whole path exists to reclaim stays held.
+ * As with ACP: the adapter just issues `thread/unsubscribe`. Bounding and
+ * swallowing belong to `SessionManager.closeSession`, which reaps either way.
  */
-test("close() swallows a failing thread/unsubscribe", async () => {
+test("close() propagates a failing thread/unsubscribe for the manager to absorb", async () => {
   const fake = fakeAppServer({ unsubscribe: () => ({ error: { code: -32603, message: "boom" } }) });
   const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
   await adapter.start({ cwd: "/tmp" });
 
-  await adapter.close(); // must not throw
+  await assert.rejects(() => adapter.close());
 });

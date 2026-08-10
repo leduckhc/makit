@@ -558,6 +558,19 @@ export type SessionStatus =
   | "error"
   | "exited";
 
+/**
+ * Is the agent mid-flight for this status — either working, or holding a question
+ * the user has not answered yet?
+ *
+ * The canonical answer, next to the type it interrogates, because "busy" is not
+ * the same as "not idle": `error` and `exited` are also not idle but hold nothing.
+ * Callers that must not disturb live work (e.g. idle auto-close) ask this rather
+ * than re-deriving a list of statuses to exclude.
+ */
+export function isBusy(status: SessionStatus): boolean {
+  return status === "running" || status === "awaiting-input" || status === "awaiting-approval";
+}
+
 export type ApprovalPolicy = "yolo" | "ask-on-risky" | "ask-always";
 
 /**

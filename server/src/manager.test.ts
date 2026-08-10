@@ -2427,149 +2427,12 @@ test("a replaced adapter can no longer feed the session it was swapped out of", 
   }
 });
 
-// ---------------------------------------------------------------------------
-// SPEC-29 — idle auto-close (option D). makit runs one agent process per
-// session and nothing ever took an idle one down, so agents accumulated until
-// the daemon died: measured 19 resident agents / ~0.95 GB RSS, some 3–5 days
-// old. The sweeper closes sessions nobody is working with, and because close
-// keeps the transcript + resume handle it is always reversible.
-// ---------------------------------------------------------------------------
 
-/** A manager with the idle sweeper armed, plus a live (non-draft) session. */
-async function idleFixture(opts: { idleCloseMs?: number } = {}) {
-  const store = new SqliteEventStore();
-  const cwd = mkdtempSync(join(tmpdir(), "makit-idle-"));
-  const calls: string[] = [];
-  const mgr = new SessionManager({
-    projects: [cwd],
-    store,
-    adapterFactory: () => stubAdapter([], calls),
-    idleCloseMs: opts.idleCloseMs ?? 60_000,
-  });
-  const projectId = mgr.listProjects()[0].id;
-  const session = await mgr.spawnPiSession(projectId, "idle-victim", "pi");
-  return {
-    mgr,
-    session,
-    calls,
-    cleanup: () => {
-      rmSync(cwd, { recursive: true, force: true });
-      store.close();
-    },
-  };
-}
 
-test("sweepIdleSessions closes a session idle past the threshold, reversibly", async () => {
-  const { mgr, session, calls, cleanup } = await idleFixture();
-  try {
-    const now = Date.now();
-    session.lastActivityAt = now - 120_000; // 2 min idle, threshold 1 min
-    session.status = "idle";
 
-    const closedIds = await mgr.sweepIdleSessions(now);
 
-    assert.deepEqual(closedIds, [session.id]);
-    assert.equal(session.closed, true);
-    assert.deepEqual(calls, ["close", "kill"], "released gracefully, then reaped");
-    // Reversible: the record + resume handle survive, so reopen resumes.
-    const row = (await mgr.listClosedSessions()).find((d) => d.id === session.id);
-    assert.ok(row, "must appear in the closed list");
-    assert.equal(session.resumable, true, "resume handle kept");
-  } finally {
-    cleanup();
-  }
-});
 
-test("sweepIdleSessions leaves a recently-active session alone", async () => {
-  const { mgr, session, cleanup } = await idleFixture();
-  try {
-    const now = Date.now();
-    session.lastActivityAt = now - 5_000; // well inside the threshold
-    session.status = "idle";
 
-    assert.deepEqual(await mgr.sweepIdleSessions(now), []);
-    assert.equal(session.closed, false);
-  } finally {
-    cleanup();
-  }
-});
-
-/**
- * The guards that make auto-close safe. Each of these would destroy work or
- * free nothing, so an idle timestamp alone must never be enough.
- */
-test("sweepIdleSessions never closes a session that is mid-turn or waiting on the user", async () => {
-  for (const status of ["running", "awaiting-input", "awaiting-approval"] as const) {
-    const { mgr, session, cleanup } = await idleFixture();
-    try {
-      session.lastActivityAt = Date.now() - 10 * 60_000;
-      session.status = status;
-
-      assert.deepEqual(await mgr.sweepIdleSessions(Date.now()), [], `must skip ${status}`);
-      assert.equal(session.closed, false, `must skip ${status}`);
-    } finally {
-      cleanup();
-    }
-  }
-});
-
-test("sweepIdleSessions skips drafts and already-cold sessions (nothing to free)", async () => {
-  const store = new SqliteEventStore();
-  const cwd = mkdtempSync(join(tmpdir(), "makit-idle-skip-"));
-  try {
-    const mgr = new SessionManager({
-      projects: [cwd],
-      store,
-      adapterFactory: () => stubAdapter([]),
-      idleCloseMs: 60_000,
-    });
-    const projectId = mgr.listProjects()[0].id;
-    // A never-promoted draft: no agent process exists, and closing it would
-    // persist an empty row in the Closed list.
-    const draft = await mgr.spawnPendingSession(projectId);
-    draft.lastActivityAt = Date.now() - 10 * 60_000;
-
-    assert.deepEqual(await mgr.sweepIdleSessions(Date.now()), []);
-    assert.equal(draft.closed, false);
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-    store.close();
-  }
-});
-
-/**
- * Auto-close must never cost the user the ability to continue. A session with no
- * native resume handle cannot be brought back, so it is held rather than freed
- * (the user can still close it by hand).
- */
-test("sweepIdleSessions refuses to auto-close a non-resumable session", async () => {
-  const { mgr, session, cleanup } = await idleFixture();
-  try {
-    session.lastActivityAt = Date.now() - 10 * 60_000;
-    session.status = "idle";
-    // Strip the resume handle: the adapter minted one on start.
-    (session as unknown as { _agentSessionId?: string })._agentSessionId = undefined;
-    Object.defineProperty(session, "resumable", { get: () => false, configurable: true });
-
-    assert.deepEqual(await mgr.sweepIdleSessions(Date.now()), []);
-    assert.equal(session.closed, false);
-  } finally {
-    cleanup();
-  }
-});
-
-test("idleCloseMs = 0 disables the sweeper entirely", async () => {
-  const { mgr, session, cleanup } = await idleFixture({ idleCloseMs: 0 });
-  try {
-    session.lastActivityAt = Date.now() - 24 * 60 * 60_000; // a day idle
-    session.status = "idle";
-
-    assert.deepEqual(await mgr.sweepIdleSessions(Date.now()), []);
-    assert.equal(session.closed, false);
-  } finally {
-    cleanup();
-  }
-});
 
 /**
  * Recovery has to be invisible, or auto-close is just a way to lose your place:
@@ -2577,11 +2440,21 @@ test("idleCloseMs = 0 disables the sweeper entirely", async () => {
  * NOT (viewing a transcript must never respawn an agent).
  */
 test("ensureLiveForInput reopens a closed session; ensureLive alone does not", async () => {
-  const { mgr, session, cleanup } = await idleFixture();
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-reopen-input-"));
+  const cleanup = () => {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  };
   try {
-    session.lastActivityAt = Date.now() - 120_000;
-    session.status = "idle";
-    await mgr.sweepIdleSessions(Date.now());
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const session = await mgr.spawnPiSession(projectId, "reopen-on-input", "pi");
+    await mgr.closeSession(session.id);
     assert.equal(session.closed, true);
 
     // Viewing: stays closed, replays read-only.
@@ -2596,86 +2469,7 @@ test("ensureLiveForInput reopens a closed session; ensureLive alone does not", a
   }
 });
 
-test("startIdleSweeper arms the injected timer and stopIdleSweeper clears it", async () => {
-  const store = new SqliteEventStore();
-  const cwd = mkdtempSync(join(tmpdir(), "makit-idle-timer-"));
-  try {
-    let armed: { ms: number } | undefined;
-    let cleared = false;
-    const mgr = new SessionManager({
-      projects: [cwd],
-      store,
-      adapterFactory: () => stubAdapter([]),
-      idleCloseMs: 60_000,
-      idleSweepMs: 5_000,
-      setTimer: (_fn, ms) => {
-        armed = { ms };
-        return "h";
-      },
-      clearTimer: () => {
-        cleared = true;
-      },
-    });
 
-    mgr.startIdleSweeper();
-    assert.deepEqual(armed, { ms: 5_000 });
-    mgr.stopIdleSweeper();
-    assert.equal(cleared, true);
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-    store.close();
-  }
-});
-
-/**
- * The guards must be re-checked immediately before each close, not once when the
- * victim list is built. A sweep is SLOW — every close awaits an agent round-trip
- * plus up to the SIGTERM grace period — so with several sessions the window is
- * tens of seconds. A message arriving in that window flips a later victim to
- * `running`; closing it anyway would tear the agent out from under a live turn,
- * which is exactly the data loss the guards exist to prevent.
- */
-test("sweepIdleSessions re-checks each victim after the awaits (no close mid-turn)", async () => {
-  const store = new SqliteEventStore();
-  const cwd = mkdtempSync(join(tmpdir(), "makit-idle-race-"));
-  try {
-    const bySession = new Map<string, any>();
-    const mgr = new SessionManager({
-      projects: [cwd],
-      store,
-      adapterFactory: (ctx) => {
-        const a: any = stubAdapter([]);
-        bySession.set(ctx.sessionId!, a);
-        return a;
-      },
-      idleCloseMs: 60_000,
-    });
-    const projectId = mgr.listProjects()[0].id;
-    const first = await mgr.spawnPiSession(projectId, "closes-slowly", "pi");
-    const second = await mgr.spawnPiSession(projectId, "gets-a-message", "pi");
-
-    const idle = Date.now() - 10 * 60_000;
-    for (const s of [first, second]) {
-      s.lastActivityAt = idle;
-      s.status = "idle";
-    }
-
-    // While the FIRST session is being closed, a user message lands on the
-    // second: its turn starts and its activity refreshes.
-    bySession.get(first.id).close = async () => {
-      second.status = "running";
-      second.lastActivityAt = Date.now();
-    };
-
-    const closed = await mgr.sweepIdleSessions(Date.now());
-
-    assert.deepEqual(closed, [first.id], "only the genuinely idle session may be closed");
-    assert.equal(second.closed, false, "must not close a session that started a turn mid-sweep");
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-    store.close();
-  }
-});
 
 /**
  * Contract enforcement, not politeness: `AgentAdapter.close()` must never throw
@@ -2700,7 +2494,6 @@ test("closeSession reaps even when the agent's close() never settles", async () 
         };
         return a;
       },
-      idleCloseMs: 60_000,
       closeGraceMs: 30,
     });
     const projectId = mgr.listProjects()[0].id;
@@ -2718,55 +2511,4 @@ test("closeSession reaps even when the agent's close() never settles", async () 
   }
 });
 
-test("a hung close does not wedge the sweeper for later sessions", async () => {
-  const store = new SqliteEventStore();
-  const cwd = mkdtempSync(join(tmpdir(), "makit-close-hang-sweep-"));
-  try {
-    const mgr = new SessionManager({
-      projects: [cwd],
-      store,
-      adapterFactory: () => {
-        const a: any = stubAdapter([]);
-        a.close = () => new Promise<void>(() => {});
-        return a;
-      },
-      idleCloseMs: 60_000,
-      closeGraceMs: 20,
-    });
-    const projectId = mgr.listProjects()[0].id;
-    const first = await mgr.spawnPiSession(projectId, "hangs", "pi");
-    first.lastActivityAt = Date.now() - 10 * 60_000;
-    first.status = "idle";
-    assert.deepEqual(await mgr.sweepIdleSessions(Date.now()), [first.id]);
 
-    // A later sweep must still work — `sweeping` cannot be left stuck true.
-    const second = await mgr.spawnPiSession(projectId, "also-idle", "pi");
-    second.lastActivityAt = Date.now() - 10 * 60_000;
-    second.status = "idle";
-    assert.deepEqual(await mgr.sweepIdleSessions(Date.now()), [second.id]);
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-    store.close();
-  }
-});
-
-/**
- * Nested deadlines only work if the inner one is strictly tighter. The ACP
- * adapter bounds its own `session/close`, and the manager bounds
- * `adapter.close()` as a backstop for adapters it cannot trust. If the adapter's
- * bound were the looser of the two it could never fire on the normal
- * `closeSession` path: the manager would abandon the call first, leaving the
- * adapter's timer pending against a transport `kill()` had already disposed —
- * defence in depth that only looks layered.
- *
- * Asserted rather than commented so a future tweak to either constant cannot
- * silently invert the ordering.
- */
-test("the adapter's own close deadline is tighter than the manager's backstop", async () => {
-  const { ACP_CLOSE_TIMEOUT } = await import("./adapters/acp.js");
-  const { DEFAULT_CLOSE_GRACE_MS } = await import("./manager.js");
-  assert.ok(
-    ACP_CLOSE_TIMEOUT < DEFAULT_CLOSE_GRACE_MS,
-    `adapter close deadline (${ACP_CLOSE_TIMEOUT}ms) must be < the manager backstop (${DEFAULT_CLOSE_GRACE_MS}ms)`,
-  );
-});

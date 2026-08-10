@@ -42,6 +42,7 @@ import type {
 import { PROTOCOL_VERSION, newId } from "./protocol.js";
 import { decodeFrame, encodeFrame, WireErrorCode } from "./protocol/codec.js";
 import type { SessionManager } from "./manager.js";
+import { IdleReaper, resolveIdleCloseMs } from "./idle_reaper.js";
 import type { Session } from "./session.js";
 import type { DeviceRegistry } from "./pairing/registry.js";
 import type { ServerCert } from "./pairing/cert.js";
@@ -124,6 +125,12 @@ export interface ServerOpts {
    * the default unhandled-'error' crash buries the cause in a stack trace.
    */
   onListenError?: (err: NodeJS.ErrnoException, where: string) => void;
+  /**
+   * Idle auto-close window in ms (SPEC-29 option D). Production reads
+   * `MAKIT_IDLE_CLOSE_MIN` via `resolveIdleCloseMs()`; tests pass `0` to keep the
+   * reaper disarmed, so no interval outlives the test.
+   */
+  idleCloseMs?: number;
   /**
    * SPEC-37 metrics collector seams, injected only by tests so a sample can be
    * driven deterministically without spawning `ps` or waiting on real timers.
@@ -490,11 +497,16 @@ export function startWsServer(opts: ServerOpts) {
   https.on("close", () => metricsCollector.stop());
 
   // -------- SPEC-29 idle auto-close ----------------------------------------
-  // Reclaims the agent process of any session that has gone quiet. A no-op when
-  // `idleCloseMs` is 0 (disabled). Stopped with the server so a restarted daemon
-  // in-process (tests) leaves no stray interval behind.
-  manager.startIdleSweeper();
-  https.on("close", () => manager.stopIdleSweeper());
+  // Reclaims the agent process of any session that has gone quiet. Disabled when
+  // `MAKIT_IDLE_CLOSE_MIN=0`. Stopped with the server so an in-process restart
+  // (tests) leaves no stray interval behind.
+  const idleReaper = new IdleReaper({
+    sessions: () => manager.allSessions(),
+    close: (id: string) => manager.closeSession(id),
+    idleCloseMs: opts.idleCloseMs ?? resolveIdleCloseMs(),
+  });
+  idleReaper.start();
+  https.on("close", () => idleReaper.stop());
 
   // -------- SPEC-41 ports scanner -----------------------------------------
   // A watch-gated `lsof`/`ps` scan (nothing runs while no client watches). Like
