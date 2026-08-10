@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 import { Session, type SessionLifecycle } from "./session.js";
+import { TurnStatusTracker } from "./adapters/turn-status.js";
 import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
 import type { SessionEvent } from "./protocol.js";
 
@@ -339,6 +340,42 @@ test("SPEC-35: a non-empty queue takes priority even if the adapter looks idle",
     ["queued", "newer"],
   );
   assert.deepEqual(f.steered, [], "no steering while a queue exists");
+});
+
+test("SPEC-35: a queue built behind an approval gate drains when the gate closes", async () => {
+  // The wedge, end to end. pi's `ask_user` opens the gate, then the ACP prompt
+  // resolves BEFORE the answer arrives, so the gate closes with no turn to
+  // resume. Nothing else emits `idle` for this session, so unless the closing
+  // gate settles it the session is "busy" forever: every message queues (pi
+  // cannot steer) and the queue never flushes.
+  const a = fakeAdapter();
+  const sent: string[] = [];
+  (a as any).send = async (input: { text: string }) => {
+    sent.push(input.text);
+  };
+  (a as any).steer = async () => false;
+  const tracker = new TurnStatusTracker({
+    emitStatus: (s) => a.emit("status", s),
+    emitSessionStatus: (status) =>
+      a.emit("event", { ts: Date.now(), kind: "session.status", payload: { status } }),
+    isExited: () => false,
+  });
+  const session = new Session({ projectId: "p", agent: "pi", adapter: a });
+
+  const turn = tracker.enterTurn();
+  tracker.enterApproval("awaiting-approval");
+  tracker.leaveTurn(turn);
+  assert.equal(session.status, "awaiting-approval", "still blocked on the question");
+
+  await session.sendUserMessage("and now this");
+  assert.equal(session.queuedMessages.length, 1, "busy → queued");
+
+  tracker.leaveApproval();
+  await settle();
+
+  assert.equal(session.status, "idle");
+  assert.deepEqual(sent, ["and now this"], "the queue drained");
+  assert.equal(session.queuedMessages.length, 0);
 });
 
 test("SPEC-35: cancelQueued removes one message; clearQueue empties it", async () => {
