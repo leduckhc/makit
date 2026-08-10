@@ -9,22 +9,22 @@ import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
 import 'repo_chips.dart';
 
-/// The archived-sessions screen (SPEC-29) — the mobile counterpart of the
-/// desktop sidebar's Archived view. Archived sessions are not part of the
+/// The closed-sessions screen (SPEC-29) — the mobile counterpart of the
+/// desktop sidebar's Closed view. Closed sessions are not part of the
 /// active `sessions.snapshot`, so the list is fetched on demand and grouped by
 /// repo; each row restores back to the active list.
-class ArchivedScreen extends ConsumerStatefulWidget {
-  const ArchivedScreen({super.key});
+class ClosedScreen extends ConsumerStatefulWidget {
+  const ClosedScreen({super.key});
 
   @override
-  ConsumerState<ArchivedScreen> createState() => _ArchivedScreenState();
+  ConsumerState<ClosedScreen> createState() => _ClosedScreenState();
 }
 
-class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
+class _ClosedScreenState extends ConsumerState<ClosedScreen> {
   late Future<List<Session>> _future = _load();
 
   Future<List<Session>> _load() {
-    final f = ref.read(storeControllerProvider.notifier).listArchivedSessions();
+    final f = ref.read(storeControllerProvider.notifier).listClosedSessions();
     // The FutureBuilder below renders any failure. `ignore()` only registers a
     // no-op error listener so a failure landing before the rebuild resubscribes
     // isn't also reported as an unhandled async error; other listeners (the
@@ -33,11 +33,11 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
     return f;
   }
 
-  /// The active session ids the last snapshot carried. Archiving or restoring
+  /// The active session ids the last snapshot carried. Closing or reopening
   /// elsewhere adds/removes an id, which is our cue to reload; routine
   /// activity/status churn must not.
   /// Seeded in [initState] rather than left null: the listener only fires on a
-  /// *change*, so an unseeded baseline swallowed the first one — archive a
+  /// *change*, so an unseeded baseline swallowed the first one — close a
   /// session on the home screen with this screen in the stack and the list
   /// stayed stale until a manual pull-to-refresh. Seeding it *empty* is not
   /// enough either: the next snapshot would then always look like a change and
@@ -61,16 +61,16 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
     });
   }
 
-  Future<void> _restore(Session s) async {
+  Future<void> _reopen(Session s) async {
     // Resolved before the first await: `ref` throws once its widget is
     // unmounted, and the record must survive the thing that reported to it.
     final status = ref.status;
     try {
-      await ref.read(storeControllerProvider.notifier).unarchiveSession(s.id);
+      await ref.read(storeControllerProvider.notifier).reopenSession(s.id);
       // The record outlives the screen: submit first, then touch UI state only
       // if this widget is still around to have any.
       status.success(
-        'Restored "${s.title}"',
+        'Reopened "${s.title}"',
         source: StatusSources.session,
         sessionId: s.id,
       );
@@ -78,7 +78,7 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
       _refresh();
     } catch (e) {
       status.failure(
-        'Could not restore session',
+        'Could not reopen session',
         error: e,
         source: StatusSources.session,
         sessionId: s.id,
@@ -91,7 +91,7 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
     // Watched here rather than inside _grouped: every dependency this screen
     // rebuilds on is then visible in one place.
     final repos = ref.watch(reposProvider);
-    // Live-sync with archive/restore happening elsewhere (e.g. a swipe on the
+    // Live-sync with close/reopen happening elsewhere (e.g. a swipe on the
     // home screen) — see [_lastActiveIds].
     ref.listen<SessionsState>(sessionsProvider, (_, next) {
       final ids = {for (final s in next.sessions) s.id};
@@ -104,7 +104,7 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Archived'),
+        title: const Text('Closed'),
         leading: IconButton(
           icon: const Icon(PhosphorIconsLight.arrowLeft),
           onPressed: () => Navigator.of(context).maybePop(),
@@ -139,13 +139,13 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            PhosphorIconsLight.archiveBox,
+            PhosphorIconsLight.moon,
             size: 48,
             color: Theme.of(context).colorScheme.outline,
           ),
           const SizedBox(height: kSpace12),
           Text(
-            'No archived sessions.',
+            'No closed sessions.',
             style: TextStyle(color: Theme.of(context).colorScheme.outline),
           ),
         ],
@@ -164,7 +164,7 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
             Icon(PhosphorIconsLight.warningCircle, size: 28, color: cs.error),
             const SizedBox(height: kSpace8),
             Text(
-              "Couldn't load archived sessions.",
+              "Couldn't load closed sessions.",
               textAlign: TextAlign.center,
               style: TextStyle(color: cs.onSurfaceVariant),
             ),
@@ -208,7 +208,7 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
               count: items.length,
             ),
             for (final s in items)
-              _ArchivedRow(session: s, onRestore: () => _restore(s)),
+              _ClosedRow(session: s, onReopen: () => _reopen(s)),
           ],
         );
       },
@@ -253,10 +253,10 @@ class _GroupHeader extends StatelessWidget {
   }
 }
 
-class _ArchivedRow extends StatelessWidget {
-  const _ArchivedRow({required this.session, required this.onRestore});
+class _ClosedRow extends StatelessWidget {
+  const _ClosedRow({required this.session, required this.onReopen});
   final Session session;
-  final VoidCallback onRestore;
+  final VoidCallback onReopen;
 
   @override
   Widget build(BuildContext context) {
@@ -286,7 +286,7 @@ class _ArchivedRow extends StatelessWidget {
           ],
         ),
       ),
-      trailing: TextButton(onPressed: onRestore, child: const Text('Restore')),
+      trailing: TextButton(onPressed: onReopen, child: const Text('Reopen')),
     );
   }
 }

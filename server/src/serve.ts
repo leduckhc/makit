@@ -104,6 +104,29 @@ export type ServeArgs = ReturnType<typeof parseArgs>;
  * over a duplicate CLI path). A persisted entry keeps its id; a CLI-only path
  * is passed as a bare string so the manager mints a fresh server id for it.
  */
+/**
+ * Idle auto-close window (SPEC-29 option D), in ms. `MAKIT_IDLE_CLOSE_MIN`
+ * overrides the default; `0` disables auto-close entirely. A garbage value falls
+ * back to the default rather than silently disabling memory hygiene.
+ */
+function resolveIdleCloseMs(): number {
+  const DEFAULT_MIN = 60;
+  const raw = process.env.MAKIT_IDLE_CLOSE_MIN;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_MIN * 60_000;
+  const min = Number(raw);
+  if (!Number.isFinite(min) || min < 0) {
+    console.warn(
+      `[makit] ignoring MAKIT_IDLE_CLOSE_MIN="${raw}" (not a non-negative number); using ${DEFAULT_MIN}min`,
+    );
+    return DEFAULT_MIN * 60_000;
+  }
+  if (min === 0) {
+    console.log("[makit] MAKIT_IDLE_CLOSE_MIN=0: idle auto-close disabled");
+    return 0;
+  }
+  return Math.round(min * 60_000);
+}
+
 function mergeProjects(
   persisted: PersistedProject[],
   cliPaths: string[],
@@ -162,6 +185,11 @@ export async function runServe(opts: ServeArgs) {
     projects: merged,
     onProjectsChanged: (projects) => saveProjects(file, projects),
     store,
+    // SPEC-29 option D — idle auto-close. One agent process per session and
+    // nothing reclaimed the idle ones, so they piled up for days. Default 60min:
+    // long enough that a session someone is reading is never taken out from
+    // under them, short enough to keep the machine honest. `0` disables.
+    idleCloseMs: resolveIdleCloseMs(),
   });
   // Record the manager's authoritative id↔path map now (CLI-only paths just got
   // fresh ids; legacy path-only entries got migrated ids).

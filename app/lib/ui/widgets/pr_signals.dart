@@ -302,8 +302,8 @@ String _plural(int n, String singular, [String? plural]) =>
 class PrResidue {
   const PrResidue({this.sessions = 0, this.baseBranch, this.baseBehind = 0});
 
-  /// Sessions bound to the worktree, archived ones excluded by the server. A
-  /// wrap-up or discard archives every one of them, which is what the fact names
+  /// Sessions bound to the worktree, closed ones excluded by the server. A
+  /// wrap-up or discard closes every one of them, which is what the fact names
   /// — *not* "still running": the set includes idle, awaiting and exited
   /// sessions, so claiming they are running would be false for most of them.
   final int sessions;
@@ -382,7 +382,7 @@ PrStatus prStatus({
         // fact about the pull request — it is how you are working on it.
         if (residue.sessions > 0)
           PrSignal(
-            '${_plural(residue.sessions, 'session')} to archive',
+            '${_plural(residue.sessions, 'session')} to close',
             PrTone.quiet,
           ),
         if (residue.baseBranch != null && residue.baseBehind > 0)

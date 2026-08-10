@@ -31,22 +31,22 @@ void main() {
         },
       ]);
       expect(sessions!.single.resumable, isFalse);
-      expect(sessions.single.archived, isFalse);
+      expect(sessions.single.closed, isFalse);
     });
 
-    test('decodeSessions parses archived=true (SPEC-29)', () {
+    test('decodeSessions parses closed=true (SPEC-29)', () {
       final sessions = WireCodec.decodeSessions([
         {
           'id': 's3',
           'projectId': 'p1',
           'agent': 'pi',
-          'title': 'archived one',
+          'title': 'closed one',
           'status': 'exited',
           'policy': 'ask-on-risky',
-          'archived': true,
+          'closed': true,
         },
       ]);
-      expect(sessions!.single.archived, isTrue);
+      expect(sessions!.single.closed, isTrue);
     });
   });
 }

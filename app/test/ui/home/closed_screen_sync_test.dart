@@ -1,5 +1,5 @@
-// Review follow-ups on the archived screen (PR #123): the live-sync listener had
-// no baseline, so the first archive/restore elsewhere was swallowed, and
+// Review follow-ups on the closed screen (PR #123): the live-sync listener had
+// no baseline, so the first close/restore elsewhere was swallowed, and
 // pull-to-refresh returned before the reload landed, hiding the spinner
 // immediately.
 import 'dart:async';
@@ -13,7 +13,7 @@ import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
-import 'package:makit/ui/home/archived_screen.dart';
+import 'package:makit/ui/home/closed_screen.dart';
 
 class _EmptyStorage implements SecureStore {
   const _EmptyStorage();
@@ -25,17 +25,17 @@ class _EmptyStorage implements SecureStore {
   Future<void> delete({required String key}) async {}
 }
 
-Session _session(String id, {bool archived = false}) => Session(
+Session _session(String id, {bool closed = false}) => Session(
   id: id,
   projectId: 'p1',
   agent: 'pi',
   title: 'session $id',
   status: SessionStatus.exited,
   policy: ApprovalPolicy.askOnRisky,
-  archived: archived,
+  closed: closed,
 );
 
-/// Counts archive-list loads and lets a test hold one open.
+/// Counts closed-list loads and lets a test hold one open.
 class _FakeStore extends StoreController {
   _FakeStore(super.ref);
 
@@ -43,11 +43,11 @@ class _FakeStore extends StoreController {
   Completer<List<Session>>? gate;
 
   @override
-  Future<List<Session>> listArchivedSessions() {
+  Future<List<Session>> listClosedSessions() {
     loads++;
     final g = gate;
     if (g != null) return g.future;
-    return Future.value([_session('a1', archived: true)]);
+    return Future.value([_session('a1', closed: true)]);
   }
 }
 
@@ -72,7 +72,7 @@ void main() {
     return c;
   }
 
-  testWidgets('reloads on the first archive that happens elsewhere', (
+  testWidgets('reloads on the first close that happens elsewhere', (
     tester,
   ) async {
     late _FakeStore store;
@@ -81,13 +81,13 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: c,
-        child: const MaterialApp(home: ArchivedScreen()),
+        child: const MaterialApp(home: ClosedScreen()),
       ),
     );
     await tester.pumpAndSettle();
     expect(store.loads, 1, reason: 'initial load');
 
-    // Somebody archives s1 on the home screen: the active list loses an id.
+    // Somebody closes s1 on the home screen: the active list loses an id.
     c.read(active.notifier).state = const [];
     await tester.pumpAndSettle();
 
@@ -105,12 +105,12 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: c,
-        child: const MaterialApp(home: ArchivedScreen()),
+        child: const MaterialApp(home: ClosedScreen()),
       ),
     );
     await tester.pumpAndSettle();
 
-    // Same id, new status — routine activity, not an archive.
+    // Same id, new status — routine activity, not a close.
     c.read(active.notifier).state = [
       Session(
         id: 's1',
@@ -135,7 +135,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: c,
-        child: const MaterialApp(home: ArchivedScreen()),
+        child: const MaterialApp(home: ClosedScreen()),
       ),
     );
     await tester.pumpAndSettle();
@@ -152,7 +152,7 @@ void main() {
       reason: 'spinner must stay while the reload is in flight',
     );
 
-    store.gate!.complete([_session('a1', archived: true)]);
+    store.gate!.complete([_session('a1', closed: true)]);
     await tester.pumpAndSettle();
 
     expect(find.byType(RefreshProgressIndicator), findsNothing);

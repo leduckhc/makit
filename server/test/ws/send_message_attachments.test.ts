@@ -70,6 +70,9 @@ function harness() {
     manager: {
       getSession: (sid: string) => (sid === "s1" ? session : undefined),
       ensureLive: async () => {},
+      // send.message routes through ...ForInput so an idle-auto-closed session is
+      // reopened before the turn (SPEC-29 option D).
+      ensureLiveForInput: async () => {},
     } as unknown as CommandDeps["manager"],
     gateway: {} as CommandDeps["gateway"],
     budgetWatch: {} as CommandDeps["budgetWatch"],
@@ -216,6 +219,9 @@ test("a pending session promoted by an image-only turn gets a usable label", asy
     manager: {
       getSession: () => session,
       ensureLive: async () => {},
+      // send.message routes through ...ForInput so an idle-auto-closed session is
+      // reopened before the turn (SPEC-29 option D).
+      ensureLiveForInput: async () => {},
       promotePendingSession: async (_s: unknown, label: string) => {
         labels.push(label);
         return true;

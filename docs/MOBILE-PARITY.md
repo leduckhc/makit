@@ -23,7 +23,7 @@ the store and wire protocol already support every item below.
 ## Genuinely desktop-only
 
 `desktop/chat/pr_bar.dart`, `desktop/chat/composer_draft.dart`,
-`desktop/chat/archived_sidebar_view.dart`, exited/resumable session gating,
+`desktop/chat/closed_sidebar_view.dart`, exited/resumable session gating,
 `desktop/settings/**` (12 sections), `desktop/chat/github_budget_button.dart`,
 `keymap_scope`, `tray/`, `open_in_ide`, split/tab/groups (SPEC-28/30).
 
@@ -117,8 +117,8 @@ pull-to-refresh.
 
 - `fix(app): hide dead sessions on the mobile home (SPEC-29)` — exited sessions
   are dropped unless resumable, matching the desktop sidebar.
-- `feat(app): archived-sessions screen on mobile (SPEC-29)` — `/archived`,
-  grouped by repo, restore + empty/error/retry states.
+- `feat(app): closed-sessions screen on mobile (SPEC-29)` — `/closed`,
+  grouped by repo, reopen + empty/error/retry states.
 
 ## Open decision — worktree visibility
 

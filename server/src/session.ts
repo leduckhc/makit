@@ -110,8 +110,8 @@ export interface SessionInit {
   resumeSessionPath?: string;
   /** Native agent session/thread id, restored on rehydration for resume (SPEC-29). */
   agentSessionId?: string;
-  /** Archived on rehydration (SPEC-29): hidden from the active list, still resumable. */
-  archived?: boolean;
+  /** Closed on rehydration (SPEC-29): hidden from the active list, still resumable. */
+  closed?: boolean;
   /** Restore the started-session branch/worktree on rehydration. */
   branch?: string;
   worktreePath?: string;
@@ -162,12 +162,12 @@ export class Session extends EventEmitter {
   agentSessionId?: string;
 
   /**
-   * Archived (SPEC-29): a soft, recoverable hide. An archived session is
+   * Closed (SPEC-29): a soft, recoverable hide. An closed session is
    * excluded from the active session list (`SessionManager.listSessions`) but
    * keeps its full event log + resume handle and can be restored. Persisted so
-   * it stays archived across a restart.
+   * it stays closed across a restart.
    */
-  archived = false;
+  closed = false;
 
   /** Pending lazy history loader — consumed (set to undefined) on first use. */
   private hydrateFrom?: () => SessionEvent[];
@@ -216,7 +216,7 @@ export class Session extends EventEmitter {
     if (typeof init.lastPreview === "string") this.lastPreview = init.lastPreview;
     this.resumeSessionPath = init.resumeSessionPath;
     this.agentSessionId = init.agentSessionId;
-    this.archived = init.archived ?? false;
+    this.closed = init.closed ?? false;
     if (init.branch !== undefined || init.worktreePath !== undefined) {
       this._lifecycle = { phase: "started", branch: init.branch, worktreePath: init.worktreePath };
     }
@@ -313,7 +313,7 @@ export class Session extends EventEmitter {
       lastPreview: this.lastPreview,
       resumeSessionPath: this.resumeSessionPath,
       agentSessionId: this.agentSessionId,
-      archived: this.archived,
+      closed: this.closed,
       // Only a STARTED session's location is persisted: a draft's bound branch
       // must not survive a restart as "started on that branch" (the constructor
       // infers phase "started" from these fields on rehydration).
@@ -389,13 +389,13 @@ export class Session extends EventEmitter {
   }
 
   /**
-   * Set the archived flag (SPEC-29) and persist it. Emits `metaChanged` so the
-   * server re-broadcasts the active session list (which now excludes archived
+   * Set the closed flag (SPEC-29) and persist it. Emits `metaChanged` so the
+   * server re-broadcasts the active session list (which now excludes closed
    * sessions). Returns whether the flag actually changed.
    */
-  setArchived(archived: boolean): boolean {
-    if (this.archived === archived) return false;
-    this.archived = archived;
+  setClosed(closed: boolean): boolean {
+    if (this.closed === closed) return false;
+    this.closed = closed;
     this.persistMeta();
     this.emit("metaChanged");
     return true;
@@ -585,7 +585,7 @@ export class Session extends EventEmitter {
       // SPEC-29: a session with a persisted resume handle can be brought back
       // to a live agent after a server restart (cold ones are auto-attached).
       resumable: this.resumable,
-      archived: this.archived,
+      closed: this.closed,
       queued: this.queued.map(
         (q): QueuedMessageDTO => ({
           id: q.id,

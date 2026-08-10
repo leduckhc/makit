@@ -1011,7 +1011,7 @@ void main() {
       ],
     );
     // The live session shows; the exited one is filtered out (it lives in the
-    // Archive surface instead).
+    // Closed surface instead).
     expect(find.text('Live one'), findsOneWidget);
     expect(find.text('Exited one'), findsNothing);
   });

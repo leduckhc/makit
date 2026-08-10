@@ -127,6 +127,25 @@ export interface ManagerOpts {
    */
   capabilityCache?: CapabilityCache;
   /**
+   * Idle auto-close threshold in ms (SPEC-29 option D): a session whose last
+   * activity is older than this is closed by {@link SessionManager.sweepIdleSessions},
+   * releasing its agent and reclaiming the process. `0`/undefined disables it.
+   *
+   * Exists because makit runs ONE agent process per session and nothing ever
+   * took an idle one down — agents accumulated for days (measured: 19 resident
+   * agents, ~0.95 GB RSS). Safe to default on because close keeps the transcript
+   * and the resume handle, so every auto-close is reversible, and a later message
+   * reopens the session transparently ({@link SessionManager.ensureLiveForInput}).
+   */
+  idleCloseMs?: number;
+  /** How often the sweeper runs. Defaults to a quarter of {@link idleCloseMs}. */
+  idleSweepMs?: number;
+  /** Injectable clock, for tests. */
+  now?: () => number;
+  /** Injectable interval, mirroring the metrics/ports collectors. */
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
+  /**
    * The single GitHub gateway (SPEC-32): every `gh` read for PR data routes
    * through it so cost, cache, dedupe, and quota accounting live in one place.
    * Injected so tests can substitute a fake (no subprocesses); omitted in
@@ -182,6 +201,17 @@ export class SessionManager extends EventEmitter {
   private readonly defaultAgentId: string;
   private readonly store?: EventStore;
   private capabilityCache?: CapabilityCache;
+  /** Idle auto-close threshold; 0 = disabled (SPEC-29 option D). */
+  private readonly idleCloseMs: number;
+  /** Sweep interval. */
+  private readonly idleSweepMs: number;
+  private readonly now: () => number;
+  private readonly setTimer: (fn: () => void, ms: number) => unknown;
+  private readonly clearTimer: (handle: unknown) => void;
+  /** Live sweeper handle, set between start/stop. */
+  private idleHandle?: unknown;
+  /** Guards against overlapping sweeps (a close awaits the agent). */
+  private sweeping = false;
   private bridge?: BridgeBinding;
   private readonly _gateway: GithubGateway;
 
@@ -193,6 +223,13 @@ export class SessionManager extends EventEmitter {
     this.defaultAgentId = "pi";
     this.store = opts.store;
     this.capabilityCache = opts.capabilityCache;
+    this.idleCloseMs = opts.idleCloseMs ?? 0;
+    // Sweep four times per window: prompt enough that a cold session is released
+    // soon after it goes quiet, coarse enough to cost nothing.
+    this.idleSweepMs = opts.idleSweepMs ?? Math.max(30_000, Math.floor((opts.idleCloseMs ?? 0) / 4));
+    this.now = opts.now ?? (() => Date.now());
+    this.setTimer = opts.setTimer ?? ((fn, ms) => setInterval(fn, ms));
+    this.clearTimer = opts.clearTimer ?? ((h) => clearInterval(h as NodeJS.Timeout));
     // The single GitHub gateway (SPEC-32). A real one over git.ts's `run` unless
     // a fake is injected; `run` resolves `gh` via PATH, so the test PATH-shim
     // keeps working. Constructed here does NOT self-refresh (no subprocess).
@@ -247,7 +284,7 @@ export class SessionManager extends EventEmitter {
         agentSessionId: meta.agentSessionId,
         branch: meta.branch,
         worktreePath: meta.worktreePath,
-        archived: meta.archived,
+        closed: meta.closed,
         hydrateFrom: () => store.read(meta.id),
       });
       this.sessions.set(session.id, session);
@@ -302,24 +339,24 @@ export class SessionManager extends EventEmitter {
   }
 
   listSessions() {
-    // Archived sessions (SPEC-29) are hidden from the ACTIVE list, but kept in
+    // Closed sessions (SPEC-29) are hidden from the ACTIVE list, but kept in
     // the registry (resumable + restorable). `allSessions()` still returns them
     // for fan-out/lookup; only this DTO list excludes them.
-    return [...this.sessions.values()].filter((s) => !s.archived).map((s) => s.toDTO());
+    return [...this.sessions.values()].filter((s) => !s.closed).map((s) => s.toDTO());
   }
 
-  /** The archived sessions (SPEC-29), for the "Show archived" list. Newest first.
+  /** The closed sessions (SPEC-29), for the "Show closed" list. Newest first.
    *  Each is tagged `orphaned` when its recorded worktree is no longer an active
    *  worktree of the project (e.g. the worktree was removed) so the UI can flag
    *  it with a "worktree removed" chip. Restoring such a session runs it at the
-   *  repo root (see {@link unarchiveSession}) — there is no recreate-worktree
+   *  repo root (see {@link reopenSession}) — there is no recreate-worktree
    *  path. Sessions whose project has been removed are omitted entirely —
    *  they're unreachable (no repo/cwd). */
-  async listArchivedSessions(): Promise<SessionDTO[]> {
-    const archived = [...this.sessions.values()].filter((s) => s.archived);
+  async listClosedSessions(): Promise<SessionDTO[]> {
+    const closed = [...this.sessions.values()].filter((s) => s.closed);
     const liveByProject = new Map<string, Set<string>>();
     const out: SessionDTO[] = [];
-    for (const session of archived) {
+    for (const session of closed) {
       const project = this.projects.get(session.projectId);
       if (!project) continue; // project removed → unreachable, hide it
       let live = liveByProject.get(session.projectId);
@@ -345,8 +382,8 @@ export class SessionManager extends EventEmitter {
   /** SPEC-29 "orphaned": the session's recorded worktree is no longer a live
    *  worktree of its project. A repo-root session (no distinct worktree) is
    *  never orphaned; an empty {@link liveWorktreePaths} set is unproven (git
-   *  failure) → not orphaned. This single predicate drives BOTH the archive
-   *  view's "worktree removed" chip and the detach-to-root on unarchive, so the
+   *  failure) → not orphaned. This single predicate drives BOTH the closed
+   *  view's "worktree removed" chip and the detach-to-root on reopen, so the
    *  flag a user sees and the action a restore takes can never diverge. */
   private isOrphaned(worktreePath: string | undefined, projectPath: string, live: Set<string>): boolean {
     if (worktreePath == null) return false;
@@ -844,20 +881,19 @@ export class SessionManager extends EventEmitter {
     // removal then failed, leaving the worktree on disk without its sessions.
     await removeWorktree(repoPath, worktreePath, true);
     // Reconcile sessions bound to the removed worktree (SPEC-29):
-    //  - archived  → leave as-is (already preserved; it simply becomes orphaned)
-    //  - draft     → kill (no transcript to keep; must not launch in a deleted dir)
-    //  - live      → ARCHIVE, not kill — preserve the transcript + resume handle
-    //               (mirrors close==archive). It survives as an orphaned archived
-    //               session, restorable later.
+    //  - closed  → leave as-is (already preserved; it simply becomes orphaned)
+    //  - draft   → kill (no transcript to keep; must not launch in a deleted dir)
+    //  - live    → CLOSE, not kill — preserve the transcript + resume handle.
+    //              It survives as an orphaned closed session, reopenable later.
     for (const session of this.sessions.values()) {
       if (session.projectId !== projectId) continue;
       const bound = session.boundWorktreePath;
       if (!bound || resolve(bound) !== target) continue;
-      if (session.archived) continue;
+      if (session.closed) continue;
       if (session.pending) {
         await this.killSession(session.id);
       } else {
-        await this.archiveSession(session.id);
+        await this.closeSession(session.id);
       }
     }
   }
@@ -1162,43 +1198,59 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Archive a session (SPEC-29): a soft, recoverable hide. Sets the persisted
-   * `archived` flag — so it drops from the active session list and survives a
-   * restart — and stops the live agent process (archived sessions shouldn't
-   * hold one), swapping in the detached placeholder. The event log + resume
-   * handle are KEPT, so `unarchive` + a later subscribe resume it exactly like
-   * any cold session. Deliberately makit-side only: we do NOT call the back
-   * end's native archive, so the underlying session/thread stays directly
-   * resumable (no archived-thread-resume edge case). Idempotent.
+   * Close a session (SPEC-29): release the agent, keep the session. Sets the
+   * persisted `closed` flag — so it drops from the active session list and
+   * survives a restart — and frees the live agent, swapping in the detached
+   * placeholder.
+   *
+   * Freeing happens in two steps, both required:
+   *  1. `adapter.close()` — the agent's own release primitive (ACP
+   *     `session/close`, codex `thread/unsubscribe`), which cancels any in-flight
+   *     turn and lets the agent flush and drop the session cleanly.
+   *  2. `adapter.kill()` — reaps the process. Since makit runs ONE agent process
+   *     per session, step 1 alone reclaims no memory; the RSS only comes back
+   *     when the child dies (see `child_transport`'s SIGTERM→SIGKILL escalation).
+   *
+   * The event log + resume handle are KEPT, so `reopenSession` + a later
+   * subscribe resume it exactly like any cold session. Deliberately does NOT use
+   * the back end's native archive/delete, so the underlying session/thread stays
+   * directly resumable and listable. Idempotent.
    */
-  async archiveSession(id: string): Promise<void> {
+  async closeSession(id: string): Promise<void> {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
-    if (session.archived) return;
-    // Best-effort: archiving is the recovery path in the removeWorktree loop
-    // (called after git already deleted the tree), so a rejecting kill() must
-    // not abort the archive — or the reconciliation of the remaining sessions.
+    if (session.closed) return;
+    // Best-effort, in order: closing is also the recovery path in the
+    // removeWorktree loop (called after git already deleted the tree), so
+    // neither a rejecting close() nor a rejecting kill() may abort the close —
+    // or the reconciliation of the remaining sessions. A wedged agent must
+    // never be able to keep its memory.
+    try {
+      await session.adapter.close();
+    } catch (e) {
+      log.warn(`[makit] closeSession(${id}): agent close failed: ${(e as Error).message}`);
+    }
     try {
       await session.adapter.kill();
     } catch (e) {
-      log.warn(`[makit] archiveSession(${id}): kill failed: ${(e as Error).message}`);
+      log.warn(`[makit] closeSession(${id}): kill failed: ${(e as Error).message}`);
     }
     session.replaceAdapter(new DetachedAdapter(session.agent));
-    session.setArchived(true);
+    session.setClosed(true);
   }
 
   /**
-   * Restore an archived session (SPEC-29): clear the flag so it returns to the
+   * Reopen a closed session (SPEC-29): clear the flag so it returns to the
    * active list. It stays cold until the next subscribe re-attaches it (resume
    * by its kept native id). Idempotent.
    */
-  async unarchiveSession(id: string): Promise<void> {
+  async reopenSession(id: string): Promise<void> {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
-    // If the worktree was deleted while archived, restoring must detach the
+    // If the worktree was deleted while closed, restoring must detach the
     // session to the repo root (SPEC-29) — otherwise its stale path matches no
     // live worktree and it renders in no view. Uses the same orphaned predicate
-    // as the archive-list chip, so the flag and the action never diverge;
+    // as the closed-list chip, so the flag and the action never diverge;
     // reattachSession already falls back to the repo root for a missing
     // worktree, so resume is unaffected.
     const project = session.worktreePath ? this.projects.get(session.projectId) : undefined;
@@ -1208,7 +1260,109 @@ export class SessionManager extends EventEmitter {
         session.detachToRoot();
       }
     }
-    session.setArchived(false);
+    session.setClosed(false);
+  }
+
+  // ---- idle auto-close (SPEC-29 option D) ----------------------------------
+
+  /** Arm the periodic idle sweep. No-op when `idleCloseMs` is 0 (disabled). */
+  startIdleSweeper(): void {
+    if (this.idleCloseMs <= 0 || this.idleHandle !== undefined) return;
+    this.idleHandle = this.setTimer(() => {
+      void this.sweepIdleSessions().catch((e) =>
+        log.warn(`[makit] idle sweep failed: ${reason(e)}`),
+      );
+    }, this.idleSweepMs);
+    log.info(
+      `[makit] idle auto-close armed: closing sessions idle > ${Math.round(this.idleCloseMs / 60_000)}min (sweep every ${Math.round(this.idleSweepMs / 1000)}s)`,
+    );
+  }
+
+  /** Disarm the idle sweep (shutdown). Idempotent. */
+  stopIdleSweeper(): void {
+    if (this.idleHandle === undefined) return;
+    this.clearTimer(this.idleHandle);
+    this.idleHandle = undefined;
+  }
+
+  /**
+   * Close every session that has gone quiet, freeing its agent process.
+   * Returns the ids closed.
+   *
+   * makit runs ONE agent process per session and, before this, nothing ever took
+   * an idle one down: agents accumulated for days (measured on a dev host: 19
+   * resident agents, ~0.95 GB RSS, the oldest 5 days). Auto-closing is safe
+   * because {@link closeSession} keeps the transcript and the resume handle, so
+   * every sweep is reversible — and a later message reopens the session
+   * transparently via {@link ensureLiveForInput}.
+   *
+   * A stale timestamp alone is never enough. Skipped:
+   *  - `closed` — already released.
+   *  - `pending` (draft) — no agent to free, and closing would persist an empty
+   *    row in the Closed list.
+   *  - cold ({@link DetachedAdapter}) — the process is already gone.
+   *  - `running` / `awaiting-input` / `awaiting-approval` — the agent is working
+   *    or holding a question for the user; closing would discard live work.
+   *    (These states can carry an old `lastActivityAt`: a long tool call or an
+   *    unanswered prompt is quiet on the wire but very much alive.)
+   *  - not `resumable` — no native handle to come back through, so freeing it
+   *    would cost the user the session. Held deliberately; a manual close still
+   *    works.
+   */
+  async sweepIdleSessions(now = this.now()): Promise<string[]> {
+    if (this.idleCloseMs <= 0) return [];
+    // A close awaits the agent, so a slow sweep could otherwise overlap the next
+    // tick and try to close the same session twice.
+    if (this.sweeping) return [];
+    this.sweeping = true;
+    try {
+      const victims = [...this.sessions.values()].filter(
+        (s) =>
+          !s.closed &&
+          !s.pending &&
+          !(s.adapter instanceof DetachedAdapter) &&
+          s.status !== "running" &&
+          s.status !== "awaiting-input" &&
+          s.status !== "awaiting-approval" &&
+          s.resumable &&
+          now - s.lastActivityAt > this.idleCloseMs,
+      );
+      const closed: string[] = [];
+      for (const session of victims) {
+        try {
+          await this.closeSession(session.id);
+          closed.push(session.id);
+          log.info(
+            `[makit] idle auto-close: ${session.id.slice(0, 8)} ("${session.title}") idle ${Math.round((now - session.lastActivityAt) / 60_000)}min — agent released, reopen to resume`,
+          );
+        } catch (e) {
+          // One stuck session must not stop the rest from being reclaimed.
+          log.warn(`[makit] idle auto-close failed for ${session.id.slice(0, 8)}: ${reason(e)}`);
+        }
+      }
+      return closed;
+    } finally {
+      this.sweeping = false;
+    }
+  }
+
+  /**
+   * Make a session live for INPUT: reopen it first when it is closed, then
+   * re-attach as usual. Sending a message is unambiguous intent to continue, so
+   * an auto-closed session comes back invisibly — the user just sees their agent
+   * pick up where it left off.
+   *
+   * Deliberately NOT what `sub` uses: opening a closed session to read its
+   * transcript must never respawn an agent (that would undo the sweep every time
+   * someone browsed the Closed list). {@link ensureLive} keeps refusing closed
+   * sessions for exactly that reason.
+   */
+  async ensureLiveForInput(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (session?.closed) {
+      await this.reopenSession(sessionId);
+    }
+    await this.ensureLive(sessionId);
   }
 
   /** Kill a session's agent process and drop it from the registry. */
@@ -1322,7 +1476,7 @@ export class SessionManager extends EventEmitter {
    * possibly stale snapshot.
    *
    * Deliberately silent on failure: a re-attach that cannot happen (unknown id,
-   * history-only, archived, a draft awaiting promotion, or an agent that won't
+   * history-only, closed, a draft awaiting promotion, or an agent that won't
    * start) must still let the caller proceed — `sub` then replays the transcript
    * read-only, and a send falls through to the cold-session `session.error`.
    */
@@ -1346,9 +1500,9 @@ export class SessionManager extends EventEmitter {
     // A draft also holds a DetachedAdapter, but its path forward is promotion
     // (which names the branch), never re-attach.
     if (session.pending) return;
-    // Archiving deliberately stopped the process (SPEC-29); only unarchive
+    // Closing deliberately released the process (SPEC-29); only reopen
     // may bring it back.
-    if (session.archived) return;
+    if (session.closed) return;
     if (!session.resumable) return;
     try {
       await this.reattachSession(sessionId);

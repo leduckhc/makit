@@ -357,11 +357,11 @@ Future<bool?> showPrDirectConfirm(
                 icon: PhosphorIconsLight.folderMinus,
                 emphasis: worktreePath,
               ),
-              // Live sessions are archived, not stopped: the transcript and the
+              // Live sessions are closed, not stopped: the transcript and the
               // resume handle survive (SPEC-29). Drafts have neither, so they go.
               const _Step(
-                'Archive the sessions running in it (drafts are discarded)',
-                icon: PhosphorIconsLight.archive,
+                'Close the sessions running in it (drafts are discarded)',
+                icon: PhosphorIconsLight.moon,
               ),
               if (branch != null)
                 _Step(

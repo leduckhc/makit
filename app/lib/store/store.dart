@@ -62,7 +62,7 @@ class SessionsState {
   final List<Session> sessions;
 
   List<Session> forProject(String projectId) =>
-      sessions.where((s) => s.projectId == projectId && !s.archived).toList()
+      sessions.where((s) => s.projectId == projectId && !s.closed).toList()
         ..sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
 
   Session? byId(String id) => sessions.firstWhereOrNull((s) => s.id == id);
@@ -851,30 +851,30 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
-  /// Archive a session (SPEC-29): a soft, recoverable hide. The server drops it
+  /// Close a session (SPEC-29): release the agent, keep the session. The server drops it
   /// from the active `sessions.snapshot` (it stays resumable + restorable) and
   /// broadcasts a fresh snapshot so the list updates.
-  Future<void> archiveSession(String sessionId) async {
+  Future<void> closeSession(String sessionId) async {
     await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.archive', 'sessionId': sessionId},
+      {'kind': 'session.close', 'sessionId': sessionId},
     );
   }
 
-  /// Restore an archived session to the active list (SPEC-29).
-  Future<void> unarchiveSession(String sessionId) async {
+  /// Reopen a closed session: it returns to the active list and resumes on next open (SPEC-29).
+  Future<void> reopenSession(String sessionId) async {
     await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.unarchive', 'sessionId': sessionId},
+      {'kind': 'session.reopen', 'sessionId': sessionId},
     );
   }
 
-  /// Fetch the archived sessions (SPEC-29). Not part of the active snapshot;
-  /// loaded on demand for the "Show archived sessions" list.
-  Future<List<Session>> listArchivedSessions() async {
+  /// Fetch the closed sessions (SPEC-29). Not part of the active snapshot;
+  /// loaded on demand for the "Show closed sessions" list.
+  Future<List<Session>> listClosedSessions() async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.listArchived'},
+      {'kind': 'session.listClosed'},
     );
     return WireCodec.decodeSessions(ack['sessions']) ?? const [];
   }

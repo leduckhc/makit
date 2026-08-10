@@ -115,22 +115,22 @@ void closeActiveTab(WidgetRef ref) {
   final state = ref.read(workspaceControllerProvider);
   final tab = activeTab(state);
   if (tab == null) return;
-  closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
+  closeTabAndSession(ref, state.activeSplitId, tab.id, tab.sessionId);
 }
 
 /// Close [tabId] in [splitId] and then dispose of its session **according to the
 /// active group's kind** (SPEC-30 decision 7):
 ///
-/// * **worktree group** → archive it (SPEC-29). Membership is derived, so the
+/// * **worktree group** → close it (SPEC-29). Membership is derived, so the
 ///   only way to take a session off that canvas is to end it.
 /// * **board** → **unpin** it. The list is the user's to edit and the agent
-///   keeps running; archiving here would destroy work while tidying a view.
+///   keeps running; closing here would destroy work while tidying a view.
 ///
 /// The choice lives here, in the one shared close path, rather than at each
 /// affordance — so the tab ✕ and the `⌘⇧W` shortcut ([closeActiveTab]) cannot
 /// drift apart. **No call site may special-case it.** A tab with no session (an
 /// empty starter) just closes.
-void closeTabAndArchive(
+void closeTabAndSession(
   WidgetRef ref,
   String splitId,
   String tabId,
@@ -154,16 +154,16 @@ void closeTabAndArchive(
     return;
   }
   if (workspace.isSessionBound(sessionId)) return;
-  // A never-started draft has no history worth preserving — archiving it would
-  // leave an empty, permanently-persisted entry in the Archived list. Just let
+  // A never-started draft has no history worth preserving — closing it would
+  // leave an empty, permanently-persisted entry in the Closed list. Just let
   // closeTab drop it.
   if (ref.read(sessionsProvider).byId(sessionId)?.pending ?? false) return;
   // Fire-and-forget: the sidebar reconciles from the fresh server snapshot, so
-  // a failed archive is non-fatal — the session simply stays/reappears there.
+  // a failed close is non-fatal — the session simply stays/reappears there.
   unawaited(
     ref
         .read(storeControllerProvider.notifier)
-        .archiveSession(sessionId)
+        .closeSession(sessionId)
         .catchError((_) {}),
   );
 }

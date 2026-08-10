@@ -126,7 +126,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    * `load` is false: codex resume does not replay history (nor does makit need
    * it to; the event log is authoritative).
    */
-  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: true, archive: true };
+  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: true, archive: true, close: true };
 
   /**
    * codex's `turn/start` `input[]` is typed `{type:"text", text, text_elements}`;
@@ -374,6 +374,25 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     } else if (id === "thought_level") this.activeEffort = value;
     else return;
     this.emitConfigOptions();
+  }
+
+  /**
+   * codex's counterpart to ACP `session/close`: `thread/unsubscribe` unloads the
+   * thread server-side while leaving it in `thread/list` and resumable through
+   * `thread/resume`. Best-effort — a rejection must not stop {@link kill} from
+   * reclaiming the process, which is what actually returns the memory.
+   */
+  async close(): Promise<void> {
+    if (!this.transport || !this.threadId) return;
+    try {
+      await withDeadline(
+        this.request("thread/unsubscribe", { threadId: this.threadId }),
+        CODEX_HANDSHAKE_TIMEOUT,
+        "codex thread/unsubscribe",
+      );
+    } catch (e) {
+      log.warn(`[makit] codex thread/unsubscribe failed: ${(e as Error).message}`);
+    }
   }
 
   async kill(): Promise<void> {

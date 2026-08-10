@@ -107,6 +107,24 @@ Print a fresh pairing QR without restarting:
 kill -USR1 "$(pgrep -f 'tsx.*index.ts serve' || pgrep -f 'node.*makit')"
 ```
 
+### Idle auto-close (memory hygiene)
+
+makit runs **one agent process per session**, so live sessions cost real
+memory (60–450 MB each). Any session idle longer than the window is closed
+automatically: its agent is released (ACP `session/close` / codex
+`thread/unsubscribe`) and the process reaped (`SIGTERM` → `SIGKILL` after a
+grace period). This is always reversible — the transcript and resume handle are
+kept, the session moves to the **Closed** list, and simply sending a message
+reopens and resumes it. Opening a closed session to *read* it does not respawn
+an agent.
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `MAKIT_IDLE_CLOSE_MIN` | `60` | Minutes of inactivity before a session is auto-closed. `0` disables it. |
+
+Sessions that are mid-turn, awaiting input/approval, still drafts, already cold,
+or lacking a native resume handle are never auto-closed.
+
 ### CLI subcommands
 
 `pnpm start`/`pnpm dev` always run `serve`. For the other subcommands invoke

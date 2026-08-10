@@ -168,10 +168,10 @@ class SessionTile extends ConsumerWidget {
       s == SessionStatus.awaitingApproval ||
       s == SessionStatus.error;
 
-  /// Confirms the archive, then requests it and only reports the row as
+  /// Confirms the close, then requests it and only reports the row as
   /// dismissed once the server acknowledges. Returning false on failure keeps
   /// the row in place (the session is still in [sessionsProvider]), so a failed
-  /// archive never desyncs the list from server state.
+  /// close never desyncs the list from server state.
   Future<bool> _confirmAndQuit(BuildContext context, WidgetRef ref) async {
     // Resolved before the first await: `ref` throws once its widget is
     // unmounted, and the record must survive the thing that reported to it.
@@ -181,7 +181,7 @@ class SessionTile extends ConsumerWidget {
     try {
       await ref
           .read(storeControllerProvider.notifier)
-          .archiveSession(session.id);
+          .closeSession(session.id);
       return true;
     } catch (e) {
       status.failure(

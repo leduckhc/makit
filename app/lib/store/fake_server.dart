@@ -298,12 +298,12 @@ class FakeServer {
     ];
   }
 
-  /// Sessions the demo reports as archived (SPEC-29). Fixed ids so restoring one
+  /// Sessions the demo reports as closed (SPEC-29). Fixed ids so restoring one
   /// twice in a demo behaves consistently; `orphaned` on the last one exercises
   /// the "worktree removed" chip.
-  List<Map<String, dynamic>> _archivedSessions() => [
+  List<Map<String, dynamic>> _closedSessions() => [
     {
-      'id': 's-archived-1',
+      'id': 's-closed-1',
       'projectId': 'proj-makit',
       'agent': 'pi',
       'title': 'draft release notes',
@@ -312,10 +312,10 @@ class FakeServer {
       'lastActivityAt': _agoMs(const Duration(days: 1)),
       'lastPreview': 'Wrote CHANGELOG.md for 0.4.0.',
       'branch': 'draft-release-notes',
-      'archived': true,
+      'closed': true,
     },
     {
-      'id': 's-archived-2',
+      'id': 's-closed-2',
       'projectId': 'proj-cmux',
       'agent': 'claude',
       'title': 'investigate tab flicker',
@@ -324,7 +324,7 @@ class FakeServer {
       'lastActivityAt': _agoMs(const Duration(days: 6)),
       'lastPreview': 'Traced it to the snapshot boundary.',
       'branch': 'investigate-tab-flicker',
-      'archived': true,
+      'closed': true,
       'orphaned': true,
     },
   ];
@@ -779,12 +779,12 @@ class FakeServer {
       case 'ports.forward.stop':
         _emit(Envelope(t: MsgType.ack, id: env.id));
         return;
-      case 'session.listArchived':
+      case 'session.listClosed':
         _emit(
           Envelope(
             t: MsgType.ack,
             id: env.id,
-            body: {'sessions': _archivedSessions()},
+            body: {'sessions': _closedSessions()},
           ),
         );
         return;

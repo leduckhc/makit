@@ -489,6 +489,13 @@ export function startWsServer(opts: ServerOpts) {
   if (metricsBackgroundOn) metricsCollector.start();
   https.on("close", () => metricsCollector.stop());
 
+  // -------- SPEC-29 idle auto-close ----------------------------------------
+  // Reclaims the agent process of any session that has gone quiet. A no-op when
+  // `idleCloseMs` is 0 (disabled). Stopped with the server so a restarted daemon
+  // in-process (tests) leaves no stray interval behind.
+  manager.startIdleSweeper();
+  https.on("close", () => manager.stopIdleSweeper());
+
   // -------- SPEC-41 ports scanner -----------------------------------------
   // A watch-gated `lsof`/`ps` scan (nothing runs while no client watches). Like
   // the metrics collector it takes closures for its data sources so `ports/`
@@ -823,7 +830,7 @@ export function startWsServer(opts: ServerOpts) {
         // being opened, so it is where the agent comes back — and it must be the
         // SERVER's call: on reconnect the client still holds its pre-restart
         // status, so it cannot know the session went cold. No-op for live,
-        // history-only, archived and draft sessions.
+        // history-only, closed and draft sessions.
         //
         // AFTER the replay, deliberately: history must reach the client before
         // the resumed agent's first live events, and `handleSub` stays sync so a

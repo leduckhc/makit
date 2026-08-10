@@ -17,7 +17,7 @@ import 'package:makit/store/secure_store.dart';
 import 'package:makit/transport/protocol.dart';
 
 /// A connection that answers every request instantly — so the fire-and-forget
-/// archive on tab close leaves no pending timeout Timer in widget tests.
+/// close on tab close leaves no pending timeout Timer in widget tests.
 class _FastConn extends ConnectionController {
   _FastConn() : super(const _NoStore());
   final sent = <Map<String, dynamic>>[];
@@ -93,9 +93,9 @@ Future<void> _invoke(
 void main() {
   setUp(resetNodeIds);
 
-  // SPEC-30 Lane 7 / decision 7: unpin-vs-archive is a property of the ACTIVE
+  // SPEC-30 Lane 7 / decision 7: unpin-vs-close is a property of the ACTIVE
   // GROUP'S KIND, not of the affordance — so the tab ✕ and ⌘⇧W cannot disagree.
-  group('closeTabAndArchive by group kind (decision 7)', () {
+  group('closeTabAndSession by group kind (decision 7)', () {
     /// Runs [close] against a container whose active group is [group], with
     /// session `s1` bound to the active tab, and reports what was sent.
     Future<(_FastConn, GroupsController)> runClose(
@@ -136,33 +136,33 @@ void main() {
       tree: WorkspaceController.seedWorkspace(),
     );
 
-    testWidgets('on a board the tab ✕ unpins and never archives', (
+    testWidgets('on a board the tab ✕ unpins and never closes', (
       tester,
     ) async {
       final (conn, groups) = await runClose(tester, board(), (ref) {
         final state = ref.read(workspaceControllerProvider);
         final tab = activeTab(state)!;
-        closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
+        closeTabAndSession(ref, state.activeSplitId, tab.id, tab.sessionId);
       });
 
       expect(groups.groupById('b1')!.members, isEmpty, reason: 'unpinned');
       expect(
-        conn.sent.where((m) => m['kind'] == 'session.archive'),
+        conn.sent.where((m) => m['kind'] == 'session.close'),
         isEmpty,
         reason: 'the agent keeps running',
       );
     });
 
-    testWidgets('in a worktree group the tab ✕ archives (unchanged)', (
+    testWidgets('in a worktree group the tab ✕ closes the session (unchanged)', (
       tester,
     ) async {
       final (conn, _) = await runClose(tester, worktree(), (ref) {
         final state = ref.read(workspaceControllerProvider);
         final tab = activeTab(state)!;
-        closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
+        closeTabAndSession(ref, state.activeSplitId, tab.id, tab.sessionId);
       });
 
-      expect(conn.sent.where((m) => m['kind'] == 'session.archive').length, 1);
+      expect(conn.sent.where((m) => m['kind'] == 'session.close').length, 1);
     });
 
     testWidgets('⌘⇧W agrees with the ✕ on a board (one shared path)', (
@@ -170,12 +170,12 @@ void main() {
     ) async {
       final (conn, groups) = await runClose(tester, board(), closeActiveTab);
       expect(groups.groupById('b1')!.members, isEmpty);
-      expect(conn.sent.where((m) => m['kind'] == 'session.archive'), isEmpty);
+      expect(conn.sent.where((m) => m['kind'] == 'session.close'), isEmpty);
     });
 
     testWidgets('⌘⇧W agrees with the ✕ in a worktree group', (tester) async {
       final (conn, _) = await runClose(tester, worktree(), closeActiveTab);
-      expect(conn.sent.where((m) => m['kind'] == 'session.archive').length, 1);
+      expect(conn.sent.where((m) => m['kind'] == 'session.close').length, 1);
     });
   });
 
@@ -277,13 +277,13 @@ void main() {
       expect(container.read(selectedSessionProvider), 's1');
     });
 
-    testWidgets('closeActiveTab archives the orphaned session (SPEC-29)', (
+    testWidgets('closeActiveTab closes the orphaned session (SPEC-29)', (
       tester,
     ) async {
-      // SPEC-30 decision 7 made this kind-dependent: archiving is the WORKTREE
+      // SPEC-30 decision 7 made this kind-dependent: closing is the WORKTREE
       // group's behaviour (membership is derived, so ending the session is the
       // only way off that canvas). On a board the same path unpins instead —
-      // covered in "closeTabAndArchive by group kind".
+      // covered in "closeTabAndSession by group kind".
       final conn = _FastConn();
       final container = ProviderContainer(
         overrides: [
@@ -312,15 +312,15 @@ void main() {
 
       await _invoke(tester, container, closeActiveTab);
 
-      // Closing the sole tab orphans s1 → it is archived (soft, recoverable).
-      final archive = conn.sent.firstWhere(
-        (b) => b['kind'] == 'session.archive',
+      // Closing the sole tab orphans s1 → it is closed (soft, recoverable).
+      final close = conn.sent.firstWhere(
+        (b) => b['kind'] == 'session.close',
         orElse: () => const {},
       );
-      expect(archive['sessionId'], 's1');
+      expect(close['sessionId'], 's1');
     });
 
-    testWidgets('closeActiveTab does NOT archive an untouched draft (SPEC-29)', (
+    testWidgets('closeActiveTab does NOT close an untouched draft (SPEC-29)', (
       tester,
     ) async {
       final conn = _FastConn();
@@ -354,8 +354,8 @@ void main() {
       await _invoke(tester, container, closeActiveTab);
 
       // A never-started draft has no history worth preserving — closing its tab
-      // must not archive it (no empty entry in the Archived list).
-      expect(conn.sent.any((b) => b['kind'] == 'session.archive'), isFalse);
+      // must not close it (no empty entry in the Closed list).
+      expect(conn.sent.any((b) => b['kind'] == 'session.close'), isFalse);
     });
 
     testWidgets('closeActiveSplit is a no-op on the sole split', (

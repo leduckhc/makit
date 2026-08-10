@@ -114,9 +114,16 @@ export interface SessionCapabilities {
   /** Fork a session/thread (codex `thread/fork`; ACP `session/fork` when added). */
   fork: boolean;
   /** Archive/unarchive capability on the back end (codex `thread/archive`).
-   *  Informational for now — makit's own `archived` flag drives the active-list
+   *  Informational for now — makit's own `closed` flag drives the active-list
    *  exclusion; a native-archive path can consume this later. */
   archive: boolean;
+  /**
+   * Release a live session's resources WITHOUT destroying it (ACP
+   * `session/close`, codex `thread/unsubscribe`). Distinct from `delete`: the
+   * session stays listable and resumable afterwards. Drives the graceful step
+   * of {@link AgentAdapter.close}.
+   */
+  close: boolean;
 }
 
 /** All-false capabilities — the safe default for a process-less adapter. */
@@ -127,6 +134,7 @@ export const NO_SESSION_CAPABILITIES: Readonly<SessionCapabilities> = Object.fre
   delete: false,
   fork: false,
   archive: false,
+  close: false,
 });
 
 export interface AgentAdapter extends EventEmitter {
@@ -162,6 +170,17 @@ export interface AgentAdapter extends EventEmitter {
    */
   sendAction?(action: string, args?: Record<string, unknown>): Promise<void>;
   cancel(): Promise<void>;
+  /**
+   * Gracefully release the agent-side session before the process is reaped
+   * (ACP `session/close`, codex `thread/unsubscribe`). Per ACP this implies a
+   * cancel of any in-flight turn, then frees the session's resources while
+   * leaving it listable and resumable.
+   *
+   * MUST NOT throw: it is the courtesy half of a teardown whose second half
+   * ({@link kill}) is what actually reclaims memory, so a wedged agent must not
+   * be able to block the reap. A back end without the capability no-ops.
+   */
+  close(): Promise<void>;
   kill(signal?: NodeJS.Signals): Promise<void>;
 
   on(event: "event", listener: (e: AdapterEvent) => void): this;

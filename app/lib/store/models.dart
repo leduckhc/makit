@@ -1122,7 +1122,7 @@ class Session {
     this.branch,
     this.worktreePath,
     this.resumable = false,
-    this.archived = false,
+    this.closed = false,
     this.orphaned = false,
     this.queued = const [],
   });
@@ -1161,13 +1161,13 @@ class Session {
   /// after a server restart (SPEC-29). Drives auto-attach on subscribe.
   final bool resumable;
 
-  /// Archived (SPEC-29): hidden from the active list. Present for surfaces that
-  /// explicitly list archived sessions; the active snapshot omits these.
-  final bool archived;
+  /// Closed (SPEC-29): hidden from the active list. Present for surfaces that
+  /// explicitly list closed sessions; the active snapshot omits these.
+  final bool closed;
 
-  /// Orphaned (SPEC-29): an archived session whose worktree was removed. Only
-  /// set on the `session.listArchived` result; drives the "worktree removed"
-  /// chip in the archive view. Restoring an orphaned session runs it at the
+  /// Orphaned (SPEC-29): a closed session whose worktree was removed. Only
+  /// set on the `session.listClosed` result; drives the "worktree removed"
+  /// chip in the closed view. Restoring an orphaned session runs it at the
   /// repo root (no recreate-worktree path).
   final bool orphaned;
 
@@ -1189,7 +1189,7 @@ class Session {
     String? branch,
     String? worktreePath,
     bool? resumable,
-    bool? archived,
+    bool? closed,
     bool? orphaned,
     List<QueuedMessage>? queued,
   }) => Session(
@@ -1208,7 +1208,7 @@ class Session {
     branch: branch ?? this.branch,
     worktreePath: worktreePath ?? this.worktreePath,
     resumable: resumable ?? this.resumable,
-    archived: archived ?? this.archived,
+    closed: closed ?? this.closed,
     orphaned: orphaned ?? this.orphaned,
     queued: queued ?? this.queued,
   );

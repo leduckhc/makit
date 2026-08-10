@@ -634,7 +634,7 @@ export interface PullRequestDTO {
  * stats are measured against the repo's default branch; `pr` is present only
  * when an open GitHub PR heads this branch. `sessionIds` links the makit
  * sessions bound to this worktree — drafts included (their worktree is resolved
- * before the spawn), archived ones excluded (SPEC-29 hides those everywhere else,
+ * before the spawn), closed ones excluded (SPEC-29 hides those everywhere else,
  * so their ids would resolve to nothing here).
  */
 export interface WorktreeDTO {
@@ -716,13 +716,13 @@ export interface SessionDTO {
    */
   resumable: boolean;
   /**
-   * Archived (SPEC-29): a soft, recoverable hide. Archived sessions are omitted
+   * Closed (SPEC-29): a soft, recoverable hide. Closed sessions are omitted
    * from the active `sessions.snapshot`; this flag is present for any surface
-   * that explicitly lists archived sessions.
+   * that explicitly lists closed sessions.
    */
-  archived: boolean;
+  closed: boolean;
   /**
-   * Orphaned (SPEC-29): an archived session whose recorded worktree is no longer
+   * Orphaned (SPEC-29): a closed session whose recorded worktree is no longer
    * an active worktree of its project (e.g. the worktree was removed). Only set
    * on the `session.listArchived` result; undefined elsewhere. The branch ref
    * usually still exists, so resume can offer to recreate the worktree.
@@ -756,9 +756,9 @@ export type CmdKind =
   | "session.list"
   | "session.attach"
   | "session.kill"
-  | "session.archive"
-  | "session.unarchive"
-  | "session.listArchived"
+  | "session.close"
+  | "session.reopen"
+  | "session.listClosed"
   | "session.setAgent"
   /** Drop ONE pending mid-turn message by `queuedId` (SPEC-35). */
   | "queue.cancel"

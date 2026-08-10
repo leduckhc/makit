@@ -23,6 +23,30 @@
 >   session/thread is left intact + directly resumable (no archived-thread
 >   resume edge case); the `capabilities.archive` flag is recorded for a future
 >   native-archive option. Covered by server tests + app codec test.
+> - **AMENDMENT (2026-08-11) — archive became `close`.** Decision 6's
+>   makit-side-only `archive` shipped a soft hide that stopped the agent, but
+>   `AgentAdapter.kill()` reduced to a single unverified `SIGTERM`, so agents that
+>   ignored or outlived it stayed resident (measured on the dev host: 19 agent
+>   processes, ~0.95 GB RSS, some 3–5 days old). `session.archive` /
+>   `session.unarchive` / `session.listArchived` are therefore **replaced** by
+>   `session.close` / `session.reopen` / `session.listClosed`, and the persisted
+>   flag `archived` is **renamed** to `closed` (SQLite `ALTER TABLE … RENAME
+>   COLUMN`, so pre-upgrade state is preserved rather than reset).
+>   Close is now a real two-step release:
+>     1. `AgentAdapter.close()` — the back end's own primitive
+>        (ACP `session/close` gated on the new `sessionCapabilities.close`;
+>        codex `thread/unsubscribe`), which cancels the in-flight turn and frees
+>        the agent-side session while leaving it listable + resumable;
+>     2. `AgentAdapter.kill()` — which now escalates `SIGTERM → SIGKILL` after a
+>        grace period (`child_transport.killGraceMs`, default 3 s).
+>   Both steps are required: makit runs **one agent process per session**, so
+>   step 1 alone reclaims no memory. Neither step can block the other — a wedged
+>   agent must never be able to keep its RSS. The session record, transcript and
+>   resume handle are still kept, so reopen resumes exactly as before, and
+>   `capabilities.archive` remains recorded (codex has real `thread/archive`)
+>   for a possible future native-archive option, which is now a *distinct*
+>   concept from close.
+
 > - **Deviation from decision 5:** listing uses a **throwaway connection per
 >   agent** (the existing `probe*` pattern in `acp.ts`/`codex.ts`), not a method
 >   on a live adapter — a cold list needs no live session and this matches how

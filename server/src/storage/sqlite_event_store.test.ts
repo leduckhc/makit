@@ -184,11 +184,63 @@ test("saveSession round-trips the agentSessionId resume handle (SPEC-29)", () =>
   assert.equal(s2.agentSessionId, undefined);
 });
 
-test("saveSession round-trips the archived flag (SPEC-29)", () => {
+/**
+ * The `archived` → `closed` rename must MIGRATE, not reset: a user who closed
+ * (formerly archived) sessions before the upgrade must not find them all back in
+ * the active list, with their agents respawned, after it.
+ */
+test("an existing DB's `archived` column migrates to `closed`, preserving values", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-store-migrate-"));
+  const file = join(dir, "events.db");
+  try {
+    // Hand-build a pre-rename schema and seed one archived + one live session.
+    const legacy = new DatabaseSync(file);
+    legacy.exec(`
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        policy TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_activity_at INTEGER NOT NULL,
+        last_preview TEXT NOT NULL,
+        resume_session_path TEXT,
+        agent_session_id TEXT,
+        branch TEXT,
+        worktree_path TEXT,
+        archived INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    legacy.exec(
+      `INSERT INTO sessions VALUES
+         ('old-archived','p','pi','was archived','idle','ask',1,1,'',NULL,'acp-1',NULL,NULL,1),
+         ('old-live','p','pi','was live','idle','ask',1,1,'',NULL,'acp-2',NULL,NULL,0)`,
+    );
+    legacy.close();
+
+    const store = new SqliteEventStore(file);
+    try {
+      const loaded = store.loadSessions();
+      assert.equal(loaded.find((s) => s.id === "old-archived")!.closed, true, "archived must survive as closed");
+      assert.equal(loaded.find((s) => s.id === "old-live")!.closed, false);
+      // And the flag is still writable through the new column name.
+      store.saveSession({ ...loaded.find((s) => s.id === "old-live")!, closed: true });
+      assert.equal(store.loadSessions().find((s) => s.id === "old-live")!.closed, true);
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("saveSession round-trips the closed flag (SPEC-29)", () => {
   const store = new SqliteEventStore();
-  store.saveSession(meta("s1", { archived: true }));
+  store.saveSession(meta("s1", { closed: true }));
   store.saveSession(meta("s2"));
   const loaded = store.loadSessions();
-  assert.equal(loaded.find((s) => s.id === "s1")!.archived, true);
-  assert.equal(loaded.find((s) => s.id === "s2")!.archived, false);
+  assert.equal(loaded.find((s) => s.id === "s1")!.closed, true);
+  assert.equal(loaded.find((s) => s.id === "s2")!.closed, false);
 });

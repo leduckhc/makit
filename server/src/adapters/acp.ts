@@ -498,6 +498,22 @@ export class AcpAdapter extends SubprocessAdapter {
     });
   }
 
+  /**
+   * Graceful ACP `session/close`: cancels any in-flight turn agent-side and
+   * frees the session's resources, leaving it listable/resumable. Best-effort
+   * by contract — a rejection here must not stop {@link kill} from reclaiming
+   * the process, which is what actually returns the memory.
+   */
+  async close(): Promise<void> {
+    if (!this.conn || !this.acpSessionId) return;
+    if (!this.capabilities.close || !this.conn.closeSession) return;
+    try {
+      await this.conn.closeSession({ sessionId: this.acpSessionId });
+    } catch (e) {
+      log.warn(`[makit] ACP session/close failed: ${(e as Error).message}`);
+    }
+  }
+
   async kill(): Promise<void> {
     this.transport?.dispose();
     this.handleExit(null);
@@ -750,6 +766,7 @@ export function deriveAcpCapabilities(init: unknown): SessionCapabilities {
     delete: has(sc.delete),
     fork: has(sc.fork),
     archive: has(sc.archive),
+    close: has(sc.close),
   };
 }
 

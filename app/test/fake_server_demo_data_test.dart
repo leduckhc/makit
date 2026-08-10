@@ -80,7 +80,7 @@ void main() {
     }
   });
 
-  test('answers session.listArchived with archived sessions', () async {
+  test('answers session.listClosed with closed sessions', () async {
     final server = FakeServer();
     addTearDown(server.stop);
     final ack = server.outgoing.firstWhere((e) => e.t == MsgType.ack);
@@ -89,7 +89,7 @@ void main() {
       Envelope(
         t: MsgType.cmd,
         id: 'c1',
-        body: const {'kind': 'session.listArchived'},
+        body: const {'kind': 'session.listClosed'},
       ),
     );
     final env = await ack.timeout(const Duration(seconds: 5));
@@ -97,6 +97,6 @@ void main() {
 
     expect(sessions, isNotNull);
     expect(sessions, isNotEmpty);
-    expect(sessions!.every((s) => s.archived), isTrue);
+    expect(sessions!.every((s) => s.closed), isTrue);
   });
 }

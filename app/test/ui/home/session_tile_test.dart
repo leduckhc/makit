@@ -35,17 +35,17 @@ class _KillConnection extends ConnectionController {
 
   final bool killFails;
 
-  /// How many archives were requested — the only thing a non-swipe quit can be
-  /// held to, since removing the row is `Dismissible`'s job, not the archive's.
-  int archiveCalls = 0;
+  /// How many closes were requested — the only thing a non-swipe quit can be
+  /// held to, since removing the row is `Dismissible`'s job, not the close's.
+  int closeCalls = 0;
 
   @override
   Future<Map<String, dynamic>> request(
     MsgType type,
     Map<String, dynamic> body,
   ) async {
-    if (body['kind'] == 'session.archive') {
-      archiveCalls++;
+    if (body['kind'] == 'session.close') {
+      closeCalls++;
       if (killFails) throw StateError('kill refused');
       return const {};
     }
@@ -131,11 +131,11 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
     await tester.pumpAndSettle();
 
-    // Confirming actually archives. The row is NOT asserted gone: the swipe
+    // Confirming actually closes. The row is NOT asserted gone: the swipe
     // tests' removal comes from `Dismissible`, and a long-press has no dismiss
     // gesture to trigger it — in the app the row leaves when sessionsProvider
     // drops the session, which this standalone tile is not driven by.
-    expect(conn.archiveCalls, 1);
+    expect(conn.closeCalls, 1);
   });
 
   testWidgets('quit is published as a semantics action for screen readers', (
