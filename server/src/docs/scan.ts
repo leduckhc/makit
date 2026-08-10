@@ -1,15 +1,19 @@
 /**
- * makit — SPEC-46: walk a worktree's doc roots into `DocDTO[]`.
+ * makit — SPEC-46: collect a worktree's documents into `DocDTO[]`.
  *
- * The walk applies D2's exclusions **before descending** (so `node_modules` is
- * never entered, not merely filtered out afterwards), routes every candidate
- * through {@link resolveDocPath} — the one security boundary both this and the
- * static route share — and reads a title/status prefix with {@link readDocMeta}.
+ * D1 rev 2: the candidate list comes from {@link trackedDocPaths} — everything
+ * git does not ignore — so docs are found wherever a project keeps them. A
+ * worktree that names `roots` in `.makit/docs.json`, or one git cannot answer
+ * for, falls back to rev 1's allowlist walk, which applies D2's exclusions
+ * **before descending** (so `node_modules` is never entered).
  *
- * An unreadable file is skipped without failing the walk: `scanOk` means "the
- * walk ran", not "the list is complete" (the `PortsSnapshotDTO.scanOk` rule).
- * The service enriches each doc with `changed` (D5) and `sessionId` afterwards;
- * this module deliberately produces neither, so the git-free walk stays pure.
+ * Either way every candidate is routed through {@link resolveDocPath} — the one
+ * security boundary this and the static route share — and its title/status read
+ * with {@link readDocMeta}.
+ *
+ * An unreadable file is skipped without failing the scan: `scanOk` means "the
+ * scan ran", not "the list is complete" (the `PortsSnapshotDTO.scanOk` rule).
+ * The service enriches each doc with `changed` (D5) and `sessionId` afterwards.
  */
 
 import { readdirSync, statSync, type Dirent } from "node:fs";
@@ -19,12 +23,15 @@ import type { DocDTO } from "../protocol.js";
 import { EXCLUDED_DIRS, resolveDocPath, type DocKind } from "./resolve.js";
 import { readDocMeta, type DocMeta } from "./title.js";
 import { resolveDocRoots, type DocRoots } from "./roots.js";
+import { trackedDocPaths, type DocLister } from "./tracked.js";
 
 export interface ScanOptions {
   /** Injected for tests; defaults to {@link resolveDocRoots}. */
   resolveRoots?: (worktreeRoot: string) => DocRoots;
   /** Injected for tests; defaults to {@link readDocMeta}. */
   readMeta?: (absPath: string, kind: DocKind) => DocMeta;
+  /** Injected for tests; defaults to {@link trackedDocPaths}. */
+  listDocs?: DocLister;
 }
 
 export interface WorktreeScan {
@@ -44,20 +51,30 @@ export interface WorktreeScan {
 export function scanWorktree(worktreePath: string, opts: ScanOptions = {}): WorktreeScan {
   const resolveRoots = opts.resolveRoots ?? resolveDocRoots;
   const readMeta = opts.readMeta ?? readDocMeta;
+  const listDocs = opts.listDocs ?? trackedDocPaths;
 
   try {
     const roots = resolveRoots(worktreePath);
     const exclude = new Set(roots.exclude);
     const docs: DocDTO[] = [];
 
-    // Root markdown first (top-level *.md only, non-recursive), then each root
-    // directory walked recursively. Grouping does not matter — the whole list is
-    // sorted by mtime below.
-    if (roots.rootMarkdown) collectTopLevel(worktreePath, worktreePath, docs, readMeta);
-    for (const dir of roots.dirs) {
-      const rel = dir.replace(/[\\/]+$/, "");
-      if (exclude.has(rel)) continue;
-      walk(worktreePath, join(worktreePath, rel), rel, exclude, docs, readMeta);
+    // D1 rev 2: git's view of the worktree, unless the project narrowed the
+    // index itself (`roots`) or git cannot answer (not a repository).
+    const candidates = roots.explicit ? undefined : listDocs(worktreePath);
+    if (candidates !== undefined) {
+      for (const rel of candidates) {
+        if (isExcluded(rel, exclude)) continue;
+        consider(worktreePath, rel, docs, readMeta);
+      }
+    } else {
+      // rev 1's allowlist walk: root markdown first (non-recursive), then each
+      // configured directory recursively. Order is irrelevant — sorted below.
+      if (roots.rootMarkdown) collectTopLevel(worktreePath, worktreePath, docs, readMeta);
+      for (const dir of roots.dirs) {
+        const rel = dir.replace(/[\\/]+$/, "");
+        if (exclude.has(rel)) continue;
+        walk(worktreePath, join(worktreePath, rel), rel, exclude, docs, readMeta);
+      }
     }
 
     docs.sort((a, b) => b.modifiedAt - a.modifiedAt);
@@ -65,6 +82,20 @@ export function scanWorktree(worktreePath: string, opts: ScanOptions = {}): Work
   } catch (err) {
     return { docs: [], scanOk: false, scanError: (err as Error).message };
   }
+}
+
+/**
+ * True when `rel`, or any directory above it, is in the config's exclude list.
+ * The recursive walk skips an excluded directory before descending; a flat
+ * candidate list has to test each ancestor instead.
+ */
+function isExcluded(rel: string, exclude: ReadonlySet<string>): boolean {
+  if (exclude.size === 0) return false;
+  if (exclude.has(rel)) return true;
+  for (let i = rel.indexOf("/"); i !== -1; i = rel.indexOf("/", i + 1)) {
+    if (exclude.has(rel.slice(0, i))) return true;
+  }
+  return false;
 }
 
 /** Index only the allowlisted files sitting directly in `dirAbs` (no descent). */

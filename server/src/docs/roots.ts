@@ -27,6 +27,12 @@ export interface DocRoots {
   rootMarkdown: boolean;
   /** Extra worktree-relative paths to exclude (in addition to D2's hard list). */
   exclude: string[];
+  /**
+   * True when `.makit/docs.json` named `roots` itself. D1 rev 2 indexes the
+   * whole worktree by default, so naming roots is now the way to **narrow** the
+   * index back to a walk of exactly those directories.
+   */
+  explicit: boolean;
 }
 
 /**
@@ -35,7 +41,12 @@ export interface DocRoots {
  * invalid JSON, wrong shape — yields the D1 defaults.
  */
 export function resolveDocRoots(worktreeRoot: string): DocRoots {
-  const defaults: DocRoots = { dirs: [...DEFAULT_DOC_DIRS], rootMarkdown: true, exclude: [] };
+  const defaults: DocRoots = {
+    dirs: [...DEFAULT_DOC_DIRS],
+    rootMarkdown: true,
+    exclude: [],
+    explicit: false,
+  };
 
   const config = readConfig(worktreeRoot);
   if (config === undefined) return defaults;
@@ -53,7 +64,7 @@ export function resolveDocRoots(worktreeRoot: string): DocRoots {
   // scan and replaces the default directories (D1). Roots that escape the
   // worktree are dropped, reusing the containment check the serving layer uses.
   const dirs = rawRoots.filter((rel) => isContained(worktreeRoot, rel));
-  return { dirs, rootMarkdown: false, exclude };
+  return { dirs, rootMarkdown: false, exclude, explicit: true };
 }
 
 /** Parse `.makit/docs.json`, or undefined on any read/parse failure. */

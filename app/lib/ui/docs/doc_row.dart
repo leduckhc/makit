@@ -2,8 +2,8 @@
 /// popover (one row, many surfaces — the mockup's rule 2).
 ///
 /// Layout: a leading kind glyph (html warm / md cool), the **extracted** title
-/// (D4, never the filename), the mono relPath, then a chip line: kind,
-/// changed, docStatus badge, and `size · relative mtime`.
+/// (D4, never the filename), the full path truncated from the LEFT, then a chip
+/// line: kind, changed, docStatus badge, and `size · relative mtime`.
 library;
 
 import 'package:flutter/material.dart';
@@ -12,6 +12,17 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/docs.dart';
 import 'doc_vocabulary.dart';
+
+/// The full filesystem path of [doc] — `worktreePath` joined to `relPath`.
+///
+/// `relPath` alone is useless for a root-level file, where it just repeats the
+/// title (`Notes` / `NOTES.md`) and says nothing about where the file is.
+String docFullPath(DocInfo doc) {
+  final root = doc.worktreePath.endsWith('/')
+      ? doc.worktreePath.substring(0, doc.worktreePath.length - 1)
+      : doc.worktreePath;
+  return '$root/${doc.relPath}';
+}
 
 /// The "changed on this branch" chip (D5), keyed so a test asserts presence
 /// without depending on colour.
@@ -82,13 +93,22 @@ class DocRow extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: kSpace2),
-                  Text(
-                    doc.relPath,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontFamily: kMonoFontFamily,
+                  // Truncate from the LEFT: the filename is the identifying
+                  // part, so `…/learning-records/0006-layout.md` beats
+                  // `/Users/le/Work/teachme/flutter/learning-…`. An RTL
+                  // paragraph puts the ellipsis at the visual start; the path
+                  // itself is wrapped in an LTR isolate so its leading `/` and
+                  // separators cannot be reordered to the wrong end.
+                  Directionality(
+                    textDirection: TextDirection.rtl,
+                    child: Text(
+                      '\u2066${docFullPath(doc)}\u2069',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        fontFamily: kMonoFontFamily,
+                      ),
                     ),
                   ),
                   const SizedBox(height: kSpace6),

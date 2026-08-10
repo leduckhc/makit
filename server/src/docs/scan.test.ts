@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync, realpathSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -109,4 +110,78 @@ test("honours a configured exclude before descending", () => {
   const rels = docs.map((d) => d.relPath);
   assert.ok(!rels.includes("docs/specs/spec.md"), "the excluded dir was still walked");
   assert.ok(rels.includes("mockups/board.html"));
+});
+
+/**
+ * A worktree laid out like a real *other* project: docs live in a directory that
+ * D1's `mockups/`+`docs/` allowlist never heard of, one doc is gitignored, and
+ * one sits in an ignored build directory. This is the teachme case — 3 docs
+ * found where 69 exist — and the reason D1 grew a rev 2.
+ */
+function gitFixture(): string {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "makit-scan-git-")));
+  mkdirSync(join(root, "flutter", "learning-records"), { recursive: true });
+  mkdirSync(join(root, "build"), { recursive: true });
+
+  writeFileSync(join(root, "NOTES.md"), "# Notes\n");
+  writeFileSync(join(root, "flutter", "MISSION.md"), "# Mission\n");
+  writeFileSync(join(root, "flutter", "learning-records", "0001-prior.md"), "# Prior knowledge\n");
+  writeFileSync(join(root, "page.html"), "<title>A Page</title>");
+  // Ignored: must never be indexed, so a gitignored secret cannot be served.
+  writeFileSync(join(root, ".gitignore"), "secrets.md\nbuild/\n");
+  writeFileSync(join(root, "secrets.md"), "# tokens\n");
+  writeFileSync(join(root, "build", "generated.md"), "# generated\n");
+
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  execFileSync("git", ["add", "-A"], { cwd: root });
+  return root;
+}
+
+test("D1 rev 2: indexes docs anywhere in the worktree, not just the old allowlist", () => {
+  const { docs, scanOk } = scanWorktree(gitFixture());
+  assert.equal(scanOk, true);
+  const rels = docs.map((d) => d.relPath).sort();
+  assert.deepEqual(rels, [
+    "NOTES.md",
+    "flutter/MISSION.md",
+    "flutter/learning-records/0001-prior.md",
+    "page.html",
+  ]);
+});
+
+test("D1 rev 2: a gitignored doc is never indexed", () => {
+  const rels = scanWorktree(gitFixture()).docs.map((d) => d.relPath);
+  assert.ok(!rels.includes("secrets.md"), "a gitignored file must not become servable");
+  assert.ok(!rels.includes("build/generated.md"), "an ignored build dir must stay out");
+});
+
+// D1 rev 2 inverts what `.makit/docs.json` roots are FOR: the index is now
+// whole-worktree by default, so naming roots is how a project narrows it back
+// down. That must beat git's list, or a project could not opt out of the breadth.
+test("D1 rev 2: an explicit roots config narrows the index, beating git's list", () => {
+  const root = gitFixture();
+  const { docs } = scanWorktree(root, {
+    resolveRoots: () => ({
+      dirs: ["flutter/learning-records"],
+      rootMarkdown: false,
+      exclude: [],
+      explicit: true,
+    }),
+  });
+  assert.deepEqual(
+    docs.map((d) => d.relPath),
+    ["flutter/learning-records/0001-prior.md"],
+    "only the named root is indexed, even though git lists four docs",
+  );
+});
+
+// A worktree git cannot answer for (not a repository) must still get an index,
+// or a plain directory added to makit would silently show zero docs.
+test("D1 rev 2: falls back to the allowlist walk when git cannot answer", () => {
+  const { docs, scanOk } = scanWorktree(fixture(), { listDocs: () => undefined });
+  assert.equal(scanOk, true);
+  assert.deepEqual(
+    docs.map((d) => d.relPath).sort(),
+    ["README.md", "docs/specs/spec.md", "mockups/board.html"],
+  );
 });

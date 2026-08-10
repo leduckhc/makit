@@ -70,9 +70,55 @@ void main() {
       expect(find.text('x.md'), findsNothing);
     });
 
-    testWidgets('shows the mono relPath', (tester) async {
+    // The full path, not just the relPath: for a root-level file the relPath is
+    // identical to the title (`Notes` / `NOTES.md`) and says nothing about where
+    // the file lives. Truncation is from the LEFT so the filename survives,
+    // which is why the string is wrapped in an LTR isolate (U+2066/U+2069) —
+    // without it the leading `/` reorders to the wrong end in the RTL paragraph.
+    testWidgets('shows the full path, LTR-isolated for left truncation', (
+      tester,
+    ) async {
       await _pump(tester, _doc(relPath: 'mockups/open-ports.html'));
-      expect(find.text('mockups/open-ports.html'), findsOneWidget);
+      expect(
+        find.text('\u2066/repo/mockups/open-ports.html\u2069'),
+        findsOneWidget,
+      );
+
+      final dir = tester.widget<Directionality>(
+        find.ancestor(
+          of: find.text('\u2066/repo/mockups/open-ports.html\u2069'),
+          matching: find.byType(Directionality),
+        ).first,
+      );
+      expect(
+        dir.textDirection,
+        TextDirection.rtl,
+        reason: 'an RTL paragraph puts the ellipsis at the visual start',
+      );
+    });
+
+    testWidgets('docFullPath joins worktree and relPath without a double slash', (
+      tester,
+    ) async {
+      expect(
+        docFullPath(_doc(relPath: 'a/b.md')),
+        '/repo/a/b.md',
+      );
+      expect(
+        docFullPath(
+          const DocInfo(
+            key: 'k',
+            relPath: 'NOTES.md',
+            title: 'Notes',
+            kind: DocKind.md,
+            bytes: 1,
+            modifiedAt: 0,
+            worktreePath: '/repo/',
+          ),
+        ),
+        '/repo/NOTES.md',
+        reason: 'a trailing slash on the worktree must not double up',
+      );
     });
 
     testWidgets('renders the kind chip (HTML / MD)', (tester) async {

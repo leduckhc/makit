@@ -60,4 +60,55 @@ void main() {
     await tester.tap(find.byType(DocRow).first);
     expect(opened?.relPath, 'docs/s.md');
   });
+
+  // A repo can hold hundreds of docs (teachme has 69, this repo 143), so the
+  // popover must not build a row per doc, nor grow to the window's height.
+  group('search and scale', () {
+    List<DocInfo> many(int n) => [
+      for (var i = 0; i < n; i++) _doc('docs/note-$i.md', title: 'Note $i'),
+    ];
+
+    testWidgets('builds only the visible rows, not one per doc', (tester) async {
+      await _pump(tester, many(200));
+      await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
+      await tester.pumpAndSettle();
+      final built = find.byType(DocRow).evaluate().length;
+      expect(built, lessThan(40), reason: 'the list must be lazy, not 200 rows');
+      expect(built, greaterThan(0));
+    });
+
+    testWidgets('the search field filters by title and by path', (tester) async {
+      await _pump(tester, [
+        _doc('mockups/board.html', title: 'Board X'),
+        _doc('flutter/learning-records/0001-prior.md', title: 'Prior knowledge'),
+      ]);
+      await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
+      await tester.pumpAndSettle();
+      expect(find.byType(DocRow), findsNWidgets(2));
+
+      // By title…
+      await tester.enterText(find.byKey(kDocsPopoverSearch), 'prior');
+      await tester.pumpAndSettle();
+      expect(find.byType(DocRow), findsOneWidget);
+      expect(find.text('Prior knowledge'), findsOneWidget);
+
+      // …and by path.
+      await tester.enterText(find.byKey(kDocsPopoverSearch), 'mockups/');
+      await tester.pumpAndSettle();
+      expect(find.byType(DocRow), findsOneWidget);
+      expect(find.text('Board X'), findsOneWidget);
+    });
+
+    testWidgets('a query with no matches says so instead of showing an empty panel', (
+      tester,
+    ) async {
+      await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);
+      await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(kDocsPopoverSearch), 'zzz');
+      await tester.pumpAndSettle();
+      expect(find.byType(DocRow), findsNothing);
+      expect(find.textContaining('No docs match'), findsOneWidget);
+    });
+  });
 }

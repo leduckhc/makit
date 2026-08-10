@@ -20,6 +20,22 @@ import 'doc_row.dart';
 /// Key for the popover panel, so tests assert its presence without copy.
 const Key kDocsPopover = ValueKey('docs-popover');
 
+/// The popover's search field, keyed for tests.
+const Key kDocsPopoverSearch = ValueKey('docs-popover-search');
+
+/// Rows shown before the list scrolls. A dozen fills the popover without
+/// growing it to the window's height, and keeps the anchor row in view.
+const int kDocsPopoverVisibleRows = 12;
+
+/// Approximate row height, used only to cap the panel. The list itself lets
+/// rows size naturally — a fixed `itemExtent` overflows as soon as a row grows
+/// (an extra badge, a wrapped chip line).
+const double kDocsPopoverRowHeight = 84;
+
+/// Header + search field + padding above the list — subtracted from the
+/// available height so the list never pushes the chrome off-screen.
+const double kDocsPopoverChromeHeight = 96;
+
 /// Dwell before a hover opens the popover — 350 ms so sliding the pointer
 /// across worktrees opens nothing; deliberately below [kTooltipDwell] so the
 /// two never race (matches `ports_popover.dart`).
@@ -247,9 +263,9 @@ class _DocsPopoverState extends State<DocsPopover> {
   }
 }
 
-/// The popover panel: a header (branch + count) and one [DocRow] per recent
-/// doc.
-class _DocsPopoverPanel extends StatelessWidget {
+/// The popover panel: a header (branch + count), a search field, and a lazily
+/// built, height-capped list of [DocRow]s.
+class _DocsPopoverPanel extends StatefulWidget {
   const _DocsPopoverPanel({
     required this.branch,
     required this.docs,
@@ -263,10 +279,37 @@ class _DocsPopoverPanel extends StatelessWidget {
   final void Function(DocInfo doc) onOpenDoc;
 
   @override
+  State<_DocsPopoverPanel> createState() => _DocsPopoverPanelState();
+}
+
+class _DocsPopoverPanelState extends State<_DocsPopoverPanel> {
+  String _query = '';
+
+  /// Title-or-path match, the same rule the Docs screen's search uses.
+  List<DocInfo> get _visible {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return widget.docs;
+    return widget.docs
+        .where(
+          (d) =>
+              d.title.toLowerCase().contains(q) ||
+              d.relPath.toLowerCase().contains(q),
+        )
+        .toList(growable: false);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final visible = _visible;
+    // A repo can hold hundreds of docs, so cap the list at a readable dozen and
+    // scroll the rest rather than growing the popover to the window's height.
+    final listHeight = (kDocsPopoverVisibleRows * kDocsPopoverRowHeight).clamp(
+      0.0,
+      widget.maxHeight - kDocsPopoverChromeHeight,
+    );
     return Material(
       key: kDocsPopover,
       color: cs.surfaceContainerLow,
@@ -275,7 +318,7 @@ class _DocsPopoverPanel extends StatelessWidget {
       borderRadius: BorderRadius.circular(kRadius12),
       child: Container(
         width: _kPopoverWidth,
-        constraints: BoxConstraints(maxHeight: maxHeight),
+        constraints: BoxConstraints(maxHeight: widget.maxHeight),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(kRadius12),
           border: Border.all(color: cs.outlineVariant),
@@ -301,7 +344,7 @@ class _DocsPopoverPanel extends StatelessWidget {
                   const SizedBox(width: kSpace6),
                   Expanded(
                     child: Text(
-                      branch,
+                      widget.branch,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelLarge?.copyWith(
                         fontWeight: FontWeight.w600,
@@ -309,7 +352,13 @@ class _DocsPopoverPanel extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    docs.length == 1 ? '1 doc' : '${docs.length} docs',
+                    // While filtering, show the match count against the total so
+                    // an empty result is obviously a filter, not an empty repo.
+                    _query.trim().isEmpty
+                        ? (widget.docs.length == 1
+                              ? '1 doc'
+                              : '${widget.docs.length} docs')
+                        : '${visible.length} of ${widget.docs.length}',
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),
@@ -317,29 +366,70 @@ class _DocsPopoverPanel extends StatelessWidget {
                 ],
               ),
             ),
-            Flexible(
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final doc in docs)
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          border: Border(
-                            top: BorderSide(color: cs.outlineVariant),
-                          ),
-                        ),
-                        child: DocRow(
-                          doc: doc,
-                          nowMs: nowMs,
-                          onTap: () => onOpenDoc(doc),
-                        ),
-                      ),
-                  ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(kSpace8, 0, kSpace8, kSpace8),
+              child: TextField(
+                key: kDocsPopoverSearch,
+                autofocus: true,
+                style: theme.textTheme.bodySmall,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Search titles and paths',
+                  prefixIcon: const Icon(
+                    PhosphorIconsLight.magnifyingGlass,
+                    size: 14,
+                  ),
+                  prefixIconConstraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: kSpace8,
+                    vertical: kSpace6,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(kRadius8),
+                  ),
                 ),
+                onChanged: (v) => setState(() => _query = v),
               ),
             ),
+            if (visible.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  kSpace12,
+                  0,
+                  kSpace12,
+                  kSpace12,
+                ),
+                child: Text(
+                  'No docs match “${_query.trim()}”.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              )
+            else
+              SizedBox(
+                height: listHeight,
+                // Lazy: a 600-doc worktree must not build 600 rows to show 12.
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: visible.length,
+                  itemBuilder: (context, i) => DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: cs.outlineVariant),
+                      ),
+                    ),
+                    child: DocRow(
+                      doc: visible[i],
+                      nowMs: nowMs,
+                      onTap: () => widget.onOpenDoc(visible[i]),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
