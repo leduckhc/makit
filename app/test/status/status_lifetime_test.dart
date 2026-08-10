@@ -25,12 +25,14 @@ void main() {
       for (final body in _asyncBodies(src)) {
         final firstAwait = body.text.indexOf('await ');
         if (firstAwait < 0) continue;
-        final use = _refStatus.allMatches(body.text).where(
-          (m) => m.start > firstAwait,
-        );
+        final use = _refStatus
+            .allMatches(body.text)
+            .where((m) => m.start > firstAwait);
         for (final m in use) {
-          final line =
-              src.substring(0, body.start + m.start).split('\n').length;
+          final line = src
+              .substring(0, body.start + m.start)
+              .split('\n')
+              .length;
           offenders.add('${entity.path}:$line');
         }
       }

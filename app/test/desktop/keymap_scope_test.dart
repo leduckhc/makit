@@ -672,8 +672,10 @@ void main() {
       },
     );
     addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null),
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
     final container = ProviderContainer(
       overrides: [
@@ -689,8 +691,11 @@ void main() {
       container: container,
     );
 
-    center.failure('Could not create worktree',
-        detail: 'errno = 17', source: 'worktree');
+    center.failure(
+      'Could not create worktree',
+      detail: 'errno = 17',
+      source: 'worktree',
+    );
     center.info('URL copied', source: 'ports');
     await tester.pump();
     await pressCtrl(tester, LogicalKeyboardKey.keyC, shift: true);
@@ -715,8 +720,10 @@ void main() {
       },
     );
     addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null),
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
     final container = ProviderContainer(
       overrides: [
@@ -752,8 +759,10 @@ void main() {
       },
     );
     addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null),
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
     final container = ProviderContainer(
       overrides: [

@@ -36,23 +36,29 @@ void main() {
       expect(c.events.map((e) => e.id).toSet().length, 50);
     });
 
-    test('failure keeps the exception verbatim in detail, not in the title',
-        () {
-      final c = StatusCenter();
-      c.failure(
-        'Could not create worktree',
-        error: StateError('File exists, errno = 17'),
-        source: 'worktree',
-      );
-      final e = c.events.single;
-      expect(e.title, 'Could not create worktree');
-      expect(e.detail, contains('File exists, errno = 17'));
-    });
+    test(
+      'failure keeps the exception verbatim in detail, not in the title',
+      () {
+        final c = StatusCenter();
+        c.failure(
+          'Could not create worktree',
+          error: StateError('File exists, errno = 17'),
+          source: 'worktree',
+        );
+        final e = c.events.single;
+        expect(e.title, 'Could not create worktree');
+        expect(e.detail, contains('File exists, errno = 17'));
+      },
+    );
 
     test('an explicit detail wins over the error object', () {
       final c = StatusCenter();
-      c.failure('Nope', error: StateError('raw'), detail: 'curated',
-          source: 't');
+      c.failure(
+        'Nope',
+        error: StateError('raw'),
+        detail: 'curated',
+        source: 't',
+      );
       expect(c.events.single.detail, 'curated');
     });
   });
@@ -108,14 +114,16 @@ void main() {
       expect(c.events.every((e) => e.count == 1), isTrue);
     });
 
-    test('only the newest event coalesces — a different event breaks the run',
-        () {
-      final c = StatusCenter(now: () => DateTime(2026, 8, 9, 12, 0));
-      c.failure('Boom', source: 't');
-      c.info('Something else', source: 't');
-      c.failure('Boom', source: 't');
-      expect(c.events, hasLength(3));
-    });
+    test(
+      'only the newest event coalesces — a different event breaks the run',
+      () {
+        final c = StatusCenter(now: () => DateTime(2026, 8, 9, 12, 0));
+        c.failure('Boom', source: 't');
+        c.info('Something else', source: 't');
+        c.failure('Boom', source: 't');
+        expect(c.events, hasLength(3));
+      },
+    );
 
     test('a coalesced repeat un-reads the event', () {
       final c = StatusCenter(now: () => DateTime(2026, 8, 9, 12, 0));
@@ -189,8 +197,12 @@ void main() {
   group('silent posts (D7)', () {
     test('land on the record but do not count as unread', () {
       final c = StatusCenter();
-      c.success('Agent finished its turn',
-          source: 'agent', sessionId: 's1', silent: true);
+      c.success(
+        'Agent finished its turn',
+        source: 'agent',
+        sessionId: 's1',
+        silent: true,
+      );
       expect(c.events, hasLength(1));
       expect(c.unreadCount, 0);
       expect(c.worstUnread, isNull);
@@ -199,25 +211,31 @@ void main() {
 
     test('a loud repeat of a silent event makes it unread', () {
       final c = StatusCenter(now: () => DateTime(2026, 8, 9, 12, 0));
-      c.warning('Agent needs your input',
-          source: 'agent', sessionId: 's1', silent: true);
+      c.warning(
+        'Agent needs your input',
+        source: 'agent',
+        sessionId: 's1',
+        silent: true,
+      );
       c.warning('Agent needs your input', source: 'agent', sessionId: 's1');
       expect(c.unreadCount, 1);
       expect(c.events.single.count, 2);
     });
 
-    test('the change carries the silent flag so the toast can skip it',
-        () async {
-      final c = StatusCenter();
-      final seen = <StatusChange>[];
-      final sub = c.changes.listen(seen.add);
-      c.success('quietly', source: 'agent', silent: true);
-      c.success('loudly', source: 'agent');
-      await Future<void>.delayed(Duration.zero);
-      await sub.cancel();
-      expect((seen[0] as StatusPosted).silent, isTrue);
-      expect((seen[1] as StatusPosted).silent, isFalse);
-    });
+    test(
+      'the change carries the silent flag so the toast can skip it',
+      () async {
+        final c = StatusCenter();
+        final seen = <StatusChange>[];
+        final sub = c.changes.listen(seen.add);
+        c.success('quietly', source: 'agent', silent: true);
+        c.success('loudly', source: 'agent');
+        await Future<void>.delayed(Duration.zero);
+        await sub.cancel();
+        expect((seen[0] as StatusPosted).silent, isTrue);
+        expect((seen[1] as StatusPosted).silent, isFalse);
+      },
+    );
   });
 
   group('clear', () {

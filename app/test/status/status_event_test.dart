@@ -43,10 +43,7 @@ void main() {
 
   group('toClipboardText', () {
     test('reads as a sibling of LogRecord.toLine()', () {
-      final e = _event(
-        ts: DateTime(2026, 8, 9, 12, 34, 56, 789),
-        detail: null,
-      );
+      final e = _event(ts: DateTime(2026, 8, 9, 12, 34, 56, 789), detail: null);
       expect(
         e.toClipboardText(),
         '12:34:56.789 FAILURE  [worktree] Could not create worktree',
@@ -78,7 +75,10 @@ void main() {
         severity: StatusSeverity.info,
         title: 'URL copied',
       );
-      expect(e.toClipboardText(), '01:02:03.004 INFO     [worktree] URL copied');
+      expect(
+        e.toClipboardText(),
+        '01:02:03.004 INFO     [worktree] URL copied',
+      );
     });
   });
 
@@ -101,8 +101,10 @@ void main() {
     });
 
     test('never coalesces across sessions', () {
-      expect(_event(sessionId: 's1').coalescesWith(_event(sessionId: 's2')),
-          isFalse);
+      expect(
+        _event(sessionId: 's1').coalescesWith(_event(sessionId: 's2')),
+        isFalse,
+      );
     });
   });
 }

@@ -392,10 +392,7 @@ void main() {
       expect(sent, [
         {'kind': 'ports.killOrphans'},
       ]);
-      expect(
-        statusCenter.events.single.title,
-        contains('1 port released'),
-      );
+      expect(statusCenter.events.single.title, contains('1 port released'));
     });
 
     testWidgets('dismissing the confirm sends nothing', (tester) async {

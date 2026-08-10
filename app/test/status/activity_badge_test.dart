@@ -51,7 +51,9 @@ void main() {
       expect(find.text('9+'), findsOneWidget);
     });
 
-    testWidgets('a live post lights it without a rebuild from above', (t) async {
+    testWidgets('a live post lights it without a rebuild from above', (
+      t,
+    ) async {
       await pump(t, ActivityBadge(onTap: () {}));
       expect(find.byType(ActivityCountPill), findsNothing);
       center.failure('Rename failed', source: 'worktree');

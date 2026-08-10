@@ -288,96 +288,99 @@ class _StatusToastCardState extends State<StatusToastCard> {
             onTap: _copy,
             onFocusChange: _setHeld,
             borderRadius: BorderRadius.circular(kRadius12),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(kRadius12),
-              border: Border.all(color: cs.outlineVariant),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(kRadius12),
-              // The severity stripe wants the card's full height, which a Column
-              // of unbounded height cannot give a `stretch` Row — so measure it.
-              child: IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // The severity stripe — colour, not a shouty fill.
-                    Container(width: 3, color: tone),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: kSpace10,
-                          vertical: kSpace8,
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(top: kSpace2),
-                              child: Icon(
-                                _copied
-                                    ? PhosphorIconsLight.checkCircle
-                                    : statusGlyph(e.severity),
-                                size: 15,
-                                color: _copied ? cs.primary : tone,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(kRadius12),
+                border: Border.all(color: cs.outlineVariant),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(kRadius12),
+                // The severity stripe wants the card's full height, which a Column
+                // of unbounded height cannot give a `stretch` Row — so measure it.
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // The severity stripe — colour, not a shouty fill.
+                      Container(width: 3, color: tone),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: kSpace10,
+                            vertical: kSpace8,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(top: kSpace2),
+                                child: Icon(
+                                  _copied
+                                      ? PhosphorIconsLight.checkCircle
+                                      : statusGlyph(e.severity),
+                                  size: 15,
+                                  color: _copied ? cs.primary : tone,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: kSpace8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _copied ? 'Copied' : e.displayTitle,
-                                    style: text.bodyMedium,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (e.hasDetail)
-                                    _held
-                                        // Held: the whole payload, selectable,
-                                        // because the tail of a stack trace is
-                                        // the part worth reading (SPEC-49 D5).
-                                        ? SelectableText(
-                                            e.detail!.trimRight(),
-                                            style: text.labelSmall
-                                                ?.copyWith(
-                                                  color: cs.onSurfaceVariant,
-                                                )
-                                                .mono,
-                                          )
-                                        : Text(
-                                            e.detail!.trim().split('\n').first,
-                                            style: text.labelSmall
-                                                ?.copyWith(
-                                                  color: cs.onSurfaceVariant,
-                                                )
-                                                .mono,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                ],
+                              const SizedBox(width: kSpace8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _copied ? 'Copied' : e.displayTitle,
+                                      style: text.bodyMedium,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (e.hasDetail)
+                                      _held
+                                          // Held: the whole payload, selectable,
+                                          // because the tail of a stack trace is
+                                          // the part worth reading (SPEC-49 D5).
+                                          ? SelectableText(
+                                              e.detail!.trimRight(),
+                                              style: text.labelSmall
+                                                  ?.copyWith(
+                                                    color: cs.onSurfaceVariant,
+                                                  )
+                                                  .mono,
+                                            )
+                                          : Text(
+                                              e.detail!
+                                                  .trim()
+                                                  .split('\n')
+                                                  .first,
+                                              style: text.labelSmall
+                                                  ?.copyWith(
+                                                    color: cs.onSurfaceVariant,
+                                                  )
+                                                  .mono,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            if (widget.onOpen != null)
+                              if (widget.onOpen != null)
+                                _ToastIconButton(
+                                  tooltip: 'Open',
+                                  icon: PhosphorIconsLight.caretRight,
+                                  onPressed: widget.onOpen!,
+                                ),
                               _ToastIconButton(
-                                tooltip: 'Open',
-                                icon: PhosphorIconsLight.caretRight,
-                                onPressed: widget.onOpen!,
+                                tooltip: 'Dismiss',
+                                icon: PhosphorIconsLight.x,
+                                onPressed: widget.onDismiss,
                               ),
-                            _ToastIconButton(
-                              tooltip: 'Dismiss',
-                              icon: PhosphorIconsLight.x,
-                              onPressed: widget.onDismiss,
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
             ),
           ),
         ),

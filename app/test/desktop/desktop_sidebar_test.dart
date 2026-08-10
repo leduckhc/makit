@@ -1770,7 +1770,9 @@ void main() {
   });
 
   group('Activity sits beside the sidebar toggle', () {
-    testWidgets('the bell is in the header row, not the footer', (tester) async {
+    testWidgets('the bell is in the header row, not the footer', (
+      tester,
+    ) async {
       await _pump(tester, repos: [_repo('p1', 'alpha')], sessions: []);
 
       final toggle = find.byIcon(PhosphorIconsLight.sidebarSimple);
@@ -1789,27 +1791,28 @@ void main() {
       expect(bellPos.dx, greaterThan(togglePos.dx), reason: 'to its right');
     });
 
-    testWidgets('the panel opens anchored to the bell, not at the screen edge', (
-      tester,
-    ) async {
-      await _pump(tester, repos: [_repo('p1', 'alpha')], sessions: []);
+    testWidgets(
+      'the panel opens anchored to the bell, not at the screen edge',
+      (tester) async {
+        await _pump(tester, repos: [_repo('p1', 'alpha')], sessions: []);
 
-      final bell = find.byIcon(PhosphorIconsLight.bell);
-      final bellRect = tester.getRect(bell);
-      await tester.tap(bell);
-      await tester.pumpAndSettle();
+        final bell = find.byIcon(PhosphorIconsLight.bell);
+        final bellRect = tester.getRect(bell);
+        await tester.tap(bell);
+        await tester.pumpAndSettle();
 
-      expect(find.byKey(kActivityPopover), findsOneWidget);
-      final panelRect = tester.getRect(find.byKey(kActivityPopover));
-      // The bell is top chrome, so the panel hangs below it.
-      expect(panelRect.top, greaterThanOrEqualTo(bellRect.bottom - 1));
-      // Near the bell horizontally, rather than pinned to the window's right.
-      expect(
-        (panelRect.left - bellRect.left).abs(),
-        lessThan(240),
-        reason: 'panel left ${panelRect.left} vs bell left ${bellRect.left}',
-      );
-    });
+        expect(find.byKey(kActivityPopover), findsOneWidget);
+        final panelRect = tester.getRect(find.byKey(kActivityPopover));
+        // The bell is top chrome, so the panel hangs below it.
+        expect(panelRect.top, greaterThanOrEqualTo(bellRect.bottom - 1));
+        // Near the bell horizontally, rather than pinned to the window's right.
+        expect(
+          (panelRect.left - bellRect.left).abs(),
+          lessThan(240),
+          reason: 'panel left ${panelRect.left} vs bell left ${bellRect.left}',
+        );
+      },
+    );
 
     testWidgets('Esc closes it', (tester) async {
       await _pump(tester, repos: [_repo('p1', 'alpha')], sessions: []);

@@ -14,25 +14,28 @@ import 'package:flutter_test/flutter_test.dart';
 /// `ScaffoldMessenger` itself is not banned (the framework mounts one, and
 /// `MaterialApp` needs it); the **call** is.
 void main() {
-  test('no lib/ file calls showSnackBar — post to the StatusCenter instead', () {
-    final offenders = <String>[];
-    for (final entity in Directory('lib').listSync(recursive: true)) {
-      if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      final lines = entity.readAsLinesSync();
-      for (var i = 0; i < lines.length; i++) {
-        if (lines[i].contains('showSnackBar')) {
-          offenders.add('${entity.path}:${i + 1}');
+  test(
+    'no lib/ file calls showSnackBar — post to the StatusCenter instead',
+    () {
+      final offenders = <String>[];
+      for (final entity in Directory('lib').listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final lines = entity.readAsLinesSync();
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].contains('showSnackBar')) {
+            offenders.add('${entity.path}:${i + 1}');
+          }
         }
       }
-    }
-    expect(
-      offenders,
-      isEmpty,
-      reason:
-          'Use `ref.status.failure(...)` / `.success(...)` / `.info(...)` '
-          '(lib/status/status_providers.dart) so the message lands on the '
-          'Activity record and can be copied. Offenders:\n'
-          '${offenders.join('\n')}',
-    );
-  });
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'Use `ref.status.failure(...)` / `.success(...)` / `.info(...)` '
+            '(lib/status/status_providers.dart) so the message lands on the '
+            'Activity record and can be copied. Offenders:\n'
+            '${offenders.join('\n')}',
+      );
+    },
+  );
 }

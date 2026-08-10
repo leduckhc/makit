@@ -28,8 +28,10 @@ void main() {
       },
     );
     addTearDown(
-      () => t.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null),
+      () => t.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
   }
 
@@ -62,8 +64,9 @@ void main() {
     expect(titles, ['newer', 'older']);
   });
 
-  testWidgets('an empty center says so instead of showing a blank list',
-      (t) async {
+  testWidgets('an empty center says so instead of showing a blank list', (
+    t,
+  ) async {
     await pumpView(t);
     expect(find.textContaining('Nothing yet'), findsOneWidget);
   });
@@ -124,12 +127,15 @@ void main() {
     await pumpView(t);
     await t.tap(find.byTooltip('Copy all'));
     await t.pumpAndSettle();
-    expect(copied.single.indexOf('first'),
-        lessThan(copied.single.indexOf('second')));
+    expect(
+      copied.single.indexOf('first'),
+      lessThan(copied.single.indexOf('second')),
+    );
   });
 
-  testWidgets('the severity filter keeps only what is at least as loud',
-      (t) async {
+  testWidgets('the severity filter keeps only what is at least as loud', (
+    t,
+  ) async {
     center.info('a copied URL', source: 'ports');
     center.failure('a real problem', source: 'worktree');
     await pumpView(t);

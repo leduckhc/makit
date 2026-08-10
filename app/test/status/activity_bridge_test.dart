@@ -29,9 +29,7 @@ void main() {
         // The observer labels each event with its project; the real store needs
         // a live connection, which this test has no business standing up.
         projectsProvider.overrideWithValue(
-          ProjectsState([
-            Project(id: 'p1', name: 'demo', path: '/tmp/demo'),
-          ]),
+          ProjectsState([Project(id: 'p1', name: 'demo', path: '/tmp/demo')]),
         ),
       ],
     );
@@ -56,16 +54,18 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   }
 
-  test('a finished turn is recorded as a success against its session',
-      () async {
-    await publish(SessionStatus.running);
-    await publish(SessionStatus.idle);
-    final e = center.events.single;
-    expect(e.severity, StatusSeverity.success);
-    expect(e.title, 'Agent finished its turn.');
-    expect(e.sessionId, 's1');
-    expect(e.source, StatusSources.agent);
-  });
+  test(
+    'a finished turn is recorded as a success against its session',
+    () async {
+      await publish(SessionStatus.running);
+      await publish(SessionStatus.idle);
+      final e = center.events.single;
+      expect(e.severity, StatusSeverity.success);
+      expect(e.title, 'Agent finished its turn.');
+      expect(e.sessionId, 's1');
+      expect(e.source, StatusSources.agent);
+    },
+  );
 
   test('needing you is a warning, an error is a failure', () async {
     await publish(SessionStatus.awaitingInput);

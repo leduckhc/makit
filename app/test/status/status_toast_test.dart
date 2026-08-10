@@ -47,24 +47,30 @@ void main() {
       },
     );
     addTearDown(
-      () => tester.binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null),
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
     );
     return copied;
   }
 
   testWidgets('a posted event shows a toast carrying its title', (t) async {
     await pumpLayer(t);
-    center.failure('Could not create worktree',
-        error: StateError('errno 17'), source: 'worktree');
+    center.failure(
+      'Could not create worktree',
+      error: StateError('errno 17'),
+      source: 'worktree',
+    );
     await t.pump();
     expect(find.text('Could not create worktree'), findsOneWidget);
     // The detail is previewed, not hidden behind a tap.
     expect(find.textContaining('errno 17'), findsOneWidget);
   });
 
-  testWidgets('the toast leaves on its own dwell and the record survives it',
-      (t) async {
+  testWidgets('the toast leaves on its own dwell and the record survives it', (
+    t,
+  ) async {
     await pumpLayer(t);
     center.info('URL copied', source: 'ports');
     await t.pump();
@@ -96,8 +102,9 @@ void main() {
     expect(center.events, hasLength(1));
   });
 
-  testWidgets('a coalesced repeat updates one toast instead of stacking',
-      (t) async {
+  testWidgets('a coalesced repeat updates one toast instead of stacking', (
+    t,
+  ) async {
     await pumpLayer(t);
     center.failure('Could not delete worktree', source: 'worktree');
     await t.pump();
@@ -110,8 +117,9 @@ void main() {
     expect(find.byType(StatusToastCard), findsOneWidget);
   });
 
-  testWidgets('at most three toasts show, the rest wait behind a +N chip',
-      (t) async {
+  testWidgets('at most three toasts show, the rest wait behind a +N chip', (
+    t,
+  ) async {
     await pumpLayer(t);
     for (var i = 0; i < 5; i++) {
       center.failure('Failure $i', source: 't$i');
@@ -123,12 +131,16 @@ void main() {
     expect(find.text('+2 more'), findsOneWidget);
   });
 
-  testWidgets('copy puts the full record on the clipboard, detail included',
-      (t) async {
+  testWidgets('copy puts the full record on the clipboard, detail included', (
+    t,
+  ) async {
     final copied = watchClipboard(t);
     await pumpLayer(t);
-    center.failure('Pair failed', detail: 'SocketException: refused',
-        source: 'pairing');
+    center.failure(
+      'Pair failed',
+      detail: 'SocketException: refused',
+      source: 'pairing',
+    );
     await t.pump();
     await t.tap(find.text('Pair failed'));
     await t.pumpAndSettle();
@@ -154,8 +166,11 @@ void main() {
   testWidgets('tapping the body copies the whole record, verbatim', (t) async {
     final copied = watchClipboard(t);
     await pumpLayer(t);
-    center.failure('Pair failed',
-        detail: 'SocketException: refused', source: 'pairing');
+    center.failure(
+      'Pair failed',
+      detail: 'SocketException: refused',
+      source: 'pairing',
+    );
     await t.pump();
     await t.tap(find.text('Pair failed'));
     await t.pumpAndSettle();
@@ -163,8 +178,9 @@ void main() {
     expect(copied.single, contains('SocketException: refused'));
   });
 
-  testWidgets('copying confirms in place, reverts, and posts nothing',
-      (t) async {
+  testWidgets('copying confirms in place, reverts, and posts nothing', (
+    t,
+  ) async {
     watchClipboard(t);
     await pumpLayer(t);
     center.failure('Rename failed', source: 'worktree');
@@ -199,8 +215,9 @@ void main() {
   // SPEC-49 D7: this used to tap the body. Copy is the action that cannot be
   // performed any other way, so it took the body; opening keeps an explicit
   // control.
-  testWidgets('the open control hands the event to onOpen without copying',
-      (t) async {
+  testWidgets('the open control hands the event to onOpen without copying', (
+    t,
+  ) async {
     final copied = watchClipboard(t);
     final opened = <StatusEvent>[];
     await pumpLayer(t, onOpen: opened.add);
@@ -212,8 +229,9 @@ void main() {
     expect(copied, isEmpty);
   });
 
-  testWidgets('there is no open control when there is nowhere to go',
-      (t) async {
+  testWidgets('there is no open control when there is nowhere to go', (
+    t,
+  ) async {
     await pumpLayer(t);
     center.failure('Turn failed', source: 'agent');
     await t.pump();
@@ -222,8 +240,12 @@ void main() {
 
   testWidgets('a silent post never becomes a toast', (t) async {
     await pumpLayer(t);
-    center.success('Agent finished its turn',
-        source: 'agent', sessionId: 's1', silent: true);
+    center.success(
+      'Agent finished its turn',
+      source: 'agent',
+      sessionId: 's1',
+      silent: true,
+    );
     await t.pump();
     await t.pump();
     expect(find.byType(StatusToastCard), findsNothing);
@@ -277,7 +299,8 @@ void main() {
           const CustomSemanticsAction(label: 'Copy'),
         ],
       ),
-      reason: 'the copy action must be reachable by assistive tech, not only '
+      reason:
+          'the copy action must be reachable by assistive tech, not only '
           'by pointer (SPEC-49 D2)',
     );
     handle.dispose();
@@ -320,8 +343,9 @@ void main() {
     expect(find.text('URL copied'), findsNothing);
   });
 
-  testWidgets('a hover has no expiry cap: it holds while you hold it',
-      (t) async {
+  testWidgets('a hover has no expiry cap: it holds while you hold it', (
+    t,
+  ) async {
     await pumpLayer(t);
     center.info('URL copied', source: 'ports');
     await t.pump();
@@ -340,7 +364,8 @@ void main() {
     await pumpLayer(t);
     center.failure(
       'Could not create worktree',
-      detail: 'FileSystemException: Creation failed\n'
+      detail:
+          'FileSystemException: Creation failed\n'
           "path = '/Users/le/.worktrees/makit/x'\n"
           '(OS Error: File exists, errno = 17)',
       source: 'worktree',
