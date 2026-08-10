@@ -337,6 +337,7 @@ class FakeServer {
         body: {
           'kind': 'sessions.snapshot',
           'sessions': _sessions.values
+              .where((s) => !s.closed)
               .map(
                 (s) => {
                   'id': s.id,
@@ -779,12 +780,44 @@ class FakeServer {
       case 'ports.forward.stop':
         _emit(Envelope(t: MsgType.ack, id: env.id));
         return;
+      case 'session.close':
+      case 'session.reopen':
+        {
+          // Mirror the real server: flip the flag, then re-broadcast, so the
+          // sidebar/board drop or restore the row exactly as they would live.
+          final id = env.body['sessionId'] as String?;
+          final target = id == null ? null : _sessions[id];
+          if (target != null) target.closed = kind == 'session.close';
+          _emit(Envelope(t: MsgType.ack, id: env.id));
+          _pushSessions();
+          _pushRepos();
+          return;
+        }
       case 'session.listClosed':
         _emit(
           Envelope(
             t: MsgType.ack,
             id: env.id,
-            body: {'sessions': _closedSessions()},
+            body: {
+              'sessions': [
+                // Sessions closed during this run, plus the static fixtures that
+                // give the demo something to look at on a cold start.
+                for (final c in _sessions.values.where((c) => c.closed))
+                  {
+                    'id': c.id,
+                    'projectId': c.projectId,
+                    'agent': c.agent,
+                    'title': c.title,
+                    'status': 'exited',
+                    'policy': 'ask-on-risky',
+                    'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
+                    'lastPreview': c.preview,
+                    if (c.branch != null) 'branch': c.branch,
+                    'closed': true,
+                  },
+                ..._closedSessions(),
+              ],
+            },
           ),
         );
         return;
@@ -1077,6 +1110,10 @@ class _FakeSession {
   /// Feature-branch worktree this session runs in; null = primary checkout.
   String? branch;
   bool pending;
+  /// Closed (SPEC-29): the agent was released. Excluded from the active
+  /// snapshot, reported by `session.listClosed`, restored by `session.reopen`.
+  /// Always starts live — the demo's cold-start closed rows are static fixtures.
+  bool closed = false;
   final List<SessionEvent> events = [];
 }
 
