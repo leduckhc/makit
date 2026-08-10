@@ -510,7 +510,14 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.BadRequest, NO_ROLLOUT);
       return;
     }
-    const adapter = source.adapter;
+    // A cold session (rehydrated after a restart) carries a process-less
+    // placeholder adapter whose capabilities are all false, so judging `fork` off
+    // it slanders the harness: "codex cannot fork" about codex. Re-attach first,
+    // exactly as `send.message` does, then ask the real adapter. Cheap when the
+    // session is already live (`ensureLive` only acts on a detached adapter).
+    await manager.ensureLive(sid);
+    const live = manager.getSession(sid) ?? source;
+    const adapter = live.adapter;
     if (!adapter.capabilities.fork || !adapter.forkSession) {
       // D6's precise sentence: name the harness, why it cannot, and the way
       // forward. The `pi-acp` half is named only for pi, which genuinely runs
@@ -518,12 +525,12 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       // binary that does not exist ("stub-acp", "codex-acp"), which a user can
       // neither act on nor search for.
       const because =
-        source.agent === "pi"
+        live.agent === "pi"
           ? "pi-acp advertises no `session/fork`"
           : "its back end advertises no native fork";
       ctx.err(
         WireErrorCode.BadRequest,
-        `${source.agent} cannot fork: ${because} — use \`makit handoff\` instead`,
+        `${live.agent} cannot fork: ${because} — use \`makit handoff\` instead`,
       );
       return;
     }
@@ -567,7 +574,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // `fork [--agent A]`; that is only coherent as "the same harness", so the
     // flag survives as a no-op and a mismatch is an error.)
     const wantedAgent = ctx.env.agent ? String(ctx.env.agent) : undefined;
-    if (wantedAgent !== undefined && wantedAgent !== source.agent) {
+    if (wantedAgent !== undefined && wantedAgent !== live.agent) {
       ctx.err(
         WireErrorCode.BadRequest,
         `cannot fork a ${source.agent} session onto ${wantedAgent}: a native fork continues the same ` +
@@ -575,11 +582,11 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       );
       return;
     }
-    const agent = source.agent;
+    const agent = live.agent;
     const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
     const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;
     const child = await manager.spawnPendingSession(
-      source.projectId,
+      live.projectId,
       agent,
       worktreePath,
       branch,

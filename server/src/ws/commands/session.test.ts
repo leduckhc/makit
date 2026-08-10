@@ -43,6 +43,10 @@ function harness(opts?: {
   boundError?: string | null;
   transcript?: unknown[];
   session?: unknown;
+  /** Called by handlers that re-attach a cold session before acting on it. */
+  ensureLive?: (id: string) => Promise<void>;
+  /** A session resolved fresh on every lookup (so a re-attach can swap it). */
+  sessionFor?: (id: string) => unknown;
 }) {
   const spawnCalls: SpawnCall[] = [];
   const r = new CommandRouter();
@@ -62,7 +66,11 @@ function harness(opts?: {
         return { id: "child-1" };
       },
       checkSpawnBounds: (_parentId: string) => opts?.boundError ?? null,
-      getSession: (_id: string) => (opts && "session" in opts ? opts.session : { id: "s" }),
+      getSession: (id: string) =>
+        opts?.sessionFor ? opts.sessionFor(id) : opts && "session" in opts ? opts.session : { id: "s" },
+      ensureLive: async (id: string) => {
+        await opts?.ensureLive?.(id);
+      },
       readTranscript: (_id: string) => opts?.transcript ?? [],
     },
     broadcastSnapshots: () => {},

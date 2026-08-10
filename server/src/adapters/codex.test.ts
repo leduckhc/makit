@@ -627,6 +627,22 @@ test("forkSession() forks the live thread at its head and returns the NEW thread
   await adapter.kill();
 });
 
+test("forkSession() releases the new thread so the child's own process can resume it (U4)", async () => {
+  // The forking process keeps the new thread loaded as its *active writer*, so the
+  // child's codex process was refused: "thread <id> already has an active writer".
+  // The fork is created here but belongs to the child, so this process must let go
+  // of it immediately — otherwise every fork produces a session that cannot start.
+  const fake = fakeAppServer({
+    fork: () => ({ result: { thread: { id: "th-forked", forkedFromId: "th1" } } }),
+  });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/repo", sessionId: "m1" });
+  await adapter.forkSession!();
+  const unsub = fake.sent.find((m: any) => m.method === "thread/unsubscribe");
+  assert.ok(unsub, "must release the forked thread");
+  assert.equal(unsub.params.threadId, "th-forked", "releases the FORK, never the source thread");
+});
+
 test("forkSession() rejects with ForkPreconditionError when there is no rollout yet (U4)", async () => {
   const fake = fakeAppServer({
     fork: () => ({ error: { code: -32600, message: "no rollout found for thread id th1" } }),

@@ -246,6 +246,13 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     }
     const id = res?.thread?.id;
     if (!id) throw new Error("codex app-server: thread/fork returned no thread id");
+    // The forking process keeps the new thread loaded as its **active writer**, so
+    // the child's own codex process is then refused with "thread <id> already has
+    // an active writer" — every fork produced a session that could never start.
+    // The fork is created here but belongs to the child, so let go of it at once.
+    // Best-effort: if the release fails the child's resume will report it, and
+    // failing the fork itself would be worse (the thread already exists).
+    await this.request("thread/unsubscribe", { threadId: id }).catch(() => {});
     return { agentSessionId: id };
   }
 
