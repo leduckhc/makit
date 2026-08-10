@@ -215,4 +215,47 @@ void main() {
       },
     );
   });
+
+  // The server acks `{grant: DocGrantDTO}` (server/src/ws/commands/docs.ts, and
+  // its own test asserts `ack.grant.grantId`). The app parsed the ack FLAT, so
+  // every real publish failed with "returned an unusable grant" — while both
+  // suites stayed green, because the server test read the nested shape and the
+  // app's publish test built a DocGrant directly and never parsed an ack.
+  group('DocGrant.fromAck — the real wire shape', () {
+    Map<String, dynamic> ackJson() => {
+      'v': 1,
+      't': 'ack',
+      'id': 'c1',
+      'grant': {
+        'grantId': 'a' * 64,
+        'worktreePath': '/repo',
+        'relPath': 'mockups/x.html',
+        'url': 'http://100.119.58.97:7801/docs/${'a' * 64}/mockups/x.html',
+        'reach': 'tailnet',
+        'expiresAt': 1799999999999,
+      },
+    };
+
+    test('reads the grant nested under "grant"', () {
+      final g = DocGrant.fromAck(ackJson());
+      expect(g, isNotNull);
+      expect(g!.grantId, 'a' * 64);
+      expect(g.relPath, 'mockups/x.html');
+      expect(g.reach, DocReach.tailnet);
+      expect(g.url, contains('/docs/'));
+    });
+
+    test('a flat ack (the old, wrong reading) is refused, not half-parsed', () {
+      final flat = Map<String, dynamic>.from(ackJson()['grant'] as Map);
+      expect(DocGrant.fromAck(flat), isNull);
+    });
+
+    test('an ack with no grant, or a malformed one, is refused', () {
+      expect(DocGrant.fromAck({'v': 1, 't': 'ack'}), isNull);
+      expect(DocGrant.fromAck({'grant': 'nope'}), isNull);
+      final missingUrl = ackJson();
+      (missingUrl['grant'] as Map).remove('url');
+      expect(DocGrant.fromAck(missingUrl), isNull);
+    });
+  });
 }

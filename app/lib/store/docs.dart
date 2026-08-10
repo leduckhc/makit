@@ -207,6 +207,18 @@ class DocGrant {
       expiresAt: (j['expiresAt'] as num).toInt(),
     );
   }
+
+  /// Parse a `docs.publish` **ack**, whose grant is nested under `grant`
+  /// (`ctx.ack({grant})` in `server/src/ws/commands/docs.ts`).
+  ///
+  /// Reading the ack flat yields null for every real publish, which surfaces as
+  /// "returned an unusable grant" — so the nesting lives here, once, with a test
+  /// on the actual wire shape rather than on a hand-built DocGrant.
+  static DocGrant? fromAck(Map<String, dynamic> ack) {
+    final grant = ack['grant'];
+    if (grant is! Map) return null;
+    return fromJson(Map<String, dynamic>.from(grant));
+  }
 }
 
 /// Documents owned by the worktree at [path], mtime-descending (D5) — the doc
