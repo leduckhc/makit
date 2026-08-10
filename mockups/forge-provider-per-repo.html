@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Which forge is this repo on?</title>
+<style>
+  :root{
+    --bg:#171717;--lowest:#121212;--low:#1E1E1E;--cont:#242424;--high:#2E2E2E;--highest:#383838;
+    --text:#F5F5F5;--muted:#9E9E9E;--osv:#C9C9C9;--hairline:#333333;
+    --primary:#4ADE80;--warn:#E0A72E;--caution:#E07B39;--merged:#A371F7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 80px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 10px;max-width:1000px}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .note{max-width:1000px;margin:12px 0 28px;padding:12px 14px;border:1px solid #2a4a34;background:#101d15;border-radius:10px;font-size:13px;color:#bfe6cd}
+  .note strong{color:#fff}
+
+  .card{border:1px solid var(--hairline);border-radius:14px;background:#141414;margin-bottom:28px;overflow:hidden}
+  .card > header{padding:12px 16px;border-bottom:1px solid var(--hairline);display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .card h2{font-size:15px;margin:0;font-weight:600}
+  .card p{margin:0;color:var(--muted);font-size:12.5px}
+  .body{padding:18px 16px}
+  .rec,.rej,.built,.follow{font-size:10px;border-radius:5px;padding:2px 6px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+  .rec{color:#0e0e0e;background:var(--primary)}
+  .rej{color:#0e0e0e;background:#8a8a8a}
+  .built{color:#0e0e0e;background:var(--merged)}
+  .follow{color:#0e0e0e;background:var(--warn)}
+  .cap{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 8px}
+
+  .grid{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+  .col-frame{flex:0 0 320px}
+  .col-mac{flex:0 0 560px}
+  /* Deliberately its own full-width row: a 320px phone + 560px mac window + a
+     prose column cannot share 1292px, and letting it wrap by accident is the
+     failure mode that silently hides a whole column below the fold. */
+  .col-prose{flex:1 1 100%;min-width:0;max-width:1000px;order:2;padding-top:4px;border-top:1px solid #202020;margin-top:2px}
+  .col-prose p{color:var(--osv);font-size:13px;margin:0 0 10px}
+  .col-prose ul{margin:0 0 10px 18px;padding:0;color:var(--osv);font-size:13px}
+  .col-prose li{margin-bottom:5px}
+
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid #222;vertical-align:top;font-size:12.5px}
+  th{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.mono,code.p{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+  .num{color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* ── glyphs ─────────────────────────────────────────────────────────── */
+  .i{fill:none;stroke:currentColor;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round}
+  /* Our own 256-grid marks: 16/256 matches 1.45/24 optically. */
+  .i256{fill:none;stroke:currentColor;stroke-width:16;stroke-linecap:round;stroke-linejoin:round}
+  .dot{fill:currentColor;stroke:none}
+  svg.g{display:inline-block;vertical-align:-2px}
+
+  /* ── iPhone frame: 320 wide, island + status + 44pt bar + 46pt composer ─ */
+  .phone{width:320px;border:1px solid var(--hairline);border-radius:26px;background:var(--bg);overflow:hidden}
+  .island{height:22px;display:flex;align-items:center;justify-content:center}
+  .island i{display:block;width:74px;height:13px;border-radius:8px;background:#000}
+  .sbar{height:14px;display:flex;justify-content:space-between;align-items:center;padding:0 14px;font-size:9.5px;color:var(--muted)}
+  .navbar{height:44px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--hairline);background:rgba(36,36,36,.7)}
+  .navbar .t{font-size:14px;font-weight:600}
+  .composer{height:46px;border-top:1px solid var(--hairline);display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--low)}
+  .composer .fake{flex:1;height:28px;border-radius:14px;background:var(--cont);border:1px solid var(--hairline)}
+  .plist{padding:8px 0}
+
+  /* ── mac window: traffic lights + 200px sidebar + 24pt strip + 34pt hdr ─ */
+  .mac{width:560px;border:1px solid var(--hairline);border-radius:11px;overflow:hidden;background:var(--bg)}
+  .strip{height:24px;background:var(--low);display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid var(--hairline)}
+  .tl{width:9px;height:9px;border-radius:50%}
+  .mac-body{display:flex;min-height:210px}
+  .side{width:200px;border-right:1px solid var(--hairline);background:var(--lowest);padding:8px 0}
+  .pane{flex:1;display:flex;flex-direction:column}
+  .phdr{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--hairline);font-size:12.5px;color:var(--osv)}
+
+  /* ── shared list/row atoms ───────────────────────────────────────────── */
+  .row{display:flex;align-items:center;gap:9px;padding:9px 13px;min-height:38px}
+  .row.tap{border-bottom:1px solid #202020}
+  .row .lbl{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .val{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+  .grp{margin:0 0 10px}
+  .grp > .hd{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;padding:8px 13px 5px}
+  .sheet{background:var(--cont);border:1px solid var(--hairline);border-radius:12px;margin:8px;overflow:hidden}
+
+  /* chips: joins BranchChip / DiffChip / PrStatusChip in repo_chips.dart */
+  .chips{display:flex;flex-wrap:wrap;gap:6px;padding:2px 13px 10px}
+  .chip{display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 7px;border-radius:9.5px;
+        background:var(--cont);border:1px solid var(--hairline);font-size:10.5px;color:var(--osv);white-space:nowrap}
+  .chip svg{width:11px;height:11px}          /* kPillIconSize = 11 */
+  .chip.new{border-color:#2f5a3f;background:#12241a}
+  .chip.bad{border-color:#5a3a2a;background:#241610;color:#f0c4a8}
+
+  .radio{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--muted);flex:0 0 auto}
+  .radio.on{border-color:var(--primary);box-shadow:inset 0 0 0 3.5px var(--primary)}
+  .pill-ok{font-size:10px;padding:1px 6px;border-radius:5px;background:#12241a;border:1px solid #2f5a3f;color:#9fe0b8}
+  .pill-no{font-size:10px;padding:1px 6px;border-radius:5px;background:#241610;border:1px solid #5a3a2a;color:#f0c4a8}
+  .pill-mute{font-size:10px;padding:1px 6px;border-radius:5px;background:var(--cont);border:1px solid var(--hairline);color:var(--muted)}
+  .kbd{font-size:10.5px;color:var(--muted);border:1px solid var(--hairline);border-radius:4px;padding:0 4px}
+  .field{margin:0 13px 10px;background:var(--low);border:1px solid var(--hairline);border-radius:8px;padding:7px 9px;font-size:12px;color:var(--osv);
+         font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hintline{font-size:11.5px;color:var(--muted);padding:0 13px 10px}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- our own marks, 256 grid, from phosphor_extras -->
+  <symbol id="g-forgejo" viewBox="0 0 256 256">
+    <g class="i256">
+      <circle cx="76" cy="202" r="20"/><circle cx="180" cy="117" r="20"/><circle cx="180" cy="54" r="20"/>
+      <path d="M76 174V98A44 44 0 0 1 120 54H152"/><path d="M76 161A44 44 0 0 1 120 117H152"/>
+    </g>
+  </symbol>
+  <symbol id="g-gitea" viewBox="0 0 256 256">
+    <g class="i256">
+      <path d="M62 88Q146 98 230 88"/>
+      <path d="M62 88C68 150 102 178 146 178C190 178 224 150 230 88"/>
+      <path d="M63 98A30 30 0 1 0 86 152"/>
+      <path d="M146 72V114"/>
+      <path d="M146 114.4L179.6 127L167 161.6L132.4 149Z"/>
+    </g>
+  </symbol>
+  <!-- 24 grid, Phosphor-Light-ish -->
+  <symbol id="g-git" viewBox="0 0 24 24"><g class="i"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M6 8.6v6.8M8.6 18h6.8M18 15.4V12a3.4 3.4 0 0 0-3.4-3.4H8.6"/></g></symbol>
+  <symbol id="g-pr" viewBox="0 0 24 24"><g class="i"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="18" r="2.4"/><path d="M6 8.4v7.2M18 15.6V9.6A3.6 3.6 0 0 0 14.4 6H10.2"/><path d="M12.4 3.8 10 6l2.4 2.2"/></g></symbol>
+  <symbol id="g-warn" viewBox="0 0 24 24"><g class="i"><path d="M12 4.2 21 19.5H3z"/><path d="M12 10v4.2"/></g><circle class="dot" cx="12" cy="16.8" r="1"/></symbol>
+  <symbol id="g-key" viewBox="0 0 24 24"><g class="i"><circle cx="8.4" cy="8.4" r="4.2"/><path d="M11.4 11.4 20 20M16.4 16.4l-2 2M18.6 18.6l-2 2"/></g></symbol>
+  <symbol id="g-lock" viewBox="0 0 24 24"><g class="i"><rect x="4.6" y="10.4" width="14.8" height="9.6" rx="2"/><path d="M8.2 10.4V7.6a3.8 3.8 0 0 1 7.6 0v2.8"/></g></symbol>
+  <symbol id="g-caret" viewBox="0 0 24 24"><g class="i"><path d="m9 5.5 7 6.5-7 6.5"/></g></symbol>
+  <symbol id="g-caretd" viewBox="0 0 24 24"><g class="i"><path d="m5.5 9 6.5 7 6.5-7"/></g></symbol>
+  <symbol id="g-folder" viewBox="0 0 24 24"><g class="i"><path d="M3.4 6.6h5.2l2 2.4h9.9v9.4H3.4z"/></g></symbol>
+  <symbol id="g-dots" viewBox="0 0 24 24"><circle class="dot" cx="5.6" cy="12" r="1.35"/><circle class="dot" cx="12" cy="12" r="1.35"/><circle class="dot" cx="18.4" cy="12" r="1.35"/></symbol>
+  <symbol id="g-gear" viewBox="0 0 24 24"><g class="i"><circle cx="12" cy="12" r="3.1"/><circle cx="12" cy="12" r="7.8" style="stroke-dasharray:2.1 2.5"/></g></symbol>
+  <symbol id="g-check" viewBox="0 0 24 24"><g class="i"><path d="m5 12.8 4.4 4.2L19 6.8"/></g></symbol>
+  <symbol id="g-plus" viewBox="0 0 24 24"><g class="i"><path d="M12 5.6v12.8M5.6 12h12.8"/></g></symbol>
+  <symbol id="g-diff" viewBox="0 0 24 24"><g class="i"><path d="M7 4.6v14.8M4.2 7.4h5.6M17 19.4V4.6M14.2 16.6h5.6"/></g></symbol>
+</svg>
+
+<h1>makit — Which forge is this repo on?</h1>
+<p class="sub">
+  The server can now identify a forge instead of guessing: it probes
+  <code>/api/forgejo/v1/version</code>, <code>/api/v1/version</code> and <code>/api/v4/version</code>,
+  once per host, cached. Verified live against Forgejo (self-hosted + Codeberg), Gitea, GitLab and an
+  unrelated host. <strong>Nothing in the UI surfaces any of it.</strong> These are the three places it
+  should, and one shape the config should <em>not</em> take.
+</p>
+<div class="note">
+  <strong>The premise needs one correction.</strong> The ask was “set up a git provider <em>per repo</em>”.
+  But an API token authenticates an <em>instance</em>, not a repository — the server already enforces that
+  (<code>forgejoRefFromRemote</code> withholds a token from any host other than the configured one, so an
+  internal token cannot leak to <code>codeberg.org</code>). So credentials belong to the instance, and the
+  only genuinely per-repo thing is an <em>override</em> for when detection is wrong. Designing this as
+  per-repo credentials would mean asking for the same token once per repository.
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header>
+    <h2>1 · The forge is a fact, not a setting</h2><span class="rec">RECOMMENDED</span>
+    <p>A chip in the row that already carries branch / diff / PR chips. No setup, no prompt.</p>
+  </header>
+  <div class="body">
+    <div class="grid">
+      <div class="col-frame">
+        <p class="cap">iOS — repo card</p>
+        <div class="phone">
+          <div class="island"><i></i></div>
+          <div class="sbar"><span>9:41</span><span>􀙇 􀛨</span></div>
+          <div class="navbar"><div class="t">Repos</div></div>
+          <div class="plist">
+            <div class="row"><svg class="g" width="17" height="17"><use href="#g-folder"/></svg>
+              <div class="lbl">Diana</div><svg class="g" width="18" height="18" style="color:#9E9E9E"><use href="#g-dots"/></svg></div>
+            <div class="chips">
+              <span class="chip new"><svg><use href="#g-forgejo"/></svg>Forgejo</span>
+              <span class="chip"><svg><use href="#g-git"/></svg>main</span>
+              <span class="chip"><svg><use href="#g-diff"/></svg>+248 −31</span>
+              <span class="chip"><svg><use href="#g-pr"/></svg>2 PRs</span>
+            </div>
+            <div class="row"><svg class="g" width="17" height="17"><use href="#g-folder"/></svg>
+              <div class="lbl">makit</div><svg class="g" width="18" height="18" style="color:#9E9E9E"><use href="#g-dots"/></svg></div>
+            <div class="chips">
+              <span class="chip new"><svg><use href="#g-git"/></svg>GitHub</span>
+              <span class="chip"><svg><use href="#g-git"/></svg>main</span>
+              <span class="chip"><svg><use href="#g-pr"/></svg>1 PR</span>
+            </div>
+            <div class="row"><svg class="g" width="17" height="17"><use href="#g-folder"/></svg>
+              <div class="lbl">legacy-tools</div><svg class="g" width="18" height="18" style="color:#9E9E9E"><use href="#g-dots"/></svg></div>
+            <div class="chips">
+              <span class="chip bad"><svg><use href="#g-warn"/></svg>GitLab — unsupported</span>
+              <span class="chip"><svg><use href="#g-git"/></svg>master</span>
+            </div>
+          </div>
+          <div class="composer"><div class="fake"></div><svg class="g" width="18" height="18" style="color:#4ADE80"><use href="#g-plus"/></svg></div>
+        </div>
+      </div>
+
+      <div class="col-mac">
+        <p class="cap">macOS — sidebar + repo pane</p>
+        <div class="mac">
+          <div class="strip">
+            <span class="tl" style="background:#ff5f57"></span><span class="tl" style="background:#febc2e"></span><span class="tl" style="background:#28c840"></span>
+          </div>
+          <div class="mac-body">
+            <div class="side">
+              <div class="row tap"><svg class="g" width="13" height="13" style="color:#4ADE80"><use href="#g-forgejo"/></svg><div class="lbl">Diana</div></div>
+              <div class="row tap"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-git"/></svg><div class="lbl">makit</div></div>
+              <div class="row tap"><svg class="g" width="13" height="13" style="color:#E07B39"><use href="#g-warn"/></svg><div class="lbl">legacy-tools</div></div>
+            </div>
+            <div class="pane">
+              <div class="phdr"><svg class="g" width="14" height="14"><use href="#g-forgejo"/></svg>Diana
+                <span class="pill-mute">forgejo.internal.xdent.ai</span><span class="pill-ok">signed in</span></div>
+              <div class="chips" style="padding-top:10px">
+                <span class="chip new"><svg><use href="#g-forgejo"/></svg>Forgejo 16.0.0</span>
+                <span class="chip"><svg><use href="#g-git"/></svg>main</span>
+                <span class="chip"><svg><use href="#g-pr"/></svg>2 PRs</span>
+              </div>
+              <div class="row" style="border-top:1px solid #202020"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-pr"/></svg>
+                <div class="lbl">feat/attachments — #142</div><span class="val">Open on Forgejo <svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
+              <div class="row" style="border-top:1px solid #202020"><svg class="g" width="15" height="15" style="color:#4ADE80"><use href="#g-pr"/></svg>
+                <div class="lbl">fix/lfs-message — #139</div><span class="val">Open on Forgejo <svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
+              <div class="row" style="border-top:1px solid #202020"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-git"/></svg>
+                <div class="lbl">main</div><span class="val">no PR</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-prose">
+        <p class="cap">why</p>
+        <ul>
+          <li><strong>Zero-setup is the default.</strong> Detection is right for every forge tested, so the
+            common path must not involve a form. The chip <em>reports</em>; it does not ask.</li>
+          <li><strong>It joins an existing family.</strong> <code>repo_chips.dart</code> already has
+            <code>BranchChip</code>, <code>DiffChip</code>, <code>PrStatusChip</code>, <code>TagChip</code> at
+            <code>kPillIconSize = 11</code>. A <code>ForgeChip</code> costs a row of that file, not a screen.</li>
+          <li><strong>The unsupported case finally speaks.</strong> Today a GitLab remote polls a Forgejo API
+            that is not there and reports <code>unknown</code> — pixel-identical to “instance down”. The chip
+            says <em>GitLab — unsupported</em>, and the server logs the host once.</li>
+          <li><strong>The glyph must come from the server.</strong> <code>forge_glyph.dart</code> currently
+            re-derives the forge from the PR URL in Dart. That is a third copy of a guess the server now
+            answers properly; it should read the DTO and delete its own rule.</li>
+        </ul>
+        <p class="cap" style="margin-top:14px">shown only when it earns the space</p>
+        <p>GitHub is the overwhelming majority for most users, so a “GitHub” chip on every card is noise.
+          Render the chip when the forge is <em>not</em> GitHub, or when it is unsupported. A one-forge user
+          sees no new chrome at all.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header>
+    <h2>2 · Credentials belong to the instance</h2><span class="rec">RECOMMENDED</span>
+    <span class="follow">NEEDS PROTOCOL</span>
+    <p>One row per instance, not per repo. Replaces today's env-only <code>FORGEJO_ACCESS_TOKEN</code>.</p>
+  </header>
+  <div class="body">
+    <div class="grid">
+      <div class="col-mac">
+        <p class="cap">macOS — Settings ▸ Forges (new section)</p>
+        <div class="mac">
+          <div class="strip">
+            <span class="tl" style="background:#ff5f57"></span><span class="tl" style="background:#febc2e"></span><span class="tl" style="background:#28c840"></span>
+          </div>
+          <div class="mac-body">
+            <div class="side">
+              <div class="row tap"><svg class="g" width="13" height="13"><use href="#g-gear"/></svg><div class="lbl">General</div></div>
+              <div class="row tap"><svg class="g" width="13" height="13"><use href="#g-git"/></svg><div class="lbl">Agents &amp; chat</div></div>
+              <div class="row tap" style="background:#1E1E1E"><svg class="g" width="13" height="13" style="color:#4ADE80"><use href="#g-forgejo"/></svg><div class="lbl">Forges</div></div>
+              <div class="row tap"><svg class="g" width="13" height="13"><use href="#g-lock"/></svg><div class="lbl">Server &amp; devices</div></div>
+            </div>
+            <div class="pane">
+              <div class="phdr">Forges</div>
+              <div class="grp">
+                <div class="hd">detected instances</div>
+                <div class="row tap"><svg class="g" width="15" height="15"><use href="#g-git"/></svg>
+                  <div class="lbl">github.com</div><span class="val"><span class="pill-ok">gh signed in</span></span></div>
+                <div class="row tap"><svg class="g" width="15" height="15"><use href="#g-forgejo"/></svg>
+                  <div class="lbl">forgejo.internal.xdent.ai<div style="font-size:11px;color:#9E9E9E">Forgejo 16.0.0 · 3 repos</div></div>
+                  <span class="val"><span class="pill-ok">token set</span><svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
+                <div class="row tap"><svg class="g" width="15" height="15"><use href="#g-gitea"/></svg>
+                  <div class="lbl">gitea.example.org<div style="font-size:11px;color:#9E9E9E">Gitea 1.27 · 1 repo</div></div>
+                  <span class="val"><span class="pill-no">no token</span><svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
+                <div class="row tap"><svg class="g" width="15" height="15" style="color:#E07B39"><use href="#g-warn"/></svg>
+                  <div class="lbl">git.legacy.example<div style="font-size:11px;color:#9E9E9E">GitLab — no provider yet</div></div>
+                  <span class="val"><span class="pill-mute">read-only</span></span></div>
+              </div>
+              <div class="hintline">Tokens are stored per instance and never sent to another host.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-frame">
+        <p class="cap">iOS — instance detail</p>
+        <div class="phone">
+          <div class="island"><i></i></div>
+          <div class="sbar"><span>9:41</span><span>􀙇 􀛨</span></div>
+          <div class="navbar"><svg class="g" width="17" height="17" style="color:#4ADE80;transform:rotate(180deg)"><use href="#g-caret"/></svg><div class="t">Instance</div></div>
+          <div class="plist">
+            <div class="row"><svg class="g" width="17" height="17"><use href="#g-forgejo"/></svg>
+              <div class="lbl">forgejo.internal.xdent.ai</div></div>
+            <div class="row tap"><div class="lbl">Software</div><span class="val">Forgejo 16.0.0</span></div>
+            <div class="row tap"><div class="lbl">Repositories</div><span class="val">3</span></div>
+            <div class="grp" style="margin-top:8px">
+              <div class="hd">access token</div>
+              <div class="field">••••••••••••••••••••••••••••••••••••c0e1</div>
+              <div class="hintline">Settings ▸ Applications on your instance. Needs
+                <code>read:repository</code>; PR actions also need <code>write:repository</code>.</div>
+            </div>
+            <div class="row tap"><svg class="g" width="16" height="16" style="color:#4ADE80"><use href="#g-check"/></svg>
+              <div class="lbl" style="color:#4ADE80">Test connection</div></div>
+          </div>
+          <div class="composer"><div class="fake"></div></div>
+        </div>
+      </div>
+
+      <div class="col-prose">
+        <p class="cap">why the instance, not the repo</p>
+        <ul>
+          <li><strong>It is what the token actually is.</strong> The server withholds a token from any host
+            other than the one it was configured for — that is a deliberate security property, added after a
+            bug that would have sent an internal token to <code>codeberg.org</code>. Per-repo credentials
+            would fight it.</li>
+          <li><strong>It de-duplicates.</strong> Three repos on one Forgejo means one token, entered once.</li>
+          <li><strong>Detection fills the list.</strong> Rows appear because a repo was added, not because
+            someone registered a server. The only editable field is the token.</li>
+        </ul>
+        <p class="cap" style="margin-top:14px">what this replaces</p>
+        <p>Today the only way to authenticate is exporting <code>FORGEJO_ACCESS_TOKEN</code> before the
+          daemon starts — invisible to the app and impossible from a phone. Env vars should keep working and
+          show as <span class="pill-mute">from environment</span>, read-only.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header>
+    <h2>3 · Per-repo override — the escape hatch</h2><span class="rec">RECOMMENDED</span>
+    <p>In the repo overflow menu that already exists (<code>dotsThree</code>, <code>repo_card.dart:188</code>).</p>
+  </header>
+  <div class="body">
+    <div class="grid">
+      <div class="col-frame">
+        <p class="cap">iOS — repo menu</p>
+        <div class="phone">
+          <div class="island"><i></i></div>
+          <div class="sbar"><span>9:41</span><span>􀙇 􀛨</span></div>
+          <div class="navbar"><div class="t">Repos</div></div>
+          <div class="plist">
+            <div class="row"><svg class="g" width="17" height="17"><use href="#g-folder"/></svg><div class="lbl">Diana</div>
+              <svg class="g" width="18" height="18" style="color:#4ADE80"><use href="#g-dots"/></svg></div>
+            <div class="sheet">
+              <div class="row tap"><svg class="g" width="15" height="15"><use href="#g-plus"/></svg><div class="lbl">New session</div></div>
+              <div class="row tap"><svg class="g" width="15" height="15"><use href="#g-caretd"/></svg><div class="lbl">Resume session</div></div>
+              <div class="row tap" style="background:#2E2E2E"><svg class="g" width="15" height="15" style="color:#4ADE80"><use href="#g-forgejo"/></svg>
+                <div class="lbl">Forge…</div><span class="val">Forgejo</span></div>
+              <div class="row" style="border-top:1px solid #3a3a3a"><svg class="g" width="15" height="15" style="color:#E5484D"><use href="#g-warn"/></svg>
+                <div class="lbl" style="color:#E5484D">Remove from makit</div></div>
+            </div>
+          </div>
+          <div class="composer"><div class="fake"></div></div>
+        </div>
+      </div>
+
+      <div class="col-frame">
+        <p class="cap">iOS — the override sheet</p>
+        <div class="phone">
+          <div class="island"><i></i></div>
+          <div class="sbar"><span>9:41</span><span>􀙇 􀛨</span></div>
+          <div class="navbar"><svg class="g" width="17" height="17" style="color:#4ADE80;transform:rotate(180deg)"><use href="#g-caret"/></svg><div class="t">Forge</div></div>
+          <div class="plist">
+            <div class="hintline" style="padding-top:6px">Diana · forgejo.internal.xdent.ai</div>
+            <div class="row tap"><span class="radio on"></span>
+              <div class="lbl">Detected automatically<div style="font-size:11px;color:#9E9E9E">Forgejo 16.0.0</div></div></div>
+            <div class="grp" style="margin-top:6px">
+              <div class="hd">or choose manually</div>
+              <div class="row tap"><span class="radio"></span><svg class="g" width="15" height="15"><use href="#g-forgejo"/></svg><div class="lbl">Forgejo</div></div>
+              <div class="row tap"><span class="radio"></span><svg class="g" width="15" height="15"><use href="#g-gitea"/></svg><div class="lbl">Gitea</div></div>
+              <div class="row tap"><span class="radio"></span><svg class="g" width="15" height="15"><use href="#g-git"/></svg><div class="lbl">GitHub</div></div>
+              <div class="row"><span class="radio" style="opacity:.4"></span><svg class="g" width="15" height="15" style="opacity:.4"><use href="#g-warn"/></svg>
+                <div class="lbl" style="opacity:.45">GitLab<div style="font-size:11px">no provider yet</div></div></div>
+            </div>
+            <div class="hintline">Only change this if detection is wrong — a proxy hiding
+              <code>/api/forgejo</code>, for example.</div>
+          </div>
+          <div class="composer"><div class="fake"></div></div>
+        </div>
+      </div>
+
+      <div class="col-prose">
+        <p class="cap">why a disclosure, not a required step</p>
+        <ul>
+          <li><strong>“Detected automatically” is pre-selected and named.</strong> The user sees what was
+            found, so the override is a correction rather than a question.</li>
+          <li><strong>The unsupported option is visible but disabled.</strong> Listing GitLab greyed out
+            answers “can I use GitLab?” without a support round trip. Hiding it invites the question.</li>
+          <li><strong>It reuses the existing menu.</strong> <code>repo_card.dart</code> already has
+            <code>themedMenuItem</code> entries for New session / Resume session / Remove from makit; this is
+            a fourth entry before the divider, plus one sheet.</li>
+          <li><strong>An override must survive a restart</strong>, so it is server-side state keyed by repo
+            path — which is the part that needs a protocol addition, not a widget.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>4 · Every state the server can produce</h2>
+    <p>Vocabulary is <code>ForgeSoftwareName</code> in <code>server/src/forge/types.ts</code>. No invented states.</p>
+  </header>
+  <div class="body">
+    <table>
+      <thead><tr><th>server value</th><th>provider used</th><th>chip</th><th>PR button</th><th>mutations</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">github</td><td class="mono">gh gateway</td><td>none (majority case)</td><td>Open #42 on GitHub</td><td>all</td></tr>
+        <tr><td class="mono">forgejo</td><td class="mono">forgejo REST</td><td><span class="chip new"><svg><use href="#g-forgejo"/></svg>Forgejo</span></td><td>Open #42 on Forgejo</td><td>all; “ready” rewrites the title</td></tr>
+        <tr><td class="mono">gitea</td><td class="mono">forgejo REST</td><td><span class="chip new"><svg><use href="#g-gitea"/></svg>Gitea</span></td><td>Open #42 on Gitea</td><td>all; same API</td></tr>
+        <tr><td class="mono">gitlab</td><td class="mono">unsupported</td><td><span class="chip bad"><svg><use href="#g-warn"/></svg>GitLab — unsupported</span></td><td>Open #42 <span class="num">(no forge named)</span></td><td>refused, with the reason</td></tr>
+        <tr><td class="mono">unknown</td><td class="mono">unsupported</td><td><span class="chip bad"><svg><use href="#g-warn"/></svg>Unrecognised forge</span></td><td>Open #42</td><td>refused</td></tr>
+        <tr><td class="mono">unknown</td><td class="mono">retried in 60s</td><td><span class="chip"><svg><use href="#g-warn"/></svg>Checking…</span></td><td>Open #42</td><td>refused meanwhile</td></tr>
+        <tr><td class="num">no readable remote</td><td class="mono">gh gateway</td><td>none</td><td>hidden (no PR)</td><td>n/a</td></tr>
+      </tbody>
+    </table>
+    <p style="color:var(--muted);font-size:12px;margin-top:12px">
+      Two <code>unknown</code> rows on purpose: a failed probe is cached for 60s, not forever, so an instance
+      that was briefly down is not pinned as unsupported until the daemon restarts. The UI should distinguish
+      “we could not tell yet” from “we asked and it is not supported”.
+    </p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>5 · Shapes rejected</h2><span class="rej">REJECTED</span></header>
+  <div class="body">
+    <table>
+      <thead><tr><th style="width:26%">shape</th><th>why not</th></tr></thead>
+      <tbody>
+        <tr><td>A required “choose your provider” step when adding a repo</td>
+            <td>Asks the user to answer what the server already knows, and gets it wrong more often than
+                detection does. Setup friction on the majority path to serve a rare one.</td></tr>
+        <tr><td>Per-repo token fields</td>
+            <td>A token authenticates an instance. Three repos on one Forgejo would mean pasting the same
+                secret three times and three places to rotate it — and it contradicts the host-scoping the
+                server enforces.</td></tr>
+        <tr><td>A free-text “API base URL” per repo</td>
+            <td>Derivable from the remote in every case tested. Keep it as an instance-level override for
+                sub-path installs (today's <code>FORGEJO_BASE_URL</code>), not a per-repo field.</td></tr>
+        <tr><td>Silently treating unknown forges as Forgejo <span class="built">AS BUILT (before)</span></td>
+            <td>What shipped until detection landed: a GitLab remote polled a nonexistent API and read as
+                “unknown”, indistinguishable from an outage.</td></tr>
+        <tr><td>A “GitHub” chip on every repo card</td>
+            <td>Chrome for the majority case to serve the minority. Show the chip only when the forge is not
+                GitHub, or is unsupported.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>6 · Deltas, ordered by value per line changed</h2>
+    <p>Nothing here is built yet. Detection (server) is.</p>
+  </header>
+  <div class="body">
+    <table>
+      <thead><tr><th style="width:34px">#</th><th>change</th><th style="width:30%">file</th><th style="width:64px">size</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>Carry the detected forge on the repo DTO: <code>forge?: {software, host, authed, source}</code>. Optional, so an older app renders no chip rather than a fabricated one.</td><td class="mono">server/src/protocol.ts</td><td class="num">~14</td></tr>
+        <tr><td class="num">2</td><td>Expose <code>softwareFor(repoPath)</code> from the router and populate the DTO in the repo snapshot.</td><td class="mono">server/src/forge/router.ts<br>server/src/repo_service.ts</td><td class="num">~25</td></tr>
+        <tr><td class="num">3</td><td><code>ForgeChip</code> beside the existing chips; render only for non-GitHub or unsupported.</td><td class="mono">app/lib/ui/home/repo_chips.dart</td><td class="num">~45</td></tr>
+        <tr><td class="num">4</td><td>Delete the Dart-side guess: <code>forgeKindForUrl</code> reads the DTO instead of re-deriving the forge from the PR URL. Removes the third copy of one rule.</td><td class="mono">app/lib/ui/widgets/forge_glyph.dart</td><td class="num">−25</td></tr>
+        <tr><td class="num">5</td><td>Instance list + token field, with env-provided values shown read-only.</td><td class="mono">app/lib/desktop/settings/sections/<br>forges_section.dart <em>(new)</em></td><td class="num">~190</td></tr>
+        <tr><td class="num">6</td><td>Persist and apply a per-repo override; a <code>forge.setOverride</code> command plus storage keyed by repo path.</td><td class="mono">server/src/ws/commands/forge.ts <em>(new)</em><br>server/src/forge/router.ts</td><td class="num">~120</td></tr>
+        <tr><td class="num">7</td><td>“Forge…” entry in the repo overflow menu + the override sheet.</td><td class="mono">app/lib/ui/home/repo_card.dart<br>app/lib/ui/home/forge_sheet.dart <em>(new)</em></td><td class="num">~150</td></tr>
+      </tbody>
+    </table>
+    <p class="cap" style="margin-top:16px">not changed, and why</p>
+    <ul style="color:var(--osv);font-size:13px;margin:0 0 0 18px">
+      <li><strong>No GitLab provider.</strong> That is a third implementation (<code>merge_requests</code>,
+        different auth), not a config entry. Rows 1–7 make makit <em>honest</em> about GitLab; they do not
+        support it.</li>
+      <li><strong>The budget footer stays GitHub-only.</strong> Forgejo has no rate limiting to display —
+        no <code>/rate_limit</code>, no headers, no config knob.</li>
+      <li><strong>Detection stays server-side.</strong> The app is told; it never probes. One answer, one
+        place, no drift.</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>
