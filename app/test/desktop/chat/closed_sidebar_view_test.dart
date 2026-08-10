@@ -19,11 +19,25 @@ class _ClosedConn extends ConnectionController {
   _ClosedConn(this.closed) : super(const _NoStore());
   final List<Map<String, dynamic>> closed;
   final sent = <Map<String, dynamic>>[];
+
+  /// Ids this fake has reopened — they must stop being reported as closed, as
+  /// the real server does, or a reopen test passes even when the row never left.
+  final reopened = <String>{};
+
   @override
   Future<Map<String, dynamic>> request(MsgType t, Map<String, dynamic> body) {
     sent.add(body);
+    if (body['kind'] == 'session.reopen') {
+      reopened.add(body['sessionId'] as String);
+      return Future.value(const {});
+    }
     if (body['kind'] == 'session.listClosed') {
-      return Future.value({'sessions': closed});
+      return Future.value({
+        'sessions': [
+          for (final s in closed)
+            if (!reopened.contains(s['id'])) s,
+        ],
+      });
     }
     return Future.value(const {});
   }
@@ -168,6 +182,13 @@ void main() {
       orElse: () => const {},
     );
     expect(u['sessionId'], 's1');
+    // What the user actually sees: the row must leave the list, not merely the
+    // request go out.
+    expect(
+      find.text('Adapter resume'),
+      findsNothing,
+      reason: 'the reopened row must leave the closed list',
+    );
   });
 
   testWidgets('Reopen reloads the list without surfacing an error', (

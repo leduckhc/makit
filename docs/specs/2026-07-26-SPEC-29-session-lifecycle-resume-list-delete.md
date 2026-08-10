@@ -140,21 +140,38 @@ compatible**.
 
 ## Decisions (frozen)
 
-> **Decision 6 UPDATED (2026-07-26) — archive, don't hard-delete.** The primary
-> destructive action is **archive** (recoverable), not delete. `session.archive`
-> sets a persisted `archived` flag on the makit session, stops the live agent
-> (`adapter.kill()`), and swaps in the `DetachedAdapter`. It is **makit-side
-> only** — it does **not** call any back-end native archive (codex
-> `thread/archive` is deliberately avoided so the underlying thread stays
-> directly resumable; the transcript + event log + resume handle are **kept**,
-> never destroyed). Archived sessions are **excluded from the active session
-> list** (`listSessions()` → `sessions.snapshot`) but survive a restart
-> (rehydration keeps them archived) and are restored with `session.unarchive`
-> (clears the flag; the session stays cold until the next subscribe re-attaches
-> it). No rows are deleted from the event log. A truly permanent hard-delete
-> (SQL delete + agent `thread/delete`/`session/delete`) is deferred to a
-> separate explicit
-> "delete permanently" action and is NOT wired in this pass.
+> **Decision 6 SUPERSEDED (2026-08-11) — close (release the agent), don't
+> archive.** The 2026-07-26 revision of this decision specified `session.archive`
+> / `session.unarchive`, a persisted `archived` flag, and "stops the live agent
+> (`adapter.kill()`)". All of it is replaced; see the AMENDMENT at the top of this
+> spec for why (one unverified SIGTERM left agents resident for days).
+>
+> The primary non-destructive action is **close** (recoverable) — not delete, and
+> no longer "archive". `session.close` releases the agent in two required steps:
+> the back end's own primitive (ACP `session/close` gated on
+> `sessionCapabilities.close`; codex `thread/unsubscribe`), then a **verified**
+> process reap (`SIGTERM` → `SIGKILL` after a grace period). Both are required
+> because makit runs one agent process per session, so the agent-side release
+> alone reclaims no memory. The manager bounds and swallows the graceful step,
+> drops pending mid-turn input ("stop means stop", SPEC-35), and serializes
+> teardown against input, then swaps in the `DetachedAdapter` and sets the
+> persisted **`closed`** flag.
+>
+> It stays **makit-side only** for the *record*: no back-end native archive is
+> called (codex `thread/archive` is deliberately avoided so the underlying
+> session/thread stays directly resumable and listable; the transcript + event log
+> + resume handle are **kept**, never destroyed). Closed sessions are **excluded
+> from the active session list** (`listSessions()` → `sessions.snapshot`), survive
+> a restart (rehydration keeps them closed), are enumerated by
+> `session.listClosed`, and come back via `session.reopen` — or transparently, by
+> sending a message (`ensureLiveForInput`). Reading a closed transcript (`sub`)
+> deliberately does **not** respawn an agent. Sessions idle beyond
+> `MAKIT_IDLE_CLOSE_MIN` (default 60, `0` disables) close automatically; that
+> sweep never touches a session that is busy, awaiting the user, a draft, already
+> cold, or not resumable, so every auto-close is reversible. A truly permanent
+> hard-delete (SQL delete + agent `thread/delete`/`session/delete`) remains
+> deferred to a separate explicit "delete permanently" action and is NOT wired in
+> this pass.
 
 1. **Capability negotiation lives on the adapter, not on `agent === "pi"`.**
    The `AgentAdapter` seam gains a `capabilities()` (or `readonly capabilities`)

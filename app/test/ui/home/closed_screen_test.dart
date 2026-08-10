@@ -36,7 +36,13 @@ class _FakeStore extends StoreController {
     // FutureBuilder as a future error rather than before it can subscribe.
     await Future<void>.delayed(Duration.zero);
     if (throws) throw StateError('offline');
-    return closed;
+    // Behave like the server: a reopened session is no longer closed, so it must
+    // leave this list. Returning `closed` verbatim let the reopen test pass even
+    // if the row never disappeared.
+    return [
+      for (final session in closed)
+        if (!restored.contains(session.id)) session,
+    ];
   }
 
   @override
@@ -128,6 +134,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(store.restored, ['a']);
+    expect(
+      find.text('sess-a'),
+      findsNothing,
+      reason: 'the reopened row must leave the list',
+    );
     // Reloaded so the restored row leaves the closed list.
     expect(store.loadCount, 2);
   });
