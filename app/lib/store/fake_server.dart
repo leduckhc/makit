@@ -1110,6 +1110,7 @@ class _FakeSession {
   /// Feature-branch worktree this session runs in; null = primary checkout.
   String? branch;
   bool pending;
+
   /// Closed (SPEC-29): the agent was released. Excluded from the active
   /// snapshot, reported by `session.listClosed`, restored by `session.reopen`.
   /// Always starts live — the demo's cold-start closed rows are static fixtures.
