@@ -99,7 +99,26 @@ void main() {
       expect(find.text('Board X'), findsOneWidget);
     });
 
-    testWidgets('a query with no matches says so instead of showing an empty panel', (
+    // The panel sized its list with `clamp(0.0, maxHeight - chrome)`, and Dart's
+  // clamp asserts lower <= upper — so any surface leaving under 96px of room
+  // (a short window, or the glyph anchored near an edge) threw ArgumentError
+  // instead of rendering a cramped popover. Verified: maxHeight=90 -> throws.
+  testWidgets('renders on a surface too short for the chrome, instead of throwing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400 * 3, 120 * 3);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);
+    await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull, reason: 'no ArgumentError from clamp');
+    expect(find.byKey(kDocsPopover), findsOneWidget);
+  });
+
+  testWidgets('a query with no matches says so instead of showing an empty panel', (
       tester,
     ) async {
       await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);

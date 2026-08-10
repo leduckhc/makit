@@ -126,6 +126,7 @@ test("publishDoc percent-encodes each path segment of the URL", async () => {
         relPath,
         kind: "md",
         bytes: 10,
+        modifiedAt: 0,
       }),
     },
   );

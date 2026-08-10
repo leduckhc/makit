@@ -25,19 +25,26 @@ bool _matchesFilter(DocInfo d, DocsFilter filter) => switch (filter) {
 /// OR the path, case-insensitively — titles AND paths, never doc bodies (P1
 /// does not do full-text). A null snapshot yields no docs (the screen shows a
 /// waiting/empty state, never a fabricated list).
+/// Whether [d] matches a free-text [query], over title AND path.
+///
+/// The one definition: the Docs screen and the desktop popover both search, and
+/// two copies of "contains, case-insensitive, title or relPath" would drift.
+bool docMatchesQuery(DocInfo d, String query) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  return d.title.toLowerCase().contains(q) ||
+      d.relPath.toLowerCase().contains(q);
+}
+
 List<DocInfo> filterDocs(
   DocsSnapshot? snapshot,
   DocsFilter filter, {
   String query = '',
 }) {
   if (snapshot == null) return const [];
-  final q = query.trim().toLowerCase();
-  return snapshot.docs.where((d) {
-    if (!_matchesFilter(d, filter)) return false;
-    if (q.isEmpty) return true;
-    return d.title.toLowerCase().contains(q) ||
-        d.relPath.toLowerCase().contains(q);
-  }).toList();
+  return snapshot.docs
+      .where((d) => _matchesFilter(d, filter) && docMatchesQuery(d, query))
+      .toList();
 }
 
 /// Count for each filter, independent of the active one — so a chip can show

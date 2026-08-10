@@ -20,20 +20,34 @@ export const DEFAULT_DOC_DIRS: readonly string[] = ["mockups", "docs"];
 
 const CONFIG_REL_PATH = join(".makit", "docs.json");
 
-export interface DocRoots {
-  /** Worktree-relative directories to walk recursively. */
-  dirs: string[];
-  /** When true, also index `*.md` sitting directly in the worktree root (D1). */
-  rootMarkdown: boolean;
-  /** Extra worktree-relative paths to exclude (in addition to D2's hard list). */
-  exclude: string[];
-  /**
-   * True when `.makit/docs.json` named `roots` itself. D1 rev 2 indexes the
-   * whole worktree by default, so naming roots is now the way to **narrow** the
-   * index back to a walk of exactly those directories.
-   */
-  explicit: boolean;
-}
+/**
+ * Which files a worktree's index considers.
+ *
+ * A discriminated union, not a bag of flags: under `git` the `dirs` and
+ * `rootMarkdown` fields are meaningless, and encoding that with an `explicit`
+ * boolean beside them let invalid combinations typecheck. The compiler now
+ * refuses them.
+ */
+export type DocRoots =
+  | {
+      /** D1 rev 2 default: everything git does not ignore. */
+      kind: "git";
+      /** Extra worktree-relative paths to exclude (in addition to D2's hard list). */
+      exclude: string[];
+    }
+  | {
+      /**
+       * rev 1's allowlist walk. Reached two ways: the project named `roots` in
+       * `.makit/docs.json` (narrowing the index on purpose), or git could not
+       * answer for this worktree.
+       */
+      kind: "walk";
+      /** Worktree-relative directories to walk recursively. */
+      dirs: string[];
+      /** When true, also index `*.md` sitting directly in the worktree root. */
+      rootMarkdown: boolean;
+      exclude: string[];
+    };
 
 /**
  * Resolve the doc roots for `worktreeRoot`, honouring `.makit/docs.json` when it
@@ -41,30 +55,25 @@ export interface DocRoots {
  * invalid JSON, wrong shape — yields the D1 defaults.
  */
 export function resolveDocRoots(worktreeRoot: string): DocRoots {
-  const defaults: DocRoots = {
-    dirs: [...DEFAULT_DOC_DIRS],
-    rootMarkdown: true,
-    exclude: [],
-    explicit: false,
-  };
+  const gitDefault = (exclude: string[]): DocRoots => ({ kind: "git", exclude });
 
   const config = readConfig(worktreeRoot);
-  if (config === undefined) return defaults;
+  if (config === undefined) return gitDefault([]);
 
   const exclude = stringArray(config.exclude) ?? [];
 
   const rawRoots = stringArray(config.roots);
   if (rawRoots === undefined) {
-    // No (or malformed) roots key: keep the defaults, but a valid exclude list
-    // still applies.
-    return { ...defaults, exclude };
+    // No (or malformed) roots key: stay on the git default, but a valid exclude
+    // list still applies.
+    return gitDefault(exclude);
   }
 
   // A user who lists roots explicitly opts out of the implicit root-markdown
   // scan and replaces the default directories (D1). Roots that escape the
   // worktree are dropped, reusing the containment check the serving layer uses.
   const dirs = rawRoots.filter((rel) => isContained(worktreeRoot, rel));
-  return { dirs, rootMarkdown: false, exclude, explicit: true };
+  return { kind: "walk", dirs, rootMarkdown: false, exclude };
 }
 
 /** Parse `.makit/docs.json`, or undefined on any read/parse failure. */

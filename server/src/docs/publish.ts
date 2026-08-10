@@ -49,7 +49,14 @@ export async function publishDoc(
   }
 
   // Only now probe reachability — an invalid doc must never spawn `tailscale`.
-  const reach = await deps.reach();
+  // A probe that throws (bind failure, spawn error) is a refusal with a reason,
+  // not an unhandled rejection escaping into the command router.
+  let reach: DocReach | null;
+  try {
+    reach = await deps.reach();
+  } catch (err) {
+    return { ok: false, reason: `could not establish a reachable address: ${(err as Error).message}` };
+  }
   if (reach === null) {
     return {
       ok: false,

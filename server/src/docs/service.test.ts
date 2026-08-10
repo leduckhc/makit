@@ -21,7 +21,7 @@ function docOf(worktreePath: string, relPath: string, mtime = 1): DocDTO {
 
 function makeService(overrides: {
   listWorktrees?: () => DocWorktree[];
-  scan?: (worktreePath: string) => WorktreeScan;
+  scan?: (worktreePath: string) => Promise<WorktreeScan>;
   changed?: () => Promise<ReadonlySet<string> | undefined>;
   exec?: Exec;
 } = {}) {
@@ -30,7 +30,7 @@ function makeService(overrides: {
   let clears = 0;
   const grants = new DocGrantStore();
 
-  const defaultScan = (worktreePath: string): WorktreeScan => ({
+  const defaultScan = async (worktreePath: string): Promise<WorktreeScan> => ({
     docs: [docOf(worktreePath, "spec.md")],
     scanOk: true,
   });
@@ -123,7 +123,7 @@ test("1→0 cancels a pending debounce", async () => {
 
 test("enriches changed from the merge base: true when in the set, false when not, absent when undetermined", async () => {
   const wt = { worktreePath: "/wt", baseBranch: "main", currentBranch: "feat" };
-  const scan = (worktreePath: string): WorktreeScan => ({
+  const scan = async (worktreePath: string): Promise<WorktreeScan> => ({
     docs: [docOf(worktreePath, "a.md"), docOf(worktreePath, "b.md")],
     scanOk: true,
   });
@@ -145,7 +145,7 @@ test("enriches changed from the merge base: true when in the set, false when not
 
 test("scanOk is false for the whole snapshot when any worktree walk did not run", async () => {
   const h = makeService({
-    scan: () => ({ docs: [], scanOk: false, scanError: "walk failed" }),
+    scan: async () => ({ docs: [], scanOk: false, scanError: "walk failed" }),
   });
   h.service.setWatchers(1);
   await flush();
@@ -241,7 +241,7 @@ test("a re-index picks up worktrees that only appeared after the first scan", as
       return 1;
     },
     clearTimer: () => {},
-    scan: (worktreePath): WorktreeScan => ({
+    scan: async (worktreePath): Promise<WorktreeScan> => ({
       docs: [
         {
           key: `${worktreePath}:mockups/b.html`,

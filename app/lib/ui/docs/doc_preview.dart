@@ -209,9 +209,31 @@ class _DocPreviewState extends State<DocPreview> {
 
   Widget _content(BuildContext context) {
     if (widget.doc.kind == DocKind.html) {
+      // The one place locality is decided (D8 rev 2). Publishing works
+      // everywhere, so it is always in the list — primary for a client that
+      // cannot open the file itself, demoted for one that can.
+      final openLocal = widget.onOpenLocal;
+      final publish = _DocAction(
+        key: kDocPublishButton,
+        label: openLocal == null ? 'Publish & open' : 'Share to a device\u2026',
+        icon: PhosphorIconsLight.shareNetwork,
+        onPressed: widget.onPublish,
+      );
       return _HtmlNotice(
-        onPublish: widget.onPublish,
-        onOpenLocal: widget.onOpenLocal,
+        blurb: openLocal == null
+            ? 'Publish it to your tailnet and open it with full fidelity \u2014 '
+                  'real Safari, real JS, print-to-PDF.'
+            : 'This file is on this machine \u2014 opening it needs no server.',
+        actions: [
+          if (openLocal != null)
+            _DocAction(
+              key: kDocOpenLocalButton,
+              label: 'Open in browser',
+              icon: PhosphorIconsLight.browser,
+              onPressed: openLocal,
+            ),
+          publish,
+        ],
       );
     }
     if (widget.markdownError != null) {
@@ -431,18 +453,40 @@ class _FrontMatterChip extends StatelessWidget {
 /// D8 rev 2: HTML is not rendered in-app in P1 — but *where the viewer is*
 /// decides how it opens. On the machine holding the file, hand it to the OS; on
 /// another device, mint a tailnet grant and open that.
-class _HtmlNotice extends StatelessWidget {
-  const _HtmlNotice({required this.onPublish, this.onOpenLocal});
-  final VoidCallback? onPublish;
+/// One way to get an HTML document in front of the user.
+class _DocAction {
+  const _DocAction({
+    required this.key,
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
+  final Key key;
+  final String label;
+  final IconData icon;
+  final VoidCallback? onPressed;
+}
 
-  /// Non-null only for a local client, where no serving is needed.
-  final VoidCallback? onOpenLocal;
+/// D8 rev 2: HTML is not rendered in-app in P1 — *where the viewer is* decides
+/// how it opens. Rather than branch on locality in the widget tree, the caller's
+/// two situations are modelled as an ordered action list: the first is primary,
+/// the rest are secondary. The notice then renders a list and has no conditional
+/// of its own, which is what stops "is this local?" from being re-asked at every
+/// line of the layout.
+class _HtmlNotice extends StatelessWidget {
+  const _HtmlNotice({required this.blurb, required this.actions});
+
+  /// Why this document opens the way it does.
+  final String blurb;
+
+  /// Primary first. Never empty.
+  final List<_DocAction> actions;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final local = onOpenLocal != null;
+    final [primary, ...secondary] = actions;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(kSpace32),
@@ -458,39 +502,26 @@ class _HtmlNotice extends StatelessWidget {
             ),
             const SizedBox(height: kSpace4),
             Text(
-              local
-                  ? 'This file is on this machine — opening it needs no server.'
-                  : 'Publish it to your tailnet and open it with full fidelity — '
-                        'real Safari, real JS, print-to-PDF.',
+              blurb,
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: kSpace16),
-            if (local)
-              FilledButton.icon(
-                key: kDocOpenLocalButton,
-                onPressed: onOpenLocal,
-                icon: const Icon(PhosphorIconsLight.browser, size: 16),
-                label: const Text('Open in browser'),
-              )
-            else
-              FilledButton.icon(
-                key: kDocPublishButton,
-                onPressed: onPublish,
-                icon: const Icon(PhosphorIconsLight.shareNetwork, size: 16),
-                label: const Text('Publish & open'),
-              ),
-            // Publishing stays reachable locally — that is how a board gets to
-            // the phone from the desk — but it is no longer the only way.
-            if (local) ...[
+            FilledButton.icon(
+              key: primary.key,
+              onPressed: primary.onPressed,
+              icon: Icon(primary.icon, size: 16),
+              label: Text(primary.label),
+            ),
+            for (final a in secondary) ...[
               const SizedBox(height: kSpace8),
               TextButton.icon(
-                key: kDocPublishButton,
-                onPressed: onPublish,
-                icon: const Icon(PhosphorIconsLight.shareNetwork, size: 15),
-                label: const Text('Share to a device…'),
+                key: a.key,
+                onPressed: a.onPressed,
+                icon: Icon(a.icon, size: 16),
+                label: Text(a.label),
               ),
             ],
           ],

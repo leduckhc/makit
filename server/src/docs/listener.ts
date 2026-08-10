@@ -41,6 +41,12 @@ export interface DocListenerDeps {
 export class DocListener {
   private server: Server | undefined;
   private origin: DocReach | undefined;
+  /**
+   * The bind in flight, so concurrent publishes share one attempt. Without it
+   * two simultaneous `publish` calls both pass the `origin === undefined` check
+   * and bind two ports, and the first listener is leaked with no way to close it.
+   */
+  private binding: Promise<DocReach | null> | undefined;
   private readonly deps: DocListenerDeps;
 
   constructor(deps: DocListenerDeps) {
@@ -59,10 +65,19 @@ export class DocListener {
    */
   async ensureOrigin(): Promise<DocReach | null> {
     if (this.origin !== undefined) return this.origin;
+    // Join an in-flight bind rather than starting a second one.
+    if (this.binding !== undefined) return this.binding;
 
     const host = this.deps.bindHost;
     if (host === null) return null;
 
+    this.binding = this.bindOnce(host).finally(() => {
+      this.binding = undefined;
+    });
+    return this.binding;
+  }
+
+  private async bindOnce(host: string): Promise<DocReach | null> {
     const server = (this.deps.createServer ?? defaultCreateServer)();
     this.deps.attach(server);
 
@@ -88,8 +103,18 @@ export class DocListener {
     await this.close();
   }
 
-  /** Close the listener if bound. Idempotent. */
+  /**
+   * Close the listener if bound. Idempotent.
+   *
+   * The fields are cleared before `close()` resolves, so a publish arriving mid
+   * close would bind a fresh listener on a new port while the old socket is
+   * still shutting down. Awaiting the closure first keeps the two serialised:
+   * one listener at a time, always.
+   */
   async close(): Promise<void> {
+    const closing = this.binding;
+    if (closing !== undefined) await closing.catch(() => null);
+
     const server = this.server;
     this.server = undefined;
     this.origin = undefined;

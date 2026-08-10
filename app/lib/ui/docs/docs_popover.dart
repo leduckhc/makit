@@ -8,6 +8,8 @@ library;
 
 import 'dart:async';
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -16,6 +18,7 @@ import '../../app/theme.dart';
 import '../../store/docs.dart';
 import 'doc_glyph.dart';
 import 'doc_row.dart';
+import 'docs_filter.dart';
 
 /// Key for the popover panel, so tests assert its presence without copy.
 const Key kDocsPopover = ValueKey('docs-popover');
@@ -285,16 +288,11 @@ class _DocsPopoverPanel extends StatefulWidget {
 class _DocsPopoverPanelState extends State<_DocsPopoverPanel> {
   String _query = '';
 
-  /// Title-or-path match, the same rule the Docs screen's search uses.
+  /// The same title-or-path rule the Docs screen searches with (`docMatchesQuery`).
   List<DocInfo> get _visible {
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return widget.docs;
+    if (_query.trim().isEmpty) return widget.docs;
     return widget.docs
-        .where(
-          (d) =>
-              d.title.toLowerCase().contains(q) ||
-              d.relPath.toLowerCase().contains(q),
-        )
+        .where((d) => docMatchesQuery(d, _query))
         .toList(growable: false);
   }
 
@@ -306,9 +304,15 @@ class _DocsPopoverPanelState extends State<_DocsPopoverPanel> {
     final visible = _visible;
     // A repo can hold hundreds of docs, so cap the list at a readable dozen and
     // scroll the rest rather than growing the popover to the window's height.
-    final listHeight = (kDocsPopoverVisibleRows * kDocsPopoverRowHeight).clamp(
+    //
+    // `clamp` asserts lower <= upper, so a maxHeight below the chrome height
+    // (small window, or the glyph anchored near a screen edge) would throw
+    // rather than degrade. Take the smaller of the two instead — no assertion,
+    // and a cramped popover still renders whatever it can.
+    final available = widget.maxHeight - kDocsPopoverChromeHeight;
+    final listHeight = math.max(
       0.0,
-      widget.maxHeight - kDocsPopoverChromeHeight,
+      math.min(kDocsPopoverVisibleRows * kDocsPopoverRowHeight, available),
     );
     return Material(
       key: kDocsPopover,

@@ -13,8 +13,14 @@
  *      read and the static route share, so "open" can never reach a dotfile,
  *      an excluded directory, a non-document extension or outside the worktree.
  *
- * The path is passed as an argv element and never through a shell, so a filename
+ * The path is passed as an argv element to a non-shell binary, so a filename
  * containing spaces, quotes or `;` is inert.
+ *
+ * Windows is deliberately unsupported. The obvious opener there is
+ * `cmd /c start ""`, and `cmd.exe` **is** a command interpreter: it re-parses
+ * `& | > < ^` in the path, so that route reintroduces exactly the injection this
+ * design avoids. makit's server targets macOS and Linux, so the honest answer is
+ * to refuse with a reason rather than ship a shell-quoting guess.
  */
 
 import { execFile } from "node:child_process";
@@ -35,20 +41,27 @@ export interface OpenDocDeps {
 
 export type OpenResult = { ok: true; absPath: string } | { ok: false; reason: string };
 
-/** The OS opener for `platform`, or undefined when we have no idea. */
-function openerFor(platform: NodeJS.Platform): { cmd: string; args: string[] } | undefined {
+/**
+ * The OS opener for `platform`, or undefined when there is no shell-free one.
+ *
+ * Both supported entries are plain executables that take the path as a single
+ * argument — no interpreter, so nothing to escape.
+ *
+ * **Windows is deliberately unsupported.** Every route there goes through an
+ * interpreter: `cmd /c start ""` re-parses `& | > < ^`, and `powershell -Command`
+ * *joins* its remaining arguments into a script, so a path containing `;` or
+ * `$(...)` is evaluated. Both reintroduce the injection this design exists to
+ * avoid. makit's server targets macOS and Linux; refusing with a reason beats
+ * shipping a quoting guess.
+ */
+function openerFor(platform: NodeJS.Platform): string | undefined {
   switch (platform) {
     case "darwin":
-      return { cmd: "/usr/bin/open", args: [] };
-    case "win32":
-      // Use `start` as a subprocess, not via `cmd /c` (which is vulnerable to
-      // unescaped quoting). Node's child_process.execFile on win32 handles the
-      // escaping via ShellExecute automatically when the first arg is not a known
-      // binary — but to be explicit and safe, use `powershell -Command` instead,
-      // which does NOT concatenate its args (they are a script block).
-      return { cmd: "powershell", args: ["-Command", "Start-Process"] };
+      return "/usr/bin/open";
+    case "linux":
+      return "xdg-open";
     default:
-      return { cmd: "xdg-open", args: [] };
+      return undefined;
   }
 }
 
@@ -71,14 +84,14 @@ export async function openDocOnHost(
 
   const opener = openerFor(platform);
   if (opener === undefined) {
-    return { ok: false, reason: `no known opener for platform ${platform}` };
+    return {
+      ok: false,
+      reason: `opening on the host is not supported on ${platform}; publish it instead`,
+    };
   }
 
   return new Promise<OpenResult>((resolve) => {
-    const args = platform === "win32" 
-      ? [...opener.args, "-FilePath", resolved.absPath]
-      : [...opener.args, resolved.absPath];
-    spawn(opener.cmd, args, (err) => {
+    spawn(opener, [resolved.absPath], (err) => {
       if (err !== null) {
         resolve({ ok: false, reason: `opener failed: ${err.message}` });
         return;

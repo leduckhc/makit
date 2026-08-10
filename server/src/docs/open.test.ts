@@ -39,16 +39,27 @@ test("opens a resolvable doc with the platform opener, passing the absolute path
   assert.deepEqual(rec.calls[0]![1], [join(root, "mockups", "board.html")]);
 });
 
-test("linux uses xdg-open; windows uses powershell Start-Process", async () => {
+test("linux uses xdg-open, with the path as the only argument", async () => {
   const root = fixture();
   const lin = recorder();
   await openDocOnHost(root, "mockups/board.html", { platform: "linux", spawn: lin.spawn });
   assert.equal(lin.calls[0]![0], "xdg-open");
+  assert.deepEqual(lin.calls[0]![1], [join(root, "mockups", "board.html")]);
+});
 
-  const win = recorder();
-  await openDocOnHost(root, "mockups/board.html", { platform: "win32", spawn: win.spawn });
-  assert.equal(win.calls[0]![0], "powershell");
-  assert.deepEqual(win.calls[0]![1].slice(0, 2), ["-Command", "Start-Process"]);
+// Guards the decision, not just the behaviour: every Windows opener goes through
+// an interpreter (`cmd /c start` re-parses `& | > <`; `powershell -Command` joins
+// its args into a script and expands `$(...)`), so the path would stop being
+// inert. If someone re-adds a win32 branch, this fails.
+test("an unsupported platform is refused with a reason and spawns nothing", async () => {
+  const root = fixture();
+  for (const platform of ["win32", "aix"] as NodeJS.Platform[]) {
+    const rec = recorder();
+    const result = await openDocOnHost(root, "mockups/board.html", { platform, spawn: rec.spawn });
+    assert.equal(result.ok, false, `${platform} must be refused`);
+    assert.match(result.ok ? "" : result.reason, /not supported|publish/);
+    assert.equal(rec.calls.length, 0, `${platform} must not spawn anything`);
+  }
 });
 
 // D2 is the one boundary: "open" must not become a way to launch anything the

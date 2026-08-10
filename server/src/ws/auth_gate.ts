@@ -109,6 +109,7 @@ export class AuthGate {
       ok: true,
       deviceId: device.id,
       bearer: device.bearer,
+      isLocal: client.isLocal,
     });
     this.deps.onAuthenticated(client);
   }

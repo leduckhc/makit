@@ -1,80 +1,66 @@
 /**
  * makit — SPEC-46: collect a worktree's documents into `DocDTO[]`.
  *
- * D1 rev 2: the candidate list comes from {@link trackedDocPaths} — everything
- * git does not ignore — so docs are found wherever a project keeps them. A
- * worktree that names `roots` in `.makit/docs.json`, or one git cannot answer
- * for, falls back to rev 1's allowlist walk, which applies D2's exclusions
- * **before descending** (so `node_modules` is never entered).
+ * One shape, one loop: {@link docCandidates} yields worktree-relative paths
+ * (from git under D1 rev 2, or the allowlist walk when git cannot answer or the
+ * project narrowed its own roots), and each is mapped to a `DocDTO` here. The
+ * fallback lives in the lister, so this module has no idea which source it got.
  *
- * Either way every candidate is routed through {@link resolveDocPath} — the one
- * security boundary this and the static route share — and its title/status read
- * with {@link readDocMeta}.
+ * Every candidate is routed through {@link resolveDocPath} — the one security
+ * boundary this and the static route share — and its title/status read with
+ * {@link readDocMeta}.
  *
  * An unreadable file is skipped without failing the scan: `scanOk` means "the
  * scan ran", not "the list is complete" (the `PortsSnapshotDTO.scanOk` rule).
  * The service enriches each doc with `changed` (D5) and `sessionId` afterwards.
  */
 
-import { readdirSync, statSync, type Dirent } from "node:fs";
-import { join } from "node:path";
-
 import type { DocDTO } from "../protocol.js";
-import { EXCLUDED_DIRS, resolveDocPath, type DocKind } from "./resolve.js";
+import { resolveDocPath, type DocKind } from "./resolve.js";
 import { readDocMeta, type DocMeta } from "./title.js";
 import { resolveDocRoots, type DocRoots } from "./roots.js";
-import { trackedDocPaths, type DocLister } from "./tracked.js";
+import { docCandidates } from "./tracked.js";
 
 export interface ScanOptions {
   /** Injected for tests; defaults to {@link resolveDocRoots}. */
   resolveRoots?: (worktreeRoot: string) => DocRoots;
   /** Injected for tests; defaults to {@link readDocMeta}. */
   readMeta?: (absPath: string, kind: DocKind) => DocMeta;
-  /** Injected for tests; defaults to {@link trackedDocPaths}. */
-  listDocs?: DocLister;
+  /** Injected for tests; defaults to {@link docCandidates}. */
+  listCandidates?: (root: string, roots: DocRoots) => Promise<string[]>;
 }
 
 export interface WorktreeScan {
   /** Docs in this worktree, mtime-descending. */
   docs: DocDTO[];
-  /** True when the walk ran — not that every file was read (D7 discipline). */
+  /** True when the scan ran — not that every file was read (D7 discipline). */
   scanOk: boolean;
-  /** One-line reason when the walk itself could not run. */
+  /** One-line reason when the scan itself could not run. */
   scanError?: string;
 }
 
 /**
- * Walk `worktreePath`'s doc roots and return its documents, mtime-descending.
- * Never throws: a per-file failure is skipped, and a catastrophic failure sets
- * `scanOk:false` with the last (empty) list.
+ * Collect `worktreePath`'s documents, mtime-descending. Never throws: a per-file
+ * failure is skipped, and a catastrophic failure sets `scanOk:false`.
  */
-export function scanWorktree(worktreePath: string, opts: ScanOptions = {}): WorktreeScan {
+export async function scanWorktree(
+  worktreePath: string,
+  opts: ScanOptions = {},
+): Promise<WorktreeScan> {
   const resolveRoots = opts.resolveRoots ?? resolveDocRoots;
   const readMeta = opts.readMeta ?? readDocMeta;
-  const listDocs = opts.listDocs ?? trackedDocPaths;
+  const listCandidates = opts.listCandidates ?? docCandidates;
 
   try {
     const roots = resolveRoots(worktreePath);
     const exclude = new Set(roots.exclude);
-    const docs: DocDTO[] = [];
+    const candidates = await listCandidates(worktreePath, roots);
 
-    // D1 rev 2: git's view of the worktree, unless the project narrowed the
-    // index itself (`roots`) or git cannot answer (not a repository).
-    const candidates = roots.explicit ? undefined : listDocs(worktreePath);
-    if (candidates !== undefined) {
-      for (const rel of candidates) {
-        if (isExcluded(rel, exclude)) continue;
-        consider(worktreePath, rel, docs, readMeta);
-      }
-    } else {
-      // rev 1's allowlist walk: root markdown first (non-recursive), then each
-      // configured directory recursively. Order is irrelevant — sorted below.
-      if (roots.rootMarkdown) collectTopLevel(worktreePath, worktreePath, docs, readMeta);
-      for (const dir of roots.dirs) {
-        const rel = dir.replace(/[\\/]+$/, "");
-        if (exclude.has(rel)) continue;
-        walk(worktreePath, join(worktreePath, rel), rel, exclude, docs, readMeta);
-      }
+    const docs: DocDTO[] = [];
+    for (const rel of candidates) {
+      if (isExcluded(rel, exclude)) continue;
+      const doc = toDoc(worktreePath, rel, readMeta);
+      if (doc !== undefined) docs.push(doc);
     }
 
     docs.sort((a, b) => b.modifiedAt - a.modifiedAt);
@@ -86,8 +72,8 @@ export function scanWorktree(worktreePath: string, opts: ScanOptions = {}): Work
 
 /**
  * True when `rel`, or any directory above it, is in the config's exclude list.
- * The recursive walk skips an excluded directory before descending; a flat
- * candidate list has to test each ancestor instead.
+ * The walk skips an excluded directory before descending; a flat candidate list
+ * has to test each ancestor instead.
  */
 function isExcluded(rel: string, exclude: ReadonlySet<string>): boolean {
   if (exclude.size === 0) return false;
@@ -98,73 +84,22 @@ function isExcluded(rel: string, exclude: ReadonlySet<string>): boolean {
   return false;
 }
 
-/** Index only the allowlisted files sitting directly in `dirAbs` (no descent). */
-function collectTopLevel(
-  worktreeRoot: string,
-  dirAbs: string,
-  out: DocDTO[],
-  readMeta: (absPath: string, kind: DocKind) => DocMeta,
-): void {
-  let entries: Dirent[];
-  try {
-    entries = readdirSync(dirAbs, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    consider(worktreeRoot, entry.name, out, readMeta);
-  }
-}
-
 /**
- * Walk `dirAbs` recursively, excluding D2's hard directory list, any
- * dot-directory, and the config's extra exclusions — **before** descending, so
- * an excluded tree is never entered.
+ * One candidate → one `DocDTO`, or undefined when the security boundary refuses
+ * it or it cannot be read. A per-file failure is swallowed so it cannot fail the
+ * scan (scanOk).
+ *
+ * `resolveDocPath` already stat'd the file, so its `bytes` and `modifiedAt` are
+ * reused rather than stat'ing a second time.
  */
-function walk(
-  worktreeRoot: string,
-  dirAbs: string,
-  dirRel: string,
-  exclude: ReadonlySet<string>,
-  out: DocDTO[],
-  readMeta: (absPath: string, kind: DocKind) => DocMeta,
-): void {
-  let entries: Dirent[];
-  try {
-    entries = readdirSync(dirAbs, { withFileTypes: true });
-  } catch {
-    return; // unreadable directory: skip it, the walk still ran
-  }
-  for (const entry of entries) {
-    const childRel = dirRel === "" ? entry.name : `${dirRel}/${entry.name}`;
-    if (entry.isDirectory()) {
-      if (entry.name.startsWith(".")) continue;
-      if (EXCLUDED_DIRS.has(entry.name)) continue;
-      if (exclude.has(childRel)) continue;
-      walk(worktreeRoot, join(dirAbs, entry.name), childRel, exclude, out, readMeta);
-    } else if (entry.isFile()) {
-      if (exclude.has(childRel)) continue;
-      consider(worktreeRoot, childRel, out, readMeta);
-    }
-  }
-}
-
-/**
- * Route one candidate through {@link resolveDocPath} (the security boundary) and
- * append a {@link DocDTO} if it survives. A per-file failure — a race delete, an
- * unreadable file — is swallowed so it cannot fail the walk (scanOk).
- */
-function consider(
+function toDoc(
   worktreeRoot: string,
   relPath: string,
-  out: DocDTO[],
   readMeta: (absPath: string, kind: DocKind) => DocMeta,
-): void {
+): DocDTO | undefined {
   const resolved = resolveDocPath(worktreeRoot, relPath);
-  if (!resolved.ok) return;
+  if (!resolved.ok) return undefined;
   try {
-    const modifiedAt = statSync(resolved.absPath).mtimeMs;
     const meta = readMeta(resolved.absPath, resolved.kind);
     const doc: DocDTO = {
       key: `${worktreeRoot}:${resolved.relPath}`,
@@ -172,12 +107,12 @@ function consider(
       title: meta.title,
       kind: resolved.kind,
       bytes: resolved.bytes,
-      modifiedAt,
+      modifiedAt: resolved.modifiedAt,
       worktreePath: worktreeRoot,
     };
     if (meta.docStatus !== undefined) doc.docStatus = meta.docStatus;
-    out.push(doc);
+    return doc;
   } catch {
-    // Unreadable at read time: skip without failing the walk.
+    return undefined; // unreadable at read time
   }
 }

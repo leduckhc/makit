@@ -52,7 +52,7 @@ export interface DocsServiceDeps {
   setTimer: (fn: () => void, ms: number) => unknown;
   clearTimer: (handle: unknown) => void;
   /** Injected for tests; default {@link scanWorktree}. */
-  scan?: (worktreePath: string) => WorktreeScan;
+  scan?: (worktreePath: string) => Promise<WorktreeScan>;
   /** Injected for tests; default {@link defaultChangedPaths}. */
   changedPaths?: (
     worktreePath: string,
@@ -81,7 +81,7 @@ export interface DocsCommandPort {
 
 export class DocsService implements DocsCommandPort {
   private readonly deps: DocsServiceDeps;
-  private readonly scan: (worktreePath: string) => WorktreeScan;
+  private readonly scan: (worktreePath: string) => Promise<WorktreeScan>;
   private readonly changedPaths: DocsServiceDeps["changedPaths"] & object;
 
   private watchers = 0;
@@ -165,7 +165,7 @@ export class DocsService implements DocsCommandPort {
     let scanError: string | undefined;
 
     for (const wt of this.deps.listWorktrees()) {
-      const scan = this.scan(wt.worktreePath);
+      const scan = await this.scan(wt.worktreePath);
       if (!scan.scanOk) {
         scanOk = false;
         scanError ??= scan.scanError;

@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { resolveDocRoots, DEFAULT_DOC_DIRS } from "./roots.js";
+import { resolveDocRoots } from "./roots.js";
 
 /** A worktree root with no `.makit/docs.json`. */
 function bareWorktree(): string {
@@ -21,45 +21,46 @@ function withConfig(json: string): string {
   return root;
 }
 
-test("defaults to mockups/, docs/ and root markdown when there is no config", () => {
+// D1 rev 2: with no config the index is git's view, so there are no dirs to
+// name. The allowlist survives only as the fallback inside the lister.
+test("defaults to the git-wide index when there is no config", () => {
   const roots = resolveDocRoots(bareWorktree());
-  assert.deepEqual(roots.dirs, DEFAULT_DOC_DIRS);
-  assert.equal(roots.rootMarkdown, true);
+  assert.equal(roots.kind, "git");
   assert.deepEqual(roots.exclude, []);
 });
 
-test("honours a configured roots list, replacing the defaults", () => {
+test("a configured roots list narrows the index to a walk of exactly those", () => {
   const roots = resolveDocRoots(withConfig('{"roots":["docs",".agents/skills"]}'));
+  assert.equal(roots.kind, "walk");
+  if (roots.kind !== "walk") return;
   assert.deepEqual(roots.dirs, ["docs", ".agents/skills"]);
-  // A user who lists roots explicitly opts out of the implicit root-markdown scan.
+  // Naming roots opts out of the implicit root-markdown scan.
   assert.equal(roots.rootMarkdown, false);
 });
 
-test("honours a configured exclude list", () => {
+test("an exclude list applies without narrowing the index", () => {
   const roots = resolveDocRoots(withConfig('{"exclude":["docs/archive"]}'));
-  assert.deepEqual(roots.dirs, DEFAULT_DOC_DIRS);
+  assert.equal(roots.kind, "git");
   assert.deepEqual(roots.exclude, ["docs/archive"]);
 });
 
-test("a malformed config falls back to defaults rather than throwing", () => {
-  const roots = resolveDocRoots(withConfig("{ this is not json"));
-  assert.deepEqual(roots.dirs, DEFAULT_DOC_DIRS);
-  assert.equal(roots.rootMarkdown, true);
+test("a malformed config falls back to the default rather than throwing", () => {
+  assert.equal(resolveDocRoots(withConfig("{ this is not json")).kind, "git");
 });
 
 test("a config whose roots is not a string array is ignored", () => {
-  const roots = resolveDocRoots(withConfig('{"roots":[1,2,3]}'));
-  assert.deepEqual(roots.dirs, DEFAULT_DOC_DIRS);
+  assert.equal(resolveDocRoots(withConfig('{"roots":[1,2,3]}')).kind, "git");
 });
 
 test("rejects a configured root that escapes the worktree", () => {
   const roots = resolveDocRoots(withConfig('{"roots":["docs","../../etc","/abs"]}'));
+  assert.equal(roots.kind, "walk");
+  if (roots.kind !== "walk") return;
   // Only the contained root survives; `..` and absolute roots are dropped.
   assert.deepEqual(roots.dirs, ["docs"]);
 });
 
-test("an unreadable/absent config file falls back to defaults", () => {
+test("an unreadable/absent config file falls back to the default", () => {
   // A worktree that does not even exist on disk must not throw.
-  const roots = resolveDocRoots("/no/such/worktree/anywhere");
-  assert.deepEqual(roots.dirs, DEFAULT_DOC_DIRS);
+  assert.equal(resolveDocRoots("/no/such/worktree/anywhere").kind, "git");
 });
