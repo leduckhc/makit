@@ -197,11 +197,7 @@ test("TOOLS emits a representative tool-call sequence", async (t) => {
  * genuinely outlives it: with a shorter settle the assertions pass while the
  * script is merely parked inside its next `wait`.
  */
-async function startsSeen(
-  stub: StubAdapter,
-  events: AdapterEvent[],
-  n = 1,
-): Promise<void> {
+async function startsSeen(events: AdapterEvent[], n = 1): Promise<void> {
   for (let i = 0; i < 300; i++) {
     if (events.filter((e) => e.kind === "tool.call.start").length >= n) return;
     await new Promise((r) => setTimeout(r, 5));
@@ -211,7 +207,7 @@ async function startsSeen(
 
 async function firstStart(stub: StubAdapter, events: AdapterEvent[]) {
   await stub.send({ text: "TOOLS" });
-  await startsSeen(stub, events, 1);
+  await startsSeen(events, 1);
 }
 
 test("cancel stops the TOOLS script mid-flight", async (t) => {
@@ -250,7 +246,7 @@ test("cancel stops the TOOLS script mid-flight", async (t) => {
  * tests above passed) but the closure and its call data were retained for the
  * life of the adapter, once per cancellation.
  */
-test("a cancelled TOOLS script settles instead of hanging", async (t) => {
+test("a cancelled TOOLS script settles instead of hanging", async () => {
   // Unscaled, so the cancel below lands inside the script's 2.6 s wait — a wait
   // far longer than the race that follows. A short scale would let the timer
   // fire on its own and the assertion would pass either way.
@@ -259,7 +255,7 @@ test("a cancelled TOOLS script settles instead of hanging", async (t) => {
   stub.on("event", (e) => events.push(e));
   await stub.start({ sessionId: "s-settle", cwd: "/tmp" });
   await stub.send({ text: "TOOLS" });
-  await startsSeen(stub, events, 2);
+  await startsSeen(events, 2);
 
   await stub.cancel();
   const settled = await Promise.race([
