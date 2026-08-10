@@ -775,7 +775,10 @@ const ASSIGN  = /^[A-Za-z_][A-Za-z0-9_]*=/;
    `&>`, `>&2`, `>out.txt`. Neither the operator nor its target is a command —
    before this, `pnpm typecheck > log 2>&1` summarised as `pnpm typecheck, 1`. */
 const REDIR      = /^(?:[0-9]*(?:>>?|<)|&>>?)/;
-const BARE_REDIR = /^(?:[0-9]*(?:>>?|<)&?[0-9]*|&>>?)$/;
+/* Only an operator that still needs the NEXT token as its target. A descriptor
+   duplication (`2>&1`, `>&2`) carries its own, and treating those as bare made
+   `2>&1 grep foo` name `foo` — the trailing digit tells them apart. */
+const BARE_REDIR = /^(?:[0-9]*(?:>>?|<)&?|&>>?)$/;
 
 /* ─── T3: strip heredoc bodies (never scanned for commands) ─────────────── */
 function stripHeredocs(cmd){
@@ -994,6 +997,7 @@ const CORPUS = [
   'xcrun simctl list devices booted && xcrun simctl io booted screenshot /tmp/s.png',
   'grep -rn a app && grep -rn b app && grep -rn c app && wc -l app/lib/**/*.dart',
   'cd server && pnpm typecheck > /tmp/tc.log 2>&1 && grep -c error /tmp/tc.log',
+  'env >&2 pnpm typecheck && 2>&1 grep -rn TODO app/lib',
   'cd /Users/le/.worktrees/makit/feat-chat-content && grep -rn "serve" server/src && gh pr view 154 --json title && sed -i \'\' \'s/7800/7810/\' server/src/ports.ts && makit serve --port 7810 & python3 tool/wait.py | head -3 ; lsof -nP -i:7810',
 ];
 

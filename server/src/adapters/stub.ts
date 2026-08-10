@@ -51,6 +51,19 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
    */
   private toolTimeout?: ReturnType<typeof setTimeout>;
   private toolAborted = false;
+  /**
+   * Resolver for the wait currently in flight. Clearing the timer is not enough:
+   * its callback is the only thing that resolves the wait, so an aborted script
+   * stayed suspended at `await wait(...)` forever, retaining its closure and
+   * call data once per cancellation.
+   */
+  private toolWaitResolve?: () => void;
+  /**
+   * The in-flight TOOLS script. Exposed so a test can assert it actually settles
+   * after a cancel — a suspended async frame emits nothing, so the leak is
+   * invisible from the event stream alone.
+   */
+  toolScript?: Promise<void>;
 
   /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
   private turnCount = 0;
@@ -175,7 +188,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     // diff, facts-only) had to be taken on trust. Scripted with real delays so
     // the live counter and the finished-duration gate (SPEC-47) both fire.
     if (input.text.includes("TOOLS")) {
-      void this.runToolScript();
+      this.toolScript = this.runToolScript();
       return;
     }
     // "THINK" → emit a reasoning trace (folded thinking card) then a reply.
@@ -226,8 +239,10 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     const scale = Number(process.env.MAKIT_STUB_TOOL_SCALE ?? "1") || 1;
     const wait = (ms: number) =>
       new Promise<void>((resolve) => {
+        this.toolWaitResolve = resolve;
         this.toolTimeout = setTimeout(() => {
           this.toolTimeout = undefined;
+          this.toolWaitResolve = undefined;
           resolve();
         }, ms * scale);
       });
@@ -374,6 +389,10 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       clearTimeout(this.toolTimeout);
       this.toolTimeout = undefined;
     }
+    // Settle the wait so the script resumes, sees the flag and returns. Without
+    // this it never runs again and its frame is never released.
+    this.toolWaitResolve?.();
+    this.toolWaitResolve = undefined;
   }
 
   /**

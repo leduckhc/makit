@@ -309,9 +309,13 @@ final RegExp _assignment = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*=');
 /// `&` split off a segment holding the bare file descriptor.
 final RegExp _redirection = RegExp(r'^(?:[0-9]*(?:>>?|<)|&>>?)');
 
-/// A redirection operator with nothing attached, so its target is the *next*
-/// token and has to be skipped too (`> out.txt` vs `>out.txt`).
-final RegExp _bareRedirection = RegExp(r'^(?:[0-9]*(?:>>?|<)&?[0-9]*|&>>?)$');
+/// A redirection operator that still needs the *next* token as its target, so
+/// that token is plumbing too (`> out.txt`, `2> err.log`, `>& out.txt`).
+///
+/// Deliberately does not match a descriptor duplication like `2>&1` or `>&2`:
+/// those carry their own target, and treating them as bare made `2>&1 grep foo`
+/// name `foo` — the trailing digit is what distinguishes the two.
+final RegExp _bareRedirection = RegExp(r'^(?:[0-9]*(?:>>?|<)&?|&>>?)$');
 
 /// A trailing version on an interpreter name: `python3`, `python3.12`, `pip3`.
 final RegExp _trailingVersion = RegExp(r'^([A-Za-z_+-]+?)[0-9]+(?:\.[0-9]+)*$');

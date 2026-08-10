@@ -309,6 +309,22 @@ void main() {
       expect(commandNames('2> err.log tail -f x'), 'tail');
     });
 
+    // A descriptor-duplication redirect carries its own target, so it must NOT
+    // swallow the word after it. Reported in review: `2>&1 grep foo` named
+    // `foo`. Only an operator with nothing attached consumes the next token.
+    test('T2a an attached-target redirect does not eat the command', () {
+      expect(commandNames('2>&1 grep foo'), 'grep');
+      expect(commandNames('>&2 tail -f x'), 'tail');
+      expect(commandNames('env >&2 pnpm typecheck'), 'pnpm typecheck');
+      expect(commandNames('2>/dev/null find . -name x'), 'find');
+    });
+
+    test('T2a a bare operator still consumes its target', () {
+      expect(commandNames('> out.txt grep foo'), 'grep');
+      expect(commandNames('cmd >& out.txt'), 'cmd');
+      expect(commandNames('2> err.log tail -f x'), 'tail');
+    });
+
     test('T2a a background & still separates', () {
       expect(
         commandNames('makit serve --port 7810 & lsof -nP -i:7810'),

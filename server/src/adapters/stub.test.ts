@@ -197,13 +197,21 @@ test("TOOLS emits a representative tool-call sequence", async (t) => {
  * genuinely outlives it: with a shorter settle the assertions pass while the
  * script is merely parked inside its next `wait`.
  */
-async function firstStart(stub: StubAdapter, events: AdapterEvent[]) {
-  await stub.send({ text: "TOOLS" });
-  for (let i = 0; i < 200; i++) {
-    if (events.some((e) => e.kind === "tool.call.start")) return;
+async function startsSeen(
+  stub: StubAdapter,
+  events: AdapterEvent[],
+  n = 1,
+): Promise<void> {
+  for (let i = 0; i < 300; i++) {
+    if (events.filter((e) => e.kind === "tool.call.start").length >= n) return;
     await new Promise((r) => setTimeout(r, 5));
   }
-  throw new Error("the script never opened a tool call");
+  throw new Error(`the script never opened ${n} tool call(s)`);
+}
+
+async function firstStart(stub: StubAdapter, events: AdapterEvent[]) {
+  await stub.send({ text: "TOOLS" });
+  await startsSeen(stub, events, 1);
 }
 
 test("cancel stops the TOOLS script mid-flight", async (t) => {
@@ -233,6 +241,32 @@ test("cancel stops the TOOLS script mid-flight", async (t) => {
     !events.some((e) => e.kind === "agent.message"),
     "the script's closing reply never lands",
   );
+});
+
+/**
+ * Aborting must SETTLE the pending wait, not just clear its timer. The timeout
+ * callback was the only thing that resolved `wait`, so a cancelled script stayed
+ * suspended at `await wait(...)` forever — no further events (which is why the
+ * tests above passed) but the closure and its call data were retained for the
+ * life of the adapter, once per cancellation.
+ */
+test("a cancelled TOOLS script settles instead of hanging", async (t) => {
+  // Unscaled, so the cancel below lands inside the script's 2.6 s wait — a wait
+  // far longer than the race that follows. A short scale would let the timer
+  // fire on its own and the assertion would pass either way.
+  const stub = new StubAdapter();
+  const events: AdapterEvent[] = [];
+  stub.on("event", (e) => events.push(e));
+  await stub.start({ sessionId: "s-settle", cwd: "/tmp" });
+  await stub.send({ text: "TOOLS" });
+  await startsSeen(stub, events, 2);
+
+  await stub.cancel();
+  const settled = await Promise.race([
+    stub.toolScript!.then(() => "settled"),
+    new Promise((r) => setTimeout(() => r("hung"), 500)),
+  ]);
+  assert.equal(settled, "settled", "the script resumed and returned");
 });
 
 test("kill stops the TOOLS script mid-flight", async (t) => {
