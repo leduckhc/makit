@@ -14,6 +14,8 @@
 /// it in [toolRenderers].
 library;
 
+import 'dart:convert' show utf8;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
@@ -71,9 +73,12 @@ abstract class ToolRenderer {
   /// phrase than the verb (`Ask the user`).
   String verb(ToolCallItem item) => label(item);
 
-  /// The verbatim command/argument for the row's hover tooltip, or null when the
-  /// collapsed line already says everything (a path is shown in full, a command
-  /// list is not). See `mockups/tool-one-liner.html` §4A.
+  /// Hover text recovering what the collapsed line dropped, or null when it
+  /// dropped nothing (a path is shown in full; a command *list* is not).
+  ///
+  /// Not necessarily verbatim — `_BashRenderer` returns [compactCommand], which
+  /// keeps everything except the `cd`/`export` prologue. See
+  /// `mockups/tool-one-liner.html` §4A.
   String? tooltip(ToolCallItem item) => null;
 
   /// Expanded body sections shown inline when the row is opened. Default:
@@ -106,7 +111,8 @@ List<Widget> genericToolBody(BuildContext context, ToolCallItem item) {
 
 /// The facts a body ends with: a one-line result (`307 lines`,
 /// `No matches found`) belongs in the strip rather than a highlighted panel
-/// (see [isFactResult]), and a failure adds its exit code.
+/// (see [isFactResult]), and a failure always states its exit code — including
+/// when the message is long enough to become a payload of its own.
 List<ToolFact> resultFacts(ToolCallItem item) {
   final text = extractToolResultText(item.resultText);
   final failed = item.ended && (item.exitCode ?? 0) != 0;
@@ -120,8 +126,7 @@ List<ToolFact> resultFacts(ToolCallItem item) {
         item.summary ?? 'exit ${item.exitCode ?? 0}',
         error: failed,
       ),
-    if (failed && isFactResult(text))
-      ToolFact('exit', '${item.exitCode}', error: true),
+    if (failed) ToolFact('exit', '${item.exitCode}', error: true),
   ];
 }
 
@@ -135,9 +140,10 @@ List<Widget> resultPayload(
   final text = extractToolResultText(item.resultText);
   if (text.trim().isEmpty || isFactResult(text)) return const [];
   final failed = item.ended && (item.exitCode ?? 0) != 0;
+  final exitLabel = failed ? 'exit ${item.exitCode ?? 0}' : null;
   return [
     ToolBlock(
-      caption: failed ? 'error' : caption,
+      caption: exitLabel ?? caption,
       error: failed,
       child: ToolCodeBlock(text, language: 'plaintext', error: failed),
     ),
@@ -569,7 +575,9 @@ class _WriteRenderer extends ToolRenderer {
         item.args['content']?.toString() ?? item.args['text']?.toString() ?? '';
     final result = extractToolResultText(item.output ?? item.summary ?? '');
     final facts = <ToolFact>[
-      ToolFact('bytes', '${content.length}'),
+      // Encoded bytes, not `content.length`: that counts UTF-16 code units, so
+      // an emoji measured 2 and a 3-byte character measured 1.
+      ToolFact('bytes', '${utf8.encode(content).length}'),
       if (isFactResult(result)) ToolFact('result', oneLine(result)),
     ];
     return [

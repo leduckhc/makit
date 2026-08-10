@@ -208,10 +208,44 @@ void main() {
       }
     });
 
+    // Reported in review: the exit fact was gated on the error being SHORT, so a
+    // failure with multi-line output rendered an error payload and no exit code.
+    testWidgets('a multi-line failure still reports its exit code', (
+      tester,
+    ) async {
+      await _pumpBody(
+        tester,
+        _item(
+          'bash',
+          {'command': 'flutter test'},
+          output: 'line one failed\nline two failed',
+          exitCode: 3,
+        ),
+      );
+      expect(find.text('exit'), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+      expect(_styleOf(tester, '3')?.color, makitDarkTheme.colorScheme.error);
+    });
+
     testWidgets('a successful result keeps the quiet tone', (tester) async {
       await _pumpBody(tester, _item('bash', {'command': 'true'}, output: 'ok'));
       final cs = makitDarkTheme.colorScheme;
       expect(_styleOf(tester, 'ok')?.color, cs.onSurfaceVariant);
+    });
+  });
+
+  // Reported in review: `content.length` counts UTF-16 code units, so an emoji
+  // read as 2 bytes and a 3-byte character as 1.
+  group('a write reports encoded bytes', () {
+    testWidgets('non-ASCII content is measured in UTF-8 bytes', (tester) async {
+      await _pumpBody(
+        tester,
+        _item('write', {'path': 'a.txt', 'content': 'héllo 🎉'}),
+      );
+      // 'héllo ' = 5 ASCII + a two-byte é = 7 bytes, '🎉' = 4 → 11 (the old
+      // code-unit count was 7).
+      expect(find.text('11'), findsOneWidget);
+      expect(find.text('7'), findsNothing);
     });
   });
 

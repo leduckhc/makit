@@ -43,6 +43,14 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   private askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
   /** Timeout handle for SLOW turns, cleared by cancel/kill to prevent late events. */
   private slowTimeout?: ReturnType<typeof setTimeout>;
+  /**
+   * The TOOLS script's pending wait and its abort flag. Same hazard as
+   * `slowTimeout` but larger: an uncancelled script keeps emitting six starts,
+   * six ends, a reply and a second `idle` for the rest of its ~5.5 s — after a
+   * `kill()` those land on an adapter that already reported `exit`.
+   */
+  private toolTimeout?: ReturnType<typeof setTimeout>;
+  private toolAborted = false;
 
   /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
   private turnCount = 0;
@@ -211,11 +219,18 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
    */
   private async runToolScript(): Promise<void> {
     this.emit("status", "running");
+    this.toolAborted = false;
     // The two long calls exist so the duration token clears SPEC-47's 2 s floor
     // in the live loop. A unit test only cares about the event shape, so the
     // scale is overridable rather than the script being duplicated.
     const scale = Number(process.env.MAKIT_STUB_TOOL_SCALE ?? "1") || 1;
-    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms * scale));
+    const wait = (ms: number) =>
+      new Promise<void>((resolve) => {
+        this.toolTimeout = setTimeout(() => {
+          this.toolTimeout = undefined;
+          resolve();
+        }, ms * scale);
+      });
 
     this.emitEvent({
       ts: Date.now(),
@@ -304,6 +319,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     ];
 
     for (const [i, call] of calls.entries()) {
+      if (this.toolAborted) return;
       const callId = `stub-tool-${Date.now()}-${i}`;
       this.emitEvent({
         ts: Date.now(),
@@ -311,6 +327,10 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
         payload: { callId, name: call.name, args: call.args, risk: call.risk },
       });
       await wait(call.ms);
+      // Closing the call is not optional — a dangling start spins forever — but
+      // an aborted script must not open the next one either, so the guard sits
+      // on both sides of the wait.
+      if (this.toolAborted) return;
       this.emitEvent({
         ts: Date.now(),
         kind: "tool.call.end",
@@ -323,6 +343,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       });
       await wait(40);
     }
+    if (this.toolAborted) return;
 
     this.emitEvent({
       ts: Date.now(),
@@ -342,7 +363,17 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       clearTimeout(this.slowTimeout);
       this.slowTimeout = undefined;
     }
+    this.abortToolScript();
     this.emit("status", "idle");
+  }
+
+  /** Stop an in-flight TOOLS script: clear its pending wait, block the rest. */
+  private abortToolScript(): void {
+    this.toolAborted = true;
+    if (this.toolTimeout !== undefined) {
+      clearTimeout(this.toolTimeout);
+      this.toolTimeout = undefined;
+    }
   }
 
   /**
@@ -455,6 +486,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       clearTimeout(this.slowTimeout);
       this.slowTimeout = undefined;
     }
+    this.abortToolScript();
     this.emit("exit", null);
   }
 

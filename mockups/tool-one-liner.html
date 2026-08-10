@@ -115,7 +115,7 @@
   .body pre{margin:0;padding:6px 10px 9px;font-family:var(--mono);font-size:11.5px;color:#b8b8b8;
     white-space:pre-wrap;word-break:break-all;max-height:120px;overflow:auto}
 
-  /* tooltip (hover the proposed row to see the verbatim command) */
+  /* tooltip (hover the proposed row to see the compacted command) */
   .r.tip{position:relative}
   .bub{position:absolute;left:21px;top:calc(100% - 3px);z-index:5;background:#000;
     border:1px solid #3a3a3a;border-radius:8px;padding:6px 9px;font-size:11.5px;color:#cfcfcf;
@@ -267,7 +267,7 @@
     <header><h3>Proposed</h3><span class="badge rec">recommended</span></header>
     <div class="transcript p" id="t-proposed"></div>
     <p class="why"><b>Reads as:</b> a scannable verb column (<b>Run / Read / Edit</b>) and, for shells, the list of
-      tools the agent reached for. Hover any row for the verbatim command; tap to expand as before.</p>
+      tools the agent reached for. Hover any row for the whole command; tap to expand as before.</p>
   </div>
 </div>
 
@@ -285,7 +285,9 @@
 
   <li><b>Recurse into command substitutions</b> <code>$( … )</code> and backticks, appended after their host segment —
     that is where <code>lsof</code> usually hides.
-    <span class="ex">kill $(lsof -t -i:9787) → <i>kill, lsof</i></span></li>
+    <span class="ex">kill $(lsof -t -i:9787) → <i>kill, lsof</i></span>
+    <span class="ex">A redirection is neither a separator nor a command:
+      pnpm typecheck &gt; log 2&gt;&amp;1 → <i>pnpm typecheck</i> (not <i>pnpm typecheck, 1</i>)</span></li>
 
   <li><b>Drop prologue &amp; shell keywords.</b> <code>cd</code>, <code>export</code>, <code>source</code>,
     <code>set -e</code>, bare <code>FOO=bar</code> and the <code>for/while/if/case</code> loop headers carry nothing.
@@ -335,6 +337,7 @@
   <header><h3>Try it</h3><span class="badge rec">live</span></header>
   <div style="padding:14px">
     <input class="play" id="play" spellcheck="false"
+      aria-label="Shell command to summarise"
       value="cd /repo && grep -rn &quot;serve&quot; server/src && gh pr view 154 --json title && sed -i '' 's/7800/7810/' server/src/ports.ts && makit serve --port 7810 & python3 tool/wait.py | head -3 ; lsof -nP -i:7810" />
     <div class="out p" id="playout"></div>
   </div>
@@ -386,7 +389,9 @@
   <div class="card">
     <header><h3>A — hover shows the command</h3><span class="badge rec">recommended</span></header>
     <div class="transcript p" id="t-hover"></div>
-    <p class="why"><b>Cost:</b> one <code>Tooltip</code> around the existing <code>Text</code>, verbatim command,
+    <p class="why"><b>Cost:</b> one <code>Tooltip</code> around the existing <code>Text</code> carrying
+      <code>compactCommand()</code> — the whole command with only the <code>cd</code>/<code>export</code> prologue
+      stripped, segments joined with <code>›</code>, which is what the rows below show — at a
       500&nbsp;ms dwell (<code>kTooltipDwell</code>, already app-wide). Pointer-only — which is fine, because on
       touch the whole row is already a tap-to-expand target. <em>(Third row shown pinned open; the others react to
       a real hover.)</em></p>
@@ -420,7 +425,8 @@
     <tbody>
       <tr><td>leading glyph size</td><td class="was">16</td><td class="was">15</td><td class="now">15</td></tr>
       <tr><td>leading glyph colour</td><td class="was">risk tint (amber on ~every row)</td>
-        <td class="was">onSurfaceVariant @ .55</td><td class="now">onSurfaceVariant @ .55</td></tr>
+        <td class="was">onSurfaceVariant @ .55<br><span style="font-size:11px">(moved to 0.70 too — one token)</span></td>
+        <td class="now">onSurfaceVariant @ <code>kToolGlyphAlpha</code> (0.70)<br><span style="color:var(--muted);font-size:11px">was .55 — see the shipped note</span></td></tr>
       <tr><td>line family</td><td class="was">monospace</td><td class="was">SF Pro Text</td>
         <td class="now">SF Pro Text</td></tr>
       <tr><td>line size</td><td class="was">13 (bodyMedium.mono)</td><td class="was">13 (bodyMedium)</td>
@@ -434,7 +440,8 @@
       <tr><td>row inner padding</td><td class="was">vertical kSpace6</td><td class="was">none</td>
         <td class="now">vertical kSpace2 (§6)</td></tr>
       <tr><td>status glyph</td><td class="was">14, primary green</td><td class="was">—</td>
-        <td class="now">13, onSurfaceVariant @ .55 (fail stays <span style="color:var(--error)">error</span>)</td></tr>
+        <td class="now">13, onSurfaceVariant @ <code>kToolGlyphAlpha</code> (fail stays
+          <span style="color:var(--error)">error</span>)</td></tr>
     </tbody>
   </table>
 </div>
@@ -646,14 +653,14 @@
         <td><code>_BashRenderer.summaryLine</code> → <code>commandNames</code>; nine verbs to present tense; a
           <code>verb</code> getter so the card can weight the verb without re-parsing the summary string.</td></tr>
       <tr><td class="mono">4</td><td class="mono">app/lib/ui/session/tool_call_card.dart</td><td class="mono">~6 lines</td>
-        <td>Wrap the collapsed line in a <code>Tooltip</code> carrying the verbatim command (§4A). Reuses the app-wide
+        <td>Wrap the collapsed line in a <code>Tooltip</code> carrying <code>compactCommand()</code> (§4A). Reuses the app-wide
           <code>kTooltipDwell</code>. Skip if you would rather ship §1–§3 alone.</td></tr>
       <tr><td class="mono">5</td><td class="mono">app/test/ui/session/tool_summary_test.dart</td><td class="mono">~120 lines</td>
         <td>The §2 corpus as a table-driven test + the pitfalls (heredoc, <code>$()</code>, loop body, quoted
           <code>&amp;&amp;</code>, unknown binary, empty command).</td></tr>
       <tr><td class="mono">6</td><td class="mono">app/test/ui/session/tool_call_card_test.dart</td><td class="mono">~40 lines</td>
         <td>Golden-ish assertions for the things a human will not re-check: glyph colour is not
-          <code>kToolRiskyColor</code>, verb span is <code>w600</code>, line style is not mono.</td></tr>
+          <code>kToolRiskyColor</code>, verb span is <code>kToolVerbWeight</code>, line style is not mono.</td></tr>
     </tbody>
   </table>
 </div>
@@ -764,6 +771,11 @@ const VERSIONED = new Set(['python','pip','php','ruby','perl','node','clang','gc
 /* Tokens that can be a subcommand: a bare lowercase word (no slash, no dot, not a flag). */
 const SUBWORD = /^[a-z][a-z0-9:_+-]*$/;
 const ASSIGN  = /^[A-Za-z_][A-Za-z0-9_]*=/;
+/* A redirection, with or without its target attached: `>`, `>>`, `2>`, `<`,
+   `&>`, `>&2`, `>out.txt`. Neither the operator nor its target is a command —
+   before this, `pnpm typecheck > log 2>&1` summarised as `pnpm typecheck, 1`. */
+const REDIR      = /^(?:[0-9]*(?:>>?|<)|&>>?)/;
+const BARE_REDIR = /^(?:[0-9]*(?:>>?|<)&?[0-9]*|&>>?)$/;
 
 /* ─── T3: strip heredoc bodies (never scanned for commands) ─────────────── */
 function stripHeredocs(cmd){
@@ -807,7 +819,11 @@ function splitSegments(cmd){
     }
     const two = cmd.slice(i, i + 2);
     if(two === '&&' || two === '||'){ flush(); i += 2; continue; }
-    if(c === ';' || c === '\n' || c === '|' || c === '&'){ flush(); i++; continue; }
+    /* `&` separates a background job, but the `&` in `2>&1`/`>&2`/`&>` belongs
+       to the redirection and must stay in the token. */
+    const prev = buf.slice(-1), next = cmd[i + 1] || '';
+    const redirecting = c === '&' && (prev === '>' || prev === '<' || next === '>');
+    if(!redirecting && (c === ';' || c === '\n' || c === '|' || c === '&')){ flush(); i++; continue; }
     buf += c; i++;
   }
   flush();
@@ -845,6 +861,9 @@ function segmentName(seg, opts){
   let i = 0;
   while(i < toks.length){
     const t = toks[i], b = normalise(basename(t));
+    /* a bare operator swallows the token after it, so `> out.txt grep foo`
+       still finds `grep` rather than naming the redirect's target */
+    if(REDIR.test(t)){ i += BARE_REDIR.test(t) ? 2 : 1; continue; }
     if(ASSIGN.test(t) || KEYWORDS.has(t) || WRAPPERS.has(b) || t.startsWith('-') || t === '«heredoc»'){ i++; continue; }
     if(PROLOGUE.has(b)) return null;                         /* cd / export / set … */
     break;
@@ -974,6 +993,7 @@ const CORPUS = [
   'time make build && ./scripts/deploy.sh --dry-run',
   'xcrun simctl list devices booted && xcrun simctl io booted screenshot /tmp/s.png',
   'grep -rn a app && grep -rn b app && grep -rn c app && wc -l app/lib/**/*.dart',
+  'cd server && pnpm typecheck > /tmp/tc.log 2>&1 && grep -c error /tmp/tc.log',
   'cd /Users/le/.worktrees/makit/feat-chat-content && grep -rn "serve" server/src && gh pr view 154 --json title && sed -i \'\' \'s/7800/7810/\' server/src/ports.ts && makit serve --port 7810 & python3 tool/wait.py | head -3 ; lsof -nP -i:7810',
 ];
 

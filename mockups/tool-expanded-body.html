@@ -432,7 +432,7 @@ server/src/adapters/acp-map.ts:<span class="num">540</span>:function riskFromKin
 </div>
 
 <!-- ═══════════════════════════ 5. THE RULES ═══════════════════════════ -->
-<h2 class="sec"><span class="n">5</span>The four rules behind A</h2>
+<h2 class="sec"><span class="n">5</span>The five rules behind A</h2>
 
 <div class="tbl" style="max-width:960px">
   <table>
@@ -501,12 +501,6 @@ server/src/adapters/acp-map.ts:<span class="num">540</span>:function riskFromKin
   </ul>
 </div>
 
-<div class="note decide">
-  <strong>Answered.</strong> The expanded header keeps the full one-liner and the facts strip carries <b>no</b>
-  <code>path</code> entry — the path would be a duplicate of the line directly above it. Confirmed by the author before
-  building.
-</div>
-
 <!-- ═══════════════════════════ 6. DELTAS ═══════════════════════════ -->
 <h2 class="sec"><span class="n">6</span>Deltas</h2>
 
@@ -531,19 +525,19 @@ server/src/adapters/acp-map.ts:<span class="num">540</span>:function riskFromKin
           <code>#F0F1F4</code> to <code>surfaceContainerLowest</code>; copy button becomes hover-revealed on pointer and
           stays visible on touch.</td></tr>
       <tr><td class="mono">5</td><td class="mono">app/test/… (2 files)</td><td class="mono">~60 lines</td>
-        <td>The four rules as tests: no <code>Container</code> between a section and its payload; a short result renders
+        <td>The five rules as tests: no <code>Container</code> between a section and its payload; a short result renders
           as a fact not a <code>ToolCodeBlock</code>; the expanded header still shows the path; caption style is
           <code>labelSmall</code>.</td></tr>
     </tbody>
   </table>
 </div>
 
-<div class="note decide">
-  <strong>One thing I would ask before building.</strong> Variant A deletes the “Arguments” section for single-argument
-  tools by keeping the path in the header — which also means <b>the expanded header no longer shrinks to the bare verb</b>.
-  That is a visible change to a row you have already signed off on. If you would rather keep the shrink,
-  the fallback is variant A with a facts strip carrying <code>path</code> as its first entry (as drawn in the
-  <em>B</em> card) — still one line, still no panel, just one line taller than A.
+<div class="note win">
+  <strong>Asked before building — and answered.</strong> Variant A deletes the “Arguments” section for single-argument
+  tools by keeping the path in the header, which also means <b>the expanded header no longer shrinks to the bare verb</b>.
+  That was a visible change to a row already signed off, so it was put to the author, who chose A <em>without</em> a
+  <code>path</code> fact: the path would only duplicate the line directly above it. The fallback (A plus a
+  <code>path</code> fact, one line taller, as drawn in the <em>B</em> card) was not taken.
 </div>
 
 </main>

@@ -286,6 +286,36 @@ void main() {
       expect(commandNames('npm run test -- --watch'), 'npm test');
     });
 
+    // A redirection is not a separator and not a command. `&` splits a
+    // background job, but the `&` in `2>&1` / `&>` belongs to the redirect, and
+    // a redirect's target is not the next command. Reported in review: this
+    // rendered `Run pnpm typecheck, 1`.
+    test('T2a a redirection contributes no name', () {
+      expect(
+        commandNames('pnpm typecheck > /tmp/tc.log 2>&1'),
+        'pnpm typecheck',
+      );
+      expect(commandNames('grep x 2>&1 | tail'), 'grep, tail');
+      expect(commandNames('cmd &> log'), 'cmd');
+      expect(commandNames('cmd >>log 2>&1'), 'cmd');
+      expect(
+        commandNames('make build 2>/dev/null && echo ok'),
+        'make build, echo',
+      );
+    });
+
+    test('T2a a leading redirection does not become the command', () {
+      expect(commandNames('> out.txt grep foo'), 'grep');
+      expect(commandNames('2> err.log tail -f x'), 'tail');
+    });
+
+    test('T2a a background & still separates', () {
+      expect(
+        commandNames('makit serve --port 7810 & lsof -nP -i:7810'),
+        'makit serve, lsof',
+      );
+    });
+
     test('T7 de-duplicates and keeps first-seen order', () {
       expect(
         commandNames('grep -rn a app && grep -rn b app && wc -l x && grep c'),

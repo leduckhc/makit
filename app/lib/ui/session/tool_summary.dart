@@ -301,6 +301,18 @@ final RegExp _subcommandWord = RegExp(r'^[a-z][a-z0-9:_+-]*$');
 /// `FOO=bar` — an assignment, not a command.
 final RegExp _assignment = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*=');
 
+/// A redirection: `>`, `>>`, `<`, `2>`, `&>`, `>&2`, or any of those with the
+/// target attached (`>out.txt`, `2>/dev/null`).
+///
+/// Neither the operator nor its target is a command. Before this existed,
+/// `pnpm typecheck > /tmp/tc.log 2>&1` summarised as `pnpm typecheck, 1` — the
+/// `&` split off a segment holding the bare file descriptor.
+final RegExp _redirection = RegExp(r'^(?:[0-9]*(?:>>?|<)|&>>?)');
+
+/// A redirection operator with nothing attached, so its target is the *next*
+/// token and has to be skipped too (`> out.txt` vs `>out.txt`).
+final RegExp _bareRedirection = RegExp(r'^(?:[0-9]*(?:>>?|<)&?[0-9]*|&>>?)$');
+
 /// A trailing version on an interpreter name: `python3`, `python3.12`, `pip3`.
 final RegExp _trailingVersion = RegExp(r'^([A-Za-z_+-]+?)[0-9]+(?:\.[0-9]+)*$');
 
@@ -386,7 +398,12 @@ List<String> _splitForNames(String command) {
       i++;
       continue;
     }
-    if (c == ';' || c == '\n' || c == '|' || c == '&') {
+    // `&` separates a background job, but the `&` in `2>&1`, `>&2` and `&>` is
+    // part of the redirection and must stay in the token.
+    final prev = buf.isEmpty ? '' : buf.toString().substring(buf.length - 1);
+    final next = i + 1 < command.length ? command[i + 1] : '';
+    final redirecting = c == '&' && (prev == '>' || prev == '<' || next == '>');
+    if (!redirecting && (c == ';' || c == '\n' || c == '|' || c == '&')) {
       flush();
       continue;
     }
@@ -463,6 +480,12 @@ String? _segmentName(String segment) {
   while (i < words.length) {
     final word = words[i];
     final base = _unversioned(_basename(word));
+    // A redirection and its target are plumbing. `> out.txt grep foo` must find
+    // `grep`, so a bare operator swallows the token that follows it.
+    if (_redirection.hasMatch(word)) {
+      i += _bareRedirection.hasMatch(word) ? 2 : 1;
+      continue;
+    }
     if (_assignment.hasMatch(word) ||
         _shellKeywords.contains(word) ||
         _wrappers.contains(base) ||

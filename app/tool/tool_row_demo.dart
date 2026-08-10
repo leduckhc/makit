@@ -351,11 +351,15 @@ class _RowProbeState extends State<_RowProbe> {
           ),
           child: KeyedSubtree(key: _key, child: widget.child),
         ),
+        // The label rides with the number: `ToolCallItem 31.0px` is readable at
+        // a glance, a bare `31.0px` next to eleven other rows is not.
         Positioned(
           right: 2,
           top: 0,
           child: Text(
-            _height == null ? '' : '${_height!.toStringAsFixed(1)}px',
+            _height == null
+                ? ''
+                : '${widget.label} ${_height!.toStringAsFixed(1)}px',
             style: Theme.of(
               context,
             ).textTheme.labelSmall?.copyWith(color: cs.primary),

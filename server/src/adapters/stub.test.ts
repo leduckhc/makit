@@ -126,8 +126,13 @@ test("a plain echo is a whole turn (running → idle), so a queue keeps draining
  * (risk tint, duration, exit code, expanded body) — could only be exercised with
  * a real agent and an API key. Same rationale as STREAM/THINK/ASK_QUESTION.
  */
-test("TOOLS emits a representative tool-call sequence", async () => {
+test("TOOLS emits a representative tool-call sequence", async (t) => {
   process.env.MAKIT_STUB_TOOL_SCALE = "0.01";
+  // `t.after` rather than a line at the end: `send` can reject, and the runner
+  // shares one process per file, so a leaked scale would shrink every later test.
+  t.after(() => {
+    delete process.env.MAKIT_STUB_TOOL_SCALE;
+  });
   const stub = new StubAdapter();
   const events: AdapterEvent[] = [];
   const statuses: string[] = [];
@@ -141,8 +146,6 @@ test("TOOLS emits a representative tool-call sequence", async () => {
   for (let i = 0; i < 200 && statuses.at(-1) !== "idle"; i++) {
     await new Promise((r) => setTimeout(r, 10));
   }
-  delete process.env.MAKIT_STUB_TOOL_SCALE;
-
   // The turn opens and closes, or the composer stays disabled forever.
   assert.deepEqual(statuses, ["running", "idle"]);
   const kinds = events.map((e) => e.kind);
@@ -183,4 +186,67 @@ test("TOOLS emits a representative tool-call sequence", async () => {
   );
   // The turn ends with the agent's reply, after every call is closed.
   assert.equal(events.at(-1)?.kind, "agent.message");
+});
+
+/**
+ * cancel()/kill() must stop the scripted turn. The SLOW turn already guards its
+ * timeout (see `slowTimeout`); the TOOLS turn emits far more late events — six
+ * starts, six ends, a reply and a second `idle` — so it needs the same guard.
+ *
+ * Scale 0.05 puts the whole script at ~265 ms, so the 900 ms settle below
+ * genuinely outlives it: with a shorter settle the assertions pass while the
+ * script is merely parked inside its next `wait`.
+ */
+async function firstStart(stub: StubAdapter, events: AdapterEvent[]) {
+  await stub.send({ text: "TOOLS" });
+  for (let i = 0; i < 200; i++) {
+    if (events.some((e) => e.kind === "tool.call.start")) return;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error("the script never opened a tool call");
+}
+
+test("cancel stops the TOOLS script mid-flight", async (t) => {
+  process.env.MAKIT_STUB_TOOL_SCALE = "0.05";
+  t.after(() => {
+    delete process.env.MAKIT_STUB_TOOL_SCALE;
+  });
+  const stub = new StubAdapter();
+  const events: AdapterEvent[] = [];
+  const statuses: string[] = [];
+  stub.on("event", (e) => events.push(e));
+  stub.on("status", (s) => statuses.push(String(s)));
+  await stub.start({ sessionId: "s-cancel", cwd: "/tmp" });
+  await firstStart(stub, events);
+
+  await stub.cancel();
+  const afterCancel = events.length;
+  await new Promise((r) => setTimeout(r, 900));
+
+  assert.equal(events.length, afterCancel, "no events after cancel");
+  assert.equal(
+    statuses.filter((s) => s === "idle").length,
+    2,
+    "start's idle + cancel's idle, and no third from the script finishing",
+  );
+  assert.ok(
+    !events.some((e) => e.kind === "agent.message"),
+    "the script's closing reply never lands",
+  );
+});
+
+test("kill stops the TOOLS script mid-flight", async (t) => {
+  process.env.MAKIT_STUB_TOOL_SCALE = "0.05";
+  t.after(() => {
+    delete process.env.MAKIT_STUB_TOOL_SCALE;
+  });
+  const stub = new StubAdapter();
+  const events: AdapterEvent[] = [];
+  stub.on("event", (e) => events.push(e));
+  await stub.start({ sessionId: "s-kill", cwd: "/tmp" });
+  await firstStart(stub, events);
+  await stub.kill();
+  const afterKill = events.length;
+  await new Promise((r) => setTimeout(r, 900));
+  assert.equal(events.length, afterKill, "an exited adapter emits nothing");
 });
