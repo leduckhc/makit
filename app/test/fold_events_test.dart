@@ -287,4 +287,54 @@ void main() {
       expect(items.whereType<AgentMediaItem>().length, 1);
     });
   });
+
+  group('SPEC-47 D1 end timestamps', () {
+    test('tool.call.end records endedTs from the ending event', () {
+      final items = foldEvents([
+        _ev(1, EventKind.toolCallStart, {'callId': 'c', 'name': 'bash'}),
+        _ev(5, EventKind.toolCallEnd, {'callId': 'c', 'exitCode': 0}),
+      ]);
+      final tool = items.single as ToolCallItem;
+      expect(tool.ts, 1000, reason: 'ts stays the start');
+      expect(tool.endedTs, 5000);
+    });
+
+    test('a running tool call has a null endedTs', () {
+      final items = foldEvents([
+        _ev(1, EventKind.toolCallStart, {'callId': 'c', 'name': 'bash'}),
+        _ev(2, EventKind.toolCallDelta, {'callId': 'c', 'chunk': 'x'}),
+      ]);
+      expect((items.single as ToolCallItem).endedTs, isNull);
+    });
+
+    test('final agent.thinking records lastTs from the ending event', () {
+      final items = foldEvents([
+        _ev(3, EventKind.agentThinking, {'text': 'reasoned'}),
+      ]);
+      final think = items.single as ThinkingItem;
+      expect(think.ts, 3000);
+      expect(think.lastTs, 3000);
+    });
+
+    test('streamed thinking lastTs advances on each delta then the final', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentThinkingDelta, {'thinkId': 't', 'chunk': 'a'}),
+        _ev(2, EventKind.agentThinkingDelta, {'thinkId': 't', 'chunk': 'b'}),
+        _ev(9, EventKind.agentThinking, {'thinkId': 't', 'text': 'ab'}),
+      ]);
+      final think = items.single as ThinkingItem;
+      expect(think.ts, 1000, reason: 'anchored at reasoning start');
+      expect(think.lastTs, 9000);
+    });
+
+    test('a still-streaming thinking card lastTs is its latest delta', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentThinkingDelta, {'thinkId': 't', 'chunk': 'a'}),
+        _ev(4, EventKind.agentThinkingDelta, {'thinkId': 't', 'chunk': 'b'}),
+      ]);
+      final think = items.single as ThinkingItem;
+      expect(think.streaming, isTrue);
+      expect(think.lastTs, 4000);
+    });
+  });
 }

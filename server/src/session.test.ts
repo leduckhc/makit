@@ -653,3 +653,17 @@ test("replaceAdapter unbinds only the session's own listeners, not a third party
   assert.deepEqual(foreignExits, [0], "a foreign exit listener survived the swap");
   assert.equal(foreignEvents.length, 1, "a foreign event listener survived the swap");
 });
+
+test("SPEC-47 D12: toDTO exposes createdAt so the app can show session age", () => {
+  // `createdAt` was already assigned and persisted through toMeta(), but omitted
+  // from the DTO — so no client could render a session's age. Rehydration passes
+  // it explicitly, which is what makes the value survive a restart.
+  const born = 1_700_000_000_000;
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter(), createdAt: born });
+  assert.equal(session.toDTO().createdAt, born);
+
+  // A session with no explicit createdAt still reports one (the constructor
+  // defaults to now), so the field is never absent on a live session.
+  const fresh = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+  assert.ok((fresh.toDTO().createdAt ?? 0) > 0);
+});

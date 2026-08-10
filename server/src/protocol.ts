@@ -680,6 +680,12 @@ export interface SessionDTO {
   title: string;
   status: SessionStatus;
   policy: ApprovalPolicy;
+  /**
+   * Epoch ms the session was created (SPEC-47 D12). Optional on the wire so a
+   * newer app paired with an older server renders no age rather than a
+   * fabricated one derived from an epoch-0 default.
+   */
+  createdAt?: number;
   lastActivityAt: number;
   lastPreview: string;
   /**

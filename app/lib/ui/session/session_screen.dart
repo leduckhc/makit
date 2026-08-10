@@ -215,7 +215,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                           key: ValueKey('ask-${pendingAsk!.requestId}'),
                           child: transcriptRow(AskCard(ask: pendingAsk)),
                         )
-                      : transcriptRow(const WorkingIndicator());
+                      : transcriptRow(
+                          WorkingIndicator(sessionId: widget.sessionId),
+                        );
                 }
                 final index = items.length - 1 - (hasTrailer ? i - 1 : i);
                 final item = items[index];

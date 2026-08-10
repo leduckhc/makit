@@ -575,6 +575,7 @@ export class Session extends EventEmitter {
       title: this.title,
       status: this.status,
       policy: this.policy,
+      createdAt: this.createdAt,
       lastActivityAt: this.lastActivityAt,
       lastPreview: this.lastPreview,
       pending: this.pending,

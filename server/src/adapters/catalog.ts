@@ -41,10 +41,18 @@ export interface AgentDescriptor {
  * Resolve `cmd` to an absolute path: an explicit path is returned when it
  * exists; a bare name is searched on PATH (with Windows executable suffixes).
  * Returns `undefined` when nothing resolves.
+ *
+ * `env` (default `process.env`) is the environment whose PATH is searched.
+ * Callers that spawn a child with a modified `PATH` (see `spawnLineProcess`,
+ * which uses `{ ...process.env, ...opts.env }`) must pass that same merged env
+ * so the preflight matches the child's real resolution.
  */
-export function resolveBinPath(cmd: string): string | undefined {
+export function resolveBinPath(
+  cmd: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
   if (cmd.includes("/") || cmd.includes("\\")) return isRunnable(cmd) ? cmd : undefined;
-  const dirs = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+  const dirs = (env.PATH ?? "").split(delimiter).filter(Boolean);
   const exts = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
   for (const dir of dirs) {
     for (const ext of exts) {
@@ -71,9 +79,14 @@ function isRunnable(p: string): boolean {
   }
 }
 
-/** True if `cmd` is an absolute/relative existing file or resolves on PATH. */
-export function onPath(cmd: string): boolean {
-  return resolveBinPath(cmd) !== undefined;
+/**
+ * True if `cmd` is an absolute/relative existing file or resolves on PATH.
+ * `env` (default `process.env`) is the environment whose PATH is consulted —
+ * pass a merged env when preflighting a child that will spawn with an
+ * overridden PATH (see `resolveBinPath`).
+ */
+export function onPath(cmd: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  return resolveBinPath(cmd, env) !== undefined;
 }
 
 // ---------- fingerprint (SPEC-27) ------------------------------------------

@@ -1114,6 +1114,7 @@ class Session {
     required this.status,
     required this.policy,
     this.lastActivityAt = 0,
+    this.createdAt,
     this.lastPreview = '',
     this.pane,
     this.pending = false,
@@ -1133,6 +1134,12 @@ class Session {
   final SessionStatus status;
   final ApprovalPolicy policy;
   final int lastActivityAt;
+
+  /// When this session was created, in epoch ms (SPEC-47 D12), or null when the
+  /// server did not report one (an older server, or a session that predates the
+  /// field). **Nullable rather than `0`-as-unknown** like [lastActivityAt]: an
+  /// absent age is not rendered rather than fabricated as "56 years".
+  final int? createdAt;
   final String lastPreview;
 
   /// Set when this session runs in a multiplexer pane (SPEC-05).
@@ -1193,6 +1200,7 @@ class Session {
     status: status ?? this.status,
     policy: policy ?? this.policy,
     lastActivityAt: lastActivityAt ?? this.lastActivityAt,
+    createdAt: createdAt,
     lastPreview: lastPreview ?? this.lastPreview,
     pane: clearPane ? null : (pane ?? this.pane),
     pending: pending ?? this.pending,

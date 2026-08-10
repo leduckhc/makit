@@ -12,6 +12,7 @@ import 'connection.dart';
 import 'metrics.dart';
 import 'models.dart';
 import 'ports.dart';
+import 'turns.dart';
 
 class ProjectsState {
   ProjectsState(this.projects);
@@ -93,6 +94,7 @@ class StoreState {
     this.metrics = const [],
     this.ports,
     this.sessionsLoaded = false,
+    this.historyLoaded = const {},
   });
 
   factory StoreState.empty() => StoreState(
@@ -147,6 +149,12 @@ class StoreState {
   /// empty [sessions] list alone cannot.
   final bool sessionsLoaded;
 
+  /// Session ids whose full history this client holds (a `fromSeq = 0` replay
+  /// completed) — the visible mirror of the controller's private
+  /// `_historyLoaded` (SPEC-47 D16). The session rollup is gated on this: a
+  /// tail-only session would report "3 turns" for one that had forty.
+  final Set<String> historyLoaded;
+
   StoreState copyWith({
     List<Project>? projects,
     List<RepoInfo>? repos,
@@ -161,6 +169,7 @@ class StoreState {
     List<MetricsSample>? metrics,
     PortsSnapshot? ports,
     bool? sessionsLoaded,
+    Set<String>? historyLoaded,
   }) => StoreState(
     projects: projects ?? this.projects,
     repos: repos ?? this.repos,
@@ -175,6 +184,7 @@ class StoreState {
     metrics: metrics ?? this.metrics,
     ports: ports ?? this.ports,
     sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
+    historyLoaded: historyLoaded ?? this.historyLoaded,
   );
 }
 
@@ -299,7 +309,9 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
 }
 
 class StoreController extends StateNotifier<StoreState> {
-  StoreController(this._ref) : super(StoreState.empty()) {
+  StoreController(this._ref, {int Function()? nowMs})
+    : _nowMs = nowMs ?? _deviceNowMs,
+      super(StoreState.empty()) {
     _sub = _ref
         .read(connectionControllerProvider.notifier)
         .incoming
@@ -332,6 +344,7 @@ class StoreController extends StateNotifier<StoreState> {
         _replayBuffer.clear();
         _historyLoaded.clear();
         _fullReplay.clear();
+        _serverClockOffset = 0;
         _watchingGithubBudget = false;
         state = StoreState.empty();
         // SPEC-45 D9: the per-(agent, project) command cache belonged to the old
@@ -388,6 +401,26 @@ class StoreController extends StateNotifier<StoreState> {
   final Ref _ref;
   StreamSubscription<Envelope>? _sub;
 
+  /// The device wall clock in epoch ms. Injected so tests can pin "now" while
+  /// asserting the server-clock offset (SPEC-47 D15).
+  final int Function() _nowMs;
+
+  static int _deviceNowMs() => DateTime.now().millisecondsSinceEpoch;
+
+  /// Server-minus-device clock skew in ms (SPEC-47 D15). Updated ONLY from a
+  /// live event's `ts` (see [_onFrame]), never from replayed history — a
+  /// replayed `ts` is arbitrarily old and would make a fresh live counter read
+  /// minutes. Zero until the first live event, which is harmless: nothing is
+  /// counting while idle, and a running turn streams a delta every second.
+  int _serverClockOffset = 0;
+
+  /// The current skew (SPEC-47 D15), for callers computing spans in server time.
+  int get serverClockOffset => _serverClockOffset;
+
+  /// "Server now" in epoch ms: the device clock corrected by [serverClockOffset]
+  /// (SPEC-47 D15). Live counters compute `serverNowMs() - startTs`.
+  int serverNowMs() => _nowMs() + _serverClockOffset;
+
   /// Sessions whose initial `sub` replay is still streaming in (between the
   /// `sub` send and its matching `ack`). Their events are buffered in
   /// [_replayBuffer] and applied as a single batch on the ack, so the reversed
@@ -439,7 +472,12 @@ class StoreController extends StateNotifier<StoreState> {
       return;
     }
     state = reduce(state, decoded);
-    if (decoded is SessionEventFrame) _cacheCommands(decoded.event);
+    if (decoded is SessionEventFrame) {
+      // Live branch only (a buffered replay returned above): correct the clock
+      // from this event's server `ts` (D15).
+      _serverClockOffset = decoded.event.ts - _nowMs();
+      _cacheCommands(decoded.event);
+    }
   }
 
   /// SPEC-45 D4: mirror a session's advertised commands into the per-(agent,
@@ -493,6 +531,8 @@ class StoreController extends StateNotifier<StoreState> {
         events: Map<String, List<SessionEvent>>.from(next.events)
           ..remove(sessionId),
         cursors: Map<String, int>.from(next.cursors)..remove(sessionId),
+        // Expose "we now hold this session's full history" (SPEC-47 D16).
+        historyLoaded: {...next.historyLoaded, sessionId},
       );
     }
     final events = buffered ?? const <SessionEvent>[];
@@ -1218,7 +1258,10 @@ final chatItemsProvider = Provider.family<List<ChatItem>, String>((
   sessionId,
 ) {
   final events = ref.watch(eventsProvider).forSession(sessionId);
-  return foldEvents(events);
+  // SPEC-47 D18: turn spans come from a SEPARATE pure pass over the same
+  // events, then the receipt rows are projected into the fold's output. The
+  // fold stays a row builder; turn correctness never depends on row order.
+  return withTurnReceipts(foldEvents(events), deriveTurns(events));
 });
 
 /// Slash commands advertised by the agent for a given session.
@@ -1272,4 +1315,31 @@ final sessionActionErrorProvider = Provider.family<ActionError?, String>((
 ) {
   final s = ref.watch(storeControllerProvider);
   return s.actionErrors[sessionId];
+});
+
+/// Completed turns for a session (SPEC-47 D18), derived as a pure pass over the
+/// event stream — independent of the chat-item fold.
+final sessionTurnsProvider = Provider.family<List<TurnSpan>, String>((
+  ref,
+  sessionId,
+) {
+  final events = ref.watch(eventsProvider).forSession(sessionId);
+  return deriveTurns(events);
+});
+
+/// The session-effort rollup (SPEC-47 D11): turn count, agent time, median.
+final sessionRollupProvider = Provider.family<TurnRollup, String>((
+  ref,
+  sessionId,
+) {
+  return turnRollup(ref.watch(sessionTurnsProvider(sessionId)));
+});
+
+/// Whether this client holds the session's full history (SPEC-47 D16). The
+/// rollup is only shown when true — a tail-only session would undercount turns.
+final sessionHistoryLoadedProvider = Provider.family<bool, String>((
+  ref,
+  sessionId,
+) {
+  return ref.watch(storeControllerProvider).historyLoaded.contains(sessionId);
 });
