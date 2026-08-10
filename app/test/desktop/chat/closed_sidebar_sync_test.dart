@@ -77,7 +77,9 @@ void main() {
       UncontrolledProviderScope(
         container: c,
         child: const MaterialApp(
-          home: Scaffold(body: SizedBox(width: 320, child: ClosedSidebarView())),
+          home: Scaffold(
+            body: SizedBox(width: 320, child: ClosedSidebarView()),
+          ),
         ),
       ),
     );

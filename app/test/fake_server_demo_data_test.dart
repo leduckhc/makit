@@ -80,6 +80,90 @@ void main() {
     }
   });
 
+  /// Review follow-up (PR #157): the fake only answered `session.listClosed`, so
+  /// `session.close` fell through to a bare ack and the session stayed visible —
+  /// the demo/no-server path could not exercise the feature at all.
+  test(
+    'session.close hides the session and session.reopen restores it',
+    () async {
+      final server = FakeServer();
+      addTearDown(server.stop);
+
+      // Subscribe BEFORE start(): the first snapshot is emitted synchronously by
+      // start(), so a later firstWhere() would wait forever for a second one.
+      final snapshots = <List<Session>>[];
+      final acks = <String, Envelope>{};
+      final sub = server.outgoing.listen((e) {
+        if (e.body['kind'] == 'sessions.snapshot') {
+          snapshots.add(
+            WireCodec.decodeSessions(e.body['sessions']) ?? const [],
+          );
+        }
+        if (e.t == MsgType.ack) acks[e.id] = e;
+      });
+      addTearDown(sub.cancel);
+
+      // start() defers its first push behind a 150ms timer, so draining
+      // microtasks is not enough here — real elapsed time is required.
+      Future<void> settle() =>
+          Future<void>.delayed(const Duration(milliseconds: 220));
+
+      server.start();
+      await settle();
+      expect(
+        snapshots,
+        isNotEmpty,
+        reason: 'start() broadcasts the active set',
+      );
+      final target = snapshots.last.first.id;
+
+      server.send(
+        Envelope(
+          t: MsgType.cmd,
+          id: 'c-close',
+          body: {'kind': 'session.close', 'sessionId': target},
+        ),
+      );
+      await settle();
+      expect(
+        snapshots.last.map((s) => s.id),
+        isNot(contains(target)),
+        reason: 'a closed session leaves the active snapshot',
+      );
+
+      server.send(
+        Envelope(
+          t: MsgType.cmd,
+          id: 'c-list',
+          body: const {'kind': 'session.listClosed'},
+        ),
+      );
+      await settle();
+      final listed = WireCodec.decodeSessions(
+        acks['c-list']!.body['sessions'],
+      )!;
+      expect(
+        listed.map((s) => s.id),
+        contains(target),
+        reason: 'and is reported by session.listClosed',
+      );
+
+      server.send(
+        Envelope(
+          t: MsgType.cmd,
+          id: 'c-reopen',
+          body: {'kind': 'session.reopen', 'sessionId': target},
+        ),
+      );
+      await settle();
+      expect(
+        snapshots.last.map((s) => s.id),
+        contains(target),
+        reason: 'reopen puts it back in the active snapshot',
+      );
+    },
+  );
+
   test('answers session.listClosed with closed sessions', () async {
     final server = FakeServer();
     addTearDown(server.stop);
