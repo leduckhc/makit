@@ -32,8 +32,10 @@ function fakeSpawn(): {
     });
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
-    child.kill = () => {
+    child.signals = [] as string[];
+    child.kill = (signal?: string) => {
       child.killed = true;
+      child.signals.push(signal ?? "SIGTERM");
     };
     children.push(child);
     return child as unknown as ChildProcess;
@@ -181,6 +183,45 @@ test("dispose kills the child", () => {
   const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
   t.dispose();
   assert.equal(children[0]!.killed, true);
+});
+
+/**
+ * The RSS leak this guards: `dispose()` used to send ONE SIGTERM and hope. An
+ * agent that ignores or is too slow to honour it stayed resident forever —
+ * observed in the wild as `pi` children of a makit daemon still alive after
+ * five days, ~1 GB RSS across 19 processes. A close is not done until the OS
+ * has actually reclaimed the process, so SIGTERM must escalate to SIGKILL.
+ */
+test("dispose escalates to SIGKILL when the child ignores SIGTERM", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+  t.dispose();
+  assert.deepEqual(children[0]!.signals, ["SIGTERM"], "SIGTERM first — give it a chance to flush");
+
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(children[0]!.signals, ["SIGTERM", "SIGKILL"]);
+});
+
+test("dispose does not SIGKILL a child that exits within the grace period", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+  t.dispose();
+  children[0]!.emit("exit", 0, "SIGTERM");
+
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(children[0]!.signals, ["SIGTERM"], "a graceful exit must not be followed by SIGKILL");
+});
+
+test("repeated dispose escalates only once", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+  t.dispose();
+  t.dispose();
+  t.dispose();
+
+  await new Promise((r) => setTimeout(r, 25));
+  const kills = children[0]!.signals.filter((s: string) => s === "SIGKILL");
+  assert.equal(kills.length, 1, `expected exactly one SIGKILL, got ${children[0]!.signals.join(",")}`);
 });
 
 test("an oversized unterminated frame is dropped instead of growing buf unbounded", () => {
