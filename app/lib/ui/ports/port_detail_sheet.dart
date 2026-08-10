@@ -170,17 +170,19 @@ class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
     final status = statusOf(context);
     setState(() => _watched = on);
     final ok = await report(on);
-    if (!mounted) return;
     if (!ok) {
       // Put the switch back where the server says it is, and say so — the whole
       // point of the feature is an alert that actually arrives.
-      setState(() => _watched = !on);
+      if (mounted) {
+        setState(() => _watched = !on);
+      }
       status.warning(
         on
             ? 'Could not start watching the port'
             : 'Could not stop watching the port',
         detail: ':${port.port}',
         source: StatusSources.ports,
+        sessionId: port.sessionId,
       );
     }
   }
@@ -201,13 +203,16 @@ class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
           'Could not open the port',
           detail: url,
           source: StatusSources.ports,
+          sessionId: port.sessionId,
         );
       }
     } catch (e) {
       status.failure(
-        'Could not open the port',
+        'Invalid port URL',
         error: e,
+        detail: url,
         source: StatusSources.ports,
+        sessionId: port.sessionId,
       );
     }
   }
@@ -217,7 +222,12 @@ class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
     if (url == null) return;
     final status = statusOf(context);
     await Clipboard.setData(ClipboardData(text: url));
-    status.info('URL copied', detail: url, source: StatusSources.ports);
+    status.info(
+      'URL copied',
+      detail: url,
+      source: StatusSources.ports,
+      sessionId: port.sessionId,
+    );
   }
 
   @override

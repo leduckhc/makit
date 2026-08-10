@@ -268,12 +268,13 @@ class _MakitAppState extends ConsumerState<MakitApp>
 }
 
 /// Where a status toast tap lands: the event's session when it has one, else the
-/// Activity feed. Lives here (not in the toast layer) because only the app root
-/// knows which shell owns the Navigator.
-void _openFromToast(StatusEvent event) {
+/// Activity feed. A null event is the overflow chip — the hidden notices live in
+/// Activity, not in any one session. Lives here (not in the toast layer) because
+/// only the app root knows which shell owns the Navigator.
+void _openFromToast(StatusEvent? event) {
   final context = makitNavigatorKey.currentContext;
   if (context == null) return;
-  final sid = event.sessionId;
+  final sid = event?.sessionId;
   context.go(sid == null ? kRouteActivity : routeForSession(sid));
 }
 

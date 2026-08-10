@@ -51,7 +51,7 @@ class StatusToastLayer extends ConsumerStatefulWidget {
   /// one. Injected because the phone (router) and the desktop (panes + popover)
   /// answer that differently; null makes the card non-tappable while copy and
   /// dismiss keep working.
-  final void Function(StatusEvent event)? onOpen;
+  final void Function(StatusEvent? event)? onOpen;
 
   @override
   ConsumerState<StatusToastLayer> createState() => _StatusToastLayerState();
@@ -81,7 +81,11 @@ class _StatusToastLayerState extends ConsumerState<StatusToastLayer> {
       case StatusPosted(:final event):
         setState(() => _queue.push(event));
         // Restart the clock on every post: a repeat that just bumped the count
-        // is news again, and deserves the full dwell.
+        // is news again, and deserves the full dwell. Unless the card is being
+        // held — SPEC-49 D4's hold outranks that, and a timer here would
+        // dismiss the notice under the pointer that is reading or copying it.
+        // The release in `_setHeld` starts the fresh dwell instead.
+        if (_held.contains(event.id)) return;
         _timers.remove(event.id)?.cancel();
         _timers[event.id] = Timer(
           toastDwell(event.severity),
@@ -180,9 +184,13 @@ class _StatusToastLayerState extends ConsumerState<StatusToastLayer> {
                       if (overflow > 0)
                         _OverflowChip(
                           count: overflow,
-                          onTap: widget.onOpen == null || visible.isEmpty
+                          // The chip counts the notices BEHIND the cap, so it
+                          // must not open one that is already on screen. A null
+                          // event means "the Activity surface", which is where
+                          // the hidden ones actually are.
+                          onTap: widget.onOpen == null
                               ? null
-                              : () => widget.onOpen!(visible.first),
+                              : () => widget.onOpen!(null),
                         ),
                     ],
                   ),

@@ -104,13 +104,13 @@ class SettingsScreen extends ConsumerWidget {
                 // Resolved before the first await: `ref` throws once its widget is
                 // unmounted, and the record must survive the thing that reported to it.
                 final status = ref.status;
-                await ref
-                    .read(connectionControllerProvider.notifier)
-                    .reconnect();
                 status.progress(
                   'Reconnecting…',
                   source: StatusSources.settings,
                 );
+                await ref
+                    .read(connectionControllerProvider.notifier)
+                    .reconnect();
               },
             ),
 

@@ -59,7 +59,8 @@ class StatusCenter {
     this.coalesceWindow = const Duration(seconds: 8),
     MakitLog? log,
     DateTime Function()? now,
-  }) : _log = log,
+  }) : assert(capacity > 0, 'a record that holds nothing is not a record'),
+       _log = log,
        _now = now ?? DateTime.now;
 
   /// Most-recent events kept in memory. Two orders of magnitude smaller than the
@@ -262,8 +263,7 @@ class StatusCenter {
 
   /// The whole feed as one chronological block — the "Copy all" payload, in
   /// reading order rather than display order.
-  String copyAllText() =>
-      _buffer.toList().reversed.map((e) => e.toClipboardText()).join('\n');
+  String copyAllText() => copyTextFor(_buffer);
 
   Future<void> dispose() => _controller.close();
 
@@ -292,3 +292,10 @@ class StatusCenter {
     return '$head\n$stackTrace';
   }
 }
+
+/// One chronological block for an arbitrary selection of events — newest-first
+/// in (the order both [StatusCenter.events] and the Activity list use), reading
+/// order out. Shared by "Copy all" and by the filtered copy the Activity
+/// toolbar performs, so the two can never disagree on shape.
+String copyTextFor(Iterable<StatusEvent> events) =>
+    events.toList().reversed.map((e) => e.toClipboardText()).join('\n');

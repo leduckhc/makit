@@ -425,7 +425,7 @@ class _RepoMenuButton extends ConsumerWidget {
       onSelected: (value) {
         switch (value) {
           case 'hide':
-            _hideRepo(context, ref);
+            _hideRepo(ref);
         }
       },
       itemBuilder: (context) => [
@@ -445,7 +445,7 @@ class _RepoMenuButton extends ConsumerWidget {
 
   /// Untrack the repo, surfacing failures the way rename/delete do rather than
   /// dropping the rejected command as an unhandled async error.
-  Future<void> _hideRepo(BuildContext context, WidgetRef ref) async {
+  Future<void> _hideRepo(WidgetRef ref) async {
     // Resolved before the first await: `ref` throws once its widget is
     // unmounted, and the record must survive the thing that reported to it.
     final status = ref.status;

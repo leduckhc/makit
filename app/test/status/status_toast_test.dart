@@ -18,7 +18,7 @@ void main() {
 
   Future<void> pumpLayer(
     WidgetTester tester, {
-    void Function(StatusEvent)? onOpen,
+    void Function(StatusEvent?)? onOpen,
   }) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -219,13 +219,13 @@ void main() {
     t,
   ) async {
     final copied = watchClipboard(t);
-    final opened = <StatusEvent>[];
+    final opened = <StatusEvent?>[];
     await pumpLayer(t, onOpen: opened.add);
     center.failure('Turn failed', source: 'agent', sessionId: 's1');
     await t.pump();
     await t.tap(find.byTooltip('Open'));
     await t.pumpAndSettle();
-    expect(opened.single.sessionId, 's1');
+    expect(opened.single?.sessionId, 's1');
     expect(copied, isEmpty);
   });
 

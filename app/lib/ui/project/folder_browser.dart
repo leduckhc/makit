@@ -68,16 +68,16 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = '$e';
-      });
       status.failure(
         'Could not browse folder',
         error: e,
         source: StatusSources.repo,
       );
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '$e';
+      });
     }
   }
 
@@ -99,13 +99,13 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
         source: StatusSources.repo,
       );
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _adding = false);
       status.failure(
         'Could not add project',
         error: e,
         source: StatusSources.repo,
       );
+      if (!mounted) return;
+      setState(() => _adding = false);
     }
   }
 

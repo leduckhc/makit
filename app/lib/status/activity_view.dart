@@ -77,8 +77,11 @@ class _ActivityViewState extends ConsumerState<ActivityView> {
           onFloor: (f) => setState(() => _floor = f),
           onCopyAll: events.isEmpty
               ? null
+              // What you copy is what you are looking at: `copyAllText()`
+              // serializes the whole buffer, which silently ignores the
+              // severity filter this toolbar just applied.
               : () => Clipboard.setData(
-                  ClipboardData(text: center.copyAllText()),
+                  ClipboardData(text: copyTextFor(events)),
                 ),
           onClear: center.events.isEmpty ? null : center.clear,
         ),

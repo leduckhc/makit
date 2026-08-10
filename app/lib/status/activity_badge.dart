@@ -335,10 +335,15 @@ Future<void> showActivityDialog(
     alignment: Alignment.topRight,
     child: Padding(
       padding: const EdgeInsets.only(top: kSpace32, right: kSpace16),
-      child: _ActivityPanel(
-        height: _kActivityPanelHeight,
-        onClose: () => Navigator.of(context).pop(),
-        onOpenSession: onOpenSession,
+      child: LayoutBuilder(
+        builder: (context, constraints) => _ActivityPanel(
+          height: math.max(
+            _kActivityPanelMinHeight,
+            math.min(_kActivityPanelHeight, constraints.maxHeight),
+          ),
+          onClose: () => Navigator.of(context).pop(),
+          onOpenSession: onOpenSession,
+        ),
       ),
     ),
   ),
