@@ -38,7 +38,7 @@ void main() {
       final t = tools.single;
       expect(t.name, 'bash');
       // The command must be the REAL command, not the tool name "bash".
-      expect(toolSummaryLine(t), 'Ran echo hello-from-pi');
+      expect(toolSummaryLine(t), 'Run echo');
       expect(t.ended, isTrue);
       expect(t.exitCode, 0);
       expect(t.resultText, contains('hello-from-pi'));
@@ -60,8 +60,8 @@ void main() {
     test('write + edit: real paths, both completed', () {
       final tools = toolsOf(foldFixture('write-edit'));
       final byName = {for (final t in tools) t.name: t};
-      expect(toolSummaryLine(byName['write']!), 'Wrote /tmp/makit-demo.txt');
-      expect(toolSummaryLine(byName['edit']!), 'Edited /tmp/makit-demo.txt');
+      expect(toolSummaryLine(byName['write']!), 'Write /tmp/makit-demo.txt');
+      expect(toolSummaryLine(byName['edit']!), 'Edit /tmp/makit-demo.txt');
       for (final t in tools) {
         expect(t.ended, isTrue);
       }

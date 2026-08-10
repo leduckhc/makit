@@ -161,6 +161,15 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       setTimeout(tick, echoDelayMs);
       return;
     }
+    // "TOOLS" → a turn made of tool calls: the one row type the keyless loop
+    // could not produce, so the risk branches, durations, exit codes, command
+    // summaries and every expanded-body shape (file content, shell output,
+    // diff, facts-only) had to be taken on trust. Scripted with real delays so
+    // the live counter and the finished-duration gate (SPEC-47) both fire.
+    if (input.text.includes("TOOLS")) {
+      void this.runToolScript();
+      return;
+    }
     // "THINK" → emit a reasoning trace (folded thinking card) then a reply.
     if (input.text.includes("THINK")) {
       this.emitEvent({
@@ -192,6 +201,135 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       });
       this.emit("status", "idle");
     }, echoDelayMs);
+  }
+
+  /**
+   * A representative tool turn: reasoning, a safe read, a multi-command shell
+   * call, a grep, an edit (diff body), a failing shell call, and a destructive
+   * one. Every `tool.call.start` is closed — a dangling start renders as a row
+   * that spins forever.
+   */
+  private async runToolScript(): Promise<void> {
+    this.emit("status", "running");
+    // The two long calls exist so the duration token clears SPEC-47's 2 s floor
+    // in the live loop. A unit test only cares about the event shape, so the
+    // scale is overridable rather than the script being duplicated.
+    const scale = Number(process.env.MAKIT_STUB_TOOL_SCALE ?? "1") || 1;
+    const wait = (ms: number) => new Promise((r) => setTimeout(r, ms * scale));
+
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "agent.thinking",
+      payload: {
+        text:
+          "The risk tint fires on edit/write/bash, so it is on for almost every " +
+          "row; monochrome loses nothing and buys back the amber for something " +
+          "that is actually exceptional.",
+      },
+    });
+    await wait(60);
+
+    type Call = {
+      name: string;
+      args: Record<string, unknown>;
+      risk: "safe" | "risky" | "destructive";
+      /** Milliseconds the call "takes" — drives the duration token. */
+      ms: number;
+      exitCode?: number;
+      summary: string;
+      output?: string;
+    };
+
+    const calls: Call[] = [
+      {
+        name: "read",
+        args: { path: `${this.workspaceRoot}/app/lib/ui/session/tool_call_card.dart` },
+        risk: "safe",
+        ms: 40,
+        summary: "307 lines read",
+        output:
+          "import 'package:flutter/material.dart';\n" +
+          "import 'package:flutter_riverpod/flutter_riverpod.dart';\n\n" +
+          "class ToolCallCard extends ConsumerStatefulWidget {\n" +
+          "  const ToolCallCard({super.key, required this.item});\n",
+      },
+      {
+        name: "bash",
+        args: {
+          command: `cd ${this.workspaceRoot} && grep -rn "risk" server/src/*.ts | head -20`,
+        },
+        risk: "risky",
+        ms: 2600,
+        summary: "3 matches",
+        output:
+          "server/src/pi-sessions.ts:259:function classifyRisk(name: string) {\n" +
+          "server/src/adapters/acp-map.ts:540:function riskFromKind(kind) {\n" +
+          'server/src/adapters/codex-map.ts:29:type Risk = "safe" | "risky";',
+      },
+      {
+        name: "grep",
+        args: { pattern: "kToolRiskyColor", glob: "*.dart" },
+        risk: "safe",
+        ms: 30,
+        summary: "1 match",
+        output: "app/lib/ui/session/chat_metrics.dart:46:const Color kToolRiskyColor",
+      },
+      {
+        name: "edit",
+        args: {
+          path: "app/lib/ui/session/tool_call_card.dart",
+          oldText: "        size: 16,\n        color: riskColor,",
+          newText: "        size: kToolGlyph,\n        color: riskColor,",
+        },
+        risk: "risky",
+        ms: 40,
+        summary: "+1 −1",
+      },
+      {
+        name: "bash",
+        args: { command: "sed -i '' 's/Ran/Run/g' app/lib/ui/session/tool_renderers.dart" },
+        risk: "risky",
+        ms: 300,
+        exitCode: 1,
+        summary: "exit 1",
+        output: 'sed: 1: "s/Ran/Run/g": invalid command code R',
+      },
+      {
+        name: "bash",
+        args: { command: "rm -rf ~/Library/Caches/dev.getmakit.app && rm -rf build" },
+        risk: "destructive",
+        ms: 2200,
+        summary: "removed 2 paths",
+      },
+    ];
+
+    for (const [i, call] of calls.entries()) {
+      const callId = `stub-tool-${Date.now()}-${i}`;
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "tool.call.start",
+        payload: { callId, name: call.name, args: call.args, risk: call.risk },
+      });
+      await wait(call.ms);
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "tool.call.end",
+        payload: {
+          callId,
+          exitCode: call.exitCode ?? 0,
+          summary: call.summary,
+          output: call.output ?? "",
+        },
+      });
+      await wait(40);
+    }
+
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "agent.message",
+      payload: { text: "Rows are 31px now, one family, and the amber is gone." },
+    });
+    this.emit("status", "idle");
   }
 
   /** No mid-turn injection (SPEC-35): the session layer queues instead. */

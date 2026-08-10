@@ -119,3 +119,68 @@ test("a plain echo is a whole turn (running → idle), so a queue keeps draining
 
   assert.deepEqual(statuses, ["running", "idle"]);
 });
+
+/**
+ * "TOOLS" trigger: the keyless loop had no way to produce a tool row at all, so
+ * the transcript's most common row type — and everything the app derives from it
+ * (risk tint, duration, exit code, expanded body) — could only be exercised with
+ * a real agent and an API key. Same rationale as STREAM/THINK/ASK_QUESTION.
+ */
+test("TOOLS emits a representative tool-call sequence", async () => {
+  process.env.MAKIT_STUB_TOOL_SCALE = "0.01";
+  const stub = new StubAdapter();
+  const events: AdapterEvent[] = [];
+  const statuses: string[] = [];
+  stub.on("event", (e) => events.push(e));
+  stub.on("status", (s) => statuses.push(String(s)));
+  await stub.start({ sessionId: "s-tools", cwd: "/tmp" });
+  events.length = 0;
+  statuses.length = 0;
+  // Streams like a real adapter: send returns immediately, events follow.
+  await stub.send({ text: "TOOLS" });
+  for (let i = 0; i < 200 && statuses.at(-1) !== "idle"; i++) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  delete process.env.MAKIT_STUB_TOOL_SCALE;
+
+  // The turn opens and closes, or the composer stays disabled forever.
+  assert.deepEqual(statuses, ["running", "idle"]);
+  const kinds = events.map((e) => e.kind);
+  assert.ok(kinds.includes("agent.thinking"), "a reasoning row leads the turn");
+  assert.ok(kinds.includes("tool.call.start"));
+  assert.ok(kinds.includes("tool.call.end"));
+
+  const starts = events.filter((e) => e.kind === "tool.call.start");
+  const ends = events.filter((e) => e.kind === "tool.call.end");
+  // Every start is closed: a dangling start renders as a row that spins forever.
+  assert.deepEqual(
+    starts.map((e) => (e.payload as { callId: string }).callId).sort(),
+    ends.map((e) => (e.payload as { callId: string }).callId).sort(),
+  );
+
+  const names = starts.map((e) => (e.payload as { name: string }).name);
+  assert.ok(names.includes("read"), "a safe read");
+  assert.ok(names.includes("bash"), "a shell call");
+  assert.ok(names.includes("edit"), "an edit, for the diff body");
+
+  // Risk classification must span the app's three branches, since the UI tints
+  // only `destructive` now and the other two must prove they do NOT.
+  const risks = new Set(starts.map((e) => (e.payload as { risk?: string }).risk));
+  assert.deepEqual([...risks].sort(), ["destructive", "risky", "safe"]);
+
+  // A failure, so the error caption/hue has something to render.
+  assert.ok(
+    ends.some((e) => (e.payload as { exitCode?: number }).exitCode === 1),
+    "one call fails",
+  );
+  // A multi-command shell call, so `commandNames` has something to summarise.
+  const commands = starts
+    .filter((e) => (e.payload as { name: string }).name === "bash")
+    .map((e) => String((e.payload as { args?: { command?: string } }).args?.command ?? ""));
+  assert.ok(
+    commands.some((c) => c.includes("&&") || c.includes("|")),
+    "one shell call chains several commands",
+  );
+  // The turn ends with the agent's reply, after every call is closed.
+  assert.equal(events.at(-1)?.kind, "agent.message");
+});

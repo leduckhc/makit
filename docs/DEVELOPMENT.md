@@ -230,6 +230,35 @@ cd /Users/le/Work/Vibe/makit
 ./app/tool/e2e.sh --mode=real                # slow; real pi, needs an LLM key
 ```
 
+### Keyless visual QA — real app, real server, scripted turn
+
+The stub adapter answers text triggers, so a live transcript can be driven with
+no LLM key and no agent binary. `TOOLS` is the one that produces **tool rows**
+(reasoning → read → multi-command shell → grep → edit → a failure → a
+destructive call, with real delays so the duration tokens fire):
+
+```sh
+# Terminal 1 — real daemon + StubAdapter, seeded pairing on :9787
+cd server
+export MAKIT_HOME=$(mktemp -d)
+pnpm exec tsx test/e2e-server.ts --mode stub --project /path/to/repo   # prints fp + bearer
+
+# Terminal 2 — the real app, paired to it
+cd app && flutter run -d "iPhone 17" \
+  --dart-define=MAKIT_TEST_HOST=127.0.0.1 --dart-define=MAKIT_TEST_PORT=9787 \
+  --dart-define=MAKIT_TEST_BEARER=e2e-token --dart-define=MAKIT_TEST_FP=<fp>
+
+# Terminal 3 — drive a turn; the app renders it live
+cd server && pnpm exec tsx test/drive-tools.ts             # sends TOOLS
+cd server && pnpm exec tsx test/drive-tools.ts --text THINK # or any other trigger
+```
+
+Other triggers: `STREAM`, `THINK`, `SLOW [ms]`, `MARKDOWN`, `ASK_QUESTION`,
+`ASK_MULTI`. The desktop app spawns its own daemon with the real adapter catalog
+(no stub), so this loop is iOS/simulator-only; for desktop-only row rendering use
+the widget harness `app/tool/tool_row_demo.dart`
+(`--dart-define=unfold=true` opens every row expanded).
+
 If a killed run leaks the stub server on port 9787:
 
 ```sh

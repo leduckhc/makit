@@ -192,4 +192,152 @@ void main() {
       expect(compactCommand('   '), '');
     });
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // commandNames — the corpus is `mockups/tool-one-liner.html` §2, verbatim.
+  // Each test names the rule (T1…T7) it pins.
+  // ─────────────────────────────────────────────────────────────────────────
+  group('commandNames', () {
+    test('T1 splits a pipeline into its members', () {
+      expect(commandNames('grep -rn x src | head -20'), 'grep, head');
+    });
+
+    test('T1 splits on &&, ||, ; and newlines', () {
+      expect(commandNames('sed -i s/a/b/ x.ts && grep -n b x.ts'), 'sed, grep');
+      expect(commandNames('rg foo || rg bar; wc -l x\nsort x'), 'rg, wc, sort');
+    });
+
+    test('T1 does not split on operators inside quotes', () {
+      expect(commandNames('git commit -m "a && b; c | d"'), 'git commit');
+    });
+
+    test('T2 recurses into a command substitution', () {
+      expect(commandNames(r'kill $(lsof -t -i:9787)'), 'kill, lsof');
+      expect(commandNames('kill `lsof -t -i:9787`'), 'kill, lsof');
+    });
+
+    test('T3 drops the cd/export/source/set prologue', () {
+      expect(
+        commandNames(
+          'set -euo pipefail; source .env; cd server && pnpm typecheck',
+        ),
+        'pnpm typecheck',
+      );
+    });
+
+    test('T3 drops a loop header but keeps its body', () {
+      expect(
+        commandNames(
+          r'for f in lib/*.dart; do wc -l "$f"; done | sort -n | tail -5',
+        ),
+        'wc, sort, tail',
+      );
+    });
+
+    test('T4 unwraps wrappers and takes the basename', () {
+      expect(
+        commandNames('time ~/flutter/bin/flutter test --no-pub'),
+        'flutter test',
+      );
+      expect(commandNames('sudo lsof -i:80'), 'lsof');
+      expect(commandNames('xargs grep -l TODO'), 'grep');
+      expect(commandNames('./scripts/deploy.sh --dry-run'), 'deploy.sh');
+    });
+
+    test('T4 normalises a versioned interpreter', () {
+      expect(commandNames('python3 -c "print(1)"'), 'python');
+      expect(commandNames('python3.12 tool/wait.py'), 'python');
+      expect(commandNames('pip3 install -r requirements.txt'), 'pip install');
+    });
+
+    test('T4 keeps an inline env assignment out of the name', () {
+      expect(commandNames('NODE_ENV=production pnpm run build'), 'pnpm build');
+    });
+
+    test('T5 keeps the subcommand only for a multiplexer', () {
+      expect(commandNames('gh pr view 154 --json title'), 'gh pr');
+      expect(commandNames('makit serve --port 7810'), 'makit serve');
+      expect(commandNames('git -C /repo status --short'), 'git status');
+      expect(
+        commandNames('defaults write dev.getmakit.app x -int 1'),
+        'defaults write',
+      );
+      expect(commandNames('make -j8 build'), 'make build');
+      expect(commandNames('docker compose up -d'), 'docker compose');
+    });
+
+    test('T5 discards the second token for everything else', () {
+      expect(commandNames("sed -i '' 's/a/b/' x.ts"), 'sed');
+      expect(commandNames('lsof -nP -iTCP:7800-7899 -sTCP:LISTEN'), 'lsof');
+      expect(commandNames('curl -sS https://example.com/a/b'), 'curl');
+      expect(commandNames('ssh le@host uptime'), 'ssh');
+    });
+
+    test('T5 never scans a heredoc body for commands', () {
+      expect(
+        commandNames("python3 - <<'EOF'\nimport os\nprint(1)\nEOF"),
+        'python',
+      );
+    });
+
+    test('T6 skips a filler subcommand', () {
+      expect(commandNames('pnpm run build'), 'pnpm build');
+      expect(commandNames('pnpm exec tsx test/e2e-server.ts'), 'pnpm tsx');
+      expect(commandNames('npm run test -- --watch'), 'npm test');
+    });
+
+    test('T7 de-duplicates and keeps first-seen order', () {
+      expect(
+        commandNames('grep -rn a app && grep -rn b app && wc -l x && grep c'),
+        'grep, wc',
+      );
+      expect(
+        commandNames('git add -A && git commit -m wip && git push'),
+        'git add, git commit, git push',
+      );
+    });
+
+    test('T7 caps the list and counts the remainder', () {
+      expect(
+        commandNames('a1;b2;c3;d4;e5;f6;g7;h8;i9;j10'),
+        'a1, b2, c3, d4, e5, f6, g7, h8 +2',
+      );
+    });
+
+    test('an unknown binary renders as its bare name', () {
+      expect(commandNames('dbvr datasource list'), 'dbvr');
+    });
+
+    test('returns an empty string when nothing informative is left', () {
+      expect(commandNames('   '), '');
+      expect(commandNames('cd /tmp'), '');
+      expect(commandNames(r'export PATH=/x:$PATH'), '');
+    });
+  });
+
+  group('splitVerb', () {
+    test('splits a leading verb from its payload', () {
+      final p = splitVerb('Run grep, head', 'Run');
+      expect(p.verb, 'Run');
+      expect(p.rest, 'grep, head');
+    });
+
+    test('keeps the payload of a one-word verb prefix', () {
+      final p = splitVerb('Ask the user', 'Ask');
+      expect(p.verb, 'Ask');
+      expect(p.rest, 'the user');
+    });
+
+    test('treats the whole line as the verb when there is no payload', () {
+      final p = splitVerb('Run', 'Run');
+      expect(p.verb, 'Run');
+      expect(p.rest, '');
+    });
+
+    test('does not weight a line that does not start with the verb', () {
+      final p = splitVerb('some_mcp_tool foo', 'Run');
+      expect(p.verb, '');
+      expect(p.rest, 'some_mcp_tool foo');
+    });
+  });
 }
