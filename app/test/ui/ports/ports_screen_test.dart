@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/ports.dart';
 import 'package:makit/store/store.dart';
@@ -60,6 +62,10 @@ final _repos = ReposState([
   ),
 ]);
 
+/// The kill outcome lands on the Activity record (SPEC-48), not in a snackbar, so
+/// tests that assert the outcome read it from here.
+late StatusCenter statusCenter;
+
 Future<PortsWatch> _pump(
   WidgetTester tester,
   PortsSnapshot? snapshot, {
@@ -67,8 +73,11 @@ Future<PortsWatch> _pump(
   PortsKiller? killer,
 }) async {
   final watch = PortsWatch((_) {});
+  statusCenter = StatusCenter();
+  addTearDown(statusCenter.dispose);
   final container = ProviderContainer(
     overrides: [
+      statusCenterProvider.overrideWithValue(statusCenter),
       portsWatchProvider.overrideWithValue(watch),
       portsKillerProvider.overrideWithValue(
         killer ?? PortsKiller((_) async => {'results': <dynamic>[]}),
@@ -383,7 +392,7 @@ void main() {
       expect(sent, [
         {'kind': 'ports.killOrphans'},
       ]);
-      expect(find.textContaining('1 port released'), findsOneWidget);
+      expect(statusCenter.events.single.title, contains('1 port released'));
     });
 
     testWidgets('dismissing the confirm sends nothing', (tester) async {

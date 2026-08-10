@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:makit/ui/home/session_tile.dart';
 
@@ -65,11 +67,15 @@ Session _session() => Session(
 Future<_KillConnection> _pumpTile(
   WidgetTester tester, {
   required bool killFails,
+  StatusCenter? status,
 }) async {
   final conn = _KillConnection(killFails: killFails);
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [connectionControllerProvider.overrideWith((ref) => conn)],
+      overrides: [
+        connectionControllerProvider.overrideWith((ref) => conn),
+        if (status != null) statusCenterProvider.overrideWithValue(status),
+      ],
       child: MaterialApp(
         home: Scaffold(body: SessionTile(session: _session())),
       ),
@@ -92,16 +98,16 @@ void main() {
   testWidgets('a failed kill keeps the row (no optimistic removal)', (
     tester,
   ) async {
-    await _pumpTile(tester, killFails: true);
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    await _pumpTile(tester, killFails: true, status: center);
 
     await _swipeAndConfirm(tester);
 
     // The kill was refused, so confirmDismiss returned false and the row stays.
     expect(find.text('Wire up pairing'), findsOneWidget);
-    expect(
-      find.text('Could not quit: Bad state: kill refused'),
-      findsOneWidget,
-    );
+    expect(center.events.single.title, 'Could not quit session');
+    expect(center.events.single.detail, contains('kill refused'));
   });
 
   testWidgets('a successful kill dismisses the row', (tester) async {

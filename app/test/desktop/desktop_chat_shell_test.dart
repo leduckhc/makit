@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/desktop_chat_shell.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
@@ -72,6 +73,24 @@ void main() {
   testWidgets('collapsed shell hides the sidebar entirely', (tester) async {
     await pumpShell(tester, collapsed: true);
     expect(find.byType(DesktopSidebar), findsNothing);
+  });
+
+  testWidgets('exactly one fold control and one bell, in either state', (
+    tester,
+  ) async {
+    // Activity is paired with the fold button at every site it appears, so this
+    // pins the invariant that pairing relies on: the real shell never shows two
+    // fold controls at once, in either state. If it ever does, the user sees two
+    // bells and this fails first.
+    await pumpShell(tester);
+    expect(find.byTooltip('Hide sidebar'), findsOneWidget);
+    expect(find.byTooltip('Show sidebar'), findsNothing);
+    expect(find.byIcon(PhosphorIconsLight.bell), findsOneWidget);
+
+    await pumpShell(tester, collapsed: true);
+    expect(find.byTooltip('Hide sidebar'), findsNothing);
+    expect(find.byTooltip('Show sidebar'), findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.bell), findsOneWidget);
   });
 
   testWidgets('fold and unfold roundtrip via the header buttons', (

@@ -5,6 +5,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'repo_chips.dart';
 
 /// The archived-sessions screen (SPEC-29) — the mobile counterpart of the
@@ -60,16 +62,27 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
   }
 
   Future<void> _restore(Session s) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     try {
       await ref.read(storeControllerProvider.notifier).unarchiveSession(s.id);
+      // The record outlives the screen: submit first, then touch UI state only
+      // if this widget is still around to have any.
+      status.success(
+        'Restored "${s.title}"',
+        source: StatusSources.session,
+        sessionId: s.id,
+      );
       if (!mounted) return;
       _refresh();
-      messenger?.showSnackBar(
-        SnackBar(content: Text('Restored "${s.title}".')),
-      );
     } catch (e) {
-      messenger?.showSnackBar(SnackBar(content: Text('Could not restore: $e')));
+      status.failure(
+        'Could not restore session',
+        error: e,
+        source: StatusSources.session,
+        sessionId: s.id,
+      );
     }
   }
 

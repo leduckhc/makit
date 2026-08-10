@@ -26,6 +26,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../../store/ports.dart';
 import 'port_kill_confirm.dart';
 import 'port_token_pill.dart';
@@ -450,7 +452,7 @@ class _PortRow extends ConsumerWidget {
   Future<void> _open(BuildContext context) async {
     final url = port.openUrl;
     if (url == null) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final status = statusOf(context);
     final uri = Uri.tryParse(url);
     try {
       if (uri == null) throw const FormatException('bad url');
@@ -459,13 +461,19 @@ class _PortRow extends ConsumerWidget {
         mode: LaunchMode.externalApplication,
       );
       if (!launched) {
-        messenger?.showSnackBar(
-          const SnackBar(content: Text('Could not open the port')),
+        status.failure(
+          'Could not open the port',
+          detail: url,
+          source: StatusSources.ports,
+          sessionId: port.sessionId,
         );
       }
-    } catch (_) {
-      messenger?.showSnackBar(
-        const SnackBar(content: Text('Could not open the port')),
+    } catch (e) {
+      status.failure(
+        'Could not open the port',
+        error: e,
+        source: StatusSources.ports,
+        sessionId: port.sessionId,
       );
     }
   }
@@ -473,9 +481,14 @@ class _PortRow extends ConsumerWidget {
   Future<void> _copy(BuildContext context) async {
     final url = port.openUrl;
     if (url == null) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final status = statusOf(context);
     await Clipboard.setData(ClipboardData(text: url));
-    messenger?.showSnackBar(const SnackBar(content: Text('URL copied')));
+    status.info(
+      'URL copied',
+      detail: url,
+      source: StatusSources.ports,
+      sessionId: port.sessionId,
+    );
   }
 
   @override

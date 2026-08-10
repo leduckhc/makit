@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/widgets/menu_item.dart';
@@ -216,15 +218,13 @@ class _SplitViewState extends ConsumerState<SplitView> {
   /// the original group is untouched and still reachable from the sidebar
   /// (decision 4).
   void _announceConversion(String fromLabel, String boardLabel) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '“$fromLabel” only holds its own branch, so this add made the board '
-          '“$boardLabel”. The worktree group is untouched — click it in the '
-          'sidebar to get it back.',
-        ),
-      ),
+    ref.status.info(
+      '“$fromLabel” only holds its own branch, so this add made the board '
+      '“$boardLabel”',
+      source: StatusSources.worktree,
+      detail:
+          'The worktree group is untouched — click it in the sidebar to get '
+          'it back.',
     );
   }
 

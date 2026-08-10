@@ -5,6 +5,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 
 /// Whether the sidebar shows the Active tree or the Archived list (SPEC-29).
 final sidebarArchivedProvider = StateProvider<bool>((_) => false);
@@ -52,7 +54,7 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
   }
 
   Future<void> _restore(String id) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final status = ref.status;
     try {
       await ref.read(storeControllerProvider.notifier).unarchiveSession(id);
       if (!mounted) return;
@@ -62,7 +64,12 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
       // and intentional: the listener alone isn't guaranteed same-frame.
       _refresh();
     } catch (e) {
-      messenger?.showSnackBar(SnackBar(content: Text('Could not restore: $e')));
+      status.failure(
+        'Could not restore the session',
+        error: e,
+        source: StatusSources.session,
+        sessionId: id,
+      );
     }
   }
 

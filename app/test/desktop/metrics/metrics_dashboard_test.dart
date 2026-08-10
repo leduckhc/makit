@@ -13,6 +13,8 @@ import 'package:makit/desktop/metrics/metrics_export.dart';
 import 'package:makit/desktop/settings/settings_window.dart'
     show DesktopWindowBody;
 import 'package:makit/desktop/window_overlays.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/metrics.dart';
 import 'package:makit/store/prefs/preferences_controller.dart';
 import 'package:makit/store/prefs/preferences_providers.dart';
@@ -85,6 +87,7 @@ Widget _host({
   FrameTimingsCollector? frames,
   MetricsSnapshotWriter? writer,
   VoidCallback? onClose,
+  StatusCenter? statusCenter,
 }) => ProviderScope(
   overrides: [
     metricsHistoryProvider.overrideWithValue(history),
@@ -93,6 +96,8 @@ Widget _host({
       watch ?? MetricsWatchController((_) {}),
     ),
     if (frames != null) frameTimingsProvider.overrideWithValue(frames),
+    if (statusCenter != null)
+      statusCenterProvider.overrideWithValue(statusCenter),
     // ALWAYS overridden: the real writer calls path_provider and would write to
     // the app-support directory. A unit test must not touch the filesystem, and
     // an unmocked plugin channel also stalls the export before the clipboard.
@@ -1065,10 +1070,13 @@ void main() {
         ),
       );
 
+      final center = StatusCenter();
+      addTearDown(center.dispose);
       await tester.pumpWidget(
         _host(
           history: [_sample()],
           writer: (_, _) async => throw const FileSystemException('nope'),
+          statusCenter: center,
         ),
       );
       await tester.pumpAndSettle();
@@ -1077,7 +1085,7 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(calls.where((c) => c.method == 'Clipboard.setData'), hasLength(1));
-      expect(find.textContaining('could not write'), findsOneWidget);
+      expect(center.events.single.title, contains('could not write'));
     });
 
     testWidgets('export copies a markdown snapshot to the clipboard', (

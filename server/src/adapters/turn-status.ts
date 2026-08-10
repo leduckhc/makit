@@ -10,7 +10,8 @@
  *   - leaving the last turn (with no pending approvals) emits `status: idle`
  *   - the first pending approval flips `session.status` to the given gate
  *     (awaiting-approval / awaiting-input); leaving the last one resumes
- *     `running` while a turn is still in flight
+ *     `running` while a turn is still in flight, or settles to `idle` when the
+ *     turn already ended
  *   - nothing is emitted once the adapter has exited
  */
 
@@ -67,12 +68,20 @@ export class TurnStatusTracker {
     if (this.approvals === 1) this.hooks.emitSessionStatus(status);
   }
 
-  /** Leave the gate; resume `running` if a turn is still in flight. */
+  /**
+   * Leave the gate; resume `running` if a turn is still in flight, else settle.
+   *
+   * The `else` matters: a turn can end BEFORE its gate closes (an ACP prompt
+   * that resolves while `ask_user` is still waiting on the phone). Without the
+   * settle, that ordering left the session pinned at `awaiting-approval` with no
+   * transition left to emit — permanently "busy", which queues every later
+   * message and never flushes it.
+   */
   leaveApproval(): void {
     this.approvals = Math.max(0, this.approvals - 1);
-    if (this.approvals === 0 && !this.hooks.isExited() && this.turns.size > 0) {
-      this.hooks.emitStatus("running");
-    }
+    if (this.approvals > 0 || this.hooks.isExited()) return;
+    if (this.turns.size > 0) this.hooks.emitStatus("running");
+    else this.settleIdle();
   }
 
   /** Emit `idle` iff fully settled (no turns, no approvals, not exited). */

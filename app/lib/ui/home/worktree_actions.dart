@@ -4,6 +4,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../widgets/sheet_header.dart';
 
 /// Whether [w]'s branch can be renamed. Mirrors the desktop sidebar's guards:
@@ -86,7 +88,9 @@ Future<void> _renameBranch(
   required RepoInfo repo,
   required Worktree worktree,
 }) async {
-  final messenger = ScaffoldMessenger.of(context);
+  // Resolved before the first await: `ref` throws once its widget is
+  // unmounted, and the record must survive the thing that reported to it.
+  final status = ref.status;
   final newName = await showDialog<String>(
     context: context,
     builder: (_) => _RenameBranchDialog(initial: worktree.branch ?? ''),
@@ -97,7 +101,11 @@ Future<void> _renameBranch(
         .read(storeControllerProvider.notifier)
         .renameBranch(repo.id, worktree.path, newName);
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('Rename failed: $e')));
+    status.failure(
+      'Could not rename branch',
+      error: e,
+      source: StatusSources.worktree,
+    );
   }
 }
 
@@ -107,7 +115,9 @@ Future<void> _deleteWorktree(
   required RepoInfo repo,
   required Worktree worktree,
 }) async {
-  final messenger = ScaffoldMessenger.of(context);
+  // Resolved before the first await: `ref` throws once its widget is
+  // unmounted, and the record must survive the thing that reported to it.
+  final status = ref.status;
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dctx) => AlertDialog(
@@ -135,7 +145,11 @@ Future<void> _deleteWorktree(
         .read(storeControllerProvider.notifier)
         .removeWorktree(repo.id, worktree.path);
   } catch (e) {
-    messenger.showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+    status.failure(
+      'Could not delete worktree',
+      error: e,
+      source: StatusSources.worktree,
+    );
   }
 }
 

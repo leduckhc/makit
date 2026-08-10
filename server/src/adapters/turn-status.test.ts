@@ -60,6 +60,23 @@ test("a turn that ends while an approval is pending does not go idle early", () 
   assert.equal(statuses.at(-1), "idle");
 });
 
+test("a gate that closes after its turn already ended settles to idle", () => {
+  // The ordering that wedged a real session: pi's `ask_user` opened the gate,
+  // the ACP prompt resolved while it was still open, and the answer (or the
+  // askDevice timeout) arrived last. `leaveApproval` had no turn left to resume,
+  // so it emitted nothing and the session stayed `awaiting-approval` forever —
+  // permanently "busy", which queues every later message and never flushes.
+  const { tracker, statuses } = makeTracker();
+  tracker.enterTurn("t");
+  tracker.enterApproval("awaiting-approval");
+  tracker.leaveTurn("t");
+  assert.equal(statuses.includes("idle"), false, "not settled while the gate is open");
+
+  tracker.leaveApproval();
+
+  assert.equal(statuses.at(-1), "idle", "the closing gate settles it, unprompted");
+});
+
 test("nothing is emitted once the adapter has exited", () => {
   const exited = { value: false };
   const { tracker, statuses } = makeTracker(exited);

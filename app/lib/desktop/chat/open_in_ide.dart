@@ -6,6 +6,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
 
@@ -112,17 +114,21 @@ class OpenInIdeButton extends ConsumerWidget {
     final path = this.path;
     if (path == null) return;
     final cmd = ideOpenCommand(target, path);
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final status = statusOf(context);
     try {
       final result = await Process.run(cmd.executable, cmd.args);
       if (result.exitCode != 0) {
-        messenger?.showSnackBar(
-          SnackBar(content: Text('Could not open ${target.label}')),
+        status.failure(
+          'Could not open ${target.label}',
+          source: StatusSources.ide,
+          detail: '${result.stderr}',
         );
       }
-    } on ProcessException {
-      messenger?.showSnackBar(
-        SnackBar(content: Text('Could not open ${target.label}')),
+    } on ProcessException catch (e) {
+      status.failure(
+        'Could not open ${target.label}',
+        source: StatusSources.ide,
+        error: e,
       );
     }
   }

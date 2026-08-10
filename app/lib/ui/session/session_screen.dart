@@ -8,6 +8,8 @@ import '../../app/theme.dart';
 import '../../store/elicitation.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../composer/attachment_controller.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
@@ -126,9 +128,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     ) {
       if (next == null) return;
       if (prev?.seq == next.seq) return;
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${next.action} failed: ${next.reason}')),
+      ref.status.failure(
+        '${next.action} failed',
+        detail: next.reason,
+        source: StatusSources.session,
+        sessionId: widget.sessionId,
       );
     });
 
@@ -604,6 +608,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   }
 
   Future<void> _confirmArchive() async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
@@ -625,14 +632,18 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       ),
     );
     if (ok != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref
           .read(storeControllerProvider.notifier)
           .archiveSession(widget.sessionId);
       if (mounted) context.go(kRouteRepos);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not archive: $e')));
+      status.failure(
+        'Could not archive session',
+        error: e,
+        source: StatusSources.session,
+        sessionId: widget.sessionId,
+      );
     }
   }
 

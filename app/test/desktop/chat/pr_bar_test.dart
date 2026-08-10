@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/pr_bar.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/prefs/preference_entries.dart';
 import 'package:makit/store/prefs/preferences_controller.dart';
@@ -54,6 +56,7 @@ Widget _host(
   String? worktreePath = '/wt/feat-x',
   required void Function(String) onInsert,
   List<PrDirectOp>? ran,
+  StatusCenter? status,
 }) => ProviderScope(
   overrides: [
     preferencesControllerProvider.overrideWith((ref) => controller),
@@ -64,6 +67,7 @@ Widget _host(
         ran.add(op);
         return const PrOpOutcome('done');
       }),
+    if (status != null) statusCenterProvider.overrideWithValue(status),
   ],
   child: MaterialApp(
     home: Scaffold(
@@ -835,6 +839,8 @@ void main() {
       // travels with the command, so the guard that stops the wrong branch going
       // is switched off precisely when the app is least sure. Refuse instead.
       final ran = <PrDirectOp>[];
+      final center = StatusCenter();
+      addTearDown(center.dispose);
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
@@ -842,12 +848,13 @@ void main() {
           branch: null,
           onInsert: (_) {},
           ran: ran,
+          status: center,
         ),
       );
       await tester.tap(find.text('Wrap up'));
       await tester.pumpAndSettle();
       expect(ran, isEmpty, reason: 'nothing may be dispatched');
-      expect(find.textContaining('which branch'), findsOneWidget);
+      expect(center.events.single.title, contains('which branch'));
     });
 
     testWidgets('cancelling runs nothing', (tester) async {

@@ -9,6 +9,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../control/control_contract.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'providers.dart';
 import 'time_format.dart';
 
@@ -66,12 +68,16 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
   }
 
   Future<void> _revoke(String id) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final status = ref.status;
     try {
       await ref.read(controlClientProvider).devicesRevoke(id);
       await _load();
     } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text('Revoke failed: $error')));
+      status.failure(
+        'Could not revoke the device',
+        error: error,
+        source: StatusSources.devices,
+      );
     }
   }
 

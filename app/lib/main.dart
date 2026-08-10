@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/router.dart';
+import 'app/routes.dart';
 import 'app/theme.dart';
 import 'app/test_bootstrap.dart';
 import 'diagnostics/app_log.dart';
@@ -18,6 +19,8 @@ import 'notifications/notification_observer.dart';
 import 'notifications/notification_request.dart';
 import 'notifications/pending_action_drain.dart';
 import 'notifications/push_registration.dart';
+import 'status/status_event.dart';
+import 'status/status_toast.dart';
 import 'store/connection.dart';
 import 'store/prefs/preferences_controller.dart';
 import 'store/prefs/preferences_providers.dart';
@@ -252,11 +255,27 @@ class _MakitAppState extends ConsumerState<MakitApp>
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        child: SrvRequestHandler(child: child ?? const SizedBox()),
+        // SPEC-48: status toasts live above the Navigator so any screen can be
+        // told something, and a tap lands in Activity (or the event's session).
+        child: StatusToastLayer(
+          onOpen: _openFromToast,
+          child: SrvRequestHandler(child: child ?? const SizedBox()),
+        ),
       ),
       debugShowCheckedModeBanner: false,
     );
   }
+}
+
+/// Where a status toast tap lands: the event's session when it has one, else the
+/// Activity feed. A null event is the overflow chip — the hidden notices live in
+/// Activity, not in any one session. Lives here (not in the toast layer) because
+/// only the app root knows which shell owns the Navigator.
+void _openFromToast(StatusEvent? event) {
+  final context = makitNavigatorKey.currentContext;
+  if (context == null) return;
+  final sid = event?.sessionId;
+  context.go(sid == null ? kRouteActivity : routeForSession(sid));
 }
 
 /// SPEC-28 (decision 10): the iPad workspace app. A minimal [MaterialApp]
@@ -277,8 +296,10 @@ class _WorkspaceShellApp extends StatelessWidget {
       darkTheme: makitDarkTheme,
       themeMode: ThemeMode.system,
       debugShowCheckedModeBanner: false,
-      builder: (context, child) =>
-          SrvRequestHandler(child: child ?? const SizedBox()),
+      builder: (context, child) => StatusToastLayer(
+        // The iPad workspace app has no router, so a toast here is read-only.
+        child: SrvRequestHandler(child: child ?? const SizedBox()),
+      ),
       home: DesktopKeymapScope(
         onOpenSettings: () {},
         child: const DesktopChatShell(),

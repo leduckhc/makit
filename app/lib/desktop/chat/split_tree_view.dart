@@ -11,7 +11,7 @@ import 'open_in_ide.dart';
 import 'selected_session.dart' show selectedWorktreeProvider;
 import 'sidebar_layout.dart' show sidebarCollapsedProvider, kTrafficLightInset;
 import 'split_view.dart';
-import 'title_bar_strip.dart' show SidebarToggleButton;
+import 'title_bar_strip.dart' show SidebarToggleControls;
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 
@@ -70,7 +70,7 @@ class WorkspaceView extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     if (collapsed) ...[
-                      const SidebarToggleButton(collapse: false),
+                      const SidebarToggleControls(collapse: false),
                       const SizedBox(width: kSpace8),
                     ],
                     // Decision 12: the rail alone scrolls; it fills the width

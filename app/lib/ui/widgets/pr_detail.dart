@@ -20,6 +20,8 @@ import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'pr_actions.dart';
 import 'pr_signals.dart';
 import 'pr_state_style.dart';
@@ -302,7 +304,7 @@ class PrDetailBody extends StatelessWidget {
 /// should depend on the other.
 Future<void> openPrUrl(BuildContext context, String url) async {
   if (url.isEmpty) return;
-  final messenger = ScaffoldMessenger.of(context);
+  final status = statusOf(context);
   final uri = Uri.tryParse(url);
   try {
     if (uri == null) throw const FormatException('bad PR url');
@@ -314,10 +316,10 @@ Future<void> openPrUrl(BuildContext context, String url) async {
     // Fall through to the same report: from the user's side "it threw" and "it
     // declined" are one outcome.
   }
-  // The sheet that owned this messenger may be gone by now.
-  if (!messenger.mounted) return;
-  messenger.showSnackBar(
-    const SnackBar(content: Text('Could not open the PR')),
+  status.failure(
+    'Could not open the PR',
+    detail: url,
+    source: StatusSources.pr,
   );
 }
 

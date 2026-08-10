@@ -11,6 +11,7 @@ import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 import 'repo_card.dart';
 import '../../app/routes.dart';
+import '../../status/activity_badge.dart';
 
 /// Home screen — organised around **repos**. Each repo card surfaces its
 /// branches (worktrees), diff size, open PRs, and the sessions running in each
@@ -138,10 +139,17 @@ class HomeScreen extends ConsumerWidget {
                       onTap: () => showFolderBrowser(context),
                     ),
                     const SizedBox(width: kSpace6),
-                    GlassCircleButton(
-                      icon: PhosphorIconsLight.gearSix,
-                      tooltip: 'Settings',
-                      onTap: () => context.go(kRouteSettings),
+                    // The bell itself does not fit: four glass circles plus the
+                    // connection chip already fill a 320 pt bar (SPEC-48), and a
+                    // phone has no screen to spend on permanent chrome. Activity
+                    // lives one tap deeper, in Settings — so the unread signal
+                    // rides the door that leads there.
+                    ActivityUnreadDot(
+                      child: GlassCircleButton(
+                        icon: PhosphorIconsLight.gearSix,
+                        tooltip: 'Settings',
+                        onTap: () => context.go(kRouteSettings),
+                      ),
                     ),
                     const SizedBox(width: kSpace6),
                     const ConnectionChip(circular: true),
