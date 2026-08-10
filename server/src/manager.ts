@@ -141,7 +141,8 @@ export interface ManagerOpts {
   idleCloseMs?: number;
   /**
    * Deadline for the graceful `adapter.close()` inside {@link SessionManager.closeSession}
-   * (default 10s). Enforces the half of the {@link AgentAdapter.close} contract
+   * (default {@link DEFAULT_CLOSE_GRACE_MS}). Enforces the half of the
+   * {@link AgentAdapter.close} contract
    * an implementation cannot be trusted with: it must not HANG. A hang would
    * strand teardown before `kill()` — holding the very RSS close exists to free
    * — and leave an idle sweep permanently in flight.
@@ -184,6 +185,14 @@ export interface BridgeBinding {
 function reason(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
+
+/**
+ * Backstop deadline for a graceful `adapter.close()` before {@link SessionManager.closeSession}
+ * reaps regardless. Must stay strictly above every adapter's own close deadline
+ * (e.g. `ACP_CLOSE_TIMEOUT`) so the adapter gets to give up first; see the
+ * ordering test in `manager.test.ts`.
+ */
+export const DEFAULT_CLOSE_GRACE_MS = 10_000;
 
 interface ProjectEntry {
   dto: ProjectDTO;
@@ -235,7 +244,7 @@ export class SessionManager extends EventEmitter {
     this.store = opts.store;
     this.capabilityCache = opts.capabilityCache;
     this.idleCloseMs = opts.idleCloseMs ?? 0;
-    this.closeGraceMs = opts.closeGraceMs ?? 10_000;
+    this.closeGraceMs = opts.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
     // Sweep four times per window: prompt enough that a cold session is released
     // soon after it goes quiet, coarse enough to cost nothing.
     this.idleSweepMs = opts.idleSweepMs ?? Math.max(30_000, Math.floor((opts.idleCloseMs ?? 0) / 4));
@@ -1251,7 +1260,7 @@ export class SessionManager extends EventEmitter {
     try {
       await session.adapter.kill();
     } catch (e) {
-      log.warn(`[makit] closeSession(${id}): kill failed: ${reason(e)}`);
+      log.warn(`[makit] closeSession(${id.slice(0, 8)}): kill failed: ${reason(e)}`);
     }
     session.replaceAdapter(new DetachedAdapter(session.agent));
     session.setClosed(true);

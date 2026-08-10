@@ -2749,3 +2749,24 @@ test("a hung close does not wedge the sweeper for later sessions", async () => {
     store.close();
   }
 });
+
+/**
+ * Nested deadlines only work if the inner one is strictly tighter. The ACP
+ * adapter bounds its own `session/close`, and the manager bounds
+ * `adapter.close()` as a backstop for adapters it cannot trust. If the adapter's
+ * bound were the looser of the two it could never fire on the normal
+ * `closeSession` path: the manager would abandon the call first, leaving the
+ * adapter's timer pending against a transport `kill()` had already disposed —
+ * defence in depth that only looks layered.
+ *
+ * Asserted rather than commented so a future tweak to either constant cannot
+ * silently invert the ordering.
+ */
+test("the adapter's own close deadline is tighter than the manager's backstop", async () => {
+  const { ACP_CLOSE_TIMEOUT } = await import("./adapters/acp.js");
+  const { DEFAULT_CLOSE_GRACE_MS } = await import("./manager.js");
+  assert.ok(
+    ACP_CLOSE_TIMEOUT < DEFAULT_CLOSE_GRACE_MS,
+    `adapter close deadline (${ACP_CLOSE_TIMEOUT}ms) must be < the manager backstop (${DEFAULT_CLOSE_GRACE_MS}ms)`,
+  );
+});

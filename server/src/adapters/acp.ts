@@ -51,6 +51,17 @@ import { log } from "../log.js";
  */
 const ACP_HANDSHAKE_TIMEOUT = 15_000;
 
+/**
+ * Deadline for the graceful `session/close` (SPEC-29). Deliberately its own
+ * constant rather than reusing {@link ACP_HANDSHAKE_TIMEOUT}: closing is a
+ * teardown courtesy, not a launch step, and it MUST stay strictly below the
+ * manager's `DEFAULT_CLOSE_GRACE_MS` backstop. If it were the looser of the two
+ * it could never fire on the normal `closeSession` path — the manager would
+ * abandon the call first and `kill()` would dispose the transport out from under
+ * a still-pending timer. Asserted by a test in `manager.test.ts`.
+ */
+export const ACP_CLOSE_TIMEOUT = 8_000;
+
 export interface AcpSpawnSpec {
   /** makit agent label surfaced in the session DTO ("pi", "codex", …). */
   agent: string;
@@ -82,8 +93,8 @@ export interface AcpAdapterOpts {
   connect?: (cwd: string, env: Record<string, string>) => AcpTransport;
   /**
    * Deadline for the graceful `session/close` (default
-   * {@link ACP_HANDSHAKE_TIMEOUT}). A hung agent must not be able to stall
-   * teardown — see {@link AcpAdapter.close}. Tests shorten it.
+   * {@link ACP_CLOSE_TIMEOUT}). A hung agent must not be able to stall teardown
+   * — see {@link AcpAdapter.close}. Tests shorten it.
    */
   closeTimeoutMs?: number;
   /**
@@ -146,7 +157,7 @@ export class AcpAdapter extends SubprocessAdapter {
     this.agent = opts.spec.agent;
     this.connectFn = opts.connect ?? defaultConnect(opts.spec);
     this.spawnsRealBinary = opts.connect === undefined;
-    this.closeTimeoutMs = opts.closeTimeoutMs ?? ACP_HANDSHAKE_TIMEOUT;
+    this.closeTimeoutMs = opts.closeTimeoutMs ?? ACP_CLOSE_TIMEOUT;
     const media = (this.media = opts.media ?? sharedMediaStore());
     this.mapper = new AcpEventMapper({
       emit: (e) => this.emit("event", e),
