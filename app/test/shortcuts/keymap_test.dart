@@ -217,5 +217,37 @@ void main() {
         );
       }
     });
+    test('copy-newest-notice defaults to the primary modifier + shift + C', () {
+      final cmd = Keymap.defaults(cmdIsPrimary: true);
+      expect(
+        cmd.chordFor(ShortcutAction.copyNewestNotice),
+        const KeyChord(LogicalKeyboardKey.keyC, meta: true, shift: true),
+      );
+      final ctrl = Keymap.defaults(cmdIsPrimary: false);
+      expect(
+        ctrl.chordFor(ShortcutAction.copyNewestNotice),
+        const KeyChord(LogicalKeyboardKey.keyC, control: true, shift: true),
+      );
+    });
+
+    test('every action has a default binding', () {
+      for (final action in ShortcutAction.values) {
+        expect(
+          map.bindings[action],
+          isNotNull,
+          reason: '${action.id} has no default chord',
+        );
+      }
+    });
+
+    test('no two actions share a chord in the same scope', () {
+      for (final action in ShortcutAction.values) {
+        expect(
+          map.conflictFor(map.chordFor(action), action.scope, ignore: action),
+          isNull,
+          reason: '${action.id} collides with another default binding',
+        );
+      }
+    });
   });
 }

@@ -10,6 +10,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../transport/protocol.dart' show protocolVersion;
+import '../../../status/status_event.dart';
+import '../../../status/status_providers.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
 
@@ -67,7 +69,7 @@ class _DocsRow extends StatelessWidget {
   const _DocsRow();
 
   Future<void> _open(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
+    final status = statusOf(context);
     // launchUrl can throw (e.g. PlatformException) as well as return false;
     // treat both as failure so the fallback message always shows.
     var ok = false;
@@ -77,8 +79,10 @@ class _DocsRow extends StatelessWidget {
       ok = false;
     }
     if (!ok) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not open $_kDocsUri')),
+      status.failure(
+        'Could not open the documentation link',
+        source: StatusSources.settings,
+        detail: '$_kDocsUri',
       );
     }
   }

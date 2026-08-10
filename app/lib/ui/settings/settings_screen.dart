@@ -9,6 +9,8 @@ import '../../app/theme.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
 import '../../transport/transport.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'notification_settings.dart';
 import 'pending_queue_setting.dart';
 import 'appearance_settings.dart';
@@ -81,12 +83,15 @@ class SettingsScreen extends ConsumerWidget {
               ),
               trailing: const Icon(PhosphorIconsLight.copy, size: 18),
               onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
+                // Resolved before the first await: `ref` throws once its widget is
+                // unmounted, and the record must survive the thing that reported to it.
+                final status = ref.status;
                 await Clipboard.setData(
                   ClipboardData(text: server.fingerprint),
                 );
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Fingerprint copied')),
+                status.info(
+                  'Fingerprint copied',
+                  source: StatusSources.settings,
                 );
               },
             ),
@@ -96,12 +101,15 @@ class SettingsScreen extends ConsumerWidget {
               title: const Text('Reconnect'),
               subtitle: const Text('Re-establish the connection'),
               onTap: () async {
-                final messenger = ScaffoldMessenger.of(context);
+                // Resolved before the first await: `ref` throws once its widget is
+                // unmounted, and the record must survive the thing that reported to it.
+                final status = ref.status;
                 await ref
                     .read(connectionControllerProvider.notifier)
                     .reconnect();
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Reconnecting…')),
+                status.progress(
+                  'Reconnecting…',
+                  source: StatusSources.settings,
                 );
               },
             ),
@@ -141,6 +149,13 @@ class SettingsScreen extends ConsumerWidget {
 
           const Divider(),
           const _SectionHeader('About'),
+          ListTile(
+            leading: _leadingIcon(PhosphorIconsLight.bell),
+            title: const Text('Activity'),
+            subtitle: const Text('What the app told you, with the error text'),
+            trailing: const Icon(PhosphorIconsLight.caretRight),
+            onTap: () => context.go(kRouteActivity),
+          ),
           ListTile(
             leading: _leadingIcon(PhosphorIconsLight.bug),
             title: const Text('Diagnostics'),

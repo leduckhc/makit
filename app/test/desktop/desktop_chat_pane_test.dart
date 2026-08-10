@@ -346,6 +346,47 @@ void main() {
     expect(find.byTooltip('Show sidebar'), findsNothing);
   });
 
+  testWidgets('Activity travels with the unfold button while collapsed', (
+    tester,
+  ) async {
+    // The bell must follow whichever fold control is on screen: while collapsed
+    // the sidebar (and its header bell) is not mounted at all, so without this
+    // Activity is unreachable exactly when the chrome is at its thinnest.
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('window_manager'),
+          (call) async => null,
+        );
+    final container = ProviderContainer(
+      overrides: [sidebarCollapsedProvider.overrideWith((ref) => true)],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: DesktopChatPane(sessionId: 's1')),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final toggle = find.byTooltip('Show sidebar');
+    final bell = find.byIcon(PhosphorIconsLight.bell);
+    expect(toggle, findsOneWidget);
+    expect(bell, findsOneWidget, reason: 'exactly one bell, beside the toggle');
+
+    final togglePos = tester.getCenter(toggle);
+    final bellPos = tester.getCenter(bell);
+    expect(
+      (bellPos.dy - togglePos.dy).abs(),
+      lessThan(4),
+      reason: 'bell dy ${bellPos.dy} vs toggle dy ${togglePos.dy}',
+    );
+    expect(bellPos.dx, greaterThan(togglePos.dx), reason: 'to its right');
+  });
+
   testWidgets('slim header: no draft tag for a pending session', (
     tester,
   ) async {

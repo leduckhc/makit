@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../status/status_event.dart';
+import '../status/status_providers.dart';
 import '../store/models.dart';
 import '../store/store.dart';
 import 'notification_policy.dart';
@@ -77,7 +79,26 @@ class NotificationController with WidgetsBindingObserver {
       _last[snap.sessionId] = snap.status;
     }
 
-    if (_foreground || pending.isEmpty) return;
+    if (pending.isEmpty) return;
+
+    // The record gets every one of these, foreground or not: an OS notification
+    // is a tap on the shoulder that vanishes, and "which of my sessions wanted
+    // something, and when?" had no answer anywhere in the product (SPEC-48 D7).
+    // Silent, because a session you are watching already shows its own status —
+    // the history is the part that was missing, not the interruption.
+    final status = _ref.status;
+    for (final p in pending) {
+      status.post(
+        _severityFor(p.status),
+        p.content.body,
+        source: StatusSources.agent,
+        detail: p.content.title,
+        sessionId: p.sessionId,
+        silent: true,
+      );
+    }
+
+    if (_foreground) return;
     final service = _ref.read(notificationServiceProvider);
     for (final p in pending) {
       service.show(
@@ -94,3 +115,14 @@ class NotificationController with WidgetsBindingObserver {
     _sub?.close();
   }
 }
+
+/// The same judgement the notification prose makes, as a severity: an error is a
+/// failure, "it wants something from you" is a warning, a finished turn is a
+/// success. `running` never reaches here (`notificationFor` returns null).
+StatusSeverity _severityFor(SessionStatus status) => switch (status) {
+  SessionStatus.error => StatusSeverity.failure,
+  SessionStatus.awaitingInput ||
+  SessionStatus.awaitingApproval => StatusSeverity.warning,
+  SessionStatus.idle || SessionStatus.exited => StatusSeverity.success,
+  SessionStatus.running => StatusSeverity.info,
+};

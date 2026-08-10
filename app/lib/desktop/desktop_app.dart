@@ -20,6 +20,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../status/activity_badge.dart';
+import '../status/status_toast.dart';
 import '../app/theme.dart';
 import '../control/control_client.dart';
 import '../control/reconnecting_control_client.dart';
@@ -342,12 +344,21 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
       themeMode: ref.preference(themeModePreference),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        child: SrvRequestHandler(
-          navigatorKey: _desktopNavKey,
-          // Desktop is the control surface: always show the in-app dialog, and
-          // only fall back to a system notification if it goes unanswered.
-          reminderDelay: reminderDelay,
-          child: child ?? const SizedBox(),
+        // SPEC-48: the same toast layer as mobile. Tapping one opens Activity in
+        // its dialog; the sidebar bell is the other way in.
+        child: StatusToastLayer(
+          topInset: kToastInsetDesktop,
+          onOpen: (event) {
+            final context = _desktopNavKey.currentContext;
+            if (context != null) unawaited(showActivityDialog(context));
+          },
+          child: SrvRequestHandler(
+            navigatorKey: _desktopNavKey,
+            // Desktop is the control surface: always show the in-app dialog, and
+            // only fall back to a system notification if it goes unanswered.
+            reminderDelay: reminderDelay,
+            child: child ?? const SizedBox(),
+          ),
         ),
       ),
       home: DesktopKeymapScope(

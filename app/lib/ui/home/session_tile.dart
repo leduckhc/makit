@@ -9,6 +9,8 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../widgets/session_status_dot.dart';
 import '../ports/session_ports_glyph.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'repo_chips.dart';
 import '../../app/routes.dart';
 
@@ -171,7 +173,9 @@ class SessionTile extends ConsumerWidget {
   /// the row in place (the session is still in [sessionsProvider]), so a failed
   /// archive never desyncs the list from server state.
   Future<bool> _confirmAndQuit(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final confirmed = await _confirmQuit(context);
     if (!confirmed) return false;
     try {
@@ -180,7 +184,12 @@ class SessionTile extends ConsumerWidget {
           .archiveSession(session.id);
       return true;
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+      status.failure(
+        'Could not quit session',
+        error: e,
+        source: StatusSources.session,
+        sessionId: session.id,
+      );
       return false;
     }
   }

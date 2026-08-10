@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/repo_card.dart';
 import 'package:makit/ui/home/start_session.dart';
@@ -127,6 +129,7 @@ RepoInfo _repo() => const RepoInfo(
 Future<_FakeStore> _pump(
   WidgetTester tester, {
   required List<AgentDescriptor> agents,
+  StatusCenter? status,
 }) async {
   late _FakeStore store;
   final repo = _repo();
@@ -156,6 +159,7 @@ Future<_FakeStore> _pump(
         store = _FakeStore(ref, agents);
         return store;
       }),
+      if (status != null) statusCenterProvider.overrideWithValue(status),
     ],
   );
   addTearDown(container.dispose);
@@ -261,7 +265,9 @@ void main() {
   testWidgets('rolls back the freshly forked worktree when spawn fails', (
     tester,
   ) async {
-    final store = await _pump(tester, agents: [_agent('pi')]);
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    final store = await _pump(tester, agents: [_agent('pi')], status: center);
     store.spawnThrows = true;
 
     await _openNewSessionSheet(tester);
@@ -269,10 +275,11 @@ void main() {
     await tester.pumpAndSettle();
 
     // The worktree was created, spawn threw, so the worktree is removed again
-    // (a retry must not orphan it) and the failure surfaces in a SnackBar.
+    // (a retry must not orphan it) and the failure is recorded in Activity.
     expect(store.createdFrom, ['main']);
     expect(store.removedWorktrees, ['/tmp/demo-wt']);
-    expect(find.textContaining('Could not start session'), findsOneWidget);
+    expect(center.events.single.title, 'Could not start session');
+    expect(center.events.single.detail, contains('spawn failed'));
   });
 
   testWidgets('a double tap on + starts one session flow, not two', (

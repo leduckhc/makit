@@ -5,6 +5,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 
 /// Present the folder browser as a full-height modal sheet. Resolves with the
 /// added project's id when the user adds a folder, or null if dismissed.
@@ -49,6 +51,9 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
   }
 
   Future<void> _browse(String? path) async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     setState(() {
       _loading = true;
       _error = null;
@@ -68,31 +73,38 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
         _loading = false;
         _error = '$e';
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not browse: $e')));
+      status.failure(
+        'Could not browse folder',
+        error: e,
+        source: StatusSources.repo,
+      );
     }
   }
 
   Future<void> _add(String path, String name) async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     if (_adding) return;
     setState(() => _adding = true);
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final id = await ref
           .read(storeControllerProvider.notifier)
           .addProject(path);
       if (!mounted) return;
       navigator.pop(id);
-      messenger.showSnackBar(
-        SnackBar(content: Text('Added ${name.isEmpty ? path : name}')),
+      status.success(
+        'Added ${name.isEmpty ? path : name}',
+        source: StatusSources.repo,
       );
     } catch (e) {
       if (!mounted) return;
       setState(() => _adding = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not add project: $e')),
+      status.failure(
+        'Could not add project',
+        error: e,
+        source: StatusSources.repo,
       );
     }
   }

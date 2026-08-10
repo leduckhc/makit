@@ -24,6 +24,8 @@ import '../../screens/providers.dart'
 import '../../screens/qr_screen.dart';
 import '../../screens/sessions_screen.dart';
 import '../../tray/tray_controller.dart' show DaemonState;
+import '../../../status/status_event.dart';
+import '../../../status/status_providers.dart';
 import '../server_config.dart';
 import '../settings_item_anchor.dart';
 import 'section_header.dart';
@@ -396,27 +398,35 @@ class _CliRowState extends ConsumerState<_CliRow> {
     unawaited(
       Clipboard.setData(const ClipboardData(text: makitInstallCommand)),
     );
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Install command copied to clipboard')),
+    ref.status.info(
+      'Install command copied',
+      source: StatusSources.settings,
+      detail: makitInstallCommand,
     );
   }
 
   /// One-click install of the app-bundled CLI into `~/.local/bin/makit`,
   /// then re-resolve so the CLI row reflects the newly installed binary.
   Future<void> _installCli() async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final result = await ref.read(cliInstallerProvider).install();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result.ok
-              ? 'Installed makit CLI to ${result.installedPath}. If your '
-                    'terminal can’t find `makit`, add ~/.local/bin to your PATH.'
-              : 'Install failed: ${result.error}',
-        ),
-      ),
-    );
     if (result.ok) {
+      status.success(
+        'Installed makit CLI to ${result.installedPath}',
+        source: StatusSources.settings,
+        detail:
+            'If your terminal can’t find `makit`, add ~/.local/bin to your PATH.',
+      );
+    } else {
+      status.failure(
+        'Could not install the makit CLI',
+        source: StatusSources.settings,
+        detail: result.error,
+      );
+    }
+    if (result.ok && mounted) {
       setState(() {
         _resolved = _refreshResolved();
       });
@@ -509,10 +519,11 @@ class _FingerprintRow extends ConsumerWidget {
               tooltip: 'Copy fingerprint',
               icon: const Icon(PhosphorIconsLight.copy, size: 18),
               onPressed: () {
-                final messenger = ScaffoldMessenger.of(context);
                 unawaited(Clipboard.setData(ClipboardData(text: fingerprint)));
-                messenger.showSnackBar(
-                  const SnackBar(content: Text('Fingerprint copied')),
+                ref.status.info(
+                  'Fingerprint copied',
+                  source: StatusSources.settings,
+                  detail: fingerprint,
                 );
               },
             ),
@@ -578,7 +589,9 @@ class _UnpairRow extends ConsumerWidget {
   const _UnpairRow();
 
   Future<void> _confirmAndUnpair(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -604,12 +617,12 @@ class _UnpairRow extends ConsumerWidget {
     if (confirmed ?? false) {
       try {
         await ref.read(connectionControllerProvider.notifier).unpair();
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Device unpaired')),
-        );
+        status.success('Device unpaired', source: StatusSources.devices);
       } catch (error) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('Unpair failed: $error')),
+        status.failure(
+          'Could not unpair the device',
+          error: error,
+          source: StatusSources.devices,
         );
       }
     }

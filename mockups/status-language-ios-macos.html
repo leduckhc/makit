@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — The status language: statuses, in-app notifications, attention (iOS + macOS)</title>
+<style>
+  :root{
+    --bg:#171717; --lowest:#121212; --low:#1E1E1E; --cont:#242424;
+    --high:#2E2E2E; --highest:#383838;
+    --text:#F5F5F5; --muted:#9E9E9E; --hairline:#333333;
+    --primary:#4ADE80; --error:#FFB4AB; --warn:#E0A72E; --caution:#E07B39;
+    --merged:#A371F7;
+    --page:#0e0e0e; --radius-card:12px; --radius-pill:9999px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 96px}
+  .wrap{max-width:1200px;margin:0 auto}
+  h1{font-size:23px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin:0 0 6px;max-width:920px;font-size:13.5px}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px;
+    font-family:"SF Mono",Menlo,Consolas,monospace}
+  .lede{max-width:920px;margin:14px 0 8px;padding:13px 15px;border:1px solid #2b3b2f;
+    background:#121a14;border-radius:10px;font-size:13px;color:#c9e6d3}
+  .lede strong{color:#eafff1}
+  .lede.bad{border-color:#4a2b2b;background:#1c1212;color:#e8c9c9}
+  .lede.bad strong{color:#ffeaea}
+
+  h2.sec{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;margin:46px 0 6px;padding-bottom:8px;border-bottom:1px solid #222}
+  .secnote{color:var(--muted);font-size:13px;max-width:920px;margin:10px 0 22px}
+
+  .card{border:1px solid var(--hairline);border-radius:14px;background:#141414;
+    margin-bottom:26px;overflow:hidden}
+  .card > header{padding:11px 16px;border-bottom:1px solid var(--hairline);
+    display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .card h3{font-size:14.5px;margin:0;font-weight:600}
+  .card header p{margin:0;color:var(--muted);font-size:12.5px}
+  .card .body{padding:20px 16px;background:#111}
+  .rec{font-size:10px;color:#0e0e0e;background:var(--primary);border-radius:5px;padding:2px 6px;font-weight:700}
+  .no{font-size:10px;color:#0e0e0e;background:var(--error);border-radius:5px;padding:2px 6px;font-weight:700}
+  .keep{font-size:10px;color:#0e0e0e;background:var(--muted);border-radius:5px;padding:2px 6px;font-weight:700}
+  .later{font-size:10px;color:#0e0e0e;background:var(--merged);border-radius:5px;padding:2px 6px;font-weight:700}
+  .bug{font-size:10px;color:#0e0e0e;background:var(--caution);border-radius:5px;padding:2px 6px;font-weight:700}
+
+  .grid{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+  .cap{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;margin:0 0 10px}
+  .why{font-size:12.5px;color:var(--muted);margin:14px 0 0}
+  .why b{color:var(--text);font-weight:600}
+  ul.why{padding-left:16px;margin:12px 0 0} ul.why li{margin:5px 0}
+  .plus::before{content:"+ ";color:var(--primary);font-weight:700}
+  .minus::before{content:"− ";color:var(--error);font-weight:700}
+  .note{font-size:12.5px;color:var(--muted);border-left:2px solid var(--hairline);padding-left:12px;
+    margin:16px 0 0;max-width:900px}
+  .note b{color:var(--text)}
+  .note.warn{border-left-color:var(--caution)}
+
+  .i{width:16px;height:16px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.45;
+    stroke-linecap:round;stroke-linejoin:round;display:block}
+  .i .dot{fill:currentColor;stroke:none}
+  .i.solid path{fill:currentColor}
+  .i.s10{width:10px;height:10px} .i.s11{width:11px;height:11px} .i.s13{width:13px;height:13px}
+  .i.s15{width:15px;height:15px} .i.s18{width:18px;height:18px} .i.s20{width:20px;height:20px}
+  .i.teeth{stroke-width:2.6}
+
+  /* dots + pills */
+  .sdot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;display:inline-block}
+  .pulse{animation:pz 1.9s ease-in-out infinite}
+  @keyframes pz{0%,100%{opacity:.32}50%{opacity:1}}
+  .breathe{animation:br 2.4s ease-in-out infinite}
+  @keyframes br{0%,100%{transform:scale(1)}50%{transform:scale(1.32)}}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:8px;
+    font-size:10px;font-weight:600;letter-spacing:.01em}
+  .halo{position:relative;display:inline-flex;align-items:center;justify-content:center;
+    width:16px;height:16px}
+  .halo .ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid currentColor;opacity:.35}
+
+  table.t{border-collapse:collapse;width:100%;margin-top:6px}
+  table.t th,table.t td{text-align:left;padding:9px 11px;border-bottom:1px solid #222;
+    vertical-align:middle;font-size:12.5px}
+  table.t th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  table.t td.k{color:var(--text);font-weight:600;white-space:nowrap}
+  table.t td.m{color:var(--muted)}
+  table.t tr.flag td{background:rgba(224,123,57,.07)}
+  .xmark{color:var(--error);font-weight:700} .okmark{color:var(--primary);font-weight:700}
+
+  /* iPhone */
+  .phone{width:320px;border:1px solid #2c2c2c;border-radius:36px;background:var(--bg);
+    position:relative;overflow:hidden;box-shadow:0 16px 44px rgba(0,0,0,.55);flex:0 0 auto;height:580px}
+  .island{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:78px;height:22px;
+    background:#000;border-radius:12px;z-index:60}
+  .statusbar{height:40px;display:flex;align-items:flex-end;justify-content:space-between;
+    padding:0 22px 4px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+  .bars{display:flex;gap:2px;align-items:flex-end}
+  .bars i{width:3px;background:var(--text);border-radius:1px;display:block}
+  .batt{width:20px;height:10px;border:1px solid var(--text);border-radius:3px;position:relative}
+  .batt::after{content:"";position:absolute;inset:1.5px;right:6px;background:var(--text);border-radius:1px}
+  .pscreen{position:relative;height:calc(100% - 40px)}
+  .glassbar{position:absolute;left:12px;right:12px;top:6px;height:44px;border-radius:26px;
+    background:rgba(24,24,24,.55);backdrop-filter:blur(18px) saturate(1.8);
+    -webkit-backdrop-filter:blur(18px) saturate(1.8);border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;align-items:center;gap:6px;padding:0 8px;z-index:40}
+  .logo{font-size:15px;font-weight:600;color:var(--primary);letter-spacing:-.02em;margin-right:auto;padding-left:6px}
+  .gcirc{width:29px;height:29px;border-radius:var(--radius-pill);display:grid;place-items:center;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);position:relative;flex:0 0 auto}
+  .connchip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;
+    border-radius:var(--radius-pill);background:rgba(255,255,255,.07);font-size:10px;
+    color:#C9C9C9;font-weight:500;border:1px solid rgba(255,255,255,.08)}
+  .backc{width:29px;height:29px;border-radius:var(--radius-pill);display:grid;place-items:center;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);flex:0 0 auto}
+  .bartitle{flex:1;min-width:0;text-align:left;padding-left:2px}
+  .bartitle .t1{font-size:13px;font-weight:600;line-height:1.2}
+  .bartitle .t2{font-size:10px;color:var(--muted);line-height:1.3}
+  .composer{position:absolute;left:12px;right:12px;bottom:10px;height:46px;border-radius:28px;
+    background:rgba(24,24,24,.55);backdrop-filter:blur(18px) saturate(1.8);
+    -webkit-backdrop-filter:blur(18px) saturate(1.8);border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;align-items:center;padding:0 6px 0 16px;gap:8px;z-index:40}
+  .composer span.ph{color:#6f6f6f;font-size:13px}
+  .sendbtn{width:32px;height:32px;border-radius:50%;background:var(--primary);color:#0b0b0b;
+    display:grid;place-items:center;margin-left:auto}
+  .transcriptP{padding:60px 20px 0;display:flex;flex-direction:column;gap:10px}
+  .msg{font-size:12.5px;line-height:1.5;color:#e6e6e6}
+  .msg.user{align-self:flex-end;background:var(--high);border-radius:16px;padding:8px 12px;max-width:80%}
+  .think{font-size:12.5px;font-style:italic;color:rgba(158,158,158,.7)}
+  .toolcard{border:1px solid var(--hairline);background:var(--lowest);border-radius:var(--radius-card);
+    padding:9px 11px;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:11px;color:#cfcfcf}
+  .stile{background:var(--lowest);border:1px solid var(--hairline);border-radius:10px;
+    padding:9px 11px;display:flex;align-items:center;gap:9px}
+  .avatar{width:22px;height:22px;border-radius:50%;background:rgba(74,222,128,.16);color:var(--primary);
+    display:grid;place-items:center;font-size:10px;font-weight:700;flex:0 0 auto}
+  .sname{font-size:12.5px;font-weight:500} .ssub{font-size:10.5px;color:var(--muted)}
+
+  /* attention bar (the proposal) */
+  .attn{position:absolute;left:12px;right:12px;z-index:39;display:flex;align-items:center;gap:8px;
+    height:32px;padding:0 6px 0 11px;border-radius:10px;background:var(--cont);
+    border:1px solid rgba(224,123,57,.35);box-shadow:0 6px 18px rgba(0,0,0,.4)}
+  .attn .lead{width:3px;height:16px;border-radius:2px;background:var(--caution);flex:0 0 auto}
+  .attn .txt{font-size:11.5px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .attn .go{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:6px;
+    background:rgba(224,123,57,.16);color:var(--caution);font-size:10.5px;font-weight:700}
+
+  /* iOS notification (lock/banner) */
+  .osnotif{width:296px;border-radius:20px;background:rgba(58,58,58,.92);backdrop-filter:blur(20px);
+    -webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.10);overflow:hidden;
+    box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  .osnotif .top{display:flex;gap:9px;padding:11px 12px 9px;align-items:flex-start}
+  .appicon{width:22px;height:22px;border-radius:6px;background:#0f0f0f;display:grid;place-items:center;
+    color:var(--primary);font-size:9px;font-weight:800;flex:0 0 auto;border:1px solid #2a2a2a}
+  .osnotif .n1{font-size:12.5px;font-weight:700;line-height:1.3}
+  .osnotif .n2{font-size:12.5px;color:#e0e0e0;line-height:1.35;margin-top:1px}
+  .osnotif .when{font-size:10.5px;color:#b5b5b5;margin-left:auto;flex:0 0 auto}
+  .osacts{display:flex;border-top:1px solid rgba(255,255,255,.10)}
+  .osacts div{flex:1;text-align:center;padding:9px 0;font-size:12.5px;font-weight:600;
+    border-left:1px solid rgba(255,255,255,.10)}
+  .osacts div:first-child{border-left:none}
+
+  /* mac window */
+  .mac{border:1px solid #2c2c2c;border-radius:11px;overflow:hidden;background:var(--bg);
+    box-shadow:0 18px 50px rgba(0,0,0,.55);position:relative}
+  .tl{display:flex;gap:7px;align-items:center} .tl i{width:11px;height:11px;border-radius:50%;display:block}
+  .macbar{height:34px;display:flex;align-items:center;gap:12px;padding:0 12px;
+    background:rgba(24,24,24,.85);border-bottom:1px solid var(--hairline)}
+  .macbody{display:flex;position:relative}
+  .macside{width:200px;flex:0 0 200px;background:var(--lowest);border-right:1px solid var(--hairline);
+    display:flex;flex-direction:column}
+  .sidehead{padding:9px 12px 6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    color:#6f6f6f;font-weight:700}
+  .siderow{padding:6px 12px;display:flex;align-items:center;gap:8px;font-size:12px;color:#d6d6d6;
+    position:relative}
+  .siderow.sel{background:var(--cont)}
+  .siderow .rail{position:absolute;left:0;top:2px;bottom:2px;width:2.5px;border-radius:0 2px 2px 0}
+  .sidefoot{margin-top:auto;border-top:1px solid var(--hairline);padding:6px 8px;display:flex;gap:2px}
+  .footbtn{width:30px;height:30px;border-radius:7px;display:grid;place-items:center;color:var(--muted);position:relative}
+  .countpill{position:absolute;top:1px;right:0;min-width:15px;height:14px;padding:0 3px;border-radius:7px;
+    background:var(--error);color:#0e0e0e;font-size:9px;font-weight:800;display:grid;place-items:center;
+    border:1px solid var(--bg)}
+  .macpane{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+  .titlestrip{height:24px;display:flex;align-items:center;gap:6px;padding:0 12px;
+    border-bottom:1px solid var(--hairline);font-size:10.5px;color:var(--muted);
+    letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+  .paneheader{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;
+    border-bottom:1px solid var(--hairline)}
+  .paneheader .pn{font-size:13px;font-weight:600}
+  .transcript{flex:1;padding:14px 18px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+  .maccomposer{margin:0 14px 12px;height:40px;border-radius:28px;background:rgba(24,24,24,.6);
+    border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(18px) saturate(1.8);
+    -webkit-backdrop-filter:blur(18px) saturate(1.8);display:flex;align-items:center;
+    padding:0 16px;color:#6f6f6f;font-size:12.5px}
+  .vdiv{width:1px;background:var(--hairline);flex:0 0 1px}
+
+  .specimen{background:var(--lowest);border:1px solid var(--hairline);border-radius:12px;overflow:hidden}
+  .specimen .r{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #202020}
+  .specimen .r:last-child{border-bottom:none}
+  .specimen .lbl{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:11px;color:var(--muted);
+    width:132px;flex:0 0 132px}
+  .specimen .cell{display:flex;align-items:center;gap:8px;min-width:0}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-right:5px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="g-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.1 12.2l2.7 2.7 5.1-5.5"/></symbol>
+  <symbol id="g-warn" viewBox="0 0 24 24"><path d="M12 4.3l9 15.4H3z"/><path d="M12 9.4v4.3"/><circle class="dot" cx="12" cy="16.7" r=".75"/></symbol>
+  <symbol id="g-warncirc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.3v5.1"/><circle class="dot" cx="12" cy="16.2" r=".75"/></symbol>
+  <symbol id="g-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10.9 11.2h1.3V16h1"/><circle class="dot" cx="12" cy="7.9" r=".75"/></symbol>
+  <symbol id="g-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20.2 4.6v3.9h-3.9"/></symbol>
+  <symbol id="g-bell" viewBox="0 0 24 24"><path d="M6.2 10.6a5.8 5.8 0 0 1 11.6 0c0 3.3.9 5.1 1.6 6.1H4.6c.7-1 1.6-2.8 1.6-6.1z"/><path d="M9.7 19.2a2.5 2.5 0 0 0 4.6 0"/></symbol>
+  <symbol id="g-copy" viewBox="0 0 24 24"><rect x="8.6" y="8.6" width="10.9" height="10.9" rx="2.2"/><path d="M15.4 5.4H4.5v10.9"/></symbol>
+  <symbol id="g-caret" viewBox="0 0 24 24"><path d="M9.4 5.4L16 12l-6.6 6.6"/></symbol>
+  <symbol id="g-x" viewBox="0 0 24 24"><path d="M6.2 6.2l11.6 11.6M17.8 6.2L6.2 17.8"/></symbol>
+  <symbol id="g-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><circle class="teeth" cx="12" cy="12" r="7.4" stroke-dasharray="2.3 3.2"/></symbol>
+  <symbol id="g-branch" viewBox="0 0 24 24"><circle cx="7.2" cy="6" r="2.2"/><circle cx="7.2" cy="18" r="2.2"/><circle cx="16.8" cy="7.6" r="2.2"/><path d="M7.2 8.2v7.6"/><path d="M16.8 9.8v1.6a3.6 3.6 0 0 1-3.6 3.6H9.4"/></symbol>
+  <symbol id="g-out" viewBox="0 0 24 24"><path d="M14.2 4.6h5.2v5.2"/><path d="M19.4 4.6L11 13"/><path d="M16.2 14.6v4.8H4.6V7.8h4.8"/></symbol>
+  <symbol id="g-send" viewBox="0 0 24 24"><path d="M12 19V5.4"/><path d="M6.6 10.8L12 5.4l5.4 5.4"/></symbol>
+  <symbol id="g-left" viewBox="0 0 24 24"><path d="M14.6 5.4L8 12l6.6 6.6"/></symbol>
+  <symbol id="g-cloudwarn" viewBox="0 0 24 24"><path d="M7 17.5a3.9 3.9 0 0 1-.3-7.8 5.3 5.3 0 0 1 10.2-1 3.4 3.4 0 0 1 .6 6.7"/><path d="M12 12.4v3.1"/><circle class="dot" cx="12" cy="18.2" r=".8"/></symbol>
+  <symbol id="g-plug" viewBox="0 0 24 24"><path d="M9.2 3.6v4M14.8 3.6v4"/><path d="M6.6 7.6h10.8v3.2a5.4 5.4 0 0 1-10.8 0z"/><path d="M12 16.2v4.2"/></symbol>
+  <symbol id="g-flask" viewBox="0 0 24 24"><path d="M9.4 3.8h5.2"/><path d="M10.4 3.8v5L5.6 18.3a1.4 1.4 0 0 0 1.2 2h10.4a1.4 1.4 0 0 0 1.2-2L13.6 8.8v-5"/><path d="M7.8 14.6h8.4"/></symbol>
+  <symbol id="g-dots" viewBox="0 0 24 24"><circle class="dot" cx="6" cy="12" r="1.5"/><circle class="dot" cx="12" cy="12" r="1.5"/><circle class="dot" cx="18" cy="12" r="1.5"/></symbol>
+  <symbol id="g-sliders" viewBox="0 0 24 24"><path d="M4.6 7.5h14.8M4.6 16.5h14.8"/><circle cx="9.5" cy="7.5" r="2.2"/><circle cx="15" cy="16.5" r="2.2"/></symbol>
+  <symbol id="g-hand" viewBox="0 0 24 24"><path d="M8.4 11V6.2a1.6 1.6 0 0 1 3.2 0V11"/><path d="M11.6 11V5a1.6 1.6 0 0 1 3.2 0v6"/><path d="M14.8 11.4V7.8a1.6 1.6 0 0 1 3.2 0v6.6a5.8 5.8 0 0 1-5.8 5.8h-1a5 5 0 0 1-3.6-1.6L5 15.4a1.6 1.6 0 0 1 2.3-2.2l1.1 1"/></symbol>
+  <symbol id="g-pr" viewBox="0 0 24 24"><circle cx="7" cy="6" r="2.2"/><circle cx="7" cy="18" r="2.2"/><circle cx="17" cy="18" r="2.2"/><path d="M7 8.2v7.6"/><path d="M17 15.8V9.4a2.6 2.6 0 0 0-2.6-2.6H11.4"/><path d="M13.2 4.8l-1.9 2 1.9 2"/></symbol>
+</defs></svg>
+
+<div class="wrap">
+  <h1>The status language — statuses, in-app notifications, attention</h1>
+  <p class="sub">Every way makit reports state, audited for coherence across <strong>iOS</strong> and <strong>macOS</strong> ·
+    <code>feat/status</code></p>
+
+  <div class="lede">
+    <strong>What this covers.</strong> makit has <strong>five</strong> independent status languages —
+    session status (6 states × 3 renderings), connection state, PR state, SPEC-48 severity, and OS
+    notifications. Each was designed well on its own. Nobody has drawn them <em>together</em>, and
+    <code>DESIGN.md</code>’s own rule is that a state must “read identically everywhere”. This page draws
+    them together, finds three places where they contradict, and designs the one signal that is
+    <strong>missing entirely</strong>.
+  </div>
+  <div class="lede bad">
+    <strong>The headline gap.</strong> You are in session A on your phone. Session B moves to
+    <code>awaiting-approval</code>. The agent is now blocked, waiting on you. makit shows you
+    <strong>nothing</strong> — no toast (SPEC-48 D7 posts session lifecycle <em>silently</em>), no OS
+    notification (those only fire when backgrounded), no badge. The only signal is a dot changing colour on
+    a screen you are not looking at. §4 fixes this.
+  </div>
+
+  <!-- ══════════════════════════ 1 · INVENTORY ══════════════════════════ -->
+  <h2 class="sec">1 · The inventory — one state, four vocabularies</h2>
+  <p class="secnote">
+    <code>SessionStatus</code> has six values. Each is rendered by <code>SessionStatusDot</code> (colour +
+    tooltip), <code>SessionStatusChip</code> (a terse pill), <code>notificationFor</code> (prose on the lock
+    screen) and — since SPEC-48 — an Activity severity. Four names for the same fact.
+  </p>
+
+  <div class="card">
+    <header><h3>Every session state, in every voice it speaks</h3>
+      <p>drawn from <code>session_status_dot.dart</code>, <code>repo_chips.dart</code>,
+         <code>notification_policy.dart</code>, <code>notification_observer.dart</code></p></header>
+    <div class="body">
+      <table class="t">
+        <tr><th>SessionStatus</th><th>Dot</th><th>Chip</th><th>OS notification says</th>
+            <th>Activity severity</th><th>Pulses?</th></tr>
+        <tr>
+          <td class="k"><code>running</code></td>
+          <td><span class="cell"><span class="sdot pulse" style="background:var(--primary)"></span>
+              <span class="m" style="font-size:11px">primary</span></span></td>
+          <td><span class="pill" style="background:rgba(74,222,128,.15);color:var(--primary)">running</span></td>
+          <td class="m">— <span style="font-size:11px">(silent by policy)</span></td>
+          <td class="m">— <span style="font-size:11px">nothing</span></td>
+          <td class="m">yes</td>
+        </tr>
+        <tr class="flag">
+          <td class="k"><code>awaitingInput</code></td>
+          <td><span class="cell"><span class="sdot pulse" style="background:var(--warn)"></span>
+              <span class="m" style="font-size:11px">kStatusWarning</span></span></td>
+          <td><span class="pill" style="background:rgba(224,167,46,.15);color:var(--warn)">you</span></td>
+          <td class="m">“Agent needs your input.”</td>
+          <td class="m">warning</td>
+          <td class="m">yes</td>
+        </tr>
+        <tr class="flag">
+          <td class="k"><code>awaitingApproval</code></td>
+          <td><span class="cell"><span class="sdot pulse" style="background:var(--caution)"></span>
+              <span class="m" style="font-size:11px">kStatusCaution</span></span></td>
+          <td><span class="pill" style="background:rgba(224,123,57,.15);color:var(--caution)">approve</span></td>
+          <td class="m">“Agent needs your approval.”</td>
+          <td class="m"><span class="xmark">warning</span> <span style="font-size:11px">← amber, not orange</span></td>
+          <td class="m">yes</td>
+        </tr>
+        <tr>
+          <td class="k"><code>error</code></td>
+          <td><span class="cell"><span class="sdot" style="background:var(--error)"></span>
+              <span class="m" style="font-size:11px">error</span></span></td>
+          <td><span class="pill" style="background:rgba(255,180,171,.15);color:var(--error)">error</span></td>
+          <td class="m">“Agent hit an error.”</td>
+          <td class="m">failure</td>
+          <td class="m">no</td>
+        </tr>
+        <tr>
+          <td class="k"><code>idle</code></td>
+          <td><span class="cell"><span class="sdot" style="background:var(--muted)"></span>
+              <span class="m" style="font-size:11px">outline</span></span></td>
+          <td><span class="pill" style="background:rgba(158,158,158,.15);color:var(--muted)">idle</span></td>
+          <td class="m">“Agent finished its turn.” <span style="font-size:11px">(only from <code>running</code>)</span></td>
+          <td class="m">success</td>
+          <td class="m">no</td>
+        </tr>
+        <tr>
+          <td class="k"><code>exited</code></td>
+          <td><span class="cell"><span class="sdot" style="background:var(--muted)"></span>
+              <span class="m" style="font-size:11px">outline</span></span></td>
+          <td><span class="pill" style="background:rgba(158,158,158,.15);color:var(--muted)">exited</span></td>
+          <td class="m">“Agent finished its turn.”</td>
+          <td class="m">success</td>
+          <td class="m">no</td>
+        </tr>
+      </table>
+
+      <p class="note"><b>Two names are wrong even before the audit.</b> The chip for
+        <code>awaitingInput</code> is <b>“you”</b> — a pronoun as a state name, which parses as a label
+        for whose turn it is only if you already know the convention. And <code>awaitingApproval</code> is
+        <b>“approve”</b>, an <em>imperative verb</em>: it reads like a button you can press, in a pill that
+        does nothing. Proposal: <code>needs you</code> and <code>approve?</code> — or keep the width and
+        use <code>you</code> / <code>ok?</code>. The point is that a state label should be a state, and a
+        verb should be a control.</p>
+      <p class="note"><b><code>idle</code> and <code>exited</code> are indistinguishable</b> — same hue, same
+        no-pulse, same notification prose — yet one means “ready for your next message” and the other means
+        “this process is gone”. Only the chip label separates them, and the chip is not shown on the
+        sidebar tile.</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ 2 · CAUTION TIER ══════════════════════════ -->
+  <h2 class="sec">2 · Contradiction #1 — the caution tier disappears in Activity</h2>
+  <p class="secnote">
+    <code>kStatusCaution</code> <span class="swatch" style="background:#E07B39"></span><code>#E07B39</code>
+    exists precisely because “awaiting approval” is a stronger <em>act-now</em> than “awaiting input” —
+    <code>DESIGN.md</code> says so, and five call sites honour it. <code>status_tone.dart</code> has
+    <strong>zero</strong> mentions of caution, so SPEC-48 flattens approval into <code>warning</code> amber.
+  </p>
+
+  <div class="card">
+    <header><h3>The same session, two colours, eight pixels apart</h3><span class="bug">BUG</span>
+      <p>sidebar tile vs Activity row — both on screen at once on macOS</p></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:0 0 400px">
+          <p class="cap">today</p>
+          <div class="specimen">
+            <div class="r"><span class="lbl">sidebar tile</span>
+              <span class="cell"><span class="sdot pulse" style="background:var(--caution)"></span>
+                <span style="font-size:12.5px">fix/ports</span>
+                <span class="pill" style="background:rgba(224,123,57,.15);color:var(--caution)">approve</span></span></div>
+            <div class="r"><span class="lbl">worktree accent</span>
+              <span class="cell"><span style="width:3px;height:16px;border-radius:2px;background:var(--caution);display:inline-block"></span>
+                <span style="font-size:12.5px;color:var(--muted)">wantsYou → kStatusCaution</span></span></div>
+            <div class="r"><span class="lbl">Activity row</span>
+              <span class="cell"><svg class="i s15" style="color:var(--warn)"><use href="#g-warn"/></svg>
+                <span style="font-size:12.5px">needs your approval</span>
+                <span class="xmark" style="font-size:11px">amber</span></span></div>
+            <div class="r"><span class="lbl">bell badge</span>
+              <span class="cell"><span style="position:relative;display:inline-flex">
+                <svg class="i s18 solid" style="color:var(--warn)"><use href="#g-bell"/></svg></span>
+                <span style="font-size:12.5px;color:var(--muted)">tinted by worst unread → amber</span></span></div>
+          </div>
+          <p class="why">Three surfaces say orange, two say amber, for one session.</p>
+        </div>
+        <div style="flex:0 0 400px">
+          <p class="cap">proposed — add the tier SPEC-48 skipped</p>
+          <div class="specimen">
+            <div class="r"><span class="lbl">sidebar tile</span>
+              <span class="cell"><span class="sdot pulse" style="background:var(--caution)"></span>
+                <span style="font-size:12.5px">fix/ports</span>
+                <span class="pill" style="background:rgba(224,123,57,.15);color:var(--caution)">approve?</span></span></div>
+            <div class="r"><span class="lbl">worktree accent</span>
+              <span class="cell"><span style="width:3px;height:16px;border-radius:2px;background:var(--caution);display:inline-block"></span>
+                <span style="font-size:12.5px;color:var(--muted)">unchanged</span></span></div>
+            <div class="r"><span class="lbl">Activity row</span>
+              <span class="cell"><svg class="i s15" style="color:var(--caution)"><use href="#g-hand"/></svg>
+                <span style="font-size:12.5px">needs your approval</span>
+                <span class="okmark" style="font-size:11px">caution</span></span></div>
+            <div class="r"><span class="lbl">bell badge</span>
+              <span class="cell"><span style="position:relative;display:inline-flex">
+                <svg class="i s18 solid" style="color:var(--caution)"><use href="#g-bell"/></svg></span>
+                <span style="font-size:12.5px;color:var(--muted)">caution outranks warning</span></span></div>
+          </div>
+          <p class="why">One hue per meaning, everywhere — the rule
+            <code>prStateStyle</code> and <code>SessionStatusDot</code> already exist to enforce.</p>
+        </div>
+        <div style="flex:1 1 260px;min-width:250px">
+          <ul class="why">
+            <li class="plus"><b>Small change, real coherence.</b> One value in
+              <code>StatusSeverity</code>, one arm in <code>statusColor</code> / <code>statusGlyph</code>,
+              one arm in <code>notification_observer</code>’s mapping, one dwell entry.</li>
+            <li class="plus"><b>It also fixes severity ordering.</b> Approval-blocked is strictly more urgent
+              than input-wanted (an agent is <em>stopped</em>), so <code>caution</code> must sort above
+              <code>warning</code> for <code>worstUnread</code> and the filter threshold.</li>
+            <li class="minus">A sixth severity is a wider enum, and <code>theme_contrast_test.dart</code> must
+              cover the new fill. <code>statusCautionText</code> already exists for the light-mode label, so
+              the contrast work is done.</li>
+            <li class="minus">Alternative, cheaper: leave the enum at five and only re-map the hue for
+              approval events. Rejected — a severity that renders in a colour outside its own tone table is
+              exactly the drift <code>status_tone.dart</code> was written to prevent.</li>
+          </ul>
+          <p class="why"><b>Glyph, too.</b> A raised hand for “approval” separates it from the triangle
+            used for “warning”. Severity is currently colour-and-glyph, and the glyph is doing no work
+            here because both states share one.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ 3 · PULSE ══════════════════════════ -->
+  <h2 class="sec">3 · Contradiction #2 — the pulse means two opposite things</h2>
+  <p class="secnote">
+    <code>SessionStatusDot</code> pulses for <code>running</code> <em>and</em> for both awaiting states.
+    But “running” means <strong>relax, I’m working</strong> and “awaiting” means <strong>stop, act now</strong>.
+    One animation, opposite instructions — and the pulsing green is the one you’ll see for hours.
+  </p>
+
+  <div class="card">
+    <header><h3>Give motion one job: urgency</h3><span class="rec">RECOMMENDED</span></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:0 0 380px">
+          <p class="cap">today — everything active pulses the same way</p>
+          <div class="specimen">
+            <div class="r"><span class="lbl">running</span>
+              <span class="cell"><span class="sdot pulse" style="background:var(--primary)"></span>
+                <span style="font-size:12px;color:var(--muted)">fade 0.3 → 1.0, 1 clock</span></span></div>
+            <div class="r"><span class="lbl">awaitingInput</span>
+              <span class="cell"><span class="sdot pulse" style="background:var(--warn)"></span>
+                <span style="font-size:12px;color:var(--muted)">identical motion</span></span></div>
+            <div class="r"><span class="lbl">awaitingApproval</span>
+              <span class="cell"><span class="sdot pulse" style="background:var(--caution)"></span>
+                <span style="font-size:12px;color:var(--muted)">identical motion</span></span></div>
+            <div class="r"><span class="lbl">error</span>
+              <span class="cell"><span class="sdot" style="background:var(--error)"></span>
+                <span style="font-size:12px;color:var(--muted)">static</span></span></div>
+          </div>
+        </div>
+        <div style="flex:0 0 380px">
+          <p class="cap">proposed — motion only where you must act</p>
+          <div class="specimen">
+            <div class="r"><span class="lbl">running</span>
+              <span class="cell"><span class="sdot" style="background:var(--primary);opacity:.75"></span>
+                <span style="font-size:12px;color:var(--muted)">steady, slightly dimmed — “busy”</span></span></div>
+            <div class="r"><span class="lbl">awaitingInput</span>
+              <span class="cell"><span class="halo" style="color:var(--warn)"><span class="ring breathe"></span>
+                <span class="sdot" style="background:var(--warn)"></span></span>
+                <span style="font-size:12px;color:var(--muted)">breathing halo — “your turn”</span></span></div>
+            <div class="r"><span class="lbl">awaitingApproval</span>
+              <span class="cell"><span class="halo" style="color:var(--caution)"><span class="ring breathe"></span>
+                <span class="sdot" style="background:var(--caution)"></span></span>
+                <span style="font-size:12px;color:var(--muted)">same halo, caution hue — “blocked on you”</span></span></div>
+            <div class="r"><span class="lbl">error</span>
+              <span class="cell"><span class="sdot" style="background:var(--error)"></span>
+                <span style="font-size:12px;color:var(--muted)">static — it already happened</span></span></div>
+          </div>
+        </div>
+        <div style="flex:1 1 260px;min-width:250px">
+          <ul class="why">
+            <li class="plus"><b>Motion becomes meaningful.</b> If only “act now” moves, a moving dot is
+              worth looking at. Today motion means “not finished”, which is most of the time.</li>
+            <li class="plus"><b>Cheaper on the phone.</b> <code>running</code> is the common state and it
+              currently animates every tile on the sessions list; a steady dot leaves nothing ticking (the
+              exact reason <code>SessionStatusDot</code> already avoids <code>Opacity</code> layers).</li>
+            <li class="plus"><b>Still not colour-only.</b> The halo is a shape change, so the “act now”
+              tier survives colour-blindness and greyscale — the tooltip/semantics label stays as it is.</li>
+            <li class="minus">Losing the green pulse costs a “something is happening” cue. But that cue is
+              already carried better elsewhere: the shimmering busy word in the transcript, and the
+              composer’s cancel button.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ 4 · THE GAP ══════════════════════════ -->
+  <h2 class="sec">4 · The missing signal — attention, in-app, across sessions</h2>
+  <p class="secnote">
+    SPEC-48 D7 says session lifecycle posts <em>silently</em> because “a session you are looking at already
+    shows its own status dot, and the OS notification is what handles you-weren’t-looking”. Both clauses are
+    true. Neither covers the case in between: <strong>app open, looking at a different session.</strong>
+    On a phone that is <em>most</em> of the time, because a phone shows exactly one session.
+  </p>
+
+  <div class="card">
+    <header><h3>Why a toast cannot fix this</h3></header>
+    <div class="body">
+      <table class="t">
+        <tr><th>Primitive</th><th>Answers</th><th>Lifetime</th><th>Right for “B needs approval”?</th></tr>
+        <tr><td class="k">Toast</td><td class="m">what just happened</td><td class="m">3–8 s dwell</td>
+          <td class="m"><span class="xmark">No</span> — the need persists after the toast dies; a
+            transient view of a durable state is a missed call</td></tr>
+        <tr><td class="k">Activity row</td><td class="m">what happened, historically</td><td class="m">forever (in memory)</td>
+          <td class="m"><span class="xmark">No</span> — you must already be looking for it</td></tr>
+        <tr><td class="k">Status dot</td><td class="m">what is true, per session</td><td class="m">as long as it’s true</td>
+          <td class="m"><span class="xmark">No</span> — correct lifetime, but only visible on a screen
+            you are not on</td></tr>
+        <tr><td class="k">OS notification</td><td class="m">something needs you, away</td><td class="m">until dismissed</td>
+          <td class="m"><span class="xmark">No</span> — suppressed in the foreground, correctly</td></tr>
+        <tr style="background:rgba(74,222,128,.06)"><td class="k" style="color:var(--primary)">Attention bar <span style="font-weight:400;font-size:11px">(new)</span></td>
+          <td class="m">which <em>other</em> session needs you, now</td>
+          <td class="m"><b>state-bound</b> — lives exactly as long as the state</td>
+          <td class="m"><span class="okmark">Yes</span></td></tr>
+      </table>
+      <p class="note warn"><b>The design rule this exposes.</b> makit’s status layer conflates
+        <em>events</em> (a thing happened; past tense; a record) with <em>states</em> (a thing is true; present
+        tense; resolves itself). SPEC-48 built an excellent event system and then routed states through it,
+        which is why the states came out silent. Attention is the state-shaped primitive: it is never
+        dismissed by the user, it <strong>disappears when the session stops needing you</strong>.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>iOS — one session on screen, so the signal comes to you</h3><span class="rec">RECOMMENDED</span>
+      <p>a 32 pt bar under the glass top bar · caution rail · tap switches session · no dismiss button</p></header>
+    <div class="body">
+      <div class="grid">
+
+        <div style="flex:0 0 320px">
+          <p class="cap">one session needs you</p>
+          <div class="phone" style="height:470px">
+            <div class="island"></div>
+            <div class="statusbar"><span>9:41</span>
+              <span class="bars"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i>
+                <span class="batt" style="margin-left:6px"></span></span></div>
+            <div class="pscreen">
+              <div class="glassbar">
+                <span class="backc"><svg class="i s15"><use href="#g-left"/></svg></span>
+                <span class="bartitle"><span class="t1">feat/status</span>
+                  <span class="t2">pi · sonnet · medium</span></span>
+                <span class="sdot" style="background:var(--primary);margin-right:4px"></span>
+              </div>
+              <div class="attn" style="top:56px">
+                <span class="lead"></span>
+                <span class="txt"><b style="font-weight:600">fix/ports</b> needs approval</span>
+                <span class="go">Go<svg class="i s10"><use href="#g-caret"/></svg></span>
+              </div>
+              <div class="transcriptP" style="padding-top:100px">
+                <div class="msg user">run the status tests</div>
+                <div class="think">Considering the coalescing window…</div>
+                <div class="toolcard">$ flutter test test/status/<br><span style="color:var(--primary)">+ 61</span> passed</div>
+                <div class="msg">All nine suites are green.</div>
+              </div>
+              <div class="composer"><span class="ph">Message pi…</span>
+                <span class="sendbtn"><svg class="i s18"><use href="#g-send"/></svg></span></div>
+            </div>
+          </div>
+          <p class="why"><b>No × button.</b> Dismissing would be a lie — the agent is still blocked. It
+            leaves when the state does. That is what makes it a status and not a notification.</p>
+        </div>
+
+        <div style="flex:0 0 320px">
+          <p class="cap">two or more — it aggregates, never stacks</p>
+          <div class="phone" style="height:470px">
+            <div class="island"></div>
+            <div class="statusbar"><span>9:41</span>
+              <span class="bars"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i>
+                <span class="batt" style="margin-left:6px"></span></span></div>
+            <div class="pscreen">
+              <div class="glassbar">
+                <span class="backc"><svg class="i s15"><use href="#g-left"/></svg></span>
+                <span class="bartitle"><span class="t1">feat/status</span>
+                  <span class="t2">pi · sonnet · medium</span></span>
+                <span class="sdot" style="background:var(--primary);margin-right:4px"></span>
+              </div>
+              <div class="attn" style="top:56px">
+                <span class="lead"></span>
+                <span class="txt"><b style="font-weight:600">2 sessions</b> need you</span>
+                <span class="go">View<svg class="i s10"><use href="#g-caret"/></svg></span>
+              </div>
+              <div class="transcriptP" style="padding-top:100px">
+                <div class="msg user">and the ports ones?</div>
+                <div class="think">Running the ports suite…</div>
+              </div>
+              <div style="position:absolute;left:12px;right:12px;top:200px;background:var(--lowest);
+                   border:1px solid var(--hairline);border-radius:12px;overflow:hidden;
+                   box-shadow:0 12px 30px rgba(0,0,0,.5)">
+                <div style="padding:8px 12px 6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+                     color:#6f6f6f;font-weight:700">Needs you</div>
+                <div class="stile" style="border:none;border-radius:0;border-top:1px solid #202020">
+                  <span class="halo" style="color:var(--caution)"><span class="ring breathe"></span>
+                    <span class="sdot" style="background:var(--caution)"></span></span>
+                  <span style="flex:1"><span class="sname">fix/ports</span><br>
+                    <span class="ssub">codex · approve <code style="font-size:9.5px">rm −rf .vite</code></span></span>
+                  <svg class="i s13" style="color:var(--muted)"><use href="#g-caret"/></svg>
+                </div>
+                <div class="stile" style="border:none;border-radius:0;border-top:1px solid #202020">
+                  <span class="halo" style="color:var(--warn)"><span class="ring breathe"></span>
+                    <span class="sdot" style="background:var(--warn)"></span></span>
+                  <span style="flex:1"><span class="sname">main</span><br>
+                    <span class="ssub">pi · asked you a question</span></span>
+                  <svg class="i s13" style="color:var(--muted)"><use href="#g-caret"/></svg>
+                </div>
+              </div>
+              <div class="composer"><span class="ph">Message pi…</span>
+                <span class="sendbtn"><svg class="i s18"><use href="#g-send"/></svg></span></div>
+            </div>
+          </div>
+          <p class="why">Tapping the aggregate opens a <b>“Needs you”</b> list — sorted caution before
+            warning, each row deep-linking to the session. Two blocked agents is a queue, not two banners.</p>
+        </div>
+
+        <div style="flex:1 1 300px;min-width:290px">
+          <ul class="why">
+            <li class="plus"><b>It reuses the primitives already on screen.</b> Caution rail, halo dot,
+              session name, agent — nothing new is invented, so nothing can drift.</li>
+            <li class="plus"><b>Correct lifetime by construction.</b> Derive it from
+              <code>sessionsProvider</code> — the set of sessions in an awaiting state, minus the one on
+              screen. No state to own, no queue, no timers, nothing to leak. Answer the approval and the bar
+              is gone on the next frame.</li>
+            <li class="plus"><b>It makes SPEC-48’s D7 silence correct.</b> D7’s reasoning was right — a
+              toast per finished turn <em>is</em> noise. The mistake was having only two volumes: toast, or
+              nothing. This is the third: <em>persistent, quiet, and not in the way.</em></li>
+            <li class="minus"><b>It costs 32 pt of the transcript</b> — and only when an agent is blocked
+              on you, which is the one moment you would trade 32 pt for. It must sit <em>below</em> the glass
+              bar (never over it) and above the transcript, so the composer is untouched.</li>
+            <li class="minus">Third thing anchored to the top edge, after the glass bar and the toast.
+              Ordering must be fixed and documented: <b>glass bar → attention → toast stack</b>. A toast is
+              transient and may overlap; attention may not.</li>
+          </ul>
+          <p class="why"><b>What it is not.</b> Not the bell (that is history), not a toast (that is an
+            event), not the connection chip (that is transport). One new widget,
+            <code>SessionAttentionBar</code>, driven entirely by derived state.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>macOS — the sidebar already shows every session, so aggregate at the edges</h3></header>
+    <div class="body">
+      <p class="cap" style="margin-bottom:10px">Sidebar visible: a caution rail on the tile is enough — plus one aggregate in the title strip</p>
+      <div class="mac" style="margin-bottom:24px">
+        <div class="macbar">
+          <span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>
+          <span style="font-size:12px;color:var(--muted)">makit</span>
+        </div>
+        <div class="macbody" style="height:320px">
+          <div class="macside">
+            <div class="sidehead">makit</div>
+            <div class="siderow sel"><span class="sdot" style="background:var(--primary)"></span>feat/status</div>
+            <div class="siderow"><span class="rail" style="background:var(--caution)"></span>
+              <span class="halo" style="color:var(--caution)"><span class="ring breathe"></span>
+                <span class="sdot" style="background:var(--caution)"></span></span>fix/ports
+              <span class="pill" style="background:rgba(224,123,57,.15);color:var(--caution);margin-left:auto">approve?</span></div>
+            <div class="siderow"><span class="rail" style="background:var(--warn)"></span>
+              <span class="halo" style="color:var(--warn)"><span class="ring breathe"></span>
+                <span class="sdot" style="background:var(--warn)"></span></span>main
+              <span class="pill" style="background:rgba(224,167,46,.15);color:var(--warn);margin-left:auto">you</span></div>
+            <div class="sidehead" style="margin-top:6px">pi-hermes</div>
+            <div class="siderow"><span class="sdot" style="background:var(--muted)"></span>main</div>
+            <div class="sidefoot">
+              <span class="footbtn"><svg class="i s18"><use href="#g-gear"/></svg></span>
+              <span class="footbtn"><svg class="i s18"><use href="#g-sliders"/></svg></span>
+              <span class="footbtn" style="color:var(--caution)">
+                <svg class="i s18 solid"><use href="#g-bell"/></svg><span class="countpill" style="background:var(--caution)">3</span></span>
+            </div>
+          </div>
+          <div class="macpane">
+            <div class="titlestrip"><svg class="i s11"><use href="#g-branch"/></svg>feat/status
+              <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;
+                     text-transform:none;letter-spacing:0;font-size:10.5px;color:var(--caution)">
+                <span class="halo" style="color:var(--caution);width:12px;height:12px">
+                  <span class="ring breathe"></span>
+                  <span class="sdot" style="background:var(--caution);width:6px;height:6px"></span></span>
+                2 sessions need you</span></div>
+            <div class="paneheader"><span class="sdot" style="background:var(--primary)"></span>
+              <span class="pn">status &amp; activity</span>
+              <span style="margin-left:auto;color:var(--muted)"><svg class="i s15"><use href="#g-dots"/></svg></span></div>
+            <div class="transcript">
+              <div class="msg user">run the status tests</div>
+              <div class="think">Considering the coalescing window…</div>
+              <div class="toolcard">$ flutter test test/status/<br><span style="color:var(--primary)">+ 61</span> passed</div>
+              <div class="msg">All nine suites are green.</div>
+            </div>
+            <div class="maccomposer">Message pi…</div>
+          </div>
+        </div>
+      </div>
+
+      <p class="cap" style="margin-bottom:10px">Sidebar collapsed, or a split where the blocked session is off-screen — then macOS needs the bar too</p>
+      <div class="mac">
+        <div class="macbar">
+          <span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>
+          <span style="font-size:12px;color:var(--muted)">makit</span>
+        </div>
+        <div class="macbody" style="height:290px">
+          <div class="macpane">
+            <div class="titlestrip"><svg class="i s11"><use href="#g-branch"/></svg>feat/status</div>
+            <div class="paneheader"><span class="sdot" style="background:var(--primary)"></span>
+              <span class="pn">status &amp; activity</span></div>
+            <div style="padding:8px 12px 0">
+              <div style="display:flex;align-items:center;gap:8px;height:30px;padding:0 6px 0 10px;
+                   border-radius:8px;background:var(--cont);border:1px solid rgba(224,123,57,.35)">
+                <span style="width:3px;height:15px;border-radius:2px;background:var(--caution)"></span>
+                <span style="font-size:11.5px;flex:1"><b style="font-weight:600">fix/ports</b> needs approval
+                  <span style="color:var(--muted)">· codex</span></span>
+                <span style="display:inline-flex;align-items:center;gap:4px;height:21px;padding:0 8px;
+                     border-radius:6px;background:rgba(224,123,57,.16);color:var(--caution);
+                     font-size:10.5px;font-weight:700">Open<svg class="i s10"><use href="#g-caret"/></svg></span>
+              </div>
+            </div>
+            <div class="transcript" style="padding-top:10px">
+              <div class="msg user">and the ports ones?</div>
+              <div class="think">Running the ports suite…</div>
+            </div>
+            <div class="maccomposer">Message pi…</div>
+          </div>
+          <div class="vdiv"></div>
+          <div class="macpane">
+            <div class="titlestrip"><svg class="i s11"><use href="#g-branch"/></svg>main</div>
+            <div class="paneheader"><span class="sdot" style="background:var(--muted)"></span>
+              <span class="pn">docs pass</span></div>
+            <div class="transcript"><div class="msg">Rewrote the notifications table.</div></div>
+            <div class="maccomposer">Message pi…</div>
+          </div>
+        </div>
+      </div>
+
+      <ul class="why" style="max-width:920px">
+        <li class="plus"><b>One rule, two shells.</b> “Show attention for awaiting sessions that are not
+          currently visible.” On macOS with the sidebar open that set is usually empty, so the bar never
+          appears and the tile rail carries it — the desktop stays quiet <em>for the same reason</em> the
+          phone gets a bar. Same predicate, different visible set.</li>
+        <li class="plus"><b>The macOS extras are free.</b> A Dock badge count and a
+          <code>Window ▸ Needs You</code> menu item both read the same derived set — and on macOS a Dock
+          badge is the platform-native answer to “not looking at this app at all”.</li>
+        <li class="minus">“Visible” needs a real definition in a split view: a pane counts as visible only
+          if it is on screen <em>and</em> its session is the one the pane shows. Cheap to get wrong, so it
+          belongs in one provider with tests, not inline in two widgets.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ 5 · THE LADDER ══════════════════════════ -->
+  <h2 class="sec">5 · The ladder — one event, five channels, no duplicates</h2>
+  <p class="secnote">
+    With attention added there are five ways makit can speak. The value is in each channel having exactly
+    one job, so nothing fires twice and nothing falls through.
+  </p>
+
+  <div class="card">
+    <header><h3>“Session <code>fix/ports</code> moves to <code>awaiting-approval</code>”</h3>
+      <p>what fires, per app state</p></header>
+    <div class="body">
+      <table class="t">
+        <tr><th>Channel</th><th>Job</th><th>Foreground,<br>viewing it</th><th>Foreground,<br>elsewhere</th>
+            <th>Backgrounded</th><th>Force-quit</th></tr>
+        <tr><td class="k">Status dot / chip</td><td class="m">what is true, in place</td>
+          <td class="okmark">yes</td><td class="okmark">yes</td><td class="m">—</td><td class="m">—</td></tr>
+        <tr><td class="k" style="color:var(--primary)">Attention bar <span style="font-weight:400;font-size:11px">(new)</span></td>
+          <td class="m">which other session is blocked</td>
+          <td class="m">no <span style="font-size:11px">(you can see it)</span></td>
+          <td class="okmark">yes</td><td class="m">—</td><td class="m">—</td></tr>
+        <tr><td class="k">OS notification</td><td class="m">you are not here</td>
+          <td class="m">no</td><td class="m">no</td><td class="okmark">yes, actionable</td>
+          <td class="m">APNs wake, then actionable</td></tr>
+        <tr><td class="k">Activity row</td><td class="m">the history, copyable</td>
+          <td class="okmark">yes, silent</td><td class="okmark">yes, silent</td>
+          <td class="okmark">yes, silent</td><td class="m">— <span style="font-size:11px">(D9: in-memory)</span></td></tr>
+        <tr><td class="k">Toast</td><td class="m">what the app itself just did</td>
+          <td class="m">never for session state</td><td class="m">never</td><td class="m">never</td><td class="m">never</td></tr>
+      </table>
+      <p class="note"><b>Read the “foreground, elsewhere” column top to bottom</b> — that is the column that
+        is empty today except for a dot you cannot see and a silent row. Every other column is already
+        covered by shipped work.</p>
+
+      <div class="grid" style="margin-top:24px">
+        <div style="flex:0 0 300px">
+          <p class="cap">backgrounded — SPEC-08, unchanged</p>
+          <div class="osnotif">
+            <div class="top">
+              <span class="appicon">mk</span>
+              <span style="min-width:0">
+                <span class="n1">fix/ports</span>
+                <span class="n2">Agent needs your approval.</span>
+              </span>
+              <span class="when">now</span>
+            </div>
+            <div class="osacts"><div style="color:var(--primary)">Approve</div><div style="color:var(--error)">Deny</div></div>
+          </div>
+          <p class="why">Actionable from the lock screen; resolves without opening the app.
+            <b>Unchanged by any of this</b> — and after SPEC-48 it finally leaves a trace.</p>
+        </div>
+        <div style="flex:0 0 300px">
+          <p class="cap">force-quit — SPEC-07 wake, content-free</p>
+          <div class="osnotif">
+            <div class="top">
+              <span class="appicon">mk</span>
+              <span style="min-width:0">
+                <span class="n1">makit</span>
+                <span class="n2">You have 1 pending item.</span>
+              </span>
+              <span class="when">now</span>
+            </div>
+          </div>
+          <p class="why">No session name, no content — APNs never carries it
+            (<code>docs/PUSH.md</code>). Tap → reconnect over the tailnet → the real request.</p>
+        </div>
+        <div style="flex:1 1 280px;min-width:270px">
+          <p class="cap">foreground, elsewhere — the new rung</p>
+          <div style="background:var(--bg);border:1px solid var(--hairline);border-radius:12px;padding:14px">
+            <div class="attn" style="position:static;left:auto;right:auto">
+              <span class="lead"></span>
+              <span class="txt"><b style="font-weight:600">fix/ports</b> needs approval</span>
+              <span class="go">Go<svg class="i s10"><use href="#g-caret"/></svg></span>
+            </div>
+          </div>
+          <p class="why">Same event, same words, one volume quieter — and it persists, because the
+            state does. <b>This is the whole proposal.</b></p>
+          <p class="why"><b>One prose source.</b> “needs approval” here and “Agent needs your approval.”
+            on the lock screen should come from <code>notification_policy.dart</code>, not a second
+            string table — otherwise the two drift the way the chip labels already have.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ 6 · SYSTEM STATUS ══════════════════════════ -->
+  <h2 class="sec">6 · System status — connection, transport, demo</h2>
+  <p class="secnote">
+    <code>ConnectionChip</code> is the one place makit reports its own health. Its best decision is that
+    <code>connected</code> renders <strong>nothing</strong> — zero chrome on the happy path. Worth keeping,
+    with one gap named.
+  </p>
+
+  <div class="card">
+    <header><h3>The degradation ladder</h3><span class="keep">AS BUILT</span>
+      <p><code>connection_chip.dart</code> — plus the one state it cannot express</p></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:0 0 420px">
+          <div class="specimen">
+            <div class="r"><span class="lbl">connected</span>
+              <span class="cell"><span style="font-size:12px;color:var(--muted)">— nothing at all —</span></span></div>
+            <div class="r"><span class="lbl">connecting</span>
+              <span class="cell"><span class="connchip"><span class="sdot pulse" style="background:var(--primary);width:6px;height:6px"></span>Connecting</span></span></div>
+            <div class="r"><span class="lbl">reconnecting</span>
+              <span class="cell"><span class="connchip" style="border-color:rgba(224,167,46,.4)">
+                <svg class="i s11" style="color:var(--warn)"><use href="#g-cloudwarn"/></svg>Reconnecting</span>
+                <span style="font-size:11px;color:var(--muted)">tap to retry</span></span></div>
+            <div class="r"><span class="lbl">closed / idle</span>
+              <span class="cell"><span class="connchip" style="border-color:rgba(255,180,171,.45)">
+                <span class="sdot" style="background:var(--error);width:6px;height:6px"></span>Offline</span>
+                <span style="font-size:11px;color:var(--muted)">tap to retry</span></span></div>
+            <div class="r"><span class="lbl">useFake</span>
+              <span class="cell"><span class="connchip" style="border-color:rgba(163,113,247,.4)">
+                <svg class="i s11" style="color:var(--merged)"><use href="#g-flask"/></svg>Demo</span>
+                <span style="font-size:11px;color:var(--muted)">always shown — seeded data</span></span></div>
+          </div>
+        </div>
+        <div style="flex:1 1 320px;min-width:300px">
+          <ul class="why">
+            <li class="plus"><b>Hiding the happy path is right</b> and should be the model for every
+              status in the app: <em>chrome proportional to trouble</em>. The attention bar in §4 follows
+              the same rule.</li>
+            <li class="minus"><b>Offline invalidates every other status on screen and doesn’t say so.</b>
+              While the socket is down, every session dot is a stale cache — “running” may have finished
+              minutes ago. Proposal: when <code>closed</code>, desaturate session dots and add one line to
+              the chip’s tooltip (<em>“statuses last updated 4m ago”</em>). Cheap, and it stops the UI
+              asserting things it cannot know.</li>
+            <li class="minus"><b>Offline is a state, so it belongs in Activity too</b> — “Disconnected” /
+              “Reconnected” with the elapsed gap is exactly the durable record SPEC-48 exists for, and
+              today the chip is the only witness.</li>
+            <li class="plus"><b>Demo mode being always-visible is correct</b> and is the only status that
+              earns permanent chrome, because everything else on screen is fake.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ 7 · DELTAS ══════════════════════════ -->
+  <h2 class="sec">7 · What I would change, in order</h2>
+  <div class="card">
+    <header><h3>Ordered by coherence gained per line changed</h3>
+      <p>1–3 are small and fix contradictions; 4 is the feature</p></header>
+    <div class="body">
+      <table class="t">
+        <tr><th>#</th><th>Change</th><th>Where</th><th>Why</th></tr>
+        <tr>
+          <td class="k">1</td>
+          <td class="k">Add <code>StatusSeverity.caution</code></td>
+          <td class="m"><code>status/status_event.dart</code>, <code>status/status_tone.dart</code>,
+            <code>notifications/notification_observer.dart</code></td>
+          <td class="m">One state currently renders in two hues on one screen. Sorts above
+            <code>warning</code>; glyph = raised hand; dwell 8 s. <code>statusCautionText</code> already
+            exists, so light-mode contrast is solved.</td>
+        </tr>
+        <tr>
+          <td class="k">2</td>
+          <td class="k">Motion means urgency only</td>
+          <td class="m"><code>ui/widgets/session_status_dot.dart</code></td>
+          <td class="m"><code>running</code> stops pulsing; awaiting states get a breathing halo (a shape
+            change, so it survives greyscale). Also removes an animation from every tile in the common state.</td>
+        </tr>
+        <tr>
+          <td class="k">3</td>
+          <td class="k">Fix two chip labels</td>
+          <td class="m"><code>ui/home/repo_chips.dart</code></td>
+          <td class="m"><code>you</code> → <code>needs you</code>, <code>approve</code> → <code>approve?</code>.
+            A state label must not be an imperative verb; and <code>idle</code> vs <code>exited</code>
+            deserve distinct words wherever both can appear.</td>
+        </tr>
+        <tr>
+          <td class="k">4</td>
+          <td class="k"><code>SessionAttentionBar</code> + <code>attentionProvider</code></td>
+          <td class="m">new: <code>status/session_attention.dart</code>; mounted in the phone shell and the
+            desktop pane column</td>
+          <td class="m">The one signal that does not exist: app open, blocked agent in another session.
+            Pure derived state (awaiting sessions − visible sessions), so nothing is owned and it clears
+            itself. Prose from <code>notification_policy.dart</code>, not a second string table.</td>
+        </tr>
+        <tr>
+          <td class="k">5</td>
+          <td class="k">Offline invalidates statuses</td>
+          <td class="m"><code>ui/widgets/connection_chip.dart</code> + dot rendering</td>
+          <td class="m">While the socket is down, every dot is a stale cache. Desaturate them and say when
+            they were last true, rather than asserting what cannot be known.</td>
+        </tr>
+        <tr>
+          <td class="k">6</td>
+          <td class="k">Connection transitions post to Activity</td>
+          <td class="m"><code>store/connection.dart</code> → <code>StatusCenter</code></td>
+          <td class="m">“Disconnected 12:04 → reconnected 12:09” is the durable record SPEC-48 is for;
+            today the chip is the only witness and it forgets instantly.</td>
+        </tr>
+        <tr>
+          <td class="k">7</td>
+          <td class="k">Dock badge + <code>Window ▸ Needs You</code></td>
+          <td class="m">macOS shell — <em>follow-up</em></td>
+          <td class="m">Same derived set as #4, and the platform-native answer to “not looking at makit
+            at all”.</td>
+        </tr>
+      </table>
+      <p class="note"><b>What I am not proposing.</b> No new OS notification triggers (SPEC-07/08 decide
+        what buzzes; this only changes what the app shows while you hold it). No persistence (D9 stands).
+        No per-source mute settings. And no toast for session state — that was the right call, it just
+        needed a third volume rather than a louder one.</p>
+    </div>
+  </div>
+
+  <p class="sub" style="margin-top:34px">
+    <code>mockups/status-language-ios-macos.html</code> · companion to
+    <code>mockups/activity-ios-macos.html</code> · tokens from <code>DESIGN.md</code> ·
+    behaviour from <code>docs/NOTIFICATIONS.md</code>, SPEC-07/08/48
+  </p>
+</div>
+</body>
+</html>

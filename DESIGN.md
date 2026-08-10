@@ -259,6 +259,49 @@ hairline:
 `SessionStatusDot` (`desktop/chat/session_status_dot.dart`) is shared by sidebar
 tiles and the pane header so a session's status reads identically everywhere.
 
+### Status toast & Activity (SPEC-48)
+The app talking back to you. **Never** a `SnackBar` — that layer is gone, and
+`test/status/no_snackbar_test.dart` keeps it gone.
+
+- **Toast** (`status/status_toast.dart`) — `surface-container-high` card,
+  `--radius-card`, 1px `outline-variant` hairline, elevation 3, a **3px severity
+  stripe** down the leading edge, and a one-line monospace preview of the detail.
+  Anchored **top**, right-aligned, `max-width 380` — *not* bottom-centre, because
+  that slot belongs to the composer. Not glass: glass is reserved for the top bar
+  and the composer.
+- **Copy-first (SPEC-49).** The **whole card** is the copy target — every
+  severity, including events with no `detail`, whose head line is still what a
+  person wants to paste. There is no separate copy glyph: the 13 px button this
+  replaced was the smallest target on the card at the worst moment. Confirmation
+  happens *in place* (the glyph becomes a check, the title reads `Copied`, then
+  reverts) and posts **no** event — a notice about a notice is a hall of mirrors.
+  Opening keeps an explicit `caretRight` control, shown only when there is
+  somewhere to go.
+- **Held while you read it (SPEC-49).** Pointer hover or keyboard focus pauses
+  the dwell and unfolds the whole `detail` as selectable monospace; leaving
+  restarts the **full** dwell, because a notice you looked away from is news
+  again. There is no cap: hover is an act that ends when the pointer leaves.
+  Deliberately **not** triggered by pointer-down — on touch that would race the
+  tap that copies, and an iPad runs the desktop shell.
+- **Reachable without a pointer (SPEC-49).** The card is focusable, `Enter` /
+  `Space` copy, and it carries a named `Copy` semantic action for assistive tech.
+  `⌘⇧C` copies the newest notice from the **record**, so it still works after the
+  card has faded.
+- **Dwell:** `info`/`success` 3 s · `progress` 4 s · `warning` 6 s ·
+  `failure` 8 s. Max 3 stacked, then a `+N more` chip. Nothing is sticky —
+  the record outlives the toast.
+- **Severity hues** — the sanctioned palette only, via `status/status_tone.dart`:
+  `success`/`progress` → `primary` · `info` → `outline` ·
+  `warning` → `kStatusWarning` (label: `statusWarningText`) · `failure` → `error`.
+  Glyphs: `checkCircle` · `info` · `arrowClockwise` · `warning` · `warningCircle`.
+- **Activity** (`status/activity_view.dart`) — one list, two containers: a pushed
+  screen on the phone, a 420 × 520 top-right dialog on desktop. Rows are
+  glyph + title + `source · 4m`, expanding to a `surface-container-low` block of
+  selectable monospace detail. Per-row copy, copy-all, clear, severity threshold.
+- **Bell badge** (`status/activity_badge.dart`) — `bell` outline when empty,
+  `PhosphorIconsFill.bell` plus a count pill tinted by the loudest unread
+  severity, with a 1px `surface` hairline so it stays legible over the glyph.
+
 ### Logo
 Green `makit` wordmark (`makit_mark.dart`, `#4ADE80`).
 

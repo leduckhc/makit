@@ -6,6 +6,8 @@ import 'package:window_manager/window_manager.dart';
 import '../../../app/theme.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
+import '../../../status/status_event.dart';
+import '../../../status/status_providers.dart';
 import '../../../ui/composer/client_commands.dart';
 import '../../../ui/widgets/menu_item.dart';
 import '../sidebar_layout.dart';
@@ -46,7 +48,7 @@ class PaneHeader extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (collapsed) ...[
-            const SidebarToggleButton(collapse: false),
+            const SidebarToggleControls(collapse: false),
             const SizedBox(width: kSpace8),
           ],
           if (session != null) ...[
@@ -164,6 +166,9 @@ class SessionActionsMenu extends ConsumerWidget {
   }
 
   Future<void> _confirmArchive(BuildContext context, WidgetRef ref) async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
@@ -185,7 +190,6 @@ class SessionActionsMenu extends ConsumerWidget {
       ),
     );
     if (ok != true || !context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     // Capture notifiers before the async gap: the optimistic close disposes
     // this menu's widget, so nothing below may touch `ref`/`context`.
     final store = ref.read(storeControllerProvider.notifier);
@@ -202,11 +206,12 @@ class SessionActionsMenu extends ConsumerWidget {
       // Drop any *other* tab still hosting the session so it never lingers.
       workspace.unbindSession(sessionId);
     } catch (e) {
-      if (messenger.mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('Could not archive: $e')),
-        );
-      }
+      status.failure(
+        'Could not archive the session',
+        error: e,
+        source: StatusSources.session,
+        sessionId: sessionId,
+      );
     }
   }
 }
@@ -221,6 +226,6 @@ class UnfoldStrip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (!ref.watch(sidebarCollapsedProvider)) return const SizedBox.shrink();
-    return const TitleBarStrip(leading: SidebarToggleButton(collapse: false));
+    return const TitleBarStrip(leading: SidebarToggleControls(collapse: false));
   }
 }

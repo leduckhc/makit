@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/ports.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/ui/ports/port_kill_confirm.dart';
 
 PortInfo _port({int? startedAt = 1_700_000}) => PortInfo(
@@ -36,11 +38,15 @@ Future<PortKillOutcome?> _tapKill(
   WidgetTester tester, {
   required PortsKiller killer,
   PortInfo? port,
+  StatusCenter? status,
 }) async {
   PortKillOutcome? result;
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [portsKillerProvider.overrideWithValue(killer)],
+      overrides: [
+        portsKillerProvider.overrideWithValue(killer),
+        if (status != null) statusCenterProvider.overrideWithValue(status),
+      ],
       child: MaterialApp(
         home: Scaffold(
           body: Consumer(
@@ -95,7 +101,13 @@ void main() {
     tester,
   ) async {
     final bodies = <Map<String, dynamic>>[];
-    await _tapKill(tester, killer: _RecordingKiller('released', bodies));
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    await _tapKill(
+      tester,
+      killer: _RecordingKiller('released', bodies),
+      status: center,
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Kill'));
     await tester.pumpAndSettle();
 
@@ -108,30 +120,39 @@ void main() {
         'startedAt': 1700000,
       },
     ]);
-    expect(find.text(':5173 released.'), findsOneWidget);
+    expect(center.events.single.title, ':5173 released.');
   });
 
   testWidgets('a refusal is reported with its own sentence, not silence', (
     tester,
   ) async {
     final bodies = <Map<String, dynamic>>[];
+    final center = StatusCenter();
+    addTearDown(center.dispose);
     await _tapKill(
       tester,
       killer: _RecordingKiller('identity_mismatch', bodies),
+      status: center,
     );
     await tester.tap(find.widgetWithText(FilledButton, 'Kill'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('changed since you looked'), findsOneWidget);
+    expect(center.events.single.title, contains('changed since you looked'));
   });
 
   testWidgets('an unknown outcome reports a failure, never a success', (
     tester,
   ) async {
     final bodies = <Map<String, dynamic>>[];
-    await _tapKill(tester, killer: _RecordingKiller('teleported', bodies));
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    await _tapKill(
+      tester,
+      killer: _RecordingKiller('teleported', bodies),
+      status: center,
+    );
     await tester.tap(find.widgetWithText(FilledButton, 'Kill'));
     await tester.pumpAndSettle();
-    expect(find.text('The kill did not go through.'), findsOneWidget);
+    expect(center.events.single.title, 'The kill did not go through.');
   });
 
   testWidgets('an unverifiable port never even opens the dialog (D1)', (

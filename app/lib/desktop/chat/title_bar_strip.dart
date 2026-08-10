@@ -4,6 +4,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'sidebar_layout.dart';
+import 'selected_session.dart';
+import '../../status/activity_badge.dart';
 
 /// The top window-drag strip that stands in for the hidden OS titlebar
 /// (SPEC-19 shared widget). Owns the [DragToMoveArea] fill plus the
@@ -87,6 +89,36 @@ class TitleBarStrip extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// The sidebar fold button and Activity, the pair that travels together.
+///
+/// Every fold control gets the bell beside it, because the sidebar — and with
+/// it the sidebar's own bell — is not mounted at all while collapsed, which
+/// would make the app's own voice unreachable exactly when the chrome is at its
+/// thinnest. Pairing them in ONE widget also means the bell inherits whatever
+/// "only one fold button is on screen" invariant each layout already keeps,
+/// rather than re-deriving it per surface.
+class SidebarToggleControls extends ConsumerWidget {
+  const SidebarToggleControls({super.key, required this.collapse});
+
+  /// Forwarded to [SidebarToggleButton].
+  final bool collapse;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SidebarToggleButton(collapse: collapse),
+        ActivityPopoverButton(
+          // SPEC-30 D15's navigate-don't-mutate path, same as clicking the
+          // session in the sidebar.
+          onOpenSession: (id) => selectSessionExclusive(ref, id),
+        ),
+      ],
     );
   }
 }

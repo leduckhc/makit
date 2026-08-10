@@ -18,6 +18,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../../store/ports.dart';
 import '../widgets/sheet_header.dart';
 import 'port_forward.dart';
@@ -165,7 +167,7 @@ class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
   Future<void> _toggleWatch(bool on) async {
     final report = widget.onWatchChanged;
     if (report == null) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final status = statusOf(context);
     setState(() => _watched = on);
     final ok = await report(on);
     if (!mounted) return;
@@ -173,14 +175,12 @@ class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
       // Put the switch back where the server says it is, and say so — the whole
       // point of the feature is an alert that actually arrives.
       setState(() => _watched = !on);
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            on
-                ? 'Could not start watching :${port.port}'
-                : 'Could not stop watching :${port.port}',
-          ),
-        ),
+      status.warning(
+        on
+            ? 'Could not start watching the port'
+            : 'Could not stop watching the port',
+        detail: ':${port.port}',
+        source: StatusSources.ports,
       );
     }
   }
@@ -188,7 +188,7 @@ class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
   Future<void> _open(BuildContext context) async {
     final url = port.openUrl;
     if (url == null) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final status = statusOf(context);
     final uri = Uri.tryParse(url);
     try {
       if (uri == null) throw const FormatException('bad url');
@@ -197,13 +197,17 @@ class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
         mode: LaunchMode.externalApplication,
       );
       if (!launched) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Could not open the port')),
+        status.failure(
+          'Could not open the port',
+          detail: url,
+          source: StatusSources.ports,
         );
       }
-    } catch (_) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Could not open the port')),
+    } catch (e) {
+      status.failure(
+        'Could not open the port',
+        error: e,
+        source: StatusSources.ports,
       );
     }
   }
@@ -211,9 +215,9 @@ class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
   Future<void> _copy(BuildContext context) async {
     final url = port.openUrl;
     if (url == null) return;
-    final messenger = ScaffoldMessenger.of(context);
+    final status = statusOf(context);
     await Clipboard.setData(ClipboardData(text: url));
-    messenger.showSnackBar(const SnackBar(content: Text('URL copied')));
+    status.info('URL copied', detail: url, source: StatusSources.ports);
   }
 
   @override
