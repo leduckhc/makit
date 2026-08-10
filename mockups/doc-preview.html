@@ -497,9 +497,13 @@
         <div class="panel" style="width:360px">
           <div style="padding:9px 12px;border-bottom:1px solid var(--hairline);display:flex;align-items:center;gap:8px">
             <div style="flex:1;font-size:12.5px;font-weight:600">Docs · feat/serving-html</div>
-            <span class="dim">3 recent</span>
+            <span class="dim">12 of 143</span>
           </div>
-          <div class="doc sel" style="border-top:none;padding:9px 12px">
+          <div class="search" style="margin:8px 8px 8px;padding:6px 9px;font-size:12px">
+            <span class="icon"><svg width="13" height="13" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.2-4.2"/></svg></span>
+            <span>Search titles and paths</span>
+          </div>
+          <div class="doc sel" style="border-top:1px solid var(--hairline);padding:9px 12px">
             <div class="lead"><span class="icon h"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 18l-4-6 4-6M15 6l4 6-4 6"/></svg></span></div>
             <div class="body2">
               <div class="ttl" style="font-size:12.5px">Docs — preview the HTML and Markdown…</div>
@@ -515,17 +519,52 @@
             <div class="lead"><span class="icon m"><svg width="15" height="15" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span></div>
             <div class="body2">
               <div class="ttl" style="font-size:12.5px">SPEC-46 — Docs preview</div>
-              <div class="l2">docs/specs/…SPEC-46…md · 6 min ago</div>
+              <div class="l2">docs/specs/2026-08-09-SPEC-46-doc-preview.md · 6 min ago</div>
             </div>
           </div>
+          <div class="doc" style="padding:9px 12px">
+            <div class="lead"><span class="icon m"><svg width="15" height="15" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span></div>
+            <div class="body2">
+              <div class="ttl" style="font-size:12.5px">Layout covered</div>
+              <div class="l2">…/learning-records/0006-layout-covered.md · 1 h ago</div>
+            </div>
+          </div>
+          <div class="doc" style="padding:9px 12px">
+            <div class="lead"><span class="icon h"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M9 18l-4-6 4-6M15 6l4 6-4 6"/></svg></span></div>
+            <div class="body2">
+              <div class="ttl" style="font-size:12.5px">Reference — Trace Schema &amp; Query Cookbook</div>
+              <div class="l2">…/ssf/reference/trace-and-queries.html · yesterday</div>
+            </div>
+          </div>
+          <div class="doc" style="padding:9px 12px;opacity:.55">
+            <div class="lead"><span class="icon m"><svg width="15" height="15" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span></div>
+            <div class="body2">
+              <div class="ttl" style="font-size:12.5px">Driving a Real Agent</div>
+              <div class="l2">…/ssf/learning-records/0004-driving-an-agent.md · yesterday</div>
+            </div>
+          </div>
+          <div style="padding:6px 12px;border-top:1px solid var(--hairline);display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px">
+            <span class="icon"><svg width="12" height="12" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></span>
+            <span>scrolls · about a dozen rows visible</span>
+          </div>
           <div style="padding:8px 12px;border-top:1px solid var(--hairline)">
-            <span class="btn ghost" style="width:100%;justify-content:center">All 132 docs… <span class="kbd">⌘⇧O</span></span>
+            <span class="btn ghost" style="width:100%;justify-content:center">All 143 docs… <span class="kbd">⌘⇧O</span></span>
           </div>
         </div>
         <p class="why">
           <b>No new sidebar chrome.</b> The doc glyph is a trailing-column icon button in the exact slot the ports plug
           already occupies — the pattern SPEC-41 settled (nested inside the row's own InkWell, 22 × 16 pt hit box).
           Two glyphs read fine; a third would not, which is the natural ceiling on this slot.
+        </p>
+        <p class="why">
+          <b>Searchable, not “3 recent” (rev 2).</b> The first cut listed three recents and sent you to the full screen
+          for anything else. Once D1 rev 2 indexed every doc git does not ignore, that stopped working: this worktree
+          holds <b>143</b>, another <b>69</b>, and the three newest are almost never the one you want. So the popover
+          owns a <b>search field</b> over titles and paths, caps the list at <b>about a dozen rows</b> and scrolls the
+          rest, and the count reads <b>12 of 143</b> while filtering so an empty result reads as a filter, not an empty
+          repo. Paths are <b>worktree-relative and truncated from the left</b> — the header already names the worktree,
+          and the filename is the part you are reading. The list is <b>lazy</b>: 143 docs must not mean 143 built rows.
+          <span class="dim">The global Docs screen keeps absolute paths, because its worktree headers are not sticky.</span>
         </p>
       </div>
     </div>
