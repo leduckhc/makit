@@ -10,6 +10,7 @@ import 'chat_metrics.dart';
 import 'elapsed.dart';
 import 'live_now.dart';
 import 'timing_labels.dart';
+import 'tool_summary.dart';
 import 'transcript_expansion.dart';
 import 'tool_renderers.dart';
 
@@ -68,17 +69,19 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
       ),
     );
     final renderer = rendererFor(item);
+    // Monochrome, matching `ThinkingLine`'s brain glyph. The `risky` tint was
+    // dropped deliberately: both servers classify every edit/write/bash call as
+    // risky (`pi-sessions.ts:259`, `acp-map.ts:540`), so the amber fired on
+    // every row that was not a read and signalled nothing. `destructive` keeps
+    // its tint precisely because it stays rare — see
+    // `mockups/tool-one-liner.html` §7.
     final (riskColor, riskIcon) = switch (item.risk) {
-      ToolRisk.risky => (
-        kToolRiskyColor,
-        renderer?.icon ?? PhosphorIconsLight.warning,
-      ),
       ToolRisk.destructive => (
         kToolDestructiveColor,
         renderer?.icon ?? PhosphorIconsLight.warningOctagon,
       ),
-      ToolRisk.safe => (
-        cs.onSurfaceVariant,
+      ToolRisk.risky || ToolRisk.safe => (
+        cs.onSurfaceVariant.withValues(alpha: kToolGlyphAlpha),
         renderer?.icon ?? PhosphorIconsLight.lightning,
       ),
     };
@@ -93,7 +96,7 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
         onTap: _toggle,
         onHover: (h) => setState(() => _hovered = h),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: kSpace6),
+          padding: const EdgeInsets.symmetric(vertical: kSpace2),
           child: _buildRow(riskIcon, riskColor, expanded: expanded),
         ),
       ),
@@ -154,15 +157,17 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
         size: 10,
         semanticsLabel: 'running',
       ),
+      // Colour is spent only where it is exceptional: a failure keeps the error
+      // hue, a resolved call drops to the glyph's own grey (§7).
       ToolStatus.failed => Icon(
         PhosphorIconsLight.warningCircle,
-        size: 14,
+        size: kToolStatusGlyph,
         color: cs.error,
       ),
       ToolStatus.ok => Icon(
         PhosphorIconsLight.checkCircle,
-        size: 14,
-        color: cs.primary,
+        size: kToolStatusGlyph,
+        color: cs.onSurfaceVariant.withValues(alpha: kToolGlyphAlpha),
       ),
     };
 
@@ -186,25 +191,64 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(riskIcon, size: 16, color: riskColor),
-        const SizedBox(width: kSpace8),
-        Expanded(
-          child: Text(
-            expanded ? toolLabel(item) : toolSummaryLine(item, root: _root()),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium?.mono.copyWith(
-              color: cs.onSurfaceVariant,
-              height: 1.3,
-            ),
-          ),
-        ),
-        const SizedBox(width: kSpace8),
+        Icon(riskIcon, size: kToolGlyph, color: riskColor),
+        const SizedBox(width: kSpace6),
+        Expanded(child: _line(expanded: expanded)),
+        const SizedBox(width: kSpace6),
         _durationSlot(),
         status,
-        const SizedBox(width: kSpace8),
+        const SizedBox(width: kSpace6),
         caret,
       ],
+    );
+  }
+
+  /// The row's text: `<verb> <payload>` in the transcript's own sans face and
+  /// size (`bodyMedium`, exactly `ThinkingLine`'s), with the verb a weight
+  /// heavier. Both parts share one colour at full opacity — dimming the payload
+  /// to the thinking preview's 0.65 alpha would put the row's only content at
+  /// 2.9:1 (below AA). See `mockups/tool-one-liner.html` §5.
+  ///
+  /// The line is the SAME in both states: expanding used to swap it for the bare
+  /// verb, which meant the body had to open by re-printing the path or command
+  /// you were just looking at, as a titled box. Keeping the subject in place is
+  /// what lets those sections disappear — `mockups/tool-expanded-body.html` §3.
+  Widget _line({required bool expanded}) {
+    final cs = Theme.of(context).colorScheme;
+    final item = widget.item;
+    final base = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant, height: 1.3);
+    final line = toolSummaryLine(item, root: _root());
+    final parts = splitVerb(line, toolVerb(item));
+    final text = Text.rich(
+      TextSpan(
+        children: [
+          if (parts.verb.isNotEmpty)
+            TextSpan(
+              text: parts.verb,
+              style: const TextStyle(fontWeight: kToolVerbWeight),
+            ),
+          if (parts.verb.isNotEmpty && parts.rest.isNotEmpty)
+            const TextSpan(text: ' '),
+          if (parts.rest.isNotEmpty) TextSpan(text: parts.rest),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: base,
+    );
+    // Collapsed shell rows list command *names*, so the arguments are only a
+    // hover away (§4A). Expanded rows already show the command in the body.
+    final hover = expanded ? null : toolTooltip(item);
+    if (hover == null) return text;
+    return Tooltip(
+      message: hover,
+      // Verbatim shell text: monospace, and never squeezed into one line.
+      textStyle: Theme.of(
+        context,
+      ).textTheme.bodySmall?.mono.copyWith(color: cs.onInverseSurface),
+      child: text,
     );
   }
 

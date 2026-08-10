@@ -65,4 +65,32 @@ void main() {
       expect(valueString([1, 2, 3]), '[1,2,3]');
     });
   });
+
+  // Rule 3 of the expanded body (mockups/tool-expanded-body.html §5): a result
+  // that is one short line is a FACT — it belongs in the dim key/value strip,
+  // not in a syntax-highlighted panel with a copy button. `307 lines` was being
+  // rendered as source code, digits tinted teal.
+  group('isFactResult', () {
+    test('a short single line is a fact', () {
+      expect(isFactResult('307 lines'), isTrue);
+      expect(isFactResult('No matches found'), isTrue);
+      expect(isFactResult('exit 0'), isTrue);
+      expect(isFactResult('  ok  '), isTrue);
+    });
+
+    test('anything with a newline is a payload', () {
+      expect(isFactResult('line one\nline two'), isFalse);
+      expect(isFactResult('one line\n'), isTrue, reason: 'trailing \\n only');
+    });
+
+    test('a long single line is a payload', () {
+      expect(isFactResult('x' * 80), isTrue);
+      expect(isFactResult('x' * 81), isFalse);
+    });
+
+    test('empty is neither — callers drop it', () {
+      expect(isFactResult(''), isFalse);
+      expect(isFactResult('   '), isFalse);
+    });
+  });
 }

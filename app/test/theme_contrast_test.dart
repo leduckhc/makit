@@ -11,6 +11,7 @@ import 'package:makit/status/status_event.dart';
 import 'package:makit/status/status_tone.dart';
 import 'package:makit/ui/ports/port_token_pill.dart';
 import 'package:makit/ui/ports/ports_vocabulary.dart';
+import 'package:makit/ui/session/chat_metrics.dart';
 import 'package:makit/ui/widgets/pr_signals.dart';
 import 'package:makit/ui/widgets/pr_tone.dart';
 
@@ -265,6 +266,29 @@ void main() {
           );
         }
       }
+    }
+  });
+
+  // A transcript row's leading glyph (tool terminal/pencil/book, thinking brain)
+  // is a graphical object, so WCAG 1.4.11 asks for 3:1 — not the 4.5:1 above.
+  // Measured from the real app: at the original 0.55 alpha it composited to
+  // #616161 on dark (2.91:1) and #A7A7A7 on light (2.31:1) — both short.
+  test('a transcript row glyph clears WCAG AA for non-text (3:1)', () {
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      expect(
+        _contrast(
+          Color.alphaBlend(
+            cs.onSurfaceVariant.withValues(alpha: kToolGlyphAlpha),
+            cs.surface,
+          ),
+          cs.surface,
+        ),
+        greaterThanOrEqualTo(3.0),
+        reason:
+            'row glyph at alpha $kToolGlyphAlpha on the '
+            '${theme.brightness.name} surface',
+      );
     }
   });
 }
