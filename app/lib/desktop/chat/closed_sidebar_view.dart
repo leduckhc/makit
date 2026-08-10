@@ -30,8 +30,7 @@ class ClosedSidebarView extends ConsumerStatefulWidget {
   const ClosedSidebarView({super.key});
 
   @override
-  ConsumerState<ClosedSidebarView> createState() =>
-      _ClosedSidebarViewState();
+  ConsumerState<ClosedSidebarView> createState() => _ClosedSidebarViewState();
 }
 
 class _ClosedSidebarViewState extends ConsumerState<ClosedSidebarView> {

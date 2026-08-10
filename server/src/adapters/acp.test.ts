@@ -1574,4 +1574,3 @@ test("start() leaves the agent's model alone when it already matches, or is unkn
   assert.ok(statuses.includes("idle"), "the session still started");
   await a2.kill();
 });
-

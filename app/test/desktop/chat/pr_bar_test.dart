@@ -622,9 +622,7 @@ void main() {
       expect(find.textContaining('Delete the local branch'), findsNothing);
     });
 
-    testWidgets('says sessions are closed, after the removal', (
-      tester,
-    ) async {
+    testWidgets('says sessions are closed, after the removal', (tester) async {
       // The server removes the worktree first and *closes* live sessions
       // (SPEC-29) rather than stopping them; the dialog claimed the reverse order
       // and the wrong verb.

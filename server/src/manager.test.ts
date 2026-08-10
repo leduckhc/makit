@@ -2510,5 +2510,3 @@ test("closeSession reaps even when the agent's close() never settles", async () 
     store.close();
   }
 });
-
-

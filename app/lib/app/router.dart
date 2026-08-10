@@ -57,10 +57,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'settings',
                 builder: (_, _) => const SettingsScreen(),
               ),
-              GoRoute(
-                path: 'closed',
-                builder: (_, _) => const ClosedScreen(),
-              ),
+              GoRoute(path: 'closed', builder: (_, _) => const ClosedScreen()),
               GoRoute(
                 path: 'ports',
                 builder: (_, s) =>

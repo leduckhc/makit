@@ -136,9 +136,7 @@ void main() {
       tree: WorkspaceController.seedWorkspace(),
     );
 
-    testWidgets('on a board the tab ✕ unpins and never closes', (
-      tester,
-    ) async {
+    testWidgets('on a board the tab ✕ unpins and never closes', (tester) async {
       final (conn, groups) = await runClose(tester, board(), (ref) {
         final state = ref.read(workspaceControllerProvider);
         final tab = activeTab(state)!;
@@ -153,17 +151,18 @@ void main() {
       );
     });
 
-    testWidgets('in a worktree group the tab ✕ closes the session (unchanged)', (
-      tester,
-    ) async {
-      final (conn, _) = await runClose(tester, worktree(), (ref) {
-        final state = ref.read(workspaceControllerProvider);
-        final tab = activeTab(state)!;
-        closeTabAndSession(ref, state.activeSplitId, tab.id, tab.sessionId);
-      });
+    testWidgets(
+      'in a worktree group the tab ✕ closes the session (unchanged)',
+      (tester) async {
+        final (conn, _) = await runClose(tester, worktree(), (ref) {
+          final state = ref.read(workspaceControllerProvider);
+          final tab = activeTab(state)!;
+          closeTabAndSession(ref, state.activeSplitId, tab.id, tab.sessionId);
+        });
 
-      expect(conn.sent.where((m) => m['kind'] == 'session.close').length, 1);
-    });
+        expect(conn.sent.where((m) => m['kind'] == 'session.close').length, 1);
+      },
+    );
 
     testWidgets('⌘⇧W agrees with the ✕ on a board (one shared path)', (
       tester,

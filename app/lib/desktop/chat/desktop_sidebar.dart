@@ -1242,8 +1242,8 @@ class _Footer extends ConsumerWidget {
             color: showClosed ? theme.colorScheme.primary : null,
             visualDensity: VisualDensity.compact,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: () => ref.read(sidebarClosedProvider.notifier).state =
-                !showClosed,
+            onPressed: () =>
+                ref.read(sidebarClosedProvider.notifier).state = !showClosed,
           ),
           if (onOpenSettings != null)
             IconButton(

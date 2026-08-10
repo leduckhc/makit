@@ -179,9 +179,7 @@ class SessionTile extends ConsumerWidget {
     final confirmed = await _confirmQuit(context);
     if (!confirmed) return false;
     try {
-      await ref
-          .read(storeControllerProvider.notifier)
-          .closeSession(session.id);
+      await ref.read(storeControllerProvider.notifier).closeSession(session.id);
       return true;
     } catch (e) {
       status.failure(
