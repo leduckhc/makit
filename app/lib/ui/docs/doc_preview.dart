@@ -74,14 +74,27 @@ class DocFrontMatter {
   final List<DocFrontMatterField> fields;
 }
 
-/// Splits the leading `**Status:** … · **Priority:** … · **Branch:** …` line
-/// off [markdown], returning the parsed fields and the body without that line.
-/// Absent-when-unstated (D14): no such line yields a null front-matter and the
-/// body unchanged.
-({DocFrontMatter? front, String body}) parseDocFrontMatter(String markdown) {
+/// Drop blank lines from both ends without touching indentation, so a body that
+/// opens with an indented code block keeps it.
+String _stripBlankEdges(String s) => s
+    .replaceFirst(RegExp(r'^\n+'), '')
+    .replaceFirst(RegExp(r'\n+$'), '');
+
+/// Splits the `**Status:** … · **Priority:** … · **Branch:** …` line off
+/// [markdown], returning the parsed fields plus the markdown either side of it:
+/// [lead] is what came before (in this repo, the `# H1`) and [body] what came
+/// after. Keeping them apart lets the caller render the strip **where the line
+/// actually sat** — under the title, as the source file and mockup Card 6 both
+/// have it — instead of hoisting it above the heading.
+///
+/// Absent-when-unstated (D14): no such line yields a null front-matter, an empty
+/// [lead], and the body unchanged.
+({DocFrontMatter? front, String lead, String body}) parseDocFrontMatter(
+  String markdown,
+) {
   final lines = markdown.split('\n');
   final idx = lines.indexWhere((l) => l.trimLeft().startsWith('**Status:**'));
-  if (idx < 0) return (front: null, body: markdown);
+  if (idx < 0) return (front: null, lead: '', body: markdown);
 
   final fields = <DocFrontMatterField>[];
   final fieldRe = RegExp(r'\*\*(.+?):\*\*\s*(.+)');
@@ -93,17 +106,13 @@ class DocFrontMatter {
       value: m.group(2)!.trim().replaceAll('`', ''),
     ));
   }
-  if (fields.isEmpty) return (front: null, body: markdown);
+  if (fields.isEmpty) return (front: null, lead: '', body: markdown);
 
-  lines.removeAt(idx);
-  // Collapse a doubled blank line the removal may have left behind.
-  if (idx > 0 &&
-      idx < lines.length &&
-      lines[idx].trim().isEmpty &&
-      lines[idx - 1].trim().isEmpty) {
-    lines.removeAt(idx);
-  }
-  return (front: DocFrontMatter(fields), body: lines.join('\n'));
+  return (
+    front: DocFrontMatter(fields),
+    lead: _stripBlankEdges(lines.take(idx).join('\n')),
+    body: _stripBlankEdges(lines.skip(idx + 1).join('\n')),
+  );
 }
 
 /// The preview widget (D12). Pure of provider reads so it is pumpable in any
@@ -195,18 +204,30 @@ class _DocPreviewState extends State<DocPreview> {
       );
     }
     final parsed = parseDocFrontMatter(markdown);
+    final styleSheet = _docStyleSheet(context);
+    final builders = {'code': _DocCodeBuilder(context)};
     final body = SingleChildScrollView(
       padding: const EdgeInsets.all(kSpace16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // The title leads, then the strip, then the rest — the order the file
+          // itself is written in.
+          if (parsed.lead.isNotEmpty)
+            MarkdownBody(
+              data: parsed.lead,
+              selectable: true,
+              styleSheet: styleSheet,
+              onTapLink: _onTapLink,
+              builders: builders,
+            ),
           if (parsed.front != null) _FrontMatterChips(front: parsed.front!),
           MarkdownBody(
             data: parsed.body,
             selectable: true,
-            styleSheet: _docStyleSheet(context),
+            styleSheet: styleSheet,
             onTapLink: _onTapLink,
-            builders: {'code': _DocCodeBuilder(context)},
+            builders: builders,
           ),
         ],
       ),

@@ -25,6 +25,16 @@ const _md = '''
 Proxy over the existing HTTPS listener.
 ''';
 
+/// A doc whose H1 differs from [DocInfo.title], so the body heading can be
+/// found without also matching the toolbar's copy of the title.
+const _mdOrdered = '''
+# SPEC-44 — Ports P4: forward a loopback port
+
+**Status:** Draft (P1) · **Priority:** P3 · **Branch:** `feat/open-ports`
+
+Proxy over the existing HTTPS listener.
+''';
+
 Future<void> _pump(
   WidgetTester tester,
   DocInfo doc, {
@@ -69,7 +79,9 @@ void main() {
   group('DocPreview — markdown', () {
     testWidgets('renders the markdown body', (tester) async {
       await _pump(tester, _doc(), markdown: _md);
-      expect(find.byType(MarkdownBody), findsOneWidget);
+      // Two bodies when a front-matter line splits the doc: the lead (the H1)
+      // above the chip strip, and the remainder below it.
+      expect(find.byType(MarkdownBody), findsNWidgets(2));
       expect(find.textContaining('Proxy over the existing'), findsOneWidget);
     });
 
@@ -84,6 +96,33 @@ void main() {
       expect(find.textContaining('feat/open-ports'), findsWidgets);
       // …and the raw markdown front-matter line is gone from the body.
       expect(find.textContaining('**Status:**'), findsNothing);
+    });
+
+    // The source file puts the H1 on line 1 and the `**Status:**` line under it,
+    // and mockup Card 6 draws title-then-status. Hoisting the chips above the
+    // title inverts the hierarchy of every spec in the repo, and the toolbar
+    // already carries the title, so the strip must not outrank the heading.
+    testWidgets('the front-matter strip renders below the H1, never above it', (
+      tester,
+    ) async {
+      await _pump(tester, _doc(), markdown: _mdOrdered);
+      final h1 = tester.getTopLeft(
+        find.textContaining('forward a loopback port'),
+      );
+      final chips = tester.getTopLeft(find.byKey(kDocFrontMatter));
+      expect(
+        chips.dy,
+        greaterThan(h1.dy),
+        reason: 'the document title must lead; the metadata strip follows it',
+      );
+    });
+
+    testWidgets('a doc with no front-matter line renders unchanged', (
+      tester,
+    ) async {
+      await _pump(tester, _doc(), markdown: '# Plain\n\nNo status line here.');
+      expect(find.byKey(kDocFrontMatter), findsNothing);
+      expect(find.textContaining('No status line here.'), findsOneWidget);
     });
 
     testWidgets('shows a spinner while markdown is loading', (tester) async {
