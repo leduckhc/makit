@@ -49,7 +49,16 @@ export type DocRejection =
   | "too-large";
 
 export type DocPathResult =
-  | { ok: true; absPath: string; relPath: string; kind: DocKind; bytes: number }
+  | {
+      ok: true;
+      absPath: string;
+      relPath: string;
+      kind: DocKind;
+      bytes: number;
+      /** Epoch ms of the file's mtime. Carried because the `stat` that validated
+       * this path already read it — callers must not stat a second time. */
+      modifiedAt: number;
+    }
   | { ok: false; reason: DocRejection };
 
 /** True when `child` is inside `parent` by path *segment*, not by string prefix. */
@@ -101,16 +110,18 @@ export function resolveDocPath(worktreeRoot: string, relPath: string): DocPathRe
   if (!isInsideRoot(realRoot, realTarget)) return { ok: false, reason: "escapes-root" };
 
   let bytes: number;
+  let modifiedAt: number;
   try {
     const st = statSync(realTarget);
     if (!st.isFile()) return { ok: false, reason: "not-a-file" };
     bytes = st.size;
+    modifiedAt = st.mtimeMs;
   } catch {
     return { ok: false, reason: "not-a-file" };
   }
   if (bytes > MAX_DOC_BYTES) return { ok: false, reason: "too-large" };
 
-  return { ok: true, absPath: realTarget, relPath: segments.join("/"), kind, bytes };
+  return { ok: true, absPath: realTarget, relPath: segments.join("/"), kind, bytes, modifiedAt };
 }
 
 /** Lowercased extension including the dot, or undefined when there is none. */

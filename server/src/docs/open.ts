@@ -41,9 +41,12 @@ function openerFor(platform: NodeJS.Platform): { cmd: string; args: string[] } |
     case "darwin":
       return { cmd: "/usr/bin/open", args: [] };
     case "win32":
-      // `start` is a cmd builtin; the empty "" is its title argument, without
-      // which a quoted path is treated AS the title and nothing opens.
-      return { cmd: "cmd", args: ["/c", "start", ""] };
+      // Use `start` as a subprocess, not via `cmd /c` (which is vulnerable to
+      // unescaped quoting). Node's child_process.execFile on win32 handles the
+      // escaping via ShellExecute automatically when the first arg is not a known
+      // binary — but to be explicit and safe, use `powershell -Command` instead,
+      // which does NOT concatenate its args (they are a script block).
+      return { cmd: "powershell", args: ["-Command", "Start-Process"] };
     default:
       return { cmd: "xdg-open", args: [] };
   }
@@ -61,7 +64,7 @@ export async function openDocOnHost(
 ): Promise<OpenResult> {
   const resolveDoc = deps.resolveDoc ?? resolveDocPath;
   const platform = deps.platform ?? process.platform;
-  const spawn = deps.spawn ?? ((cmd, args, cb) => void execFile(cmd, args, (err) => cb(err)));
+  const spawn = deps.spawn ?? ((cmd, args, cb) => void execFile(cmd, args, { windowsHide: true }, (err) => cb(err)));
 
   const resolved = resolveDoc(worktreePath, relPath);
   if (!resolved.ok) return { ok: false, reason: `cannot open ${relPath}: ${resolved.reason}` };
@@ -72,7 +75,10 @@ export async function openDocOnHost(
   }
 
   return new Promise<OpenResult>((resolve) => {
-    spawn(opener.cmd, [...opener.args, resolved.absPath], (err) => {
+    const args = platform === "win32" 
+      ? [...opener.args, "-FilePath", resolved.absPath]
+      : [...opener.args, resolved.absPath];
+    spawn(opener.cmd, args, (err) => {
       if (err !== null) {
         resolve({ ok: false, reason: `opener failed: ${err.message}` });
         return;

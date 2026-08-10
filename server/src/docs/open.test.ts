@@ -39,7 +39,7 @@ test("opens a resolvable doc with the platform opener, passing the absolute path
   assert.deepEqual(rec.calls[0]![1], [join(root, "mockups", "board.html")]);
 });
 
-test("linux uses xdg-open; windows uses cmd /c start with the empty title", async () => {
+test("linux uses xdg-open; windows uses powershell Start-Process", async () => {
   const root = fixture();
   const lin = recorder();
   await openDocOnHost(root, "mockups/board.html", { platform: "linux", spawn: lin.spawn });
@@ -47,8 +47,8 @@ test("linux uses xdg-open; windows uses cmd /c start with the empty title", asyn
 
   const win = recorder();
   await openDocOnHost(root, "mockups/board.html", { platform: "win32", spawn: win.spawn });
-  assert.equal(win.calls[0]![0], "cmd");
-  assert.deepEqual(win.calls[0]![1].slice(0, 3), ["/c", "start", ""]);
+  assert.equal(win.calls[0]![0], "powershell");
+  assert.deepEqual(win.calls[0]![1].slice(0, 2), ["-Command", "Start-Process"]);
 });
 
 // D2 is the one boundary: "open" must not become a way to launch anything the
