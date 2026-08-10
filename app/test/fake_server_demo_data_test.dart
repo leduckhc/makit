@@ -89,8 +89,10 @@ void main() {
       final server = FakeServer();
       addTearDown(server.stop);
 
-      // Subscribe BEFORE start(): the first snapshot is emitted synchronously by
-      // start(), so a later firstWhere() would wait forever for a second one.
+      // Subscribe BEFORE start(): start() schedules `_pushInitialState()` on a
+      // 150ms timer, so a listener attached afterwards can miss that emission
+      // entirely — and a firstWhere() added later would then wait for a second
+      // snapshot that never comes.
       final snapshots = <List<Session>>[];
       final acks = <String, Envelope>{};
       final sub = server.outgoing.listen((e) {
