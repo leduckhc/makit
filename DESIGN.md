@@ -292,7 +292,11 @@ The app talking back to you. **Never** a `SnackBar` — that layer is gone, and
   the record outlives the toast.
 - **Severity hues** — the sanctioned palette only, via `status/status_tone.dart`:
   `success`/`progress` → `primary` · `info` → `outline` ·
-  `warning` → `kStatusWarning` (label: `statusWarningText`) · `failure` → `error`.
+  `warning` → `statusWarningText` · `failure` → `error`. Warning takes the
+  brightness-resolved `statusWarningText` for **every** mark (stripe, glyph, dot,
+  count fill), not raw `kStatusWarning`, which fails the contrast floor on light
+  themes; text printed *on* a severity fill takes `inkOn(cs, fill)`. Pinned by
+  `theme_contrast_test.dart`.
   Glyphs: `checkCircle` · `info` · `arrowClockwise` · `warning` · `warningCircle`.
 - **Activity** (`status/activity_view.dart`) — one list, two containers: a pushed
   screen on the phone, a 420 × 520 top-right dialog on desktop. Rows are

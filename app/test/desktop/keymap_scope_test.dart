@@ -117,6 +117,28 @@ GroupsController _wtGroups(String path) => GroupsController.ephemeral(
 /// Widget-level proof that [DesktopKeymapScope] turns a persisted [Keymap] into
 /// live global shortcuts. Uses Ctrl-primary defaults (cmdIsPrimary: false) so
 /// the combos are deterministic regardless of the test host platform.
+/// Records every `Clipboard.setData` payload for the duration of one test, and
+/// restores the channel afterwards. Three copy tests needed the same 14 lines.
+List<String> watchClipboard(WidgetTester tester) {
+  final copied = <String>[];
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    },
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    ),
+  );
+  return copied;
+}
+
 void main() {
   setUp(() {
     resetNodeIds();
@@ -661,22 +683,7 @@ void main() {
     final keymap = await controller();
     final center = StatusCenter();
     addTearDown(center.dispose);
-    final copied = <String>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied.add((call.arguments as Map)['text'] as String);
-        }
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      ),
-    );
+    final copied = watchClipboard(tester);
     final container = ProviderContainer(
       overrides: [
         keymapProvider.overrideWith((_) => keymap),
@@ -709,22 +716,7 @@ void main() {
     final keymap = await controller();
     final center = StatusCenter();
     addTearDown(center.dispose);
-    final copied = <String>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied.add((call.arguments as Map)['text'] as String);
-        }
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      ),
-    );
+    final copied = watchClipboard(tester);
     final container = ProviderContainer(
       overrides: [
         keymapProvider.overrideWith((_) => keymap),
@@ -748,22 +740,7 @@ void main() {
     final keymap = await controller();
     final center = StatusCenter();
     addTearDown(center.dispose);
-    final copied = <String>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied.add((call.arguments as Map)['text'] as String);
-        }
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      ),
-    );
+    final copied = watchClipboard(tester);
     final container = ProviderContainer(
       overrides: [
         keymapProvider.overrideWith((_) => keymap),

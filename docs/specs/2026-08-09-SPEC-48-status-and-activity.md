@@ -17,7 +17,7 @@ buffer + stream + sinks shape this spec copies), SPEC-41/43/44 (`ports_vocabular
 `app/lib/status/activity_screen.dart` (new — phone route),
 `app/lib/status/activity_badge.dart` (new — bell, count pill, desktop dialog),
 `app/lib/app/routes.dart` + `router.dart`, the home bar, the desktop sidebar footer.
-*app (P4 — migration):* the 72 `showSnackBar` call sites across 23 files; guard test.
+*app (P4 — migration):* the 72 `showSnackBar` call sites across 29 files; guard test.
 *app (P5 — bridge):* `app/lib/notifications/notification_policy.dart` (`PendingNotification.status`),
 `app/lib/notifications/notification_observer.dart`.
 *docs:* `DESIGN.md` (§Components), `docs/NOTIFICATIONS.md`, `docs/UX.md`.

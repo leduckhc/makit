@@ -19,6 +19,8 @@ import 'package:makit/ui/composer/context_usage.dart'
     show ContextUsageButton, ContextUsageRing, kUsageTargetSize;
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/elicitation.dart';
@@ -357,8 +359,15 @@ void main() {
           const MethodChannel('window_manager'),
           (call) async => null,
         );
+    // A fresh record, not the app-wide one: `status_providers.dart` asks tests
+    // to override rather than post into the global `appLog`.
+    final center = StatusCenter();
+    addTearDown(center.dispose);
     final container = ProviderContainer(
-      overrides: [sidebarCollapsedProvider.overrideWith((ref) => true)],
+      overrides: [
+        sidebarCollapsedProvider.overrideWith((ref) => true),
+        statusCenterProvider.overrideWithValue(center),
+      ],
     );
     addTearDown(container.dispose);
 

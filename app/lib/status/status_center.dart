@@ -269,9 +269,16 @@ class StatusCenter {
 
   /// Every event is also one log line (SPEC-48 D2), so user-visible outcomes ride
   /// along in diagnostics uploads. The reverse never happens.
+  ///
+  /// One exception, and it is the reason this guard exists: events from the
+  /// diagnostics screen report on the log pipeline itself. `LogUploader.flush()`
+  /// ships `MakitLog.records` and never drains them, so mirroring "Logs sent to
+  /// server" would append a record to the very buffer that was just uploaded —
+  /// every later upload would then carry the results of the earlier ones, and
+  /// "Nothing to send" could never be true again after the first send.
   void _mirrorToLog(StatusEvent e) {
     final log = _log;
-    if (log == null) return;
+    if (log == null || e.source == StatusSources.diagnostics) return;
     final level = switch (e.severity) {
       StatusSeverity.failure => LogLevel.error,
       StatusSeverity.warning => LogLevel.warn,

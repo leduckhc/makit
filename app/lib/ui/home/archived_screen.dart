@@ -67,13 +67,15 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
     final status = ref.status;
     try {
       await ref.read(storeControllerProvider.notifier).unarchiveSession(s.id);
-      if (!mounted) return;
-      _refresh();
+      // The record outlives the screen: submit first, then touch UI state only
+      // if this widget is still around to have any.
       status.success(
         'Restored "${s.title}"',
         source: StatusSources.session,
         sessionId: s.id,
       );
+      if (!mounted) return;
+      _refresh();
     } catch (e) {
       status.failure(
         'Could not restore session',

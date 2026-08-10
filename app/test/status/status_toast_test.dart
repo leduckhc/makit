@@ -289,21 +289,30 @@ void main() {
 
   testWidgets('a screen reader is offered a named copy action', (t) async {
     final handle = t.ensureSemantics();
-    await pumpLayer(t);
-    center.failure('Rename failed', source: 'worktree');
-    await t.pump();
-    expect(
-      t.getSemantics(find.byType(StatusToastCard)),
-      isSemantics(
-        customActions: <CustomSemanticsAction>[
-          const CustomSemanticsAction(label: 'Copy'),
-        ],
-      ),
-      reason:
-          'the copy action must be reachable by assistive tech, not only '
-          'by pointer (SPEC-49 D2)',
-    );
-    handle.dispose();
+    // `finally`, not `addTearDown`: Flutter verifies that every SemanticsHandle
+    // was disposed at the end of the test BODY, before tear-downs run — so a
+    // tear-down is too late and fails the test on its way out. This still meets
+    // the point of registering early: a failing expectation below cannot leave
+    // semantics enabled for the rest of the file and break later tests for an
+    // unrelated reason.
+    try {
+      await pumpLayer(t);
+      center.failure('Rename failed', source: 'worktree');
+      await t.pump();
+      expect(
+        t.getSemantics(find.byType(StatusToastCard)),
+        isSemantics(
+          customActions: <CustomSemanticsAction>[
+            const CustomSemanticsAction(label: 'Copy'),
+          ],
+        ),
+        reason:
+            'the copy action must be reachable by assistive tech, not only '
+            'by pointer (SPEC-49 D2)',
+      );
+    } finally {
+      handle.dispose();
+    }
   });
 
   // ── SPEC-49 D4: attention pauses the dwell ───────────────────────────────
@@ -321,6 +330,34 @@ void main() {
     await t.pump();
     await t.pump(const Duration(seconds: 4));
     expect(find.text('URL copied'), findsOneWidget);
+  });
+
+  testWidgets('a coalesced repeat does not dismiss a notice you are holding', (
+    t,
+  ) async {
+    // The layer restarts the dwell on every post, which is right for a repeat
+    // that bumped the count — but not while the pointer is on the card. That
+    // timer used to dismiss the notice being read or copied, defeating D4.
+    await pumpLayer(t);
+    center.info('URL copied', source: 'ports');
+    await t.pump();
+    final g = await t.createGesture(kind: PointerDeviceKind.mouse);
+    await g.addPointer(location: Offset.zero);
+    addTearDown(g.removePointer);
+    await g.moveTo(t.getCenter(find.byType(StatusToastCard)));
+    await t.pump();
+
+    // Same event again: coalesces into the held card, whose title now carries
+    // the count — which also proves the repeat landed rather than being dropped.
+    center.info('URL copied', source: 'ports');
+    await t.pump();
+    await t.pump(const Duration(seconds: 4));
+
+    expect(
+      find.text('URL copied ×2'),
+      findsOneWidget,
+      reason: 'the hold outranks the repeat',
+    );
   });
 
   testWidgets('leaving restarts the whole dwell, not the remainder', (t) async {

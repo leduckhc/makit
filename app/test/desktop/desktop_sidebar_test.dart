@@ -153,13 +153,24 @@ Future<ProviderContainer> _pump(
   WidgetTester tester, {
   required List<RepoInfo> repos,
   required List<Session> sessions,
+  StatusCenter? statusCenter,
 }) async {
   final container = ProviderContainer(
     overrides: [
       reposProvider.overrideWithValue(ReposState(repos)),
       sessionsProvider.overrideWithValue(SessionsState(sessions)),
+      // `status_providers.dart` asks tests to bring their own record rather than
+      // posting into the app-wide one (and, through it, the global `appLog`).
+      if (statusCenter != null)
+        statusCenterProvider.overrideWithValue(statusCenter),
     ],
   );
+  // Dispose the container ahead of any center the test registered:
+  // `statusBadgeProvider` subscribes to `center.changes`, and closing that
+  // controller while the subscription is live hangs the harness ("Cannot close
+  // sink while adding stream"). Tear-downs run last-registered-first, so this
+  // one — registered after the test's own — cancels the subscription first.
+  addTearDown(container.dispose);
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
@@ -1773,7 +1784,14 @@ void main() {
     testWidgets('the bell is in the header row, not the footer', (
       tester,
     ) async {
-      await _pump(tester, repos: [_repo('p1', 'alpha')], sessions: []);
+      final center = StatusCenter();
+      addTearDown(center.dispose);
+      await _pump(
+        tester,
+        repos: [_repo('p1', 'alpha')],
+        sessions: [],
+        statusCenter: center,
+      );
 
       final toggle = find.byIcon(PhosphorIconsLight.sidebarSimple);
       final bell = find.byIcon(PhosphorIconsLight.bell);
@@ -1794,7 +1812,14 @@ void main() {
     testWidgets(
       'the panel opens anchored to the bell, not at the screen edge',
       (tester) async {
-        await _pump(tester, repos: [_repo('p1', 'alpha')], sessions: []);
+        final center = StatusCenter();
+        addTearDown(center.dispose);
+        await _pump(
+          tester,
+          repos: [_repo('p1', 'alpha')],
+          sessions: [],
+          statusCenter: center,
+        );
 
         final bell = find.byIcon(PhosphorIconsLight.bell);
         final bellRect = tester.getRect(bell);
@@ -1815,7 +1840,14 @@ void main() {
     );
 
     testWidgets('Esc closes it', (tester) async {
-      await _pump(tester, repos: [_repo('p1', 'alpha')], sessions: []);
+      final center = StatusCenter();
+      addTearDown(center.dispose);
+      await _pump(
+        tester,
+        repos: [_repo('p1', 'alpha')],
+        sessions: [],
+        statusCenter: center,
+      );
       await tester.tap(find.byIcon(PhosphorIconsLight.bell));
       await tester.pumpAndSettle();
       expect(find.byKey(kActivityPopover), findsOneWidget);
@@ -1826,7 +1858,14 @@ void main() {
     });
 
     testWidgets('a tap outside closes it', (tester) async {
-      await _pump(tester, repos: [_repo('p1', 'alpha')], sessions: []);
+      final center = StatusCenter();
+      addTearDown(center.dispose);
+      await _pump(
+        tester,
+        repos: [_repo('p1', 'alpha')],
+        sessions: [],
+        statusCenter: center,
+      );
       await tester.tap(find.byIcon(PhosphorIconsLight.bell));
       await tester.pumpAndSettle();
       expect(find.byKey(kActivityPopover), findsOneWidget);

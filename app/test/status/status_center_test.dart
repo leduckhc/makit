@@ -294,6 +294,27 @@ void main() {
     test('works without a log — the core does not require one', () {
       expect(() => StatusCenter().info('fine', source: 't'), returnsNormally);
     });
+
+    test('a diagnostics event never enters the log it reports on', () {
+      // `LogUploader.flush()` ships `MakitLog.records` and never drains them, so
+      // mirroring the upload's own result would make every later upload carry
+      // the earlier ones' results — and "Nothing to send" unreachable after the
+      // first send.
+      final log = MakitLog(minLevel: LogLevel.debug);
+      final c = StatusCenter(log: log);
+
+      c.success('Logs sent to server', source: StatusSources.diagnostics);
+      c.info('Nothing to send', source: StatusSources.diagnostics);
+      c.failure('Could not send logs', source: StatusSources.diagnostics);
+
+      expect(log.records, isEmpty, reason: 'no new upload work');
+      // The record still holds them — only the log is spared.
+      expect(c.events.length, 3);
+
+      // Every other source still rides along (SPEC-48 D2).
+      c.success('Added repo', source: StatusSources.repo);
+      expect(log.records.single.message, '[repo] Added repo');
+    });
   });
 
   test('dispose closes the stream', () async {

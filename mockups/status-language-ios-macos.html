@@ -72,6 +72,14 @@
   @keyframes pz{0%,100%{opacity:.32}50%{opacity:1}}
   .breathe{animation:br 2.4s ease-in-out infinite}
   @keyframes br{0%,100%{transform:scale(1)}50%{transform:scale(1.32)}}
+  /* Section 3 argues motion must carry meaning; a reader who has asked the OS
+     for less of it has already said what this page means to them. Both loops
+     are endless, and several run at once, so they settle rather than stop mid
+     cycle: the dot keeps its lit state so the "active" reading survives. */
+  @media (prefers-reduced-motion: reduce){
+    .pulse{animation:none;opacity:1}
+    .breathe{animation:none;transform:none}
+  }
   .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:8px;
     font-size:10px;font-weight:600;letter-spacing:.01em}
   .halo{position:relative;display:inline-flex;align-items:center;justify-content:center;

@@ -96,6 +96,19 @@ void main() {
       }
     });
 
+    test('copy-newest-notice defaults to the primary modifier + shift + C', () {
+      final cmd = Keymap.defaults(cmdIsPrimary: true);
+      expect(
+        cmd.chordFor(ShortcutAction.copyNewestNotice),
+        const KeyChord(LogicalKeyboardKey.keyC, meta: true, shift: true),
+      );
+      final ctrl = Keymap.defaults(cmdIsPrimary: false);
+      expect(
+        ctrl.chordFor(ShortcutAction.copyNewestNotice),
+        const KeyChord(LogicalKeyboardKey.keyC, control: true, shift: true),
+      );
+    });
+
     test('send default is plain Enter', () {
       final map = Keymap.defaults(cmdIsPrimary: true);
       expect(
@@ -217,28 +230,12 @@ void main() {
         );
       }
     });
-    test('copy-newest-notice defaults to the primary modifier + shift + C', () {
-      final cmd = Keymap.defaults(cmdIsPrimary: true);
-      expect(
-        cmd.chordFor(ShortcutAction.copyNewestNotice),
-        const KeyChord(LogicalKeyboardKey.keyC, meta: true, shift: true),
-      );
-      final ctrl = Keymap.defaults(cmdIsPrimary: false);
-      expect(
-        ctrl.chordFor(ShortcutAction.copyNewestNotice),
-        const KeyChord(LogicalKeyboardKey.keyC, control: true, shift: true),
-      );
-    });
+  });
 
-    test('every action has a default binding', () {
-      for (final action in ShortcutAction.values) {
-        expect(
-          map.bindings[action],
-          isNotNull,
-          reason: '${action.id} has no default chord',
-        );
-      }
-    });
+  // A map-wide invariant, not a group-switch one: its own group so a failure
+  // names the whole default map rather than the ⌘1–9 work.
+  group('Keymap default map invariants', () {
+    final map = Keymap.defaults(cmdIsPrimary: true);
 
     test('no two actions share a chord in the same scope', () {
       for (final action in ShortcutAction.values) {
