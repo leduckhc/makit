@@ -62,18 +62,32 @@
   .composer{height:46px;border-top:1px solid var(--hairline);display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--low)}
   .composer .fake{flex:1;height:28px;border-radius:14px;background:var(--cont);border:1px solid var(--hairline)}
 
-  .mac{width:620px;border:1px solid var(--hairline);border-radius:11px;overflow:hidden;background:var(--bg)}
-  .strip{height:24px;background:var(--low);display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid var(--hairline)}
+  /* The real Settings window (see the app screenshot): own traffic lights, an
+     "X Settings" title, a search field, a ~250pt sidebar, then a GREEN uppercase
+     page title and green uppercase group headers over filled rounded cards.
+     Structure is to spec; type is enlarged for legibility — the real window is
+     ~1400pt wide, which cannot be drawn at scale on this page. */
+  .mac{width:660px;border:1px solid var(--hairline);border-radius:11px;overflow:hidden;background:var(--bg)}
+  .strip{height:24px;background:var(--bg);display:flex;align-items:center;gap:6px;padding:0 10px}
   .tl{width:9px;height:9px;border-radius:50%}
   .mac-body{display:flex;min-height:210px}
-  .side{width:200px;border-right:1px solid var(--hairline);background:var(--lowest);padding:8px 0}
-  .pane{flex:1;display:flex;flex-direction:column;min-width:0}
-  .phdr{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--hairline);font-size:12.5px;color:var(--osv)}
+  .side{width:186px;background:var(--bg);padding:0 10px 10px;flex:0 0 186px}
+  .side .stitle{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:600;padding:2px 4px 10px}
+  .side .stitle .x{color:var(--muted)}
+  .search{display:flex;align-items:center;gap:7px;height:30px;padding:0 9px;margin-bottom:10px;
+          border:1px solid var(--hairline);border-radius:8px;color:var(--muted);font-size:11.5px}
+  .navitem{display:flex;align-items:center;gap:10px;height:32px;padding:0 9px;border-radius:8px;font-size:12.5px;color:var(--osv)}
+  .navitem.on{background:#1f2a22;color:var(--primary)}
+  .navitem.on svg{color:var(--primary)}
+  .pane{flex:1;display:flex;flex-direction:column;min-width:0;padding:0 14px 14px;background:var(--bg)}
+  .ptitle{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--primary);font-weight:700;padding:4px 0 12px}
+  .crumb{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--osv);padding:0 0 10px}
 
   /* SettingsGroup: one rounded filled card of rows, indented from flush-left headers */
-  .sgroup{background:var(--cont);border-radius:10px;margin:0 12px 12px;overflow:hidden}
-  .shdr{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;padding:12px 12px 6px}
-  .srow{display:flex;align-items:center;gap:9px;padding:8px 11px;min-height:36px;border-bottom:1px solid #2c2c2c}
+  .sgroup{background:var(--cont);border-radius:11px;margin:0 0 16px;overflow:hidden}
+  .shdr{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--primary);font-weight:700;padding:2px 0 7px}
+  .srow{display:flex;align-items:center;gap:10px;padding:9px 13px;min-height:42px;border-bottom:1px solid #2c2c2c}
+  .srow .sub{font-size:11px;color:var(--muted);font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .srow:last-child{border-bottom:none}
   .srow .lbl{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .srow .val{font-size:12px;color:var(--osv);display:flex;align-items:center;gap:6px;white-space:nowrap;max-width:52%;overflow:hidden;text-overflow:ellipsis}
@@ -111,6 +125,18 @@
   <symbol id="g-warn" viewBox="0 0 24 24"><g class="i"><path d="M12 4.2 21 19.5H3z"/><path d="M12 10v4.2"/></g><circle class="dot" cx="12" cy="16.8" r="1"/></symbol>
   <symbol id="g-img" viewBox="0 0 24 24"><g class="i"><rect x="3.6" y="5" width="16.8" height="14" rx="2"/><path d="m5.4 16.4 4-4 3.2 3 2.4-2.2 3.6 3.2"/></g><circle class="dot" cx="9" cy="9.6" r="1.1"/></symbol>
   <symbol id="g-branch" viewBox="0 0 24 24"><g class="i"><circle cx="6.6" cy="5.4" r="2.3"/><circle cx="6.6" cy="18.6" r="2.3"/><circle cx="17.4" cy="9" r="2.3"/><path d="M6.6 7.7v8.6M15.1 9H12A5.4 5.4 0 0 0 6.6 14.4"/></g></symbol>
+  <symbol id="g-x" viewBox="0 0 24 24"><g class="i"><path d="M6 6l12 12M18 6 6 18"/></g></symbol>
+  <symbol id="g-search" viewBox="0 0 24 24"><g class="i"><circle cx="10.6" cy="10.6" r="6.2"/><path d="m15.2 15.2 4.4 4.4"/></g></symbol>
+  <symbol id="g-sliders" viewBox="0 0 24 24"><g class="i"><path d="M4 7.4h16M4 16.6h16"/></g><circle class="dot" cx="9.4" cy="7.4" r="2"/><circle class="dot" cx="15" cy="16.6" r="2"/></symbol>
+  <symbol id="g-palette" viewBox="0 0 24 24"><g class="i"><path d="M12 3.8a8.2 8.2 0 1 0 0 16.4c1.5 0 1.9-1 1.4-2-.6-1.2.2-2.3 1.6-2.3h1.8c2 0 3.4-1.5 3.4-3.6C20.2 7 16.6 3.8 12 3.8Z"/></g><circle class="dot" cx="8.4" cy="9" r="1.1"/><circle class="dot" cx="12" cy="7.6" r="1.1"/></symbol>
+  <symbol id="g-robot" viewBox="0 0 24 24"><g class="i"><rect x="4.2" y="7.4" width="15.6" height="11.2" rx="2.4"/><path d="M12 4.4v3M2.6 12.4h1.6M19.8 12.4h1.6"/></g><circle class="dot" cx="9" cy="12.6" r="1.2"/><circle class="dot" cx="15" cy="12.6" r="1.2"/></symbol>
+  <symbol id="g-server" viewBox="0 0 24 24"><g class="i"><rect x="3.6" y="4.6" width="16.8" height="6" rx="1.8"/><rect x="3.6" y="13.4" width="16.8" height="6" rx="1.8"/></g><circle class="dot" cx="7" cy="7.6" r="1"/><circle class="dot" cx="7" cy="16.4" r="1"/></symbol>
+  <symbol id="g-bell" viewBox="0 0 24 24"><g class="i"><path d="M17.4 16.6H6.6l1.2-2V10a4.2 4.2 0 0 1 8.4 0v4.6z"/><path d="M10.4 19.2a1.8 1.8 0 0 0 3.2 0"/></g></symbol>
+  <symbol id="g-kbd" viewBox="0 0 24 24"><g class="i"><rect x="2.8" y="7" width="18.4" height="10" rx="2"/><path d="M8 13.6h8"/></g><circle class="dot" cx="7" cy="10.6" r=".9"/><circle class="dot" cx="12" cy="10.6" r=".9"/><circle class="dot" cx="17" cy="10.6" r=".9"/></symbol>
+  <symbol id="g-wrench" viewBox="0 0 24 24"><g class="i"><path d="M14.6 4.4a4.6 4.6 0 0 0 5.6 6l-8 8a3 3 0 1 1-4.2-4.2l8-8a4.6 4.6 0 0 0-1.4-1.8z"/></g></symbol>
+  <symbol id="g-info" viewBox="0 0 24 24"><g class="i"><circle cx="12" cy="12" r="8.2"/><path d="M12 11.2v5"/></g><circle class="dot" cx="12" cy="8.2" r="1"/></symbol>
+  <symbol id="g-copy" viewBox="0 0 24 24"><g class="i"><rect x="8.6" y="8.6" width="11" height="11" rx="2"/><path d="M15.4 5.4H6.4a2 2 0 0 0-2 2v9"/></g></symbol>
+  <symbol id="g-caretd" viewBox="0 0 24 24"><g class="i"><path d="m5.5 9 6.5 7 6.5-7"/></g></symbol>
   <symbol id="g-dots" viewBox="0 0 24 24"><circle class="dot" cx="5.6" cy="12" r="1.35"/><circle class="dot" cx="12" cy="12" r="1.35"/><circle class="dot" cx="18.4" cy="12" r="1.35"/></symbol>
 </svg>
 
@@ -141,46 +167,66 @@
   <div class="body">
     <div class="grid">
       <div class="col-mac">
-        <p class="cap">macOS — Settings window</p>
+        <p class="cap">macOS — the real Settings window, with Repositories added</p>
         <div class="mac">
           <div class="strip"><span class="tl" style="background:#ff5f57"></span><span class="tl" style="background:#febc2e"></span><span class="tl" style="background:#28c840"></span></div>
           <div class="mac-body">
             <div class="side">
-              <div class="srow" style="border:none;background:none"><svg class="g" width="13" height="13"><use href="#g-gear"/></svg><div class="lbl">General</div></div>
-              <div class="srow" style="border:none;background:none"><svg class="g" width="13" height="13"><use href="#g-git"/></svg><div class="lbl">Agents &amp; chat</div></div>
-              <div class="srow" style="border:none;background:#1E1E1E"><svg class="g" width="13" height="13" style="color:#4ADE80"><use href="#g-folder"/></svg><div class="lbl">Repositories</div></div>
-              <div class="srow" style="border:none;background:none"><svg class="g" width="13" height="13"><use href="#g-shield"/></svg><div class="lbl">Server &amp; devices</div></div>
+              <div class="stitle"><svg class="g x" width="15" height="15"><use href="#g-x"/></svg>Settings</div>
+              <div class="search"><svg class="g" width="12" height="12"><use href="#g-search"/></svg>Search settings</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-sliders"/></svg>General</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-palette"/></svg>Appearance</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-robot"/></svg>Agents &amp; Chat</div>
+              <div class="navitem on"><svg class="g" width="14" height="14"><use href="#g-folder"/></svg>Repositories</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-server"/></svg>Server &amp; Devices</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-bell"/></svg>Notifications</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-kbd"/></svg>Shortcuts</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-wrench"/></svg>Advanced</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-info"/></svg>About</div>
             </div>
             <div class="pane">
-              <div class="phdr"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-back"/></svg>Repositories
+              <div class="ptitle">Repositories</div>
+              <div class="crumb"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-back"/></svg>All repositories
                 <span style="color:#5c5c5c">›</span><span class="logo" style="background:#4ADE80">D</span>Diana</div>
+
               <div class="shdr">identity</div>
               <div class="sgroup">
-                <div class="srow"><span class="logo" style="background:#4ADE80">D</span><div class="lbl">Logo</div>
-                  <span class="val"><span class="auto">from name</span></span><span class="reset hidden"></span></div>
-                <div class="srow"><svg class="g" width="15" height="15"><use href="#g-folder"/></svg><div class="lbl">Root path</div>
-                  <span class="val mono">~/Work/Vibe/Diana</span><span class="reset hidden"></span></div>
-                <div class="srow"><svg class="g" width="15" height="15"><use href="#g-forgejo"/></svg><div class="lbl">Git provider</div>
+                <div class="srow"><span class="logo" style="background:#4ADE80">D</span>
+                  <div class="lbl">Logo<div class="sub">Monogram from the name</div></div>
+                  <span class="val"><span class="auto">from name</span></span>
+                  <span class="reset hidden"></span></div>
+                <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-folder"/></svg>
+                  <div class="lbl">Root path<div class="sub">Remove and re-add to change</div></div>
+                  <span class="val mono">~/Work/Vibe/Diana</span>
+                  <span class="reset"><svg class="g" width="13" height="13"><use href="#g-copy"/></svg></span></div>
+                <div class="srow"><svg class="g" width="15" height="15" style="color:#4ADE80"><use href="#g-forgejo"/></svg>
+                  <div class="lbl">Git provider<div class="sub">forgejo.internal.xdent.ai · token set</div></div>
                   <span class="val">Forgejo 16.0.0 <span class="auto">detected</span></span>
                   <span class="reset hidden"></span></div>
-                <div class="srow"><svg class="g" width="15" height="15"><use href="#g-branch"/></svg><div class="lbl">Default branch</div>
-                  <span class="val mono">main <span class="auto">from remote</span></span><span class="reset hidden"></span></div>
+                <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-branch"/></svg>
+                  <div class="lbl">Default branch<div class="sub">Read from origin/HEAD</div></div>
+                  <span class="val mono">main <span class="auto">from remote</span></span>
+                  <span class="reset hidden"></span></div>
               </div>
+
               <div class="shdr">worktrees</div>
               <div class="sgroup">
-                <div class="srow"><div class="lbl">Worktree root</div>
+                <div class="srow"><div class="lbl">Worktree root<div class="sub">Where new worktrees are created</div></div>
                   <span class="val mono">~/.worktrees <span class="inh">inherited</span></span>
                   <span class="reset hidden"></span></div>
-                <div class="srow"><div class="lbl">Branch prefix</div>
+                <div class="srow"><div class="lbl">Branch prefix<div class="sub">Prepended to a new worktree's branch</div></div>
                   <span class="val mono">feat/ <span class="ovr">overridden</span></span>
                   <span class="reset"><svg class="g" width="14" height="14"><use href="#g-undo"/></svg></span></div>
               </div>
-              <div class="shdr">lifecycle scripts <span class="untrusted">not trusted</span></div>
+
+              <div class="shdr">lifecycle scripts <span class="untrusted">host only</span></div>
               <div class="sgroup">
-                <div class="srow"><svg class="g" width="15" height="15"><use href="#g-term"/></svg><div class="lbl">After worktree create</div>
-                  <span class="val">Not set</span><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
-                <div class="srow"><svg class="g" width="15" height="15"><use href="#g-term"/></svg><div class="lbl">Before worktree prune</div>
-                  <span class="val">Not set</span><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+                <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-term"/></svg>
+                  <div class="lbl">After worktree create<div class="sub">Not set</div></div>
+                  <svg class="g reset" width="13" height="13"><use href="#g-caretd"/></svg></div>
+                <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-term"/></svg>
+                  <div class="lbl">Before worktree prune<div class="sub">Not set · may cancel the prune</div></div>
+                  <svg class="g reset" width="13" height="13"><use href="#g-caretd"/></svg></div>
               </div>
             </div>
           </div>
@@ -351,7 +397,9 @@
           <div class="strip"><span class="tl" style="background:#ff5f57"></span><span class="tl" style="background:#febc2e"></span><span class="tl" style="background:#28c840"></span></div>
           <div class="mac-body" style="min-height:190px">
             <div class="pane">
-              <div class="phdr"><svg class="g" width="13" height="13"><use href="#g-term"/></svg>Diana › After worktree create</div>
+              <div class="ptitle">Repositories</div>
+              <div class="crumb"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-back"/></svg>Diana
+                <span style="color:#5c5c5c">›</span><svg class="g" width="13" height="13"><use href="#g-term"/></svg>After worktree create</div>
               <div class="script">#!/bin/sh
 pnpm install --frozen-lockfile
 cp "$MAKIT_REPO_ROOT/.env.local" .</div>
