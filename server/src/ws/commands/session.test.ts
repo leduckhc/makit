@@ -97,6 +97,12 @@ const agent = (sessionId: string): Principal => ({
 const cli: Principal = { deviceId: "d", label: "cli@host", caps: ["client"] };
 const phone: Principal = { deviceId: "d", label: "phone" }; // no caps = full access
 
+/** An adapter that can fork, for the U4 tests. */
+const forkableAdapter = () => ({
+  capabilities: { fork: true },
+  forkSession: async () => ({ agentSessionId: "th-forked" }),
+});
+
 // ---- T10: parentId comes from the credential, never the wire ---------------
 
 test("T10: an agent-scoped spawn records the token's session as parent, origin=agent", async () => {
@@ -493,4 +499,67 @@ test("D17: a human credential reads any transcript, as before", async () => {
   const h = harness({ principal: cli, transcript: [{ seq: 1, kind: "agent.message" }] });
   await h.cmd({ kind: "session.transcript", sessionId: "anyones", limit: 5 });
   assert.ok(h.sent.some((f) => f.t === "ack"));
+});
+
+test("U4: the fork's child runs on the SOURCE's harness, not the default one", async () => {
+  // A native fork is a continuation of *that back end's* thread. The handler passed
+  // the optional `--agent` through and, when absent, let the manager fall back to
+  // the project default — so forking a codex session produced a **pi** child, which
+  // was then handed a codex thread id and died on `session/load: Invalid params`.
+  // The child was created successfully and could never start: a fork that looks
+  // like it worked and is permanently broken.
+  const h = harness({
+    principal: cli,
+    session: { id: "src", agent: "codex", pending: false, adapter: forkableAdapter() },
+  });
+  await h.cmd({ kind: "session.fork", sessionId: "src" });
+  assert.equal(h.spawnCalls[0]?.agent, "codex", "inherits the source's harness");
+});
+
+test("U4: --agent naming a DIFFERENT harness is refused, and points at handoff", async () => {
+  // Moving harness is what `handoff` is for (D6). A codex thread cannot be resumed
+  // by pi, so honouring `--agent pi` here would mint another dead session.
+  const h = harness({
+    principal: cli,
+    session: { id: "src", agent: "codex", pending: false, adapter: forkableAdapter() },
+  });
+  await h.cmd({ kind: "session.fork", sessionId: "src", agent: "pi" });
+  const err = h.sent.find((f) => f.t === "err");
+  assert.ok(err, "must refuse");
+  assert.match(String((err as { message?: string }).message), /handoff/);
+  assert.equal(h.spawnCalls.length, 0, "and nothing is created");
+});
+
+test("U4: --agent naming the SAME harness is accepted (a harmless no-op)", async () => {
+  const h = harness({
+    principal: cli,
+    session: { id: "src", agent: "codex", pending: false, adapter: forkableAdapter() },
+  });
+  await h.cmd({ kind: "session.fork", sessionId: "src", agent: "codex" });
+  assert.equal(h.spawnCalls[0]?.agent, "codex");
+});
+
+test("U4: a COLD session is re-attached before its fork capability is judged", async () => {
+  // After a server restart a session is rehydrated with a process-less placeholder
+  // adapter whose capabilities are all false. Reading `fork` off that reported
+  // "codex cannot fork: its back end advertises no native fork" — about codex,
+  // which plainly can. `send.message` already re-attaches first (ensureLive); fork
+  // must too, or the verb is broken for exactly the sessions worth forking: the
+  // ones you left running yesterday.
+  let live = false;
+  const cold = { capabilities: { fork: false } }; // the placeholder
+  const warm = { capabilities: { fork: true }, forkSession: async () => ({ agentSessionId: "th-forked" }) };
+  const h = harness({
+    principal: cli,
+    ensureLive: async () => {
+      live = true;
+    },
+    // getSession is consulted again after ensureLive, so it must reflect the swap.
+    sessionFor: () => ({ id: "src", agent: "codex", pending: false, adapter: live ? warm : cold }),
+  });
+
+  await h.cmd({ kind: "session.fork", sessionId: "src" });
+
+  assert.equal(live, true, "it re-attached");
+  assert.equal(h.spawnCalls.length, 1, "and then forked");
 });

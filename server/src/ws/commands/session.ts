@@ -558,7 +558,24 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       : principal?.caps?.includes("client")
         ? "cli"
         : "app";
-    const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
+    // The child runs on the SOURCE's harness, always. A native fork is a
+    // continuation of *that* back end's thread, so the thread id is only
+    // meaningful to it — handing a codex thread to pi produced a child that was
+    // created successfully and could never start (`session/load: Invalid params`).
+    // Moving harness is what `handoff` is for (D6), which is why a differing
+    // `--agent` is refused rather than honoured. (The spec's grammar listed
+    // `fork [--agent A]`; that is only coherent as "the same harness", so the
+    // flag survives as a no-op and a mismatch is an error.)
+    const wantedAgent = ctx.env.agent ? String(ctx.env.agent) : undefined;
+    if (wantedAgent !== undefined && wantedAgent !== source.agent) {
+      ctx.err(
+        WireErrorCode.BadRequest,
+        `cannot fork a ${source.agent} session onto ${wantedAgent}: a native fork continues the same ` +
+          `back end's thread — use \`makit handoff --to ${wantedAgent}\` to change harness`,
+      );
+      return;
+    }
+    const agent = source.agent;
     const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
     const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;
     const child = await manager.spawnPendingSession(
