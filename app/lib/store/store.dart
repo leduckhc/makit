@@ -1192,7 +1192,11 @@ class StoreController extends StateNotifier<StoreState> {
         'relPath': relPath,
       },
     );
-    final grant = DocGrant.fromJson(ack);
+    final grantMap = ack['grant'];
+    if (grantMap is! Map<String, dynamic>) {
+      throw StateError('docs.publish returned an unusable grant shape');
+    }
+    final grant = DocGrant.fromJson(grantMap);
     if (grant == null) {
       throw StateError('docs.publish returned an unusable grant');
     }

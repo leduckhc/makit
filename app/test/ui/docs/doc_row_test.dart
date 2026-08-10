@@ -24,11 +24,21 @@ DocInfo _doc({
   docStatus: docStatus,
 );
 
-Future<void> _pump(WidgetTester tester, DocInfo doc, {int nowMs = 0}) =>
+Future<void> _pump(
+  WidgetTester tester,
+  DocInfo doc, {
+  int nowMs = 0,
+  DocPathStyle pathStyle = DocPathStyle.absolute,
+}) =>
     tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: DocRow(doc: doc, nowMs: nowMs, onTap: () {}),
+          body: DocRow(
+            doc: doc,
+            nowMs: nowMs,
+            onTap: () {},
+            pathStyle: pathStyle,
+          ),
         ),
       ),
     );
@@ -94,6 +104,27 @@ void main() {
         dir.textDirection,
         TextDirection.rtl,
         reason: 'an RTL paragraph puts the ellipsis at the visual start',
+      );
+    });
+
+    testWidgets('with pathStyle.relative, shows only the relPath', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _doc(relPath: 'docs/specs/SPEC-46.md'),
+        pathStyle: DocPathStyle.relative,
+      );
+      // The relative path is wrapped in LTR isolates (\u2066/\u2069) for the
+      // RTL paragraph, same as the absolute path styling.
+      expect(
+        find.text('\u2066docs/specs/SPEC-46.md\u2069'),
+        findsOneWidget,
+      );
+      // No worktreePath prefix.
+      expect(
+        find.text('/repo/docs/specs/SPEC-46.md'),
+        findsNothing,
       );
     });
 

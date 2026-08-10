@@ -426,6 +426,7 @@ class _DocsPopoverPanelState extends State<_DocsPopoverPanel> {
                       doc: visible[i],
                       nowMs: nowMs,
                       onTap: () => widget.onOpenDoc(visible[i]),
+                      pathStyle: DocPathStyle.relative,
                     ),
                   ),
                 ),

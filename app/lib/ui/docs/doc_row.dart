@@ -31,6 +31,18 @@ const Key kDocChangedChip = ValueKey('doc-changed-chip');
 /// The docStatus badge (D14), keyed for tests.
 const Key kDocStatusBadge = ValueKey('doc-status-badge');
 
+/// How to render a doc's path in the row.
+enum DocPathStyle {
+  /// Relative to the worktree (e.g. `mockups/doc-preview.html`). Used in the
+  /// per-worktree popover where every row is from the same worktree.
+  relative,
+
+  /// Absolute from the repo root (e.g. `/Users/le/Work/teachme/docs/NOTES.md`),
+  /// with left-ellipsis for overflow. Used in the docs screen when rows span
+  /// multiple repos.
+  absolute,
+}
+
 /// One tappable document row. Pure (data in, no provider read) so it is
 /// directly pumpable and identical in every container.
 class DocRow extends StatelessWidget {
@@ -40,6 +52,7 @@ class DocRow extends StatelessWidget {
     required this.nowMs,
     required this.onTap,
     this.selected = false,
+    this.pathStyle = DocPathStyle.absolute,
   });
 
   final DocInfo doc;
@@ -51,6 +64,9 @@ class DocRow extends StatelessWidget {
   /// Highlights the row in the desktop popover's selected state (mockup Card 2
   /// right frame `.doc.sel`).
   final bool selected;
+
+  /// Whether to show the path as relative or absolute (default).
+  final DocPathStyle pathStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +118,7 @@ class DocRow extends StatelessWidget {
                   Directionality(
                     textDirection: TextDirection.rtl,
                     child: Text(
-                      '\u2066${docFullPath(doc)}\u2069',
+                      '\u2066${pathStyle == DocPathStyle.absolute ? docFullPath(doc) : doc.relPath}\u2069',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelSmall?.copyWith(

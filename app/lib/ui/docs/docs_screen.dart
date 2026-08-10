@@ -136,6 +136,7 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
                 doc: doc,
                 nowMs: nowMs,
                 onTap: () => _open(doc),
+                pathStyle: DocPathStyle.absolute,
               ),
           ],
         ],
