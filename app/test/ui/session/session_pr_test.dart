@@ -6,6 +6,7 @@
 // how the sheet is ordered, and that a picked prompt reaches the composer unsent.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:url_launcher_platform_interface/link.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
@@ -230,6 +231,33 @@ void main() {
       expect(icon.color, fg, reason: 'the icon must match the label');
     });
 
+    testWidgets('names and badges the forge from the PR url, not GitHub always', (
+      tester,
+    ) async {
+      // Before Forgejo support this button said "on GitHub" for every PR, which
+      // is wrong for a self-hosted one. The forge is read off the PR's own URL.
+      await _pumpSheet(
+        tester,
+        pr: _pr(url: 'https://codeberg.org/o/r/pulls/42'),
+      );
+
+      expect(find.text('Open #42 on Forgejo'), findsOneWidget);
+      expect(find.text('Open #42 on GitHub'), findsNothing);
+      // Phosphor ships no Forgejo mark, so it renders as our vendored SVG.
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is SvgPicture,
+          description: 'the Forgejo SVG glyph',
+        ),
+        findsWidgets,
+      );
+    });
+
+    testWidgets('a GitHub PR still says GitHub', (tester) async {
+      await _pumpSheet(tester, pr: _pr());
+      expect(find.text('Open #42 on GitHub'), findsOneWidget);
+    });
+
     testWidgets('reports a PR url the platform declines to open', (
       tester,
     ) async {
@@ -255,7 +283,10 @@ void main() {
       // as an unhandled framework error.
       await _pumpSheet(tester, pr: _pr(url: 'http://['));
 
-      await tester.tap(find.text('Open #42 on GitHub'));
+      // No forge name: an unparseable URL identifies no forge, and the button
+      // says "Open #42" rather than claiming a forge it could not read. The
+      // GitHub-URL cases above still read "on GitHub".
+      await tester.tap(find.text('Open #42'));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);

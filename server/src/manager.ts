@@ -23,7 +23,8 @@ import { listAcpSessions } from "./adapters/acp.js";
 import { listCodexThreads } from "./adapters/codex.js";
 import type { AgentSessionInfo } from "./adapters/adapter.js";
 import { listRepos, enrichPrs, type LastKnownPr } from "./repo_service.js";
-import { createGithubGateway, type GithubGateway } from "./github/gateway.js";
+import type { GithubGateway } from "./github/gateway.js";
+import { createDefaultForgeGateway } from "./forge/router.js";
 import type { PersistedProject } from "./project-store.js";
 import {
   isGitRepo,
@@ -193,10 +194,13 @@ export class SessionManager extends EventEmitter {
     this.defaultAgentId = "pi";
     this.store = opts.store;
     this.capabilityCache = opts.capabilityCache;
-    // The single GitHub gateway (SPEC-32). A real one over git.ts's `run` unless
-    // a fake is injected; `run` resolves `gh` via PATH, so the test PATH-shim
+    // The single forge gateway (SPEC-32). A router over both providers unless a
+    // fake is injected: it dispatches per repo on the `origin` host -- github.com
+    // to the `gh`-backed gateway, anything else to the Forgejo/Gitea REST one --
+    // and forwards the budget surface to the gh gateway, which owns the only
+    // quota that exists. `run` resolves `gh` via PATH, so the test PATH-shim
     // keeps working. Constructed here does NOT self-refresh (no subprocess).
-    this._gateway = opts.gateway ?? createGithubGateway({ exec: run });
+    this._gateway = opts.gateway ?? createDefaultForgeGateway({ exec: run });
     for (const entry of opts.projects) {
       // A bare path gets a fresh server-generated id; a restored `{ id, path }`
       // keeps its id so a client's persisted projectId stays valid across a
