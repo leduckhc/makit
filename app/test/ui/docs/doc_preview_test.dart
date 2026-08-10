@@ -141,6 +141,58 @@ void main() {
     });
   });
 
+  // D8 rev 2: the same sheet, two primary actions, decided by whether the client
+  // shares a machine with the server. Publishing works everywhere, so it stays
+  // reachable locally as the secondary — but it must not be the only way, which
+  // is what made a board unopenable with Tailscale off.
+  group('DocPreview — html actions (D8 rev 2)', () {
+    testWidgets('a remote client gets Publish & open as the only action', (
+      tester,
+    ) async {
+      await _pump(tester, _doc(kind: DocKind.html), onPublish: () {});
+      expect(find.byKey(kDocPublishButton), findsOneWidget);
+      expect(find.byKey(kDocOpenLocalButton), findsNothing);
+      expect(find.text('Publish & open'), findsOneWidget);
+      expect(find.textContaining('Publish it to your tailnet'), findsOneWidget);
+    });
+
+    testWidgets('a local client leads with Open in browser, publish demoted', (
+      tester,
+    ) async {
+      var opened = 0;
+      var published = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DocPreview(
+              doc: _doc(kind: DocKind.html),
+              onPublish: () => published++,
+              onOpenLocal: () => opened++,
+            ),
+          ),
+        ),
+      );
+      expect(find.byKey(kDocOpenLocalButton), findsOneWidget);
+      expect(find.text('Open in browser'), findsOneWidget);
+      // The copy must stop telling a local user to publish.
+      expect(find.textContaining('Publish it to your tailnet'), findsNothing);
+      expect(
+        find.textContaining('on this machine'),
+        findsOneWidget,
+        reason: 'say why no server is needed',
+      );
+      // Publish is still reachable — that is how a board reaches the phone.
+      expect(find.text('Share to a device…'), findsOneWidget);
+
+      await tester.tap(find.byKey(kDocOpenLocalButton));
+      expect(opened, equals(1));
+      expect(
+        published,
+        equals(0),
+      );
+    });
+  });
+
   group('DocPreview — html (D8: no in-app render in P1)', () {
     testWidgets(
       'html shows no markdown; Publish & open is the primary action',

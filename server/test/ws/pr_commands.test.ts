@@ -67,7 +67,8 @@ function routerWith(manager: Partial<CommandDeps["manager"]>) {
     docs: {
       read: () => ({ ok: false as const, message: "" }),
       publish: async () => ({ ok: false as const, reason: "" }),
-      unpublish: () => false,
+      open: async () => ({ ok: false as const, reason: "stub" }),
+        unpublish: () => false,
       grants: () => [],
     },
     askDevice: async () => ({}) as Envelope,

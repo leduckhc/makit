@@ -23,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
 import '../../store/docs.dart';
+import '../../store/connection.dart';
 import '../../store/store.dart';
 import 'doc_vocabulary.dart';
 import 'publish_sheet.dart';
@@ -32,6 +33,12 @@ const Key kDocFrontMatter = ValueKey('doc-front-matter');
 
 /// The reader-width toggle button, keyed for tests.
 const Key kDocReaderWidthToggle = ValueKey('doc-reader-width-toggle');
+
+/// The local "Open in browser" action (D8 rev 2), keyed for tests.
+const Key kDocOpenLocalButton = ValueKey('doc-open-local');
+
+/// The publish action — primary for a remote client, secondary for a local one.
+const Key kDocPublishButton = ValueKey('doc-publish');
 
 /// Comfortable measure for prose when the reader-width toggle is on.
 const double _kReaderWidth = 680;
@@ -124,6 +131,7 @@ class DocPreview extends StatefulWidget {
     required this.doc,
     this.markdown,
     this.onPublish,
+    this.onOpenLocal,
     this.onOpenInternal,
     this.onExternalLink,
   });
@@ -133,8 +141,13 @@ class DocPreview extends StatefulWidget {
   /// The markdown text, when loaded. Null → spinner (md) / ignored (html).
   final String? markdown;
 
-  /// Publish & open (D8, the html primary action; also offered for md sharing).
+  /// Publish & open — the html primary action for a REMOTE client (D9/D15), and
+  /// the secondary "Share to a device…" for a local one.
   final VoidCallback? onPublish;
+
+  /// Open on the host (D8 rev 2). Non-null only for a local client, where the
+  /// file needs no serving; its presence is what makes the notice local.
+  final VoidCallback? onOpenLocal;
 
   /// Internal doc link tapped — the host re-targets the preview at [relPath].
   final void Function(String relPath)? onOpenInternal;
@@ -192,7 +205,10 @@ class _DocPreviewState extends State<DocPreview> {
 
   Widget _content(BuildContext context) {
     if (widget.doc.kind == DocKind.html) {
-      return _HtmlNotice(onPublish: widget.onPublish);
+      return _HtmlNotice(
+        onPublish: widget.onPublish,
+        onOpenLocal: widget.onOpenLocal,
+      );
     }
     final markdown = widget.markdown;
     if (markdown == null) {
@@ -378,14 +394,21 @@ class _FrontMatterChip extends StatelessWidget {
 
 /// D8: HTML is not rendered in-app in P1. The primary action is *Publish &
 /// open*, which mints a tailnet grant and opens it in a real browser.
+/// D8 rev 2: HTML is not rendered in-app in P1 — but *where the viewer is*
+/// decides how it opens. On the machine holding the file, hand it to the OS; on
+/// another device, mint a tailnet grant and open that.
 class _HtmlNotice extends StatelessWidget {
-  const _HtmlNotice({required this.onPublish});
+  const _HtmlNotice({required this.onPublish, this.onOpenLocal});
   final VoidCallback? onPublish;
+
+  /// Non-null only for a local client, where no serving is needed.
+  final VoidCallback? onOpenLocal;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final local = onOpenLocal != null;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(kSpace32),
@@ -401,19 +424,41 @@ class _HtmlNotice extends StatelessWidget {
             ),
             const SizedBox(height: kSpace4),
             Text(
-              'Publish it to your tailnet and open it with full fidelity — '
-              'real Safari, real JS, print-to-PDF.',
+              local
+                  ? 'This file is on this machine — opening it needs no server.'
+                  : 'Publish it to your tailnet and open it with full fidelity — '
+                        'real Safari, real JS, print-to-PDF.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: cs.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: kSpace16),
-            FilledButton.icon(
-              onPressed: onPublish,
-              icon: const Icon(PhosphorIconsLight.shareNetwork, size: 16),
-              label: const Text('Publish & open'),
-            ),
+            if (local)
+              FilledButton.icon(
+                key: kDocOpenLocalButton,
+                onPressed: onOpenLocal,
+                icon: const Icon(PhosphorIconsLight.browser, size: 16),
+                label: const Text('Open in browser'),
+              )
+            else
+              FilledButton.icon(
+                key: kDocPublishButton,
+                onPressed: onPublish,
+                icon: const Icon(PhosphorIconsLight.shareNetwork, size: 16),
+                label: const Text('Publish & open'),
+              ),
+            // Publishing stays reachable locally — that is how a board gets to
+            // the phone from the desk — but it is no longer the only way.
+            if (local) ...[
+              const SizedBox(height: kSpace8),
+              TextButton.icon(
+                key: kDocPublishButton,
+                onPressed: onPublish,
+                icon: const Icon(PhosphorIconsLight.shareNetwork, size: 15),
+                label: const Text('Share to a device…'),
+              ),
+            ],
           ],
         ),
       ),
@@ -519,12 +564,30 @@ class _DocPreviewSheetState extends ConsumerState<_DocPreviewSheet> {
     title: _doc.title,
   );
 
+  /// D8 rev 2: hand the file to the host's opener. Failure is stated — the
+  /// server's reason surfaces in a snack bar rather than a silent no-op.
+  Future<void> _openLocal() async {
+    try {
+      await ref
+          .read(storeControllerProvider.notifier)
+          .openDoc(_doc.worktreePath, _doc.relPath);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Only a local client gets the direct path; everyone else publishes.
+    final isLocal = ref.watch(connectionControllerProvider).serverIsLocal;
     if (_doc.kind == DocKind.html) {
       return DocPreview(
         doc: _doc,
         onPublish: _publish,
+        onOpenLocal: isLocal ? _openLocal : null,
         onOpenInternal: _openInternal,
       );
     }
@@ -534,6 +597,7 @@ class _DocPreviewSheetState extends ConsumerState<_DocPreviewSheet> {
         doc: _doc,
         markdown: snap.data,
         onPublish: _publish,
+        onOpenLocal: isLocal ? _openLocal : null,
         onOpenInternal: _openInternal,
       ),
     );

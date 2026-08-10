@@ -1179,6 +1179,16 @@ class StoreController extends StateNotifier<StoreState> {
     return text;
   }
 
+  /// SPEC-46 D8 rev 2: open the doc on the machine holding it, via the host's
+  /// OS opener. Only valid for a local client — a remote one is refused by the
+  /// server with a stated reason, which propagates as a thrown error.
+  Future<void> openDoc(String worktreePath, String relPath) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'docs.open', 'worktreePath': worktreePath, 'relPath': relPath},
+    );
+  }
+
   /// SPEC-46 D9/D15: publish one document over the tailnet, returning the
   /// grant. Never invents a URL — a server `err` (no usable address,
   /// `tailscale serve` unavailable) throws with the stated reason so the share

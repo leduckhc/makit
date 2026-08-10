@@ -769,6 +769,12 @@ export type CmdKind =
    * it. `{kind:'docs.read', worktreePath, relPath}`.
    */
   | "docs.read"
+  /**
+   * SPEC-46 D8 rev 2: open the document on the machine holding it, via the
+   * host's OS opener. **Local clients only** — a remote client cannot be served
+   * this way and must publish instead. `{kind:'docs.open', worktreePath, relPath}`.
+   */
+  | "docs.open"
   /** SPEC-46: publish one document over the tailnet, returning a {@link DocGrantDTO}. */
   | "docs.publish"
   /** SPEC-46: revoke a publication by `grantId`. */

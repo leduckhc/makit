@@ -57,6 +57,24 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     else ctx.err(WireErrorCode.BadRequest, result.reason);
   });
 
+  r.register("docs.open", async (ctx) => {
+    // D8 rev 2: local clients get direct OS opener; remote clients must publish.
+    if (!ctx.client.isLocal) {
+      ctx.err(WireErrorCode.BadRequest, "docs.open is for local clients only; remote clients must publish");
+      return;
+    }
+    const worktreePath = ctx.env.worktreePath;
+    const relPath = ctx.env.relPath;
+    if (typeof worktreePath !== "string" || typeof relPath !== "string") {
+      ctx.err(WireErrorCode.BadRequest, "docs.open requires worktreePath and relPath");
+      return;
+    }
+    // Degrade loudly, as publish does: say why, never a bare failure.
+    const result = await deps.docs.open(worktreePath, relPath);
+    if (result.ok) ctx.ack({ ok: true });
+    else ctx.err(WireErrorCode.BadRequest, result.reason);
+  });
+
   r.register("docs.unpublish", async (ctx) => {
     const grantId = ctx.env.grantId;
     if (typeof grantId !== "string") {

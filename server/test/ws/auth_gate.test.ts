@@ -28,7 +28,7 @@ interface FakeClient extends WsClient {
   closed: { code: number; reason: string } | null;
 }
 
-function fakeClient(authed = false): FakeClient {
+function fakeClient(authed = false, isLocal = true): FakeClient {
   const sent: OutgoingFrame[] = [];
   const client: FakeClient = {
     sent,
@@ -38,7 +38,7 @@ function fakeClient(authed = false): FakeClient {
     watchingMetrics: false,
     watchingPorts: false,
     watchingDocs: false,
-    isLocal: true,
+    isLocal,
     send: (frame) => sent.push(frame),
     close: (code, reason) => {
       client.closed = { code, reason };
@@ -183,4 +183,24 @@ test("hello {pid} on a non-loopback client is ignored, appPid stays unset (SPEC-
 
   assert.equal(client.authed, true, "a non-loopback client still authenticates");
   assert.equal(client.appPid, undefined, "its reported pid is ignored");
+});
+
+// D8 rev 2: the app must not infer locality from its own stored host — mDNS
+// rediscovery can rewrite that behind it (see connection.dart), so the server
+// states it, per client, at the one moment the app is guaranteed to be listening.
+test("hello.ack carries isLocal so the client never has to guess", () => {
+  const device = { id: "dev-1", label: "phone", bearer: "good-bearer" };
+  const gate = () =>
+    new AuthGate({
+      registry: fakeRegistry({ bearers: { "good-bearer": device } }),
+      onAuthenticated: () => {},
+    });
+
+  const local = fakeClient();
+  gate().handleHello(local, hello({ bearer: "good-bearer" }));
+  assert.equal(local.sent.find((f) => f.t === "hello.ack")?.isLocal, true);
+
+  const remote = fakeClient(false, false);
+  gate().handleHello(remote, hello({ bearer: "good-bearer" }));
+  assert.equal(remote.sent.find((f) => f.t === "hello.ack")?.isLocal, false);
 });

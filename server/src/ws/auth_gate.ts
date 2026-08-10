@@ -65,7 +65,7 @@ export class AuthGate {
 
     if (client.authed) {
       // Already trusted (localhost dev mode).
-      client.send({ t: "hello.ack", id: env.id, ok: true });
+      client.send({ t: "hello.ack", id: env.id, ok: true, isLocal: client.isLocal });
       this.deps.onAuthenticated(client);
       return;
     }
@@ -83,7 +83,7 @@ export class AuthGate {
     client.authed = true;
     client.deviceLabel = device.label;
     client.deviceId = device.id;
-    client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: device.id });
+    client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: device.id, isLocal: client.isLocal });
     log.info(`[makit] hello: authed as ${device.label} (${device.id}); sent snapshots`);
     this.deps.onAuthenticated(client);
   }

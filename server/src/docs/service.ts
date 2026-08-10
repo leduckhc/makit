@@ -18,6 +18,7 @@ import type { DocsSnapshotDTO, DocDTO, DocGrantDTO } from "../protocol.js";
 import { scanWorktree, type WorktreeScan } from "./scan.js";
 import { changedPaths as defaultChangedPaths, type Exec } from "./changed.js";
 import { readDocText, type DocReadResult } from "./read.js";
+import { openDocOnHost, type OpenResult } from "./open.js";
 import { publishDoc, type DocReach, type PublishResult } from "./publish.js";
 import type { DocGrantStore } from "./grants.js";
 
@@ -64,6 +65,16 @@ export interface DocsServiceDeps {
 export interface DocsCommandPort {
   read(worktreePath: string, relPath: string): DocReadResult;
   publish(worktreePath: string, relPath: string): Promise<PublishResult>;
+  /**
+   * Open the doc on the machine holding it (D8 rev 2). Async and
+   * reason-carrying, because the failure has to be *stated*: the opener can be
+   * missing, the platform unknown, or the path refused by D2, and "could not
+   * open document" tells the user none of that.
+   *
+   * The **local-client gate lives in the command layer**, which is the only
+   * place that knows the connection.
+   */
+  open(worktreePath: string, relPath: string): Promise<OpenResult>;
   unpublish(grantId: string): boolean;
   grants(): DocGrantDTO[];
 }
@@ -181,6 +192,12 @@ export class DocsService implements DocsCommandPort {
 
   publish(worktreePath: string, relPath: string): Promise<PublishResult> {
     return publishDoc({ worktreePath, relPath }, { grants: this.deps.grants, reach: this.deps.reach });
+  }
+
+  open(worktreePath: string, relPath: string): Promise<OpenResult> {
+    // `openDocOnHost` owns the D2 resolve, the per-platform opener and the
+    // argv-not-shell discipline, and is tested for all three.
+    return openDocOnHost(worktreePath, relPath);
   }
 
   unpublish(grantId: string): boolean {

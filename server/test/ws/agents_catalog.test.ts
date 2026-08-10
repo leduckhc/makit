@@ -67,6 +67,7 @@ function routerWith(manager: Partial<CommandDeps["manager"]>): { router: Command
       docs: {
         read: () => ({ ok: false as const, message: "" }),
         publish: async () => ({ ok: false as const, reason: "" }),
+        open: async () => ({ ok: false as const, reason: "stub" }),
         unpublish: () => false,
         grants: () => [],
       },

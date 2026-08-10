@@ -86,6 +86,7 @@ function harness() {
       docs: {
         read: () => ({ ok: false as const, message: "" }),
         publish: async () => ({ ok: false as const, reason: "" }),
+        open: async () => ({ ok: false as const, reason: "stub" }),
         unpublish: () => false,
         grants: () => [],
       },
@@ -243,6 +244,7 @@ test("a pending session promoted by an image-only turn gets a usable label", asy
       docs: {
         read: () => ({ ok: false as const, message: "" }),
         publish: async () => ({ ok: false as const, reason: "" }),
+        open: async () => ({ ok: false as const, reason: "stub" }),
         unpublish: () => false,
         grants: () => [],
       },

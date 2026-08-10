@@ -156,6 +156,43 @@ test("docs.publish errs with the stated reason when nothing is reachable (D15)",
   assert.match((errs(c)[0] as unknown as { message: string }).message, /reachable/);
 });
 
+// --- docs.open ---
+
+test("docs.open acks for a local client, handed to the OS opener", async () => {
+  const rec = setup();
+  let openedPath = "";
+  const c = fakeClient({
+    isLocal: true,
+  });
+  rec.docs.open = async (wt: string, rel: string) => {
+    openedPath = `${wt}:${rel}`;
+    return { ok: true, absPath: `${wt}/${rel}` };
+  };
+  await dispatch(rec.router, c, "docs.open", { worktreePath: "/wt", relPath: "mockups/board.html" });
+  assert.equal(openedPath, "/wt:mockups/board.html");
+  assert.equal(acks(c).length, 1);
+});
+
+test("docs.open errs for a remote (non-local) client", async () => {
+  const rec = setup();
+  const c = fakeClient({ isLocal: false });
+  await dispatch(rec.router, c, "docs.open", { worktreePath: "/wt", relPath: "mockups/board.html" });
+  assert.equal(errs(c).length, 1);
+  assert.match((errs(c)[0] as unknown as { message: string }).message, /local/);
+});
+
+// The first cut answered every failure with "could not open document", which
+// tells the user nothing and breaks the house rule publish already follows:
+// degrade loudly, with the reason. A refused path must say it was refused.
+test("docs.open errs with the opener's stated reason, not a bare failure", async () => {
+  const rec = setup();
+  const c = fakeClient({ isLocal: true });
+  rec.docs.open = async () => ({ ok: false, reason: "cannot open .env: dotfile" });
+  await dispatch(rec.router, c, "docs.open", { worktreePath: "/wt", relPath: ".env" });
+  assert.equal(acks(c).length, 0, "a refusal must not ack");
+  assert.match((errs(c)[0] as unknown as { message: string }).message, /dotfile/);
+});
+
 // --- docs.unpublish ---
 
 test("docs.unpublish revokes the grant and acks", async () => {
