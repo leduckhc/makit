@@ -1,6 +1,6 @@
 # SPEC-48 — Per-repo settings: one Settings section per repository
 
-**Status:** Draft (rev 1) · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
+**Status:** Draft (rev 1) — **REVIEW FAILED, rev 2 required. Do not implement.** · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
 **Depends on:** SPEC-11 (repo-centric home — `RepoDTO`, `repos.snapshot`, the repo card and its
 `dotsThree` menu), SPEC-19 (`SettingsResetButton` as the one shared "reset to default" widget, and
 `SettingsGroup` as the grouped-list idiom), and the forge-detection work already on this branch
@@ -123,3 +123,58 @@ P1 is not "the tests pass". It is, in order:
 
 Global settings redesign. Repo add/remove flows. Anything that writes to the repository working tree.
 A settings-sync mechanism between paired devices. Per-worktree (as opposed to per-repo) settings.
+
+
+---
+
+## Review round 1 — both reviewers returned NOT READY
+
+Two parallel `codex exec` reviews (technical correctness; engineering practice). Every finding below
+was **re-verified against the code by hand** before being accepted — the reviewers' verdicts are not
+taken on trust.
+
+### Confirmed wrong in rev 1
+
+| # | Claim in rev 1 | Reality |
+| --- | --- | --- |
+| R1 | T1.1's fixture edit is a RED test | **Vacuous.** `contract.test.ts:24` loads snapshots as `Record<string, unknown>[]` and only asserts codec round-trip; `decodeFrame` (`codec.ts:104`) validates `v`/`t`/`id` and then casts. A new `RepoDTO` field can never fail it. |
+| R2 | `createForgeRouter` already records per-repo decisions | **False.** `router.ts:165` caches `Map<string, Promise<ForgeGateway>>` only — no software, host or auth is retained. `softwareFor` needs a new decision record, not an accessor. |
+| R3 | A previous `softwareFor` was reverted for not being on the declared type | **Unsubstantiated.** It happened in an uncommitted edit, so `git log -S softwareFor` finds nothing. Claim removed. |
+| R4 | `repo_service.ts` can reach the router | **False.** `listRepos` takes `GithubGateway` (`repo_service.ts:62`) and `manager._gateway` is typed the same (`manager.ts:187`); a router-only accessor is invisible across that boundary. |
+| R5 | `git.ts:33` is the only consumer of the worktree root | **Only of the env read.** The resolved root is consumed by `addWorktree` (`git.ts:468`), `addWorktreeForPr` (`git.ts:585`) and `uniqueWorktreeDir` (`manager.ts:1006`). P2 must route all three or collision checks and creation disagree. |
+| R6 | The Settings sidebar can take a new group | **Foundational work missing.** `kSettingsSections` is a static `final List` (`settings_registry.dart:24`) carrying `SettingsItem` search entries, resolved statically by `settings_window.dart`. Dynamic repo sections need `sectionsFor(repos)`, stable ids, generated search entries, and defined behaviour when a selected repo disappears. |
+| R7 | T4.1 adds the entry point | **Wrong surface.** `RepoCard` is used only by the *mobile* `home_screen.dart:53`; desktop Settings is a separate window whose open state is a bare `bool` (`window_overlays.dart:28`) and whose `_openSettings()` takes no repo id. There is no deep-link path to carry a `repoId`. |
+| R8 | T2.3 is red today | **Cannot compile.** `PrDetailBody` receives `PrStatus`/`PullRequest`, not a repo (`pr_detail.dart:77`), so there is no server-forge input to disagree with the URL. |
+| R9 | T5.1 uses the right harness | **Wrong one.** `app/tool/e2e-desktop.sh` runs `control_e2e_test.dart`, which pumps `ServerDevicesSection` directly and serves no `repos.snapshot`. |
+| R10 | D11 "unknown keys preserved" | **Not true today and not free.** `project-store.ts:81`/`:99` reconstruct and emit only `{id, path}`, and `manager.ts:204` copies only those into `ProjectDTO`. Lossless `settings` needs work in all three places. |
+| R11 | `forge` will be populated for every repo | **May never be.** Routing happens only when a gateway PR op calls `pick`; a repo with no eligible worktree is never routed. `forge` must be modelled as genuinely *pending*, or detection must be driven proactively for the snapshot. |
+
+### The finding that changes the product, not the plan
+
+**Write authorization was specified for scripts (D13) and for nothing else.** A paired device that can
+set an arbitrary `worktreeRoot` directs host filesystem operations at a path of its choosing. That is a
+security surface of the same kind as D13(b), and rev 1 left it undecided. Rev 2 must state who may write
+each setting, and what path validation applies (absolute? canonicalised? symlink-checked? denied
+outside `$HOME`?).
+
+### Accepted YAGNI cuts
+
+Disabled Lifecycle Scripts group in P1; the six-value badge vocabulary as one abstraction (provenance
+and resolution are different things); the generic four-level resolver (there is no global settings
+store — the real chain is `repo override → env → default`); provider and default-branch overrides;
+the copy button; two-line rows as a blanket rule; the monogram's hue-determinism as a *tested*
+requirement; P4; and "pixel-perfect" as an acceptance gate rather than design evidence.
+
+### Rejected
+
+- **"Cut the monogram entirely."** A per-repo logo was an explicit product request and the sidebar
+  group leans on it for scanability. Descoped instead: keep the glyph, drop the collision/grapheme
+  over-specification and test fixed name→output fixtures rather than "two names differ".
+- **"Drop the visual audit."** Kept as *evidence*, not as the acceptance criterion.
+
+### Open decisions blocking rev 2
+
+1. **Phasing.** The practice reviewer holds that a read-only P1 is ornamental and that the smallest
+   shippable P1 is the worktree-root override end-to-end. The request was explicitly UI-first. These
+   conflict; rev 2 needs one of them chosen.
+2. **Write authorization** for non-script settings (above).
