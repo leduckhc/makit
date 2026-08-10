@@ -29,9 +29,22 @@
 import type { Exec } from "../github/gateway.js";
 import { createGithubGateway, type GithubGateway } from "../github/gateway.js";
 import type { OpenPr } from "../git.js";
-import type { ForgeGateway, ForgeProviderId, GatewayStats, PrLookup, PrMutation, ProviderMix } from "./types.js";
+import type {
+  ForgeGateway,
+  ForgeProviderId,
+  ForgeSoftwareName,
+  GatewayStats,
+  PrLookup,
+  PrMutation,
+  ProviderMix,
+} from "./types.js";
 import { createFetchHttp, createForgejoGateway, type ForgejoRepoRef } from "./forgejo/gateway.js";
 import { parseForgejoRemote } from "./forgejo/map.js";
+import { createForgeDetector, isGitHubHost } from "./detect.js";
+import { createUnsupportedGateway } from "./unsupported.js";
+
+// Re-exported: routing is where callers reach for it, detection is where it lives.
+export { isGitHubHost };
 
 /**
  * Reads the origin URL. Declared here rather than imported from
@@ -39,18 +52,19 @@ import { parseForgejoRemote } from "./forgejo/map.js";
  */
 export const ORIGIN_REMOTE_ARGV = ["remote", "get-url", "origin"] as const;
 
+/** Where a repo lives, and how to reach its API. */
+export interface ForgeInstance {
+  /** Host of the `origin` remote, including a non-default port. */
+  host: string;
+  /** API base, e.g. `https://git.example.com` or a sub-path install. */
+  baseUrl: string;
+  /** Token for this instance, if one is configured for it. */
+  token?: string;
+}
+
 /** Timeout for the local `git remote` read. Local, so this is generous. */
 const REMOTE_TIMEOUT_MS = 5_000;
 
-/**
- * Whether a host is GitHub. Matches the apex and its subdomains, and nothing
- * else: a suffix test alone would route `github.com.evil.test` to the gh gateway
- * along with any credentials it holds.
- */
-export function isGitHubHost(host: string): boolean {
-  const h = host.toLowerCase().split(":")[0];
-  return h === "github.com" || h.endsWith(".github.com");
-}
 
 /**
  * Turn a git remote URL into Forgejo coordinates, or null when it cannot be read.
@@ -132,8 +146,14 @@ function hostnameOnly(host: string): string {
 export interface ForgeRouterDeps {
   github: GithubGateway;
   forgejo: ForgeGateway;
-  /** The `origin` host for a repo, or null when the remote cannot be read. */
-  resolveHost: (repoPath: string) => Promise<string | null>;
+  /** Used for a forge makit cannot talk to (GitLab, or unidentifiable). */
+  unsupported: ForgeGateway;
+  /** Where a repo lives, or null when the remote cannot be read. */
+  resolveInstance: (repoPath: string) => Promise<ForgeInstance | null>;
+  /** Ask the instance what software it runs. See `detect.ts`. */
+  detect: (baseUrl: string, token?: string) => Promise<ForgeSoftwareName>;
+  /** Called once per host that turns out to be unsupported, for logging. */
+  onUnsupported?: (host: string, software: ForgeSoftwareName) => void;
 }
 
 export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & ProviderMix {
@@ -148,21 +168,36 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
    * only routing knows the truth, and the poll cadence depends on it.
    */
   const inUse = new Set<ForgeProviderId>();
+  /** Hosts already reported as unsupported, so the log says it once, not per tick. */
+  const warned = new Set<string>();
 
   function pick(repoPath: string): Promise<ForgeGateway> {
     const hit = chosen.get(repoPath);
     if (hit !== undefined) return hit;
-    const p = deps
-      .resolveHost(repoPath)
-      .then((host) => {
-        const useGithub = host === null || isGitHubHost(host);
-        inUse.add(useGithub ? "github" : "forgejo");
-        return useGithub ? deps.github : deps.forgejo;
-      })
-      .catch(() => {
+    const p = (async (): Promise<ForgeGateway> => {
+      const inst = await deps.resolveInstance(repoPath);
+      // No readable remote: stay on gh, which is the status quo for anything that
+      // is not a checkout. Routing it elsewhere would change where such a
+      // directory fails, for no gain.
+      if (inst === null || isGitHubHost(inst.host)) {
         inUse.add("github");
         return deps.github;
-      });
+      }
+      const software = await deps.detect(inst.baseUrl, inst.token);
+      if (software === "forgejo" || software === "gitea") {
+        inUse.add("forgejo");
+        return deps.forgejo;
+      }
+      inUse.add("unsupported");
+      if (!warned.has(inst.host)) {
+        warned.add(inst.host);
+        deps.onUnsupported?.(inst.host, software);
+      }
+      return deps.unsupported;
+    })().catch(() => {
+      inUse.add("github");
+      return deps.github;
+    });
     chosen.set(repoPath, p);
     return p;
   }
@@ -204,6 +239,7 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
     close(): void {
       chosen.clear();
       inUse.clear();
+      warned.clear();
       deps.github.close();
       deps.forgejo.close();
     },
@@ -226,18 +262,39 @@ export function createDefaultForgeGateway(opts: {
     const url = r.stdout.trim();
     return url.length > 0 ? url : null;
   };
-  return createForgeRouter({
+  const http = createFetchHttp();
+  const detector = createForgeDetector({ http });
+  let currentSoftware: ForgeSoftwareName = "unknown";
+  const router = createForgeRouter({
     github: createGithubGateway({ exec: opts.exec }),
     forgejo: createForgejoGateway({
-      http: createFetchHttp(),
+      http,
       resolveRepo: async (repoPath) => {
         const url = await readRemote(repoPath);
         return url === null ? null : forgejoRefFromRemote(url, env);
       },
     }),
-    resolveHost: async (repoPath) => {
+    unsupported: createUnsupportedGateway({ software: () => currentSoftware }),
+    resolveInstance: async (repoPath) => {
       const url = await readRemote(repoPath);
-      return url === null ? null : (parseForgejoRemote(url)?.host ?? null);
+      if (url === null) return null;
+      const ref = forgejoRefFromRemote(url, env);
+      if (ref === null) return null;
+      const host = parseForgejoRemote(url)?.host;
+      return host === undefined ? null : { host, baseUrl: ref.baseUrl, token: ref.token };
+    },
+    detect: async (baseUrl, token) => {
+      currentSoftware = await detector.detect(baseUrl, token);
+      return currentSoftware;
+    },
+    onUnsupported: (host, software) => {
+      const what = software === "unknown" ? "an unrecognised forge" : software;
+      // Once per host. Silent failure here is what made this class of bug
+      // indistinguishable from an outage.
+      console.warn(
+        `[makit] ${host} looks like ${what}; makit has no provider for it, so pull-request status is unavailable for repositories there.`,
+      );
     },
   });
+  return router;
 }

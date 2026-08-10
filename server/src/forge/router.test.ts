@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createForgeRouter, forgejoRefFromRemote, isGitHubHost, ORIGIN_REMOTE_ARGV } from "./router.js";
-import type { ForgeGateway, GatewayStats, PrLookup } from "./types.js";
+import type { ForgeGateway, ForgeSoftwareName, GatewayStats, PrLookup } from "./types.js";
 import type { GithubGateway } from "../github/gateway.js";
 
 /** A recording stand-in for either provider. */
@@ -50,18 +50,33 @@ function githubFake(calls: string[]): GithubGateway {
   } as GithubGateway;
 }
 
-function harness(hosts: Record<string, string | null>) {
+/**
+ * [hosts] maps a repo path to its origin host (null = unreadable remote), and
+ * [software] maps a host to what detection reports for it. A host with no entry
+ * defaults to "forgejo", which keeps the routing tests focused on routing.
+ */
+function harness(hosts: Record<string, string | null>, software: Record<string, ForgeSoftwareName> = {}) {
   const calls: string[] = [];
   const lookups: string[] = [];
+  const probes: string[] = [];
   const router = createForgeRouter({
     github: githubFake(calls),
     forgejo: fake("forgejo", calls),
-    resolveHost: async (repoPath) => {
+    unsupported: fake("unsupported", calls),
+    resolveInstance: async (repoPath: string) => {
       lookups.push(repoPath);
-      return hosts[repoPath] ?? null;
+      const host = hosts[repoPath];
+      if (host === undefined || host === null) return null;
+      return { host, baseUrl: `https://${host}`, token: "t" };
     },
+    detect: async (baseUrl: string) => {
+      probes.push(baseUrl);
+      const host = baseUrl.replace("https://", "");
+      return software[host] ?? "forgejo";
+    },
+    onUnsupported: (host, sw) => calls.push(`warn(${host},${sw})`),
   });
-  return { router, calls, lookups };
+  return { router, calls, lookups, probes };
 }
 
 // ---------------------------------------------------------------------------
@@ -270,4 +285,76 @@ test("close() forgets the provider mix along with the routing cache", async () =
   await router.prForBranch("/fj", "b");
   router.close();
   assert.deepEqual([...router.providersInUse()], []);
+});
+
+// ---------------------------------------------------------------------------
+// Detection-driven routing. Before this, EVERY non-GitHub host was assumed to be
+// Forgejo, so a GitLab remote was polled against an API that does not exist there
+// and reported `unknown` -- identical to the instance being down.
+// ---------------------------------------------------------------------------
+
+test("a Gitea instance routes to the Forgejo provider (same REST API)", async () => {
+  const { router, calls } = harness({ "/gt": "gitea.example" }, { "gitea.example": "gitea" });
+  await router.prForBranch("/gt", "b");
+  assert.deepEqual(calls, ["forgejo.prForBranch(/gt,b)"]);
+});
+
+test("a GitLab instance routes to the unsupported provider, not Forgejo", async () => {
+  const { router, calls } = harness({ "/gl": "gitlab.example" }, { "gitlab.example": "gitlab" });
+  await router.prForBranch("/gl", "b");
+  assert.ok(calls.includes("unsupported.prForBranch(/gl,b)"), calls.join(","));
+  assert.ok(!calls.some((c) => c.startsWith("forgejo.")), "must not query a Forgejo API that is not there");
+});
+
+test("an unidentifiable forge routes to the unsupported provider", async () => {
+  const { router, calls } = harness({ "/x": "mystery.example" }, { "mystery.example": "unknown" });
+  await router.prForBranch("/x", "b");
+  assert.ok(calls.includes("unsupported.prForBranch(/x,b)"), calls.join(","));
+});
+
+test("an unsupported host is reported once, not once per poll", async () => {
+  const { router, calls } = harness({ "/gl": "gitlab.example" }, { "gitlab.example": "gitlab" });
+  await router.prForBranch("/gl", "a");
+  await router.prForBranch("/gl", "b");
+  await router.openPrs("/gl", 30);
+  assert.equal(calls.filter((c) => c.startsWith("warn(")).length, 1, calls.join(","));
+  assert.deepEqual(
+    calls.filter((c) => c.startsWith("warn(")),
+    ["warn(gitlab.example,gitlab)"],
+  );
+});
+
+test("GitHub is never probed -- the host is decisive", async () => {
+  const { router, probes } = harness({ "/gh": "github.com" });
+  await router.prForBranch("/gh", "b");
+  assert.deepEqual(probes, [], "no round trip should be spent identifying github.com");
+});
+
+test("detection runs once per repo, like the rest of the routing decision", async () => {
+  const { router, probes } = harness({ "/fj": "git.example" });
+  await router.prForBranch("/fj", "a");
+  await router.prForBranch("/fj", "b");
+  await router.openPrs("/fj", 30);
+  assert.deepEqual(probes, ["https://git.example"]);
+});
+
+test("an unsupported forge counts as its own provider in the mix", async () => {
+  const { router } = harness({ "/gl": "gitlab.example" }, { "gitlab.example": "gitlab" });
+  await router.prForBranch("/gl", "b");
+  assert.deepEqual([...router.providersInUse()], ["unsupported"]);
+});
+
+test("a detection failure falls back to GitHub rather than breaking the poll", async () => {
+  const calls: string[] = [];
+  const router = createForgeRouter({
+    github: githubFake(calls),
+    forgejo: fake("forgejo", calls),
+    unsupported: fake("unsupported", calls),
+    resolveInstance: async () => ({ host: "git.example", baseUrl: "https://git.example" }),
+    detect: async () => {
+      throw new Error("probe exploded");
+    },
+  });
+  await router.prForBranch("/fj", "b");
+  assert.deepEqual(calls, ["github.prForBranch(/fj,b)"]);
 });

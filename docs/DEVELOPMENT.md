@@ -137,11 +137,24 @@ pnpm build             # tsc -p . → dist/  (then: node dist/src/index.js serve
 
 ## 1b. Forges other than GitHub (Forgejo / Gitea)
 
-The server picks a provider per repository from the `origin` remote's host:
-`github.com` goes to the `gh`-backed gateway, **anything else** to the Forgejo /
-Gitea REST provider. A hostname cannot prove which software a server runs, so
-that is a guess — but a deliberate one: such remotes previously went to `gh`,
-failed, and showed as "unknown". Nothing regresses, and Forgejo/Gitea now work.
+The server picks a provider per repository by **asking the instance what it runs**,
+once per host, cached:
+
+| Probe | Forgejo | Gitea | GitLab |
+|-------|---------|-------|--------|
+| `GET /api/forgejo/v1/version` | 200 | 404 | — |
+| `GET /api/v1/version` | 200 | 200 | 302 → sign-in |
+| `GET /api/v4/version` | — | — | 401 |
+
+`github.com` (and subdomains) is decided by hostname and never probed. Forgejo and
+Gitea share one provider — the REST API is the same. GitLab, or anything
+unidentifiable, routes to an **unsupported** provider that makes no requests and
+says so on a button press, instead of being polled against an API that is not
+there and failing as "unknown" (which looked identical to an outage). The host is
+logged once, not once per poll.
+
+A failed probe is retried after a minute rather than cached, so an instance that
+was briefly down is not pinned as unsupported until the server restarts.
 
 No `gh`-style login is involved; the provider talks REST with a token.
 
