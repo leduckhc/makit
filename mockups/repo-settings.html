@@ -78,6 +78,8 @@
           border:1px solid var(--hairline);border-radius:8px;color:var(--muted);font-size:11.5px}
   .navitem{display:flex;align-items:center;gap:10px;height:32px;padding:0 9px;border-radius:8px;font-size:12.5px;color:var(--osv)}
   .navitem.on{background:#1f2a22;color:var(--primary)}
+  .navgrp{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--primary);font-weight:700;padding:14px 9px 5px}
+  .logo.sm{width:16px;height:16px;flex:0 0 16px;border-radius:4px;font-size:9px}
   .navitem.on svg{color:var(--primary)}
   .pane{flex:1;display:flex;flex-direction:column;min-width:0;padding:0 14px 14px;background:var(--bg)}
   .ptitle{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--primary);font-weight:700;padding:4px 0 12px}
@@ -162,12 +164,12 @@
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 <div class="card">
-  <header><h2>1 · Settings ▸ Repositories ▸ <em>one repo</em></h2><span class="rec">RECOMMENDED</span>
-    <p>A list that scales, and a detail pane per repo. Same destination from the repo card's <code>dotsThree</code> menu.</p></header>
+  <header><h2>1 · One Settings section per repository</h2><span class="rec">RECOMMENDED</span>
+    <p>Fixed app sections, then a <code>REPOSITORIES</code> group — the Mail/Finder idiom. Same destination from the repo card's <code>dotsThree</code> menu.</p></header>
   <div class="body">
     <div class="grid">
       <div class="col-mac">
-        <p class="cap">macOS — the real Settings window, with Repositories added</p>
+        <p class="cap">macOS — one sidebar section per repository</p>
         <div class="mac">
           <div class="strip"><span class="tl" style="background:#ff5f57"></span><span class="tl" style="background:#febc2e"></span><span class="tl" style="background:#28c840"></span></div>
           <div class="mac-body">
@@ -177,18 +179,18 @@
               <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-sliders"/></svg>General</div>
               <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-palette"/></svg>Appearance</div>
               <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-robot"/></svg>Agents &amp; Chat</div>
-              <div class="navitem on"><svg class="g" width="14" height="14"><use href="#g-folder"/></svg>Repositories</div>
               <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-server"/></svg>Server &amp; Devices</div>
               <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-bell"/></svg>Notifications</div>
               <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-kbd"/></svg>Shortcuts</div>
               <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-wrench"/></svg>Advanced</div>
               <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-info"/></svg>About</div>
+              <div class="navgrp">repositories</div>
+              <div class="navitem on"><span class="logo sm" style="background:#4ADE80">D</span>Diana</div>
+              <div class="navitem"><span class="logo sm" style="background:#A371F7">m</span>makit</div>
+              <div class="navitem"><span class="logo sm" style="background:#E0A72E">p</span>piano</div>
             </div>
             <div class="pane">
-              <div class="ptitle">Repositories</div>
-              <div class="crumb"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-back"/></svg>All repositories
-                <span style="color:#5c5c5c">›</span><span class="logo" style="background:#4ADE80">D</span>Diana</div>
-
+              <div class="ptitle">Diana</div>
               <div class="shdr">identity</div>
               <div class="sgroup">
                 <div class="srow"><span class="logo" style="background:#4ADE80">D</span>
@@ -262,19 +264,31 @@
       </div>
 
       <div class="col-prose">
-        <p class="cap">why a list-plus-detail, not fields on the repo card</p>
+        <p class="cap">why a section per repo, not one “Repositories” page</p>
         <ul>
-          <li><strong>It has to scale.</strong> The stated set is already eight rows and explicitly “much more”.
-            A list with a detail pane absorbs rows indefinitely; a popover does not.</li>
-          <li><strong>The widgets exist.</strong> <code>SettingsGroup</code> is documented as the grouped-list
-            idiom for exactly this, <code>SettingsSectionHeader</code> gives the flush-left subsection titles,
-            and <code>SettingsResetButton</code> already collapses to a fixed-width box so rows with and without
-            an override stay aligned. That is the whole inheritance affordance, already built for SPEC-19.</li>
-          <li><strong>Two entry points, one destination.</strong> Settings ▸ Repositories for browsing;
-            “Settings…” in the repo card's <code>dotsThree</code> menu for the repo in front of you.</li>
-          <li><strong>Root path is shown, not edited.</strong> The path <em>is</em> the repo's identity in
-            <code>projects.json</code>; changing it is “remove and add”, which the menu already offers.</li>
+          <li><strong>It is bounded by what you added.</strong> Sections come from projects — three on this
+            install (<code>makit</code>, <code>Diana</code>, <code>piano</code>). Repos makit merely noticed are
+            <code>pinned:false</code> (<code>manager.ts:287</code> vs <code>:215</code>) and stay out of the
+            sidebar, so it cannot turn into a file browser.</li>
+          <li><strong>Grouped, so the taxonomy stays honest.</strong> Fixed app sections are a closed set;
+            repos are data. Interleaving them in one flat list is a smell — under a
+            <code>REPOSITORIES</code> header it is just the Mail/Finder sidebar idiom, and the monogram makes
+            the group scannable at a glance.</li>
+          <li><strong>One click, and the page gets simpler.</strong> No list-then-detail drill, and the green
+            page title becomes the repo name — the breadcrumb an “All repositories” page would have needed
+            disappears entirely.</li>
+          <li><strong>Search still reaches everything.</strong> The existing “Search settings” field is what
+            makes a longer sidebar safe: “worktree root” finds the row whichever section owns it.</li>
         </ul>
+        <p class="cap" style="margin-top:14px">the risk worth naming</p>
+        <p>The sidebar becomes a <em>second</em> place that lists repositories, alongside the repo-centric home.
+          Two lists drift — different order, different names, different logos. Mitigation is not a rule but a
+          shared source: both render from the same <code>RepoDTO</code> and the same monogram widget, which is
+          row 6 of the deltas below.</p>
+        <p class="cap" style="margin-top:14px">if it ever grows</p>
+        <p>Past roughly ten repos, add a single <em>All repositories…</em> entry at the end of the group and
+          keep only pinned ones inline. Not worth building now — three sections is not a scrolling problem, and
+          the overflow rule is cheap to add later precisely because <code>pinned</code> already exists.</p>
       </div>
     </div>
   </div>
@@ -397,8 +411,8 @@
           <div class="strip"><span class="tl" style="background:#ff5f57"></span><span class="tl" style="background:#febc2e"></span><span class="tl" style="background:#28c840"></span></div>
           <div class="mac-body" style="min-height:190px">
             <div class="pane">
-              <div class="ptitle">Repositories</div>
-              <div class="crumb"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-back"/></svg>Diana
+              <div class="ptitle">Diana</div>
+              <div class="crumb"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-back"/></svg>Lifecycle scripts
                 <span style="color:#5c5c5c">›</span><svg class="g" width="13" height="13"><use href="#g-term"/></svg>After worktree create</div>
               <div class="script">#!/bin/sh
 pnpm install --frozen-lockfile
