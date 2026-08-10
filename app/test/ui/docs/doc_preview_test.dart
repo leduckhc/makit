@@ -186,10 +186,7 @@ void main() {
 
       await tester.tap(find.byKey(kDocOpenLocalButton));
       expect(opened, equals(1));
-      expect(
-        published,
-        equals(0),
-      );
+      expect(published, equals(0));
     });
   });
 

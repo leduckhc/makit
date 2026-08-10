@@ -147,3 +147,23 @@ test("publishDoc percent-encodes each path segment of the URL", async () => {
   assert.ok(parsed.pathname.includes("/mockups/"), `segments must stay separate: ${parsed.pathname}`);
 });
 
+
+// A reach probe can throw (a bind failure, a spawn error while asking Tailscale).
+// Unwrapped, that escaped as an unhandled rejection through the command router
+// instead of becoming the stated reason D15 requires.
+test("a throwing reach probe becomes a stated reason, not an unhandled rejection", async () => {
+  const root = fixture();
+  const grants = new DocGrantStore();
+  const result = await publishDoc(
+    { worktreePath: root, relPath: "mockups/board.html" },
+    {
+      grants,
+      reach: async () => {
+        throw new Error("EADDRINUSE 100.64.0.1:7801");
+      },
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.ok ? "" : result.reason, /EADDRINUSE/);
+  assert.equal(grants.list().length, 0, "nothing is shared when reach failed");
+});

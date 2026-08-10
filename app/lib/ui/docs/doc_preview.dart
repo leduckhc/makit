@@ -83,9 +83,8 @@ class DocFrontMatter {
 
 /// Drop blank lines from both ends without touching indentation, so a body that
 /// opens with an indented code block keeps it.
-String _stripBlankEdges(String s) => s
-    .replaceFirst(RegExp(r'^\n+'), '')
-    .replaceFirst(RegExp(r'\n+$'), '');
+String _stripBlankEdges(String s) =>
+    s.replaceFirst(RegExp(r'^\n+'), '').replaceFirst(RegExp(r'\n+$'), '');
 
 /// Splits the `**Status:** … · **Priority:** … · **Branch:** …` line off
 /// [markdown], returning the parsed fields plus the markdown either side of it:
@@ -638,9 +637,9 @@ class _DocPreviewSheetState extends ConsumerState<_DocPreviewSheet> {
           .openDoc(_doc.worktreePath, _doc.relPath);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not open: $e')));
     }
   }
 

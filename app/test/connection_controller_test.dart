@@ -330,7 +330,12 @@ void main() {
     test('isLocal:true in hello.ack marks the connection local', () async {
       final (controller, t) = await boot();
       t.emitFrame(
-        Envelope(v: 1, t: MsgType.helloAck, id: 'h1', body: {'ok': true, 'isLocal': true}),
+        Envelope(
+          v: 1,
+          t: MsgType.helloAck,
+          id: 'h1',
+          body: {'ok': true, 'isLocal': true},
+        ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(controller.state.serverIsLocal, isTrue);

@@ -29,19 +29,13 @@ Future<void> _pump(
   DocInfo doc, {
   int nowMs = 0,
   DocPathStyle pathStyle = DocPathStyle.absolute,
-}) =>
-    tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: DocRow(
-            doc: doc,
-            nowMs: nowMs,
-            onTap: () {},
-            pathStyle: pathStyle,
-          ),
-        ),
-      ),
-    );
+}) => tester.pumpWidget(
+  MaterialApp(
+    home: Scaffold(
+      body: DocRow(doc: doc, nowMs: nowMs, onTap: () {}, pathStyle: pathStyle),
+    ),
+  ),
+);
 
 void main() {
   group('doc vocabulary', () {
@@ -95,10 +89,12 @@ void main() {
       );
 
       final dir = tester.widget<Directionality>(
-        find.ancestor(
-          of: find.text('\u2066/repo/mockups/open-ports.html\u2069'),
-          matching: find.byType(Directionality),
-        ).first,
+        find
+            .ancestor(
+              of: find.text('\u2066/repo/mockups/open-ports.html\u2069'),
+              matching: find.byType(Directionality),
+            )
+            .first,
       );
       expect(
         dir.textDirection,
@@ -117,40 +113,32 @@ void main() {
       );
       // The relative path is wrapped in LTR isolates (\u2066/\u2069) for the
       // RTL paragraph, same as the absolute path styling.
-      expect(
-        find.text('\u2066docs/specs/SPEC-46.md\u2069'),
-        findsOneWidget,
-      );
+      expect(find.text('\u2066docs/specs/SPEC-46.md\u2069'), findsOneWidget);
       // No worktreePath prefix.
-      expect(
-        find.text('/repo/docs/specs/SPEC-46.md'),
-        findsNothing,
-      );
+      expect(find.text('/repo/docs/specs/SPEC-46.md'), findsNothing);
     });
 
-    testWidgets('docFullPath joins worktree and relPath without a double slash', (
-      tester,
-    ) async {
-      expect(
-        docFullPath(_doc(relPath: 'a/b.md')),
-        '/repo/a/b.md',
-      );
-      expect(
-        docFullPath(
-          const DocInfo(
-            key: 'k',
-            relPath: 'NOTES.md',
-            title: 'Notes',
-            kind: DocKind.md,
-            bytes: 1,
-            modifiedAt: 0,
-            worktreePath: '/repo/',
+    testWidgets(
+      'docFullPath joins worktree and relPath without a double slash',
+      (tester) async {
+        expect(docFullPath(_doc(relPath: 'a/b.md')), '/repo/a/b.md');
+        expect(
+          docFullPath(
+            const DocInfo(
+              key: 'k',
+              relPath: 'NOTES.md',
+              title: 'Notes',
+              kind: DocKind.md,
+              bytes: 1,
+              modifiedAt: 0,
+              worktreePath: '/repo/',
+            ),
           ),
-        ),
-        '/repo/NOTES.md',
-        reason: 'a trailing slash on the worktree must not double up',
-      );
-    });
+          '/repo/NOTES.md',
+          reason: 'a trailing slash on the worktree must not double up',
+        );
+      },
+    );
 
     testWidgets('renders the kind chip (HTML / MD)', (tester) async {
       await _pump(tester, _doc(kind: DocKind.html));

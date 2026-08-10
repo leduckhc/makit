@@ -68,19 +68,30 @@ void main() {
       for (var i = 0; i < n; i++) _doc('docs/note-$i.md', title: 'Note $i'),
     ];
 
-    testWidgets('builds only the visible rows, not one per doc', (tester) async {
+    testWidgets('builds only the visible rows, not one per doc', (
+      tester,
+    ) async {
       await _pump(tester, many(200));
       await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
       await tester.pumpAndSettle();
       final built = find.byType(DocRow).evaluate().length;
-      expect(built, lessThan(40), reason: 'the list must be lazy, not 200 rows');
+      expect(
+        built,
+        lessThan(40),
+        reason: 'the list must be lazy, not 200 rows',
+      );
       expect(built, greaterThan(0));
     });
 
-    testWidgets('the search field filters by title and by path', (tester) async {
+    testWidgets('the search field filters by title and by path', (
+      tester,
+    ) async {
       await _pump(tester, [
         _doc('mockups/board.html', title: 'Board X'),
-        _doc('flutter/learning-records/0001-prior.md', title: 'Prior knowledge'),
+        _doc(
+          'flutter/learning-records/0001-prior.md',
+          title: 'Prior knowledge',
+        ),
       ]);
       await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
       await tester.pumpAndSettle();
@@ -99,35 +110,42 @@ void main() {
       expect(find.text('Board X'), findsOneWidget);
     });
 
-    // The panel sized its list with `clamp(0.0, maxHeight - chrome)`, and Dart's
-  // clamp asserts lower <= upper — so any surface leaving under 96px of room
-  // (a short window, or the glyph anchored near an edge) threw ArgumentError
-  // instead of rendering a cramped popover. Verified: maxHeight=90 -> throws.
-  testWidgets('renders on a surface too short for the chrome, instead of throwing', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(400 * 3, 120 * 3);
-    tester.view.devicePixelRatio = 3;
-    addTearDown(tester.view.reset);
-
-    await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);
-    await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
-    await tester.pumpAndSettle();
-
-    expect(tester.takeException(), isNull, reason: 'no ArgumentError from clamp');
-    expect(find.byKey(kDocsPopover), findsOneWidget);
-  });
-
-  testWidgets('a query with no matches says so instead of showing an empty panel', (
+    // The panel sized its list with `clamp(0.0, maxHeight - kChrome)`, and Dart's
+    // clamp asserts lower <= upper — so a surface leaving less than the chrome
+    // height of room threw ArgumentError instead of rendering. A 200pt-tall window
+    // lands squarely in that range (the panel gets ~90pt, chrome wanted 96), so
+    // this test throws on the old code and renders on the new.
+    testWidgets('renders where the list no longer fits, instead of throwing', (
       tester,
     ) async {
+      tester.view.physicalSize = const Size(400 * 3, 180 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
       await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);
       await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(kDocsPopoverSearch), 'zzz');
-      await tester.pumpAndSettle();
-      expect(find.byType(DocRow), findsNothing);
-      expect(find.textContaining('No docs match'), findsOneWidget);
+
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'no clamp assertion and no overflow when the list is squeezed',
+      );
+      expect(find.byKey(kDocsPopover), findsOneWidget);
+      expect(find.byKey(kDocsPopoverSearch), findsOneWidget);
     });
+
+    testWidgets(
+      'a query with no matches says so instead of showing an empty panel',
+      (tester) async {
+        await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);
+        await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byKey(kDocsPopoverSearch), 'zzz');
+        await tester.pumpAndSettle();
+        expect(find.byType(DocRow), findsNothing);
+        expect(find.textContaining('No docs match'), findsOneWidget);
+      },
+    );
   });
 }

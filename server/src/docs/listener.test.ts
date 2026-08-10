@@ -113,3 +113,21 @@ test("close() is idempotent and safe before any bind", async () => {
   await l.close();
   assert.equal(l.isListening, false);
 });
+
+// Two clients publishing at once both passed the `origin === undefined` check and
+// bound their own port; the first listener was then unreachable and unclosable.
+test("concurrent ensureOrigin calls share one bind, not one each", async () => {
+  const { l, opened } = listener("127.0.0.1");
+
+  const [a, b, c] = await Promise.all([
+    l.ensureOrigin(),
+    l.ensureOrigin(),
+    l.ensureOrigin(),
+  ]);
+  assert.equal(opened.length, 1, "one listener for three concurrent publishes");
+  assert.deepEqual(a, b);
+  assert.deepEqual(b, c);
+  assert.notEqual(a, null);
+  await l.close();
+  assert.equal(l.isListening, false);
+});

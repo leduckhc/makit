@@ -204,3 +204,18 @@ test("hello.ack carries isLocal so the client never has to guess", () => {
   gate().handleHello(remote, hello({ bearer: "good-bearer" }));
   assert.equal(remote.sent.find((f) => f.t === "hello.ack")?.isLocal, false);
 });
+
+// There are THREE hello.ack sends (already-trusted, bearer, pair) and the first
+// pass patched two. A device that pairs would then never learn it is local, and
+// would silently publish instead of opening — the feature quietly off.
+test("every hello.ack path states isLocal, including the pairing one", () => {
+  const registry = fakeRegistry({ pairTokens: { "pair-1": { id: "d1", label: "mac", bearer: "b1" } } });
+  const client = fakeClient();
+  new AuthGate({ registry, onAuthenticated: () => {} }).handleHello(
+    client,
+    hello({ pair: "pair-1", label: "mac" }),
+  );
+  const ack = client.sent.find((f) => f.t === "hello.ack");
+  assert.ok(ack, "pairing must ack");
+  assert.equal(ack?.isLocal, true, "the pairing ack must carry isLocal too");
+});

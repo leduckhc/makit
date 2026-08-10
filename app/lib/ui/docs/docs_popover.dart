@@ -8,8 +8,6 @@ library;
 
 import 'dart:async';
 
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -34,10 +32,6 @@ const int kDocsPopoverVisibleRows = 12;
 /// rows size naturally — a fixed `itemExtent` overflows as soon as a row grows
 /// (an extra badge, a wrapped chip line).
 const double kDocsPopoverRowHeight = 84;
-
-/// Header + search field + padding above the list — subtracted from the
-/// available height so the list never pushes the chrome off-screen.
-const double kDocsPopoverChromeHeight = 96;
 
 /// Dwell before a hover opens the popover — 350 ms so sliding the pointer
 /// across worktrees opens nothing; deliberately below [kTooltipDwell] so the
@@ -302,18 +296,6 @@ class _DocsPopoverPanelState extends State<_DocsPopoverPanel> {
     final cs = theme.colorScheme;
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     final visible = _visible;
-    // A repo can hold hundreds of docs, so cap the list at a readable dozen and
-    // scroll the rest rather than growing the popover to the window's height.
-    //
-    // `clamp` asserts lower <= upper, so a maxHeight below the chrome height
-    // (small window, or the glyph anchored near a screen edge) would throw
-    // rather than degrade. Take the smaller of the two instead — no assertion,
-    // and a cramped popover still renders whatever it can.
-    final available = widget.maxHeight - kDocsPopoverChromeHeight;
-    final listHeight = math.max(
-      0.0,
-      math.min(kDocsPopoverVisibleRows * kDocsPopoverRowHeight, available),
-    );
     return Material(
       key: kDocsPopover,
       color: cs.surfaceContainerLow,
@@ -414,24 +396,32 @@ class _DocsPopoverPanelState extends State<_DocsPopoverPanel> {
                 ),
               )
             else
-              SizedBox(
-                height: listHeight,
-                // Lazy: a 600-doc worktree must not build 600 rows to show 12.
-                child: ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: visible.length,
-                  itemBuilder: (context, i) => DecoratedBox(
-                    key: ValueKey(visible[i].key),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(color: cs.outlineVariant),
+              // Flexible, not a fixed height: the cap is a *maximum*, and the
+              // list yields space when the panel is squeezed. Computing a height
+              // by hand is what produced first a clamp assertion and then a
+              // RenderFlex overflow on a short surface.
+              Flexible(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxHeight: kDocsPopoverVisibleRows * kDocsPopoverRowHeight,
+                  ),
+                  // Lazy: a 600-doc worktree must not build 600 rows to show 12.
+                  child: ListView.builder(
+                    padding: EdgeInsets.zero,
+                    itemCount: visible.length,
+                    itemBuilder: (context, i) => DecoratedBox(
+                      key: ValueKey(visible[i].key),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          top: BorderSide(color: cs.outlineVariant),
+                        ),
                       ),
-                    ),
-                    child: DocRow(
-                      doc: visible[i],
-                      nowMs: nowMs,
-                      onTap: () => widget.onOpenDoc(visible[i]),
-                      pathStyle: DocPathStyle.relative,
+                      child: DocRow(
+                        doc: visible[i],
+                        nowMs: nowMs,
+                        onTap: () => widget.onOpenDoc(visible[i]),
+                        pathStyle: DocPathStyle.relative,
+                      ),
                     ),
                   ),
                 ),
