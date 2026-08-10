@@ -135,6 +135,50 @@ pnpm build             # tsc -p . → dist/  (then: node dist/src/index.js serve
 
 ---
 
+## 1b. Forges other than GitHub (Forgejo / Gitea)
+
+The server picks a provider per repository from the `origin` remote's host:
+`github.com` goes to the `gh`-backed gateway, **anything else** to the Forgejo /
+Gitea REST provider. A hostname cannot prove which software a server runs, so
+that is a guess — but a deliberate one: such remotes previously went to `gh`,
+failed, and showed as "unknown". Nothing regresses, and Forgejo/Gitea now work.
+
+No `gh`-style login is involved; the provider talks REST with a token.
+
+| Variable | Purpose |
+|----------|---------|
+| `FORGEJO_BASE_URL` (or `MAKIT_FORGEJO_BASE_URL`) | The instance URL. Only needed when `https://<host-from-the-remote>` is not right — a sub-path install, a non-standard port, or plain HTTP on a private network. |
+| `FORGEJO_ACCESS_TOKEN` (or `MAKIT_FORGEJO_TOKEN`, `FORGEJO_TOKEN`, `GITEA_TOKEN`) | API token, checked in that order. Create it under *Settings → Applications*. |
+
+**Setting an instance URL scopes the token to that host.** This is a security
+property: configuring one instance means exporting a single global token, and
+without scoping it would be attached to every non-GitHub remote — so opening any
+public Gitea/Forgejo repo would send your internal token to a third party. A
+foreign host is still queried, just unauthenticated (correct for a public repo).
+Host matching ignores scheme, port and path, because an scp-form remote
+(`git@host:owner/repo`) cannot express the API's port.
+
+Token scopes: `read:repository` is enough for the PR pills. The PR *actions*
+(mark ready, update branch, squash-merge) additionally need `write:repository`.
+Creating repositories needs `write:user` / `write:organization`, which makit
+never does.
+
+### Differences you will see versus GitHub
+
+- **No quota panel.** Forgejo exposes no `/api/v1/rate_limit` and no rate-limit
+  headers, so there is nothing to ration or display. The GitHub budget footer
+  keeps showing GitHub's quota only.
+- **"Mark ready" rewrites the title.** Forgejo derives `draft` from a
+  `WORK_IN_PROGRESS_PREFIXES` title prefix (default `WIP:`, `[WIP]`,
+  case-insensitive, configurable per instance) and its API has no `draft` field.
+  makit strips the prefix, and refuses rather than guessing if it does not
+  recognise one.
+- **No merge-state detail.** GitHub's `BEHIND`/`BLOCKED`/`CLEAN` has no Forgejo
+  counterpart, so that fact is reported as unknown instead of guessed.
+- **Unresolved review comments are not counted yet.** Forgejo exposes resolution
+  per review *comment* via a reviews→comments walk; until that is verified the
+  count is marked unmeasured rather than reported as zero.
+
 ## 2. App (`app/`)
 
 ### Setup

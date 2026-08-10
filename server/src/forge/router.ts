@@ -55,9 +55,24 @@ export function isGitHubHost(host: string): boolean {
 /**
  * Turn a git remote URL into Forgejo coordinates, or null when it cannot be read.
  *
- * The base URL assumes `https://<host>`, which is right for every normal
- * deployment; `MAKIT_FORGEJO_BASE_URL` overrides it for the awkward ones (an
- * instance served from a sub-path, or plain HTTP on a private network).
+ * Configuration comes from the environment:
+ *
+ *   `MAKIT_FORGEJO_BASE_URL` / `FORGEJO_BASE_URL`
+ *       The instance's URL. Needed only when `https://<host>` is not right --
+ *       an instance behind a sub-path, or plain HTTP on a private network.
+ *   `MAKIT_FORGEJO_TOKEN` / `FORGEJO_ACCESS_TOKEN` / `FORGEJO_TOKEN` /
+ *   `GITEA_TOKEN`
+ *       API token, most specific name first.
+ *
+ * **A configured instance URL scopes the credentials to that host.** This is a
+ * security property, not a convenience: configuring one instance means setting a
+ * single global token, and without scoping that token would be attached to every
+ * non-GitHub remote — so opening any public Gitea/Forgejo repo would send the
+ * user's internal token to a third party. A foreign host is still queried, just
+ * unauthenticated, which is the correct outcome for a public repo.
+ *
+ * With no instance configured there is nothing to scope against (the
+ * single-instance case), so the token applies to the remote's own host.
  */
 export function forgejoRefFromRemote(
   remoteUrl: string,
@@ -65,14 +80,53 @@ export function forgejoRefFromRemote(
 ): ForgejoRepoRef | null {
   const parsed = parseForgejoRemote(remoteUrl);
   if (parsed === null) return null;
-  const override = env.MAKIT_FORGEJO_BASE_URL;
+
+  const configured = firstSet(env, ["MAKIT_FORGEJO_BASE_URL", "FORGEJO_BASE_URL"]);
+  const token = firstSet(env, [
+    "MAKIT_FORGEJO_TOKEN",
+    "FORGEJO_ACCESS_TOKEN",
+    "FORGEJO_TOKEN",
+    "GITEA_TOKEN",
+  ]);
+
+  // Compared on HOSTNAME alone -- no scheme, no port, no path. The override
+  // exists precisely to supply those, and an scp-form remote
+  // (`git@host:owner/repo`) cannot express a port at all, so an instance whose
+  // API is on :3000 would never match if the port counted.
+  const configuredHost = configured === undefined ? undefined : hostnameOf(configured);
+  const isConfiguredInstance =
+    configuredHost !== undefined && configuredHost.length > 0 && configuredHost === hostnameOnly(parsed.host);
+
   return {
-    baseUrl: override !== undefined && override.length > 0 ? override : `https://${parsed.host}`,
+    baseUrl: isConfiguredInstance && configured !== undefined ? configured : `https://${parsed.host}`,
     owner: parsed.owner,
     repo: parsed.repo,
-    // Most specific name first, then the names tea/fgj users already have set.
-    token: env.MAKIT_FORGEJO_TOKEN ?? env.FORGEJO_TOKEN ?? env.GITEA_TOKEN,
+    // Withheld from any host other than the configured one -- see the note above.
+    token: configuredHost === undefined || isConfiguredInstance ? token : undefined,
   };
+}
+
+/** First env var of [names] that is set and non-empty. */
+function firstSet(env: Record<string, string | undefined>, names: string[]): string | undefined {
+  for (const name of names) {
+    const v = env[name];
+    if (v !== undefined && v.length > 0) return v;
+  }
+  return undefined;
+}
+
+/** Hostname of a URL (no port), lower-cased; empty string when unparseable. */
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/** Strip a `:port` suffix from a bare host. */
+function hostnameOnly(host: string): string {
+  return host.toLowerCase().split(":")[0];
 }
 
 export interface ForgeRouterDeps {

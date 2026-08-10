@@ -183,17 +183,62 @@ test("forgejoRefFromRemote derives base URL, slug and token", () => {
 test("forgejoRefFromRemote accepts the common token env names in priority order", () => {
   const pick = (env: Record<string, string>) =>
     forgejoRefFromRemote("https://git.example.com/a/b", env)?.token;
-  assert.equal(pick({ MAKIT_FORGEJO_TOKEN: "m", FORGEJO_TOKEN: "f", GITEA_TOKEN: "g" }), "m");
+  assert.equal(
+    pick({
+      MAKIT_FORGEJO_TOKEN: "m",
+      FORGEJO_ACCESS_TOKEN: "a",
+      FORGEJO_TOKEN: "f",
+      GITEA_TOKEN: "g",
+    }),
+    "m",
+  );
+  assert.equal(pick({ FORGEJO_ACCESS_TOKEN: "a", FORGEJO_TOKEN: "f" }), "a");
   assert.equal(pick({ FORGEJO_TOKEN: "f", GITEA_TOKEN: "g" }), "f");
   assert.equal(pick({ GITEA_TOKEN: "g" }), "g");
   assert.equal(pick({}), undefined);
 });
 
-test("forgejoRefFromRemote honours a base-URL override for subpath installs", () => {
-  const ref = forgejoRefFromRemote("https://git.example.com/a/b", {
-    MAKIT_FORGEJO_BASE_URL: "https://example.com/forge",
-  });
-  assert.equal(ref?.baseUrl, "https://example.com/forge");
+test("forgejoRefFromRemote honours a base-URL override for the host it names", () => {
+  for (const key of ["MAKIT_FORGEJO_BASE_URL", "FORGEJO_BASE_URL"]) {
+    const ref = forgejoRefFromRemote("https://git.example.com/a/b", {
+      [key]: "https://git.example.com/forge",
+    });
+    assert.equal(ref?.baseUrl, "https://git.example.com/forge", key);
+  }
+});
+
+// A configured instance URL scopes the credentials to THAT host. Without this a
+// single global FORGEJO_ACCESS_TOKEN -- the normal way to configure one instance
+// -- would be attached to every non-GitHub remote, so cloning any public Gitea
+// repo would ship the user's internal token to a third party.
+test("a configured instance never lends its token to a different host", () => {
+  const env = {
+    FORGEJO_BASE_URL: "https://forgejo.internal.example",
+    FORGEJO_ACCESS_TOKEN: "secret",
+  };
+  const own = forgejoRefFromRemote("https://forgejo.internal.example/a/b", env);
+  assert.equal(own?.token, "secret");
+  assert.equal(own?.baseUrl, "https://forgejo.internal.example");
+
+  const foreign = forgejoRefFromRemote("https://codeberg.org/a/b", env);
+  assert.equal(foreign?.token, undefined, "the internal token must not leave its host");
+  // Still usable unauthenticated against its own host, not the configured one.
+  assert.equal(foreign?.baseUrl, "https://codeberg.org");
+});
+
+test("the base-URL override matches on host, ignoring scheme, port and path", () => {
+  const env = { FORGEJO_BASE_URL: "http://git.example.com:3000/forge", FORGEJO_TOKEN: "t" };
+  const ref = forgejoRefFromRemote("git@git.example.com:a/b.git", env);
+  assert.equal(ref?.baseUrl, "http://git.example.com:3000/forge");
+  assert.equal(ref?.token, "t");
+});
+
+test("with no instance configured the token applies to the remote's own host", () => {
+  // The single-instance case: there is nothing to scope against, so the token is
+  // attached to whatever host the remote names.
+  const ref = forgejoRefFromRemote("https://git.example.com/a/b", { FORGEJO_TOKEN: "t" });
+  assert.equal(ref?.token, "t");
+  assert.equal(ref?.baseUrl, "https://git.example.com");
 });
 
 test("forgejoRefFromRemote returns null for a remote it cannot read", () => {
