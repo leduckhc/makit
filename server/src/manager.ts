@@ -184,6 +184,12 @@ export class SessionManager extends EventEmitter {
   private readonly sessions = new Map<string, Session>();
   /** pi session uuid → live makit session id, so re-attach reuses the process. */
   private readonly attachedByPi = new Map<string, string>();
+  /**
+   * In-flight closes, keyed by session id. Teardown awaits the agent, during
+   * which the session still reads `closed === false` with its live adapter
+   * installed — so input paths MUST await this rather than racing it.
+   */
+  private readonly closeInFlight = new Map<string, Promise<void>>();
   /** In-flight attaches, so concurrent attach calls collapse onto one process. */
   private readonly attachInFlight = new Map<string, Promise<Session>>();
   /** In-flight draft promotions, keyed by session id, so concurrent first
@@ -1204,6 +1210,27 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
     if (session.closed) return;
+    // Collapse concurrent closes (a user tap racing an idle sweep) onto one
+    // teardown, and publish it so input paths can wait instead of prompting an
+    // agent that is being reaped.
+    const already = this.closeInFlight.get(id);
+    if (already) return already;
+    const run = this.runClose(id, session);
+    this.closeInFlight.set(id, run);
+    try {
+      await run;
+    } finally {
+      this.closeInFlight.delete(id);
+    }
+  }
+
+  /** The teardown itself; {@link closeSession} owns de-duplication. */
+  private async runClose(id: string, session: Session): Promise<void> {
+    // Stop means stop (SPEC-35), as with `cancel`: drop pending mid-turn input
+    // before the agent is asked to close. Otherwise the `idle` an adapter emits
+    // while cancelling its turn triggers `flushNext()` and a queued message is
+    // prompted into the process we are about to reap.
+    session.clearQueue();
     // Best-effort, in order: closing is also the recovery path in the
     // removeWorktree loop (called after git already deleted the tree), so
     // neither a rejecting close() nor a rejecting kill() may abort the close —
@@ -1263,6 +1290,11 @@ export class SessionManager extends EventEmitter {
    * sessions for exactly that reason.
    */
   async ensureLiveForInput(sessionId: string): Promise<void> {
+    // A close in flight still reads `closed === false` with the live adapter
+    // installed, so acting now would prompt an agent mid-reap. Let teardown
+    // finish, then bring the session back deliberately.
+    const closing = this.closeInFlight.get(sessionId);
+    if (closing) await closing.catch(() => {});
     const session = this.sessions.get(sessionId);
     if (session?.closed) {
       await this.reopenSession(sessionId);

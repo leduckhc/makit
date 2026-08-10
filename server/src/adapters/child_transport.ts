@@ -287,11 +287,16 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
       // Already reaped by the OS — nothing to signal, and SIGKILLing a pid that
       // has been recycled would hit an unrelated process.
       if (settled) return;
+      // `kill()` returns false when the signal was NOT delivered (the child is
+      // already gone). Escalating on that would schedule a SIGKILL against a pid
+      // the OS may have recycled by then — a signal to an unrelated process.
+      let termed = false;
       try {
-        child.kill("SIGTERM");
+        termed = child.kill("SIGTERM");
       } catch {
         /* ignore */
       }
+      if (!termed) return;
       // Escalate once. An agent that ignores SIGTERM (or is wedged mid-turn)
       // would otherwise stay resident indefinitely, holding its whole RSS.
       if (killTimer) return;

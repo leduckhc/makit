@@ -2510,3 +2510,99 @@ test("closeSession reaps even when the agent's close() never settles", async () 
     store.close();
   }
 });
+
+/**
+ * Teardown must be serialized against input (review: "Serialize input with
+ * session teardown"). While `closeSession` awaits `adapter.close()` and `kill()`,
+ * the session still reads `closed === false` with the live adapter installed, so
+ * a racing `send.message` would pass `ensureLiveForInput` and prompt an agent
+ * that is being reaped — the turn is lost or errors.
+ */
+test("a message racing a close waits for teardown, then reopens the session", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-close-race-"));
+  try {
+    const order: string[] = [];
+    let releaseClose = () => {};
+    const gate = new Promise<void>((r) => {
+      releaseClose = r;
+    });
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a: any = stubAdapter([]);
+        a.close = async () => {
+          order.push("close:start");
+          await gate;
+          order.push("close:end");
+        };
+        return a;
+      },
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "racer", "pi");
+
+    const closing = mgr.closeSession(s.id); // not awaited: teardown in flight
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(order, ["close:start"], "teardown is mid-flight");
+
+    const input = (async () => {
+      await mgr.ensureLiveForInput(s.id);
+      order.push("input:live");
+    })();
+
+    releaseClose();
+    await Promise.all([closing, input]);
+
+    assert.deepEqual(
+      order,
+      ["close:start", "close:end", "input:live"],
+      "input must not be serviced until teardown finished",
+    );
+    assert.equal(mgr.getSession(s.id)!.closed, false, "the racing message reopened it");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+/**
+ * Closing drops queued mid-turn messages, mirroring `cancel`'s "stop means stop"
+ * (SPEC-35). Without this, the `idle` an adapter's `close()` emits triggers
+ * `flushNext()` and a queued message is sent into the agent being reaped.
+ */
+test("closeSession drops queued mid-turn messages instead of flushing them into a dying agent", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-close-queue-"));
+  try {
+    const sends: string[] = [];
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a: any = stubAdapter([]);
+        a.send = async (input: { text: string }) => {
+          sends.push(input.text);
+        };
+        a.steer = async () => false; // unsteerable → mid-turn input queues
+        a.close = async () => a.emit("status", "idle"); // as a real cancel does
+        return a;
+      },
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "queued", "pi");
+    await s.sendUserMessage("first");
+    s.adapter.emit("status", "running");
+    await s.sendUserMessage("queued-while-busy");
+    assert.equal(s.queuedMessages.length, 1, "precondition: one message is queued");
+
+    await mgr.closeSession(s.id);
+
+    assert.equal(s.queuedMessages.length, 0, "the queue is dropped, not flushed");
+    assert.deepEqual(sends, ["first"], "no queued message reached the closing agent");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});

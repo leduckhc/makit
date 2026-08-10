@@ -33,9 +33,14 @@ function fakeSpawn(): {
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
     child.signals = [] as string[];
+    // Mirrors Node: true when the signal was delivered, false when it was not
+    // (already-exited child). `killDelivers` lets a test take the false path.
+    child.killDelivers = true;
     child.kill = (signal?: string) => {
-      child.killed = true;
       child.signals.push(signal ?? "SIGTERM");
+      if (!child.killDelivers) return false;
+      child.killed = true;
+      return true;
     };
     children.push(child);
     return child as unknown as ChildProcess;
@@ -344,4 +349,21 @@ test("pid is undefined when the spawn faults (no child pid)", () => {
   const { spawn } = fakeSpawn(); // fake child never sets .pid
   const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
   assert.equal(t.pid, undefined);
+});
+
+/**
+ * `kill()` returning false means the signal was not delivered — the child is
+ * already gone. Escalating anyway would fire a SIGKILL at a pid the OS may have
+ * recycled, hitting an unrelated process.
+ */
+test("dispose does not escalate when the SIGTERM was not delivered", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+  children[0]!.killDelivers = false;
+
+  t.dispose();
+  assert.deepEqual(children[0]!.signals, ["SIGTERM"], "the attempt is still made");
+
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(children[0]!.signals, ["SIGTERM"], "but no SIGKILL follows an undelivered signal");
 });

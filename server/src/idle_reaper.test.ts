@@ -173,3 +173,56 @@ test("resolveIdleCloseMs reads minutes, defaults, and honours 0", () => {
   assert.equal(resolveIdleCloseMs({ MAKIT_IDLE_CLOSE_MIN: "soon" } as NodeJS.ProcessEnv), DEFAULT_IDLE_CLOSE_MS);
   assert.equal(resolveIdleCloseMs({ MAKIT_IDLE_CLOSE_MIN: "-3" } as NodeJS.ProcessEnv), DEFAULT_IDLE_CLOSE_MS);
 });
+
+/**
+ * The interval derivation and its floor were untested (review). The floor is the
+ * load-bearing half: a short window must not turn the sweep into a busy loop.
+ */
+test("the default sweep interval is a quarter of the window, floored at 30s", () => {
+  const armedFor = (idleCloseMs: number) => {
+    let armed: number | undefined;
+    new IdleReaper({
+      sessions: () => [],
+      close: async () => {},
+      idleCloseMs,
+      setTimer: (_fn, ms) => {
+        armed = ms;
+        return "h";
+      },
+    }).start();
+    return armed;
+  };
+  assert.equal(armedFor(60 * 60_000), 15 * 60_000, "an hour window sweeps every 15min");
+  assert.equal(armedFor(60_000), 30_000, "a 1min window is floored, not swept every 15s");
+});
+
+/**
+ * A sweep awaits an agent per close, so a slow one can still be running when the
+ * next tick fires. Without the re-entrancy guard the same session closes twice.
+ */
+test("a sweep already in flight suppresses the next one", async () => {
+  let releaseFirst = () => {};
+  const gate = new Promise<void>((r) => {
+    releaseFirst = r;
+  });
+  const s = session({ lastActivityAt: 0 });
+  const closed: string[] = [];
+  const r = new IdleReaper({
+    sessions: () => [s],
+    close: async (id) => {
+      closed.push(id);
+      await gate;
+      (s as { closed: boolean }).closed = true;
+    },
+    idleCloseMs: 60_000,
+    now: () => 10 * 60_000,
+  });
+
+  const first = r.sweep();
+  await new Promise((res) => setTimeout(res, 5));
+  assert.deepEqual(await r.sweep(), [], "the overlapping sweep is a no-op");
+
+  releaseFirst();
+  assert.deepEqual(await first, [s.id]);
+  assert.deepEqual(closed, [s.id], "closed exactly once");
+});
