@@ -792,10 +792,10 @@
 <div class="card">
   <header><h2>Explicitly not changed</h2></header>
   <div class="body"><div class="grid"><div class="prose" style="flex:1 1 100%;min-width:0">
-    <p class="m">· <b>The wire protocol.</b> Flat frames, <code>v:1</code>, bearer auth, <code>makit://pair</code> — untouched apart from two optional query params (#15).</p>
+    <p class="m">· <b>The wire protocol.</b> Flat frames, <code>v:1</code>, bearer auth, <code>makit://pair</code> — untouched apart from two optional query params (#19).</p>
     <p class="m">· <b><code>MAKIT_HOME</code> as the isolation boundary.</b> Already correct, already used by every store (<code>daemon/paths.ts</code>, <code>pairing/registry.ts</code>, <code>project-store.ts</code>, <code>push/config.ts</code>). Profiles are a client concept; the server stays profile-agnostic.</p>
     <p class="m">· <b>The daemon spawn path.</b> <code>desktop_app.dart:107</code> already passes <code>environment: profile.environment</code>. Nothing to add.</p>
-    <p class="m">· <b>Per-profile prefs namespacing.</b> <code>SharedPreferences.setPrefix(profile.prefsPrefix)</code> and the legacy <code>flutter.</code> prefix for shipped users both stand.</p>
+    <p class="m">· <b>Stored preference keys.</b> The effective key stays <code>flutter.&lt;id&gt;.&lt;key&gt;</code> (and <code>flutter.&lt;key&gt;</code> for the legacy profile). The profile segment moves out of <code>SharedPreferences.setPrefix</code> and into app-owned keys (#8), so the stored key is byte-identical and no migration runs.</p>
     <p class="m">· <b>Devices / Sessions / Danger-zone groups.</b> Out of scope; they were never the complexity.</p>
     <p class="m">· <b>Your git worktrees, repos and code.</b> Profile deletion touches <code>$MAKIT_HOME</code>, prefs, secure store and the registry &mdash; never a path outside <code>~/.makit*</code>. The <code>origin</code> field is read to detect orphans and is never written to or removed.</p>
     <p class="m">· <b>Session retention / db size.</b> The 544 MB <code>makit.db</code> + 99 MB <code>media/</code> in the live <code>~/Work/Vibe/makit</code> profile is a pruning problem, not a profiles problem. Deliberately deferred.</p>

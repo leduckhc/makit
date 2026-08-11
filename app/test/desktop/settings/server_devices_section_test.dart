@@ -77,6 +77,7 @@ Future<void> _pump(
   MakitConnState? connection,
   StatusCenter? statusCenter,
   ServerProfile? profile,
+  NavigatorObserver? observer,
   bool tall = false,
 }) async {
   if (tall) {
@@ -100,7 +101,10 @@ Future<void> _pump(
         if (statusCenter != null)
           statusCenterProvider.overrideWithValue(statusCenter),
       ],
-      child: const MaterialApp(home: Scaffold(body: ServerDevicesSection())),
+      child: MaterialApp(
+        navigatorObservers: observer == null ? const [] : [observer],
+        home: const Scaffold(body: ServerDevicesSection()),
+      ),
     ),
   );
   await tester.pump();
@@ -408,29 +412,13 @@ void main() {
   testWidgets('nav rows disclose their content inline (no page push)', (
     tester,
   ) async {
-    final config = await makeConfig();
     final observer = _RecordingObserver();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          serverConfigProvider.overrideWith((ref) => config),
-          desktopControllerProvider.overrideWithValue(_controller()),
-          connectionProvider.overrideWithValue(MakitConnState()),
-          controlClientProvider.overrideWithValue(
-            FakeControlClient(sessions: const []),
-          ),
-        ],
-        child: MaterialApp(
-          navigatorObservers: [observer],
-          home: const Scaffold(body: ServerDevicesSection()),
-        ),
-      ),
+    await _pump(
+      tester,
+      config: await makeConfig(),
+      observer: observer,
+      tall: true,
     );
-    tester.view.physicalSize = const Size(1200, 2400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pump();
     observer.pushed.clear();
 
     expect(find.text('No running sessions'), findsNothing);

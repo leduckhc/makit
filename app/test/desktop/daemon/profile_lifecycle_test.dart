@@ -168,7 +168,7 @@ void main() {
         statusProbe: (_) async => true,
         // No pid file exists for this fake home, so confirmation rests on the
         // socket going away — exactly what this test covers.
-        readPid: (_) async => null,
+        readPid: (_) => null,
         sleep: (_) async {},
       );
 
@@ -248,7 +248,7 @@ void main() {
           resolver: _resolver(),
           run: _RecordingRunner().run,
           socketExists: (_) => false, // socket already gone
-          readPid: (_) async => 4242,
+          readPid: (_) => 4242,
           // Alive for the first two polls, then the process exits.
           processAlive: (pid) async {
             expect(pid, 4242);
@@ -278,7 +278,7 @@ void main() {
           resolver: _resolver(),
           run: _RecordingRunner().run,
           socketExists: (_) => false, // socket gone...
-          readPid: (_) async => 99,
+          readPid: (_) => 99,
           processAlive: (_) async => true, // ...but the process never exits
           sleep: (_) async {},
         );
@@ -306,7 +306,7 @@ void main() {
           probed = true;
           return false;
         },
-        readPid: (_) async => null,
+        readPid: (_) => null,
         sleep: (_) async {},
       );
 
@@ -328,7 +328,7 @@ void main() {
         resolver: _resolver(path: null),
         run: _RecordingRunner().run,
         socketExists: (_) => false,
-        readPid: (_) async => null,
+        readPid: (_) => null,
         sleep: (_) async {},
       );
 

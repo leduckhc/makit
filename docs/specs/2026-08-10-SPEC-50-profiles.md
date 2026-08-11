@@ -135,8 +135,10 @@ why a worktree build opens with a default theme and empty shortcuts.
 
 **D12 — The pair URL gains two optional params.** `&n=<name>` and `&id=<profileId>` so the phone
 can label and colour each paired server instead of showing a bare IP. Absent → fall back to
-`host:port`. No protocol version bump; per-profile pairing already works because the QR already
-carries `host`, `port` and `fp` (`pairing/url.ts`).
+`host:port`. `n` is capped at 64 Unicode code points (`MAX_PROFILE_NAME_CODE_POINTS` in
+`pairing/url.ts`), truncated on code-point boundaries so a multi-unit emoji is never split, because
+the URL is rendered into a QR code of finite capacity. No protocol version bump; per-profile
+pairing already works because the QR already carries `host`, `port` and `fp` (`pairing/url.ts`).
 
 ## Phases
 
@@ -146,7 +148,7 @@ carries `host`, `port` and `fp` (`pairing/url.ts`).
 | **P1** | `ProfileRegistry`, profile model split (D2/D3), port allocation + retry (D4) | 2–5 | **Implemented** |
 | **P2** | `ProfileScopedPrefs` (D11), per-profile lifecycle + deleter (D7/D8) | 8 | **Implemented** |
 | **P3** | Server section rewrite (D5/D6), Profiles section + detail + delete + reclaim (D7/D8/D9) | 6, 7, 12–16 | **Implemented** |
-| **P4** | Pair-URL params (D12) | 18 | **Implemented** |
+| **P4** | Pair-URL params (D12) | 19 | **Implemented** |
 | **P5** | In-place switching (D10) + `ProfileRuntime` | 9–11 | **Implemented** |
 
 ## Correction recorded
@@ -166,7 +168,7 @@ claimed, and it is now implemented.
   are a retention problem. Deleting profiles will not touch them. Own spec.
 - **A designated "primary" profile** holding a stable 7777 and the phone pairing. Right end state,
   wrong first step: it adds promote/demote and a second class of profile before anyone asks.
-- **A detected-address dropdown** (delta 17). Needs a new `net.interfaces` command; the address row
+- **A detected-address dropdown** (delta 18). Needs a new `net.interfaces` command; the address row
   renders the *current* bind host read-only until then.
 - **Mobile profile management.** The phone gains labels/colours from D12 only; it does not create,
   stop or delete profiles.
@@ -176,7 +178,7 @@ claimed, and it is now implemented.
 ## Verification
 
 1. `cd app && flutter analyze --no-pub` → "No issues found"; `dart format --set-exit-if-changed lib test` clean.
-2. `cd server && node_modules/.bin/tsc -p . --noEmit` clean; `pnpm test` green with the pre-existing count preserved.
+2. `cd server && pnpm typecheck` clean; `pnpm test` green with the pre-existing count preserved.
 3. Every new test's bite proven by reverting only the production line.
 4. Live proof: a real second profile created, started on its own port, switched into in-place, and
    deleted — with `~/.makit-dev` inspected before and after to confirm all four stores went.

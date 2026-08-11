@@ -61,13 +61,13 @@ class ProfileLifecycle {
     bool Function(String path)? socketExists,
     Future<bool> Function(ServerProfile profile)? statusProbe,
     Future<void> Function(Duration duration)? sleep,
-    Future<int?> Function(ServerProfile profile)? readPid,
+    int? Function(ServerProfile profile)? readPid,
     Future<bool> Function(int pid)? processAlive,
   }) : run = run ?? _defaultRun,
        _socketExists = socketExists ?? _fileExists,
        _statusProbe = statusProbe ?? _connectProbe,
        _sleep = sleep ?? Future<void>.delayed,
-       _readPid = readPid ?? _readPidFileAsync,
+       _readPid = readPid ?? _readPidFile,
        _processAlive = processAlive ?? _posixProcessAlive;
 
   /// Locates the `makit` executable.
@@ -79,7 +79,7 @@ class ProfileLifecycle {
   final bool Function(String path) _socketExists;
   final Future<bool> Function(ServerProfile profile) _statusProbe;
   final Future<void> Function(Duration duration) _sleep;
-  final Future<int?> Function(ServerProfile profile) _readPid;
+  final int? Function(ServerProfile profile) _readPid;
   final Future<bool> Function(int pid) _processAlive;
 
   /// Runs `MAKIT_HOME=<profile.home> makit start`.
@@ -123,7 +123,7 @@ class ProfileLifecycle {
     ServerProfile profile, {
     Duration timeout = _kDefaultStopTimeout,
   }) async {
-    final pid = await _readPid(profile);
+    final pid = _readPid(profile);
     final stopResult = await stop(profile);
     if (stopResult.outcome == DaemonActionOutcome.failed ||
         stopResult.outcome == DaemonActionOutcome.cliNotFound) {
@@ -188,12 +188,16 @@ class ProfileLifecycle {
 
   /// Reads the daemon pid from `$MAKIT_HOME/makit.pid`, or `null` when the file
   /// is absent or unparseable. Read before `makit stop`, which deletes it.
-  static Future<int?> _readPidFileAsync(ServerProfile profile) async {
+  ///
+  /// Synchronous on purpose: it is one small read, once per stop — unlike
+  /// [_posixProcessAlive], which is polled up to ~100 times and therefore must
+  /// be async. Making this async introduced real filesystem microtasks that a
+  /// widget test's `pumpAndSettle` could never settle, hanging the delete tests.
+  static int? _readPidFile(ServerProfile profile) {
     try {
       final file = File(profile.pidFilePath);
-      if (!await file.exists()) return null;
-      final raw = await file.readAsString();
-      return int.tryParse(raw.trim());
+      if (!file.existsSync()) return null;
+      return int.tryParse(file.readAsStringSync().trim());
     } on FileSystemException {
       return null;
     }

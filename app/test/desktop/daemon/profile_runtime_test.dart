@@ -9,6 +9,7 @@
 // ignore_for_file: depend_on_referenced_packages, invalid_use_of_visible_for_testing_member
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show FlutterError;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
 import 'package:makit/desktop/daemon/profile_lifecycle.dart';
@@ -188,6 +189,22 @@ void main() {
         prefs: await _prefs(),
       );
       await expectLater(runtime.dispose(), completes);
+    });
+
+    test('dispose disposes the profilesController (no leak per switch)', () async {
+      // profilesController is injected via overrideWithValue, which Riverpod does
+      // not dispose, so the runtime must. A disposed ChangeNotifier throws when a
+      // listener is added.
+      final runtime = ProfileRuntime.create(
+        profile: _target,
+        registry: _registry(),
+        prefs: await _prefs(),
+      );
+      await runtime.dispose();
+      expect(
+        () => runtime.profilesController.addListener(() {}),
+        throwsA(isA<FlutterError>()),
+      );
     });
   });
 }

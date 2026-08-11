@@ -45,6 +45,9 @@ class _NoWriteFs extends FileSystemAdapter {
   String? readOrNull(String path) => null;
   @override
   void writeAtomic(String path, String contents) {}
+  // Without this, the base withLock creates `<path>.lock` on the real disk.
+  @override
+  T withLock<T>(String path, T Function() body) => body();
 }
 
 ProfileLifecycle _lifecycle({required bool targetRunning}) => ProfileLifecycle(

@@ -631,9 +631,10 @@ void main() {
         final pa = await a.createUserProfile(name: 'Alpha');
         final pb = await b.createUserProfile(name: 'Beta');
         expect(pa.port, pb.port, reason: 'the scenario needs them to collide');
+        final contestedPort = pa.port;
 
-        a.save();
-        b.save();
+        a.save(); // Alpha is persisted first, on the contested port.
+        b.save(); // Beta collides; the already-persisted Alpha must keep it.
 
         final onDisk = ProfileRegistry.load(
           makitRoot: kRoot,
@@ -646,6 +647,10 @@ void main() {
           ports.length,
           reason: 'no two profiles may share a port after the merge',
         );
+        // The on-disk (possibly-running) profile keeps its port; the newcomer
+        // yields.
+        expect(onDisk.byId(pa.id)!.port, contestedPort);
+        expect(onDisk.byId(pb.id)!.port, isNot(contestedPort));
       },
     );
     // The id is interpolated into a filesystem path (the secure-store namespace

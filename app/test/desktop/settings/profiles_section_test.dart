@@ -23,6 +23,11 @@ class _MemFs extends FileSystemAdapter {
   String? readOrNull(String path) => null;
   @override
   void writeAtomic(String path, String contents) {}
+  // Without this, the base withLock creates `<path>.lock` on the REAL disk
+  // (under a non-existent `/Users/test`), which breaks the no-disk guarantee and
+  // stalls the widget test's pumpAndSettle.
+  @override
+  T withLock<T>(String path, T Function() body) => body();
 }
 
 /// An in-memory [ProfileFileSystem] for the deleter: only the paths seeded in
@@ -441,6 +446,11 @@ void main() {
     await tester.tap(find.text('Delete…'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Delete profile'));
+    await tester.pumpAndSettle();
+    // Advance the binding's (fake) clock so the delete's async work settles.
+    // A bare `await Future.delayed(...)` deadlocks here: inside `testWidgets`
+    // the clock only moves when the tester pumps.
+    await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpAndSettle();
 
     final successes = center.events.where(
