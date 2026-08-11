@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/home/repo_monogram.dart';
@@ -44,11 +46,11 @@ class RepositorySettingsPage extends ConsumerWidget {
 
     return RepositorySettingsSection(
       view: view,
-      onChooseProvider: (choice) => _write(context, ref, {
+      onChooseProvider: (choice) => _write(ref, {
         // `auto` clears the override; absent means "believe detection".
         'provider': choice == ForgeChoice.auto ? null : choice.name,
       }),
-      onResetWorktreeRoot: () => _write(context, ref, {'worktreeRoot': null}),
+      onResetWorktreeRoot: () => _write(ref, {'worktreeRoot': null}),
       onEditWorktreeRoot: () => _promptWorktreeRoot(context, ref, view),
       onChooseDefaultBranch: () => _pickBranch(context, ref, view),
       onEditLogo: () => _pickHue(context, ref, repo),
@@ -56,24 +58,31 @@ class RepositorySettingsPage extends ConsumerWidget {
     );
   }
 
-  /// Write a settings patch and SHOW a refusal.
+  /// Write a settings patch and REPORT a refusal.
   ///
   /// The server refuses a non-loopback client, an invalid worktree root and an invalid
   /// branch name with an explicit error, and each message is written to be read by the
   /// user. Dropping it left the row unchanged and silent — the exact "appears to save
   /// and does not" failure the server handler documents as unacceptable.
-  Future<void> _write(
-    BuildContext context,
-    WidgetRef ref,
-    Map<String, Object?> patch,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
+  ///
+  /// Posted to the StatusCenter, not a snackbar (SPEC-48 D8): the message lands on the
+  /// Activity record, so it can be copied into a bug report rather than vanishing after
+  /// four seconds. `ref.status` is hoisted BEFORE the await, because `ref` dies with its
+  /// widget and this pane can close mid-flight — reaching for it afterwards would crash
+  /// exactly when there is bad news to deliver.
+  Future<void> _write(WidgetRef ref, Map<String, Object?> patch) async {
+    final status = ref.status;
     try {
       await ref
           .read(storeControllerProvider.notifier)
           .setRepoSettings(repoId, patch);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(_reasonFrom(e))));
+      status.failure(
+        'Could not change repository settings',
+        detail: _reasonFrom(e),
+        error: e,
+        source: StatusSources.settings,
+      );
     }
   }
 
@@ -124,7 +133,7 @@ class RepositorySettingsPage extends ConsumerWidget {
       // $HOME, canonicalised) and re-implementing them in Dart would give two
       // answers that could disagree. The refusal is shown by `_write`.
       if (!context.mounted) return;
-      await _write(context, ref, {'worktreeRoot': value});
+      await _write(ref, {'worktreeRoot': value});
     } finally {
       controller.dispose();
     }
@@ -155,9 +164,7 @@ class RepositorySettingsPage extends ConsumerWidget {
     );
     if (picked == null) return;
     if (!context.mounted) return;
-    await _write(context, ref, {
-      'defaultBranch': picked.isEmpty ? null : picked,
-    });
+    await _write(ref, {'defaultBranch': picked.isEmpty ? null : picked});
   }
 
   Future<void> _pickHue(
@@ -197,7 +204,7 @@ class RepositorySettingsPage extends ConsumerWidget {
     );
     if (picked == null) return;
     if (!context.mounted) return;
-    await _write(context, ref, {'logoHue': picked < 0 ? null : picked});
+    await _write(ref, {'logoHue': picked < 0 ? null : picked});
   }
 
   /// Re-point the repository (SPEC-48 D4\u2032).
@@ -216,6 +223,11 @@ class RepositorySettingsPage extends ConsumerWidget {
     WidgetRef ref,
     RepoSettingsView view,
   ) async {
+    // Hoisted to the top of the method, not merely before the write: `ref` dies with
+    // its widget, and the dialog is itself an asynchronous gap during which this pane
+    // can close. Pinned by test/status/status_lifetime_test.dart -- whose scanner is
+    // textual, so the word it looks for is kept out of this comment too.
+    final status = ref.status;
     final controller = TextEditingController(text: view.path);
     try {
       final value = await showDialog<String>(
@@ -273,17 +285,20 @@ class RepositorySettingsPage extends ConsumerWidget {
       // the disabled state are two different mechanisms, and only one of them is
       // enforced by the widget tree.
       if (value == null || value.isEmpty || value == view.path) return;
-      // Not validated here: the server owns the rules (absolute, no `..`, exists, is a
-      // git repo, not already open) and re-implementing them in Dart would give two
+      // Not validated here: the server owns the rules (absolute, no `..`, exists, is
+      // a git repo, not already open) and re-implementing them in Dart would give two
       // answers that could disagree.
-      if (!context.mounted) return;
-      final messenger = ScaffoldMessenger.of(context);
       try {
         await ref
             .read(storeControllerProvider.notifier)
             .setRepoPath(repoId, value);
       } catch (e) {
-        messenger.showSnackBar(SnackBar(content: Text(_reasonFrom(e))));
+        status.failure(
+          'Could not re-point the repository',
+          detail: _reasonFrom(e),
+          error: e,
+          source: StatusSources.repo,
+        );
       }
     } finally {
       controller.dispose();

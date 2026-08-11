@@ -24,8 +24,9 @@ enum ForgeKind { github, forgejo, gitea }
 /// WINS when supplied: the daemon asks the instance what software it runs, which is
 /// the only way to know. Pass it wherever the repo is in scope.
 ///
-/// Without it, only a host that is decisive on its own is claimed — `github.com` and
-/// `gitea.com`. A self-hosted host is left unnamed rather than guessed.
+/// Without it, only a host that is decisive on its own is claimed — `github.com`,
+/// `gitea.com` and `codeberg.org` (Forgejo's own flagship instance). A self-hosted
+/// host is left unnamed rather than guessed.
 ///
 /// This used to report every other host as Forgejo. That agreed with the router while
 /// the router also guessed by hostname, but the router now probes the instance, so the
@@ -46,6 +47,12 @@ ForgeKind? forgeKindForUrl(String? url, {String? detected}) {
   }
   if (host == 'gitea.com' || host.endsWith('.gitea.com')) {
     return ForgeKind.gitea;
+  }
+  // Hosts that PROVE a forge on their own, the same way `github.com` does. Codeberg
+  // runs Forgejo (it is the project's own flagship instance), so naming it is a fact
+  // rather than the hostname guess this function used to make for every host.
+  if (host == 'codeberg.org' || host.endsWith('.codeberg.org')) {
+    return ForgeKind.forgejo;
   }
   return null;
 }

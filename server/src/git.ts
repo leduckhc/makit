@@ -115,8 +115,13 @@ export async function detectDefaultBranch(repoPath: string): Promise<string | nu
  * (`validateBranch`), it is chosen from branches that existed at the time, and a
  * branch can be deleted afterwards. A stale override is a worse base than
  * detection, not a better one, so it loses rather than winning and then failing
- * deep inside a `git diff` where the message is unrecognisable. "Known" includes
- * `origin/<branch>`: see {@link refKnown}.
+ * deep inside a `git diff` where the message is unrecognisable.
+ *
+ * "Known" includes `origin/<branch>`, and the RETURNED FORM differs by which ref
+ * exists: a local branch comes back bare (the sync path fast-forwards a local
+ * branch), a remote-only one comes back as `origin/<branch>` (so every `git`
+ * invocation can resolve it). Callers must therefore treat the result as a REV, and
+ * only `syncBaseBranch` cares about the distinction -- which it checks.
  *
  * Checking costs one `rev-parse` and REPLACES detection's one-to-three calls when
  * the override holds, so the common case gets cheaper rather than dearer.
@@ -125,27 +130,28 @@ export async function resolveDefaultBranch(
   repoPath: string,
   override: string | undefined,
 ): Promise<string | null> {
-  if (override !== undefined && override.length > 0 && (await refKnown(repoPath, override))) {
-    return override;
+  if (override !== undefined && override.length > 0) {
+    // A local branch is returned BARE, because `syncBaseBranch` fetches and
+    // fast-forwards a local branch and a qualified name would break it.
+    if (await branchExists(repoPath, override)) return override;
+    // Known only on the remote: returned QUALIFIED, because git's revision rules never
+    // resolve a bare name against `refs/remotes/origin/` (`gitrevisions` checks
+    // `refs/<name>`, `refs/tags/<name>`, `refs/heads/<name>`, `refs/remotes/<name>` --
+    // not `refs/remotes/origin/<name>`). Returning the bare name handed `diffStat`,
+    // `commitsAhead` and `git worktree add` a base that resolves nowhere: silent zero
+    // diffs, zero counts, and failed worktree creation.
+    if (await remoteBranchExists(repoPath, override)) return `origin/${override}`;
   }
   return detectDefaultBranch(repoPath);
 }
 
-/**
- * Whether [branch] names something this repo knows — locally OR on `origin`.
- *
- * The remote-tracking half matters: after a `--single-branch` clone the intended
- * default may exist only as `origin/<branch>`, and that is precisely the situation the
- * override exists to fix. Checking `refs/heads` alone treated such an override as
- * stale and silently dropped it, so the feature did nothing in its main case.
- */
-async function refKnown(repoPath: string, branch: string): Promise<boolean> {
-  if (await branchExists(repoPath, branch)) return true;
-  const remote = await git(
+/** Whether `refs/remotes/origin/<branch>` exists. */
+async function remoteBranchExists(repoPath: string, branch: string): Promise<boolean> {
+  const r = await git(
     ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`],
     repoPath,
   );
-  return remote.code === 0;
+  return r.code === 0;
 }
 
 /** The currently checked-out branch, or null when HEAD is detached. */
@@ -777,6 +783,14 @@ export interface BaseSyncResult {
  * a total failure.
  */
 export async function syncBaseBranch(repoPath: string, branch: string): Promise<BaseSyncResult> {
+  // A remote-tracking base (`origin/trunk`) has no local branch to fast-forward, so
+  // there is nothing to catch up -- and running the local path on it would issue
+  // `git fetch origin origin/trunk` and compare `origin/trunk..origin/origin/trunk`,
+  // both nonsense. `resolveDefaultBranch` returns this form when the default exists
+  // only on the remote.
+  if (branch.startsWith("origin/")) {
+    return { updated: false, reason: `${branch} has no local branch to catch up` };
+  }
   // `run` without a cap, not `git`: this talks to the network inside a
   // user-initiated action, and a large or slow repo can legitimately outlast the
   // 15s read cap (see GIT_READ_TIMEOUT_MS — mutations are deliberately uncapped).

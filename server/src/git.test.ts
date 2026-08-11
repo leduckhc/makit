@@ -638,8 +638,8 @@ test("a default-branch override naming a remote-only branch is honoured", async 
     assert.equal(await branchExists(repo, "trunk"), false, "not a local branch");
     assert.equal(
       await resolveDefaultBranch(repo, "trunk"),
-      "trunk",
-      "but the remote knows it, so the override stands",
+      "origin/trunk",
+      "the remote knows it, so the override stands -- qualified so it resolves",
     );
   } finally {
     rmSync(repo, { recursive: true, force: true });
@@ -653,6 +653,61 @@ test("an override naming nothing at all is still dropped", async () => {
   try {
     execFileSync("git", ["remote", "add", "origin", "https://example.test/x/y.git"], { cwd: repo });
     assert.equal(await resolveDefaultBranch(repo, "never-existed"), "main");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("a remote-only override is returned in a form git can actually resolve", async () => {
+  // Review finding, and a bug the previous round introduced: accepting an override that
+  // exists only as `refs/remotes/origin/<b>` and then returning the BARE name yields a
+  // ref git cannot resolve. `gitrevisions` checks `refs/<name>`, `refs/tags/<name>`,
+  // `refs/heads/<name>` and `refs/remotes/<name>` -- never `refs/remotes/origin/<name>`
+  // -- so `diffStat`, `commitsAhead` and `git worktree add` all received a base that
+  // resolves nowhere: silent zero diffs, zero counts, failed worktree creation.
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    g("remote", "add", "origin", "https://example.test/x/y.git");
+    g("update-ref", "refs/remotes/origin/trunk", "HEAD");
+
+    const base = await resolveDefaultBranch(repo, "trunk");
+    assert.equal(base, "origin/trunk", "qualified, so it resolves");
+    // Proven against git rather than asserted by shape.
+    const resolved = execFileSync("git", ["rev-parse", "--verify", "--quiet", base!], {
+      cwd: repo,
+    })
+      .toString()
+      .trim();
+    assert.ok(resolved.length > 0, "git resolves what we returned");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("a LOCAL override is returned bare, so the sync path still works", async () => {
+  // `syncBaseBranch` fetches and fast-forwards a LOCAL branch (`git fetch origin <b>`,
+  // then `<b>..origin/<b>`), so a qualified name would break it. The two consumers want
+  // different things, and which refs exist is exactly what distinguishes them.
+  const repo = makeRepo();
+  try {
+    execFileSync("git", ["branch", "trunk"], { cwd: repo });
+    assert.equal(await resolveDefaultBranch(repo, "trunk"), "trunk");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("syncBaseBranch refuses a remote-tracking base instead of mangling it", async () => {
+  // The other half of the fix. Without this guard the local path runs on
+  // `origin/trunk`: `git fetch origin origin/trunk`, then
+  // `origin/trunk..origin/origin/trunk` -- both nonsense, and the reported reason would
+  // blame the fetch rather than say there is nothing to catch up.
+  const repo = makeRepo();
+  try {
+    const r = await syncBaseBranch(repo, "origin/trunk");
+    assert.equal(r.updated, false);
+    assert.match(r.reason ?? "", /no local branch/i);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }

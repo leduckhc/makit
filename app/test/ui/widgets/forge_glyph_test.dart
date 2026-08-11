@@ -35,15 +35,19 @@ void main() {
       );
     });
 
+    test('codeberg.org proves Forgejo, like gitea.com proves Gitea', () {
+      // A decisive host, not a guess: Codeberg is the Forgejo project's own instance.
+      expect(
+        forgeKindForUrl('https://codeberg.org/forgejo/forgejo/pulls/1'),
+        ForgeKind.forgejo,
+      );
+    });
+
     test('an unidentifiable host is left UNNAMED, not guessed', () {
       // It used to report every non-GitHub host as Forgejo, which agreed with the
       // router while the router also guessed by hostname. The router now probes the
       // instance, so the guess could contradict the provider that served the data --
       // putting Forgejo's name and mark on a self-hosted Gitea or a GitLab remote.
-      expect(
-        forgeKindForUrl('https://codeberg.org/forgejo/forgejo/pulls/1'),
-        isNull,
-      );
       expect(
         forgeKindForUrl('https://git.example.com:3000/a/b/pulls/1'),
         isNull,
@@ -131,6 +135,10 @@ void main() {
       expect(forgeGlyphForUrl(null), isNull);
       // An unidentifiable host composes to no glyph, rather than to Forgejo's.
       expect(forgeGlyphForUrl('https://git.example.com/a/b/pulls/1'), isNull);
+      expect(
+        forgeGlyphForUrl('https://codeberg.org/a/b/pulls/1'),
+        forgeGlyphFor(ForgeKind.forgejo),
+      );
     });
   });
 
