@@ -25,6 +25,7 @@ import {
   isGitRepo,
   resolveDefaultBranch,
   listLocalBranches,
+  listRemoteBranchNames,
   detectCurrentBranch,
   listWorktrees,
   diffStat,
@@ -143,11 +144,10 @@ function adoptLivePrTargets(
  *  * **Repo isolation** — `persisted` is the GLOBAL store; only paths in `here`
  *    (this repo's worktrees) are considered, so another repo's target is never
  *    tested against this repo's branches and rewritten to this repo's default.
- *  * **Remote-only PR bases are live** — the caller adds the base of any OPEN PR
- *    to `live`, so a target that exists only on the remote (which
- *    `adoptLivePrTargets` may have just persisted) is not rewritten to the
- *    default. A stale `refs/remotes/origin/*` ref is deliberately NOT trusted as
- *    liveness, so a merged-and-auto-deleted branch is still repaired.
+ *  * **Remote and open-PR bases are live** — the caller adds `origin` branches and
+ *    the base of any OPEN PR to `live`, so a target that exists on the remote but
+ *    was never checked out locally is not rewritten to the default. See the
+ *    caller for why a delayed repair beats a silent redirect.
  */
 export function repointVanishedTargets(args: {
   here: ReadonlySet<string>;
@@ -200,12 +200,20 @@ async function repairVanishedTargets(
   if (!hasCandidates) return persisted;
   const locals = await listLocalBranches(repoPath);
   if (locals.length === 0) return persisted;
-  // Liveness is local refs ∪ the bases of currently-OPEN PRs. A PR base can live
-  // only on the remote (never checked out locally), and it is authoritative while
-  // the PR is open — but we must NOT treat every `refs/remotes/origin/*` ref as
-  // live: a stale one left behind after a merged branch is auto-deleted would
-  // block the repair this function exists to perform, indefinitely.
-  const live = new Set<string>(locals);
+  // Liveness is local refs ∪ `origin` refs ∪ the bases of currently-OPEN PRs.
+  //
+  // This trade-off has been argued both ways, so it is settled here explicitly:
+  // including `origin` means a stale `origin/<branch>` left behind after a merged
+  // branch is auto-deleted DELAYS the repair until the next `fetch --prune`. That
+  // is strictly better than the alternative. Excluding it silently REDIRECTS a
+  // worktree whose target lives only on the remote — e.g. an open PR into a
+  // remote-only `release` is adopted, the PR closes, and the target is rewritten
+  // to the repo default, moving future diffs and PR bases without asking. A
+  // delayed repair shows the honest `targetResolved: false` (the branch is real,
+  // it just is not here yet); a wrong redirect is unrecoverable data loss of the
+  // user's intent. Never trade the second for the first.
+  const remotes = await listRemoteBranchNames(repoPath);
+  const live = new Set<string>([...locals, ...remotes]);
   for (const e of entries) {
     if (!e.branch) continue;
     const pr = lastKnown(repoPath, e.branch);

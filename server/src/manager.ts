@@ -1069,7 +1069,13 @@ export class SessionManager extends EventEmitter {
   async targetCandidates(projectId: string, worktreePath: string): Promise<TargetCandidate[]> {
     const { repoPath, wt } = await this._locateWorktree(projectId, worktreePath);
     if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
-    return computeTargetCandidates(repoPath, resolve(wt.path));
+    // Thread the stored default-branch override so the picker's `default` group
+    // names the same branch every diff and new worktree uses.
+    return computeTargetCandidates(
+      repoPath,
+      resolve(wt.path),
+      this.settingsForPath(repoPath).defaultBranch,
+    );
   }
 
   private async _locateWorktree(
@@ -1777,20 +1783,29 @@ export class SessionManager extends EventEmitter {
     if (existingId) {
       const existing = this.sessions.get(existingId);
       if (existing) {
-        // A closed session keeps its registry entry and attach mapping but holds a
-        // `DetachedAdapter` — returning it as-is would honour this method's
-        // "resume live" promise with a session that launches no process. Bring it
-        // back live first.
-        if (existing.closed) {
+        if (!existing.closed) return existing;
+        // Reviving a CLOSED session must go through the SAME in-flight dedupe as a
+        // fresh attach. `reopenSession` clears `closed` before `reattachSession`
+        // finishes `start()`, so an uncoalesced second caller would see
+        // `closed === false`, return immediately, and send to an adapter that has
+        // not finished initialising.
+        const revivePending = this.attachInFlight.get(piSessionId);
+        if (revivePending) return revivePending;
+        const revive = (async () => {
           await this.reopenSession(existingId);
           // `reattachSession`, NOT `ensureLive`: `ensureLive` deliberately swallows
           // a failed resume (it is called speculatively on subscribe), which would
           // let this method hand back a cold `DetachedAdapter` session as though it
-          // had resumed live — the caller only finds out on the next message. An
-          // explicit attach request owns its failure.
+          // had resumed live. An explicit attach request owns its failure.
           await this.reattachSession(existingId);
+          return existing;
+        })();
+        this.attachInFlight.set(piSessionId, revive);
+        try {
+          return await revive;
+        } finally {
+          this.attachInFlight.delete(piSessionId);
         }
-        return existing;
       }
       this.attachedByPi.delete(piSessionId);
     }

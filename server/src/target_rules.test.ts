@@ -529,3 +529,34 @@ test("rule 2: a rename does not rewrite a same-named target in another repo", as
     f.cleanup();
   }
 });
+
+test("rule 4: a target that still exists on origin is NOT repaired away", async () => {
+  // The failure this guards: an open PR into a remote-only `release` is adopted,
+  // the PR closes, and the repair pass — seeing no LOCAL `release` — rewrites the
+  // worktree's target to the repo default, silently moving every future diff and
+  // PR base. A branch that exists on the remote has not vanished; the honest
+  // outcome is `targetResolved: false` until it is fetched, never a redirect.
+  const f = await fixture();
+  try {
+    const wt = await branchWorktree(f, "child", "main");
+    const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: f.repo }).toString().trim();
+    // `release` exists ONLY as a remote-tracking ref.
+    execFileSync("git", ["update-ref", "refs/remotes/origin/release", sha], { cwd: f.repo });
+    putTarget(worktreeTargetsFile(), wt, "release");
+
+    await f.manager.listRepos({ includePrs: false });
+
+    assert.equal(
+      loadTargets(worktreeTargetsFile())[wt]?.target,
+      "release",
+      "a remote-only target must survive the repair pass",
+    );
+    assert.equal(
+      loadTargets(worktreeTargetsFile())[wt]?.retargetedFrom,
+      undefined,
+      "and must not be announced as an automatic retarget",
+    );
+  } finally {
+    f.cleanup();
+  }
+});

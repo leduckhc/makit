@@ -15,7 +15,7 @@ import { mapLimit } from "./concurrency.js";
 import {
   closestAncestorBranch,
   hasOriginRemote,
-  detectDefaultBranch,
+  resolveDefaultBranch,
   diffStat,
   listLocalBranches,
   listRemoteBranchNames,
@@ -113,11 +113,18 @@ export function resolveThroughChain(
 export async function targetCandidates(
   repoPath: string,
   worktreePath: string,
+  /**
+   * The user's stored default-branch choice, threaded from the caller exactly as
+   * `repoSnapshot` does. Without it the picker would label and rank git's own
+   * answer as `default` while every diff and new worktree used the override — the
+   * picker disagreeing with the rest of the app about what "default" means.
+   */
+  defaultBranchOverride?: string,
 ): Promise<TargetCandidate[]> {
   const [locals, onRemote, defaultBranch, trees, originExists] = await Promise.all([
     listLocalBranches(repoPath),
     listRemoteBranchNames(repoPath),
-    detectDefaultBranch(repoPath),
+    resolveDefaultBranch(repoPath, defaultBranchOverride),
     listWorktrees(repoPath),
     hasOriginRemote(repoPath),
   ]);

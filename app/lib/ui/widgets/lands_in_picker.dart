@@ -175,10 +175,17 @@ Future<String?> showLandsInPicker(
   // while it was open, throwing and silently losing the target change (SPEC-48
   // lifetime rule — enforced by status_lifetime_test).
   final status = ref.status;
+  // The request is in flight before the route's first build, and the user can
+  // dismiss the picker before it completes — in both cases a rejection would reach
+  // no listener and escape to the zone handler. `ignore()` marks it handled while
+  // still delivering to the `FutureBuilder` inside, which renders the error state.
+  // Same pattern as `_NewWorktreeDialogState._loadPrs`.
+  final candidatesFuture = store.targetCandidates(projectId, worktree.path);
+  candidatesFuture.ignore();
   final body = _LandsInPickerBody(
     projectId: projectId,
     worktree: worktree,
-    candidatesFuture: store.targetCandidates(projectId, worktree.path),
+    candidatesFuture: candidatesFuture,
   );
   final chosen = sheet
       ? await showModalBottomSheet<String>(
