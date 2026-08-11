@@ -6,6 +6,8 @@ import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 
 import { SessionManager } from "./manager.js";
+import { createForgeRouter } from "./forge/router.js";
+import { createNoForgeGateway } from "./forge/none.js";
 import { resolveWorktreeRoot, validateWorktreeRoot } from "./repo_settings.js";
 
 /**
@@ -416,5 +418,188 @@ test("re-pointing re-runs detection rather than keeping the old forge decision",
   } finally {
     rmSync(from, { recursive: true, force: true });
     rmSync(to, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-48 — "New worktree from PR" has to work on BOTH providers.
+//
+// Listing already routed through the gateway, so the picker showed Forgejo PRs
+// correctly. The CHECKOUT did not: it ran `gh pr checkout` unconditionally, which
+// speaks only to GitHub. The flow was therefore broken exactly halfway — the user
+// saw their PRs, picked one, and the worktree never appeared.
+//
+// The strategy is chosen from the router's own decision, so it agrees with whichever
+// provider actually served the list.
+// ---------------------------------------------------------------------------
+
+test("a GitHub repo checks out via gh, preserving today's behaviour", async () => {
+  const a = repoWithBranches([]);
+  try {
+    const m = managerWithInspector([{ id: "a", path: a }], {
+      forgeFor: () => ({ software: "github", host: "github.com", source: "detected" }),
+      hasRemoteFor: () => true,
+    });
+    assert.equal(m.prCheckoutStrategyFor(a), "gh");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("a Forgejo repo checks out via the pull ref, because gh cannot reach it", async () => {
+  const a = repoWithBranches([]);
+  try {
+    const m = managerWithInspector([{ id: "a", path: a }], {
+      forgeFor: () => ({ software: "forgejo", host: "git.example", authed: true, source: "detected" }),
+      hasRemoteFor: () => true,
+    });
+    assert.equal(m.prCheckoutStrategyFor(a), "pull-ref");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("a Gitea repo does the same — one REST API, one checkout path", async () => {
+  const a = repoWithBranches([]);
+  try {
+    const m = managerWithInspector([{ id: "a", path: a }], {
+      forgeFor: () => ({ software: "gitea", host: "git.example", authed: true, source: "detected" }),
+      hasRemoteFor: () => true,
+    });
+    assert.equal(m.prCheckoutStrategyFor(a), "pull-ref");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("an OVERRIDE to Forgejo also changes how the PR is checked out", async () => {
+  // The override's whole purpose is a repo detection could not identify. If it moved
+  // the listing but not the checkout, "New worktree from PR" would still fail for
+  // exactly the repos the override exists to rescue.
+  const a = repoWithBranches([]);
+  try {
+    const m = managerWithInspector([{ id: "a", path: a, settings: { provider: "forgejo" } }], {
+      // Detection reports the unidentifiable case; the override is what decides.
+      forgeFor: () => ({ software: "forgejo", host: "priv.example", authed: true, source: "override" }),
+      hasRemoteFor: () => true,
+    });
+    assert.equal(m.prCheckoutStrategyFor(a), "pull-ref");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("an unrouted or unreadable repo falls back to gh, the status quo", async () => {
+  // Same rule the router itself follows for an unreadable remote: don't change where
+  // such a repo fails.
+  const a = repoWithBranches([]);
+  try {
+    const m = manager([{ id: "a", path: a }]);
+    assert.equal(m.prCheckoutStrategyFor(a), "gh");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("the provider override wins over a stale detection record", async () => {
+  // Belt and braces: the strategy is read from the same override the router honours,
+  // so it cannot disagree with the gateway that served the list even if the decision
+  // record is behind.
+  const a = repoWithBranches([]);
+  try {
+    const m = managerWithInspector([{ id: "a", path: a, settings: { provider: "github" } }], {
+      forgeFor: () => ({ software: "forgejo", host: "old.example", authed: true, source: "detected" }),
+      hasRemoteFor: () => true,
+    });
+    assert.equal(m.prCheckoutStrategyFor(a), "gh", "the user said GitHub");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("the picker itself routes per repo: Forgejo and GitHub side by side", async () => {
+  // The end of the chain the user actually touches: `manager.listOpenPrs` is what the
+  // `worktree.prs` command calls. Two repos in ONE manager, so this cannot pass by a
+  // global default -- which is the way a routing bug usually hides.
+  const served: string[] = [];
+  const fj = repoWithBranches([]);
+  const gh = repoWithBranches([]);
+  const stub = (name: string) => ({
+    prForBranch: async () => ({ kind: "none" }) as never,
+    openPrs: async () => {
+      served.push(name);
+      return [];
+    },
+    mutatePr: async () => ({ ok: true }),
+    stats: () => ({ execs: 0, exemptExecs: 0, cacheHits: 0 }),
+    close: () => {},
+  });
+  try {
+    const router = createForgeRouter({
+      github: {
+        ...stub("github"),
+        budget: () => ({}) as never,
+        history: () => [],
+        refresh: async () => ({}) as never,
+        setPaused: () => {},
+        onBudgetChange: () => () => {},
+      } as never,
+      forgejo: stub("forgejo") as never,
+      unsupported: stub("unsupported") as never,
+      none: stub("none") as never,
+      // Wired to the manager below, exactly as production wires it.
+      providerFor: (p) => m.providerFor(p),
+      resolveInstance: async (p) => ({
+        host: p === gh ? "github.com" : "git.example",
+        baseUrl: "https://git.example",
+      }),
+      detect: async () => "unknown" as never,
+    });
+    const m = manager([
+      { id: "fj", path: fj, settings: { provider: "forgejo" } },
+      { id: "gh", path: gh },
+    ]);
+    Object.assign((m as unknown as { _gateway: object })._gateway, router);
+
+    await m.listOpenPrs("fj");
+    await m.listOpenPrs("gh");
+    assert.deepEqual(served, ["forgejo", "github"], "each repo's PRs came from its own provider");
+  } finally {
+    rmSync(fj, { recursive: true, force: true });
+    rmSync(gh, { recursive: true, force: true });
+  }
+});
+
+test("a repo set to None offers no PRs, so the picker cannot reach a checkout", async () => {
+  // The checkout strategy for `none` is moot only because the list is empty. Asserted
+  // rather than assumed: if None ever returned PRs, the user could pick one and the
+  // checkout would run against a forge they told makit to ignore.
+  const a = repoWithBranches([]);
+  try {
+    const router = createForgeRouter({
+      github: {
+        prForBranch: async () => ({ kind: "none" }) as never,
+        openPrs: async () => [{ number: 1, title: "t", headRefName: "h", isDraft: false, url: "u" }],
+        mutatePr: async () => ({ ok: true }),
+        stats: () => ({ execs: 0, exemptExecs: 0, cacheHits: 0 }),
+        close: () => {},
+        budget: () => ({}) as never,
+        history: () => [],
+        refresh: async () => ({}) as never,
+        setPaused: () => {},
+        onBudgetChange: () => () => {},
+      } as never,
+      forgejo: {} as never,
+      unsupported: {} as never,
+      none: createNoForgeGateway(),
+      providerFor: (p) => m.providerFor(p),
+      resolveInstance: async () => ({ host: "github.com", baseUrl: "https://github.com" }),
+      detect: async () => "unknown" as never,
+    });
+    const m = manager([{ id: "a", path: a, settings: { provider: "none" } }]);
+    Object.assign((m as unknown as { _gateway: object })._gateway, router);
+    assert.deepEqual(await m.listOpenPrs("a"), []);
+  } finally {
+    rmSync(a, { recursive: true, force: true });
   }
 });

@@ -44,6 +44,7 @@ import {
   deleteBranch,
   syncBaseBranch,
   listOpenPrs,
+  type PrCheckoutStrategy,
   findOpenPr,
   branchExists,
   slugify,
@@ -766,7 +767,32 @@ export class SessionManager extends EventEmitter {
       prNumber,
       headRefName: pr.headRefName,
       baseDir: this.worktreeRootFor(repoPath),
+      // Read AFTER `listOpenPrs`, which is what routes the repo — so detection has
+      // run and its decision is available rather than empty.
+      checkout: this.prCheckoutStrategyFor(repoPath),
     });
+  }
+
+  /**
+   * How a PR should be checked out for [repoPath] (SPEC-48).
+   *
+   * Resolved from the SAME two sources the router uses to pick a gateway, and in the
+   * same order — the user's override first, then routing's decision — so the checkout
+   * cannot disagree with the provider that served the PR list. "New worktree from PR"
+   * used to list Forgejo PRs correctly and then run `gh pr checkout`, so it failed
+   * halfway for every non-GitHub repo.
+   *
+   * Falls back to `gh` when nothing is known: that is the status quo for an
+   * unreadable remote, and the router makes the same choice for the same reason.
+   */
+  prCheckoutStrategyFor(repoPath: string): PrCheckoutStrategy {
+    const chosen = this.providerFor(repoPath);
+    if (chosen === "forgejo" || chosen === "gitea") return "pull-ref";
+    if (chosen === "github") return "gh";
+    // `auto` (or `none`, which never reaches a checkout): believe detection.
+    const inspector = this._gateway as unknown as Partial<ForgeInspector>;
+    const software = inspector.forgeFor?.(repoPath)?.software;
+    return software === "forgejo" || software === "gitea" ? "pull-ref" : "gh";
   }
 
   /**
