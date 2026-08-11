@@ -101,15 +101,19 @@ export function loadTargets(file: string): TargetMap {
  * the destination. `rename` within a directory is atomic on POSIX, so a reader
  * only ever sees the old file or the new one — never a half-written one.
  *
- * Never throws. A failed write is logged; the temp file is cleaned up so a
- * broken disk does not leave litter beside the real store.
+ * Never throws — a broken disk must not crash a background snapshot repair. It
+ * does, however, RETURN whether the write landed: an interactive command
+ * (`worktree.setTarget`) needs to tell the user the truth rather than ack a
+ * success the next snapshot will contradict. A failed write is logged and the
+ * temp file cleaned up so a broken disk does not leave litter beside the store.
  */
-export function saveTargets(file: string, targets: TargetMap): void {
+export function saveTargets(file: string, targets: TargetMap): boolean {
   const tmp = `${file}.tmp`;
   try {
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(tmp, JSON.stringify({ targets }, null, 2) + "\n");
     renameSync(tmp, file);
+    return true;
   } catch (e) {
     log.warn(`[makit] failed to write worktree targets ${file}: ${(e as Error).message}`);
     try {
@@ -117,6 +121,7 @@ export function saveTargets(file: string, targets: TargetMap): void {
     } catch {
       // Best-effort cleanup; the write already failed and we must not throw.
     }
+    return false;
   }
 }
 
@@ -131,18 +136,21 @@ export function targetOf(file: string, worktreePath: string): string | null {
  * Omitting `retargetedFrom` CLEARS any existing note, which is what an explicit
  * user choice should do: they have taken ownership of the value, so there is no
  * longer an automatic change to announce.
+ *
+ * Returns whether the write persisted, so an interactive caller can surface a
+ * failure instead of falsely acking success.
  */
 export function putTarget(
   file: string,
   worktreePath: string,
   branch: string,
   opts: { retargetedFrom?: string } = {},
-): void {
+): boolean {
   const all = loadTargets(file);
   all[worktreePath] = opts.retargetedFrom
     ? { target: branch, retargetedFrom: opts.retargetedFrom }
     : { target: branch };
-  saveTargets(file, all);
+  return saveTargets(file, all);
 }
 
 /**

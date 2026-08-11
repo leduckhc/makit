@@ -1,7 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { enrichPrs, resolveTargetBranch } from "./repo_service.js";
+import {
+  enrichPrs,
+  resolveTargetBranch,
+  repointVanishedTargets,
+  collectLivePathsForPrune,
+} from "./repo_service.js";
 import type { GithubGateway, PrLookup } from "./github/gateway.js";
 import type { PullRequestDTO, RepoDTO } from "./protocol.js";
 import type { PullRequestInfo } from "./git.js";
@@ -300,4 +305,84 @@ test("resolveTargetBranch: state is matched case-insensitively", () => {
     }),
     "main",
   );
+});
+
+// repointVanishedTargets — the pure core of the vanished-target repair. Two
+// once-live bugs are pinned here: cross-repo corruption and clobbering a
+// remote-only PR base.
+
+test("repointVanishedTargets: a genuinely vanished target repoints to the default", () => {
+  const writes = repointVanishedTargets({
+    here: new Set(["/wt"]),
+    persisted: { "/wt": { target: "feat/gone" } },
+    live: new Set(["main"]),
+    branchTarget: {},
+    defaultBranch: "main",
+  });
+  assert.deepEqual(writes, [{ path: "/wt", target: "main", retargetedFrom: "feat/gone" }]);
+});
+
+test("repointVanishedTargets: leaves another repo's persisted target untouched", () => {
+  // `/other` belongs to a different repo (not in `here`); its target does not
+  // exist among THIS repo's branches, but it must never be rewritten from here.
+  const writes = repointVanishedTargets({
+    here: new Set(["/wt"]),
+    persisted: {
+      "/wt": { target: "main" },
+      "/other": { target: "some-other-repo-branch" },
+    },
+    live: new Set(["main"]),
+    branchTarget: {},
+    defaultBranch: "main",
+  });
+  assert.deepEqual(writes, [], "no writes: /wt is fine and /other is not ours");
+});
+
+test("repointVanishedTargets: a target that exists only on origin is not clobbered", () => {
+  // `adoptLivePrTargets` may have just persisted a PR base that lives only on the
+  // remote. `live` includes origin branches, so it is NOT treated as vanished.
+  const writes = repointVanishedTargets({
+    here: new Set(["/wt"]),
+    persisted: { "/wt": { target: "release/1.4" } },
+    live: new Set(["main", "release/1.4"]),
+    branchTarget: {},
+    defaultBranch: "main",
+  });
+  assert.deepEqual(writes, [], "a remote-only base is live, so nothing is repointed");
+});
+
+test("repointVanishedTargets: leaves a broken target in place when nothing resolves", () => {
+  const writes = repointVanishedTargets({
+    here: new Set(["/wt"]),
+    persisted: { "/wt": { target: "feat/gone" } },
+    live: new Set(["unrelated"]),
+    branchTarget: {},
+    defaultBranch: null,
+  });
+  assert.deepEqual(writes, [], "no default to fall back to: surface targetResolved:false instead");
+});
+
+// collectLivePathsForPrune — the guard that decides whether the target store can
+// be safely pruned against a snapshot.
+
+test("collectLivePathsForPrune: unions live worktree paths across projects", () => {
+  const r = repos("feat/x");
+  const live = collectLivePathsForPrune(r);
+  assert.notEqual(live, null);
+  assert.equal(live!.has("/wt"), true);
+});
+
+test("collectLivePathsForPrune: aborts (null) when a git repo reports zero worktrees", () => {
+  const r = repos("feat/x");
+  r[0].worktrees = []; // isGitRepo stays true → looks like a failed enumeration
+  assert.equal(collectLivePathsForPrune(r), null);
+});
+
+test("collectLivePathsForPrune: a non-git repo with no worktrees does not abort", () => {
+  const r = repos("feat/x");
+  r[0].isGitRepo = false;
+  r[0].worktrees = [];
+  const live = collectLivePathsForPrune(r);
+  assert.notEqual(live, null);
+  assert.equal(live!.size, 0);
 });

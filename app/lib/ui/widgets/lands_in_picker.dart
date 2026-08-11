@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_providers.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import 'sheet_header.dart';
@@ -191,16 +192,20 @@ Future<String?> showLandsInPicker(
           ),
         );
   if (chosen == null || chosen == worktree.targetBranch) return null;
-  if (!context.mounted) return null;
-  final messenger = ScaffoldMessenger.maybeOf(context);
+  // Capture the StatusCenter before the await so a later widget disposal cannot
+  // strand the failure message (SPEC-48 lifetime rule).
+  final status = ref.status;
   try {
     await store.setWorktreeTarget(projectId, worktree.path, chosen);
     return chosen;
   } catch (e) {
     // Never leave the UI showing a value the server refused: the snapshot is the
-    // only source of truth, so there is nothing to roll back — just say why.
-    messenger?.showSnackBar(
-      SnackBar(content: Text('Could not change where this lands: $e')),
+    // only source of truth, so there is nothing to roll back — just say why, on
+    // the Activity record where it can be copied.
+    status.failure(
+      'Could not change where this lands',
+      error: e,
+      source: 'worktree',
     );
     return null;
   }

@@ -224,6 +224,14 @@ test("diffStat flags an unresolvable target instead of returning a partial count
 
     const stat = await diffStat(wtPath, "no-such-branch");
     assert.equal(stat.targetResolved, false, "an absent target must be reported, not swallowed");
+    // Defence in depth: a consumer that forgets the flag must degrade to
+    // "nothing", not a plausible small working-tree figure. The working-tree
+    // truth still lives in `uncommittedFiles`, so no information is lost.
+    assert.deepEqual(
+      { i: stat.insertions, d: stat.deletions, f: stat.filesChanged },
+      { i: 0, d: 0, f: 0 },
+      "an unresolvable target must zero the counts, not ship a partial reading",
+    );
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(base, { recursive: true, force: true });
@@ -676,6 +684,17 @@ test("listRemoteBranchNames strips the remote prefix and skips HEAD", async () =
     assert.equal(remote.has("local-only"), false, "an unpushed branch is not");
     // `origin/HEAD` is a symbolic alias, not a branch a PR can target.
     assert.equal(remote.has("HEAD"), false);
+    // A branch that exists only on a NON-origin remote (e.g. `upstream`) is not a
+    // valid PR base — `gh` resolves against `origin` — so it must be excluded.
+    execFileSync("git", ["update-ref", "refs/remotes/upstream/upstream-only", "HEAD"], {
+      cwd: clone,
+    });
+    const remote2 = await listRemoteBranchNames(clone);
+    assert.equal(
+      remote2.has("upstream-only"),
+      false,
+      "a branch on a non-origin remote is not a PR base",
+    );
   } finally {
     rmSync(origin, { recursive: true, force: true });
     rmSync(clone, { recursive: true, force: true });

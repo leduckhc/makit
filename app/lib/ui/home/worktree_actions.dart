@@ -123,9 +123,16 @@ Future<void> showWorktreeActions(
     },
   );
   if (action == null || !context.mounted) return;
+  // Re-derive the live worktree before acting: a snapshot may have retargeted or
+  // moved it while the sheet sat open, and every action below must operate on
+  // today's value, not the one captured when the menu opened (the builder above
+  // is careful to do this for display, but that value dies with the sheet). Falls
+  // back to the passed-in value for a worktree the snapshot no longer carries.
+  final live =
+      ref.read(reposProvider).locateWorktree(w.path)?.worktree ?? worktree;
   switch (action) {
     case 'rename':
-      await _renameBranch(context, ref, repo: repo, worktree: worktree);
+      await _renameBranch(context, ref, repo: repo, worktree: live);
     case 'landsIn':
       // `sheet: true`: on touch the picker is a bottom sheet, matching the
       // surface it was launched from. It persists the choice itself.
@@ -133,11 +140,11 @@ Future<void> showWorktreeActions(
         context,
         ref,
         projectId: repo.id,
-        worktree: worktree,
+        worktree: live,
         sheet: true,
       );
     case 'delete':
-      await _deleteWorktree(context, ref, repo: repo, worktree: worktree);
+      await _deleteWorktree(context, ref, repo: repo, worktree: live);
   }
 }
 

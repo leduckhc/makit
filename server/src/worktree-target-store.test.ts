@@ -317,3 +317,31 @@ test("renameTargetBranch preserves an existing note", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("saveTargets/putTarget return false when the write cannot land", () => {
+  // Point the store under a path whose parent is a regular FILE, so the
+  // atomic-write's `mkdirSync` fails with ENOTDIR — a deterministic write
+  // failure. The interactive command relies on this signal to avoid acking a
+  // success the disk refused.
+  const { dir } = tmpFile();
+  try {
+    const blocker = join(dir, "blocker");
+    writeFileSync(blocker, "not a directory");
+    const file = join(blocker, "sub", "worktree-targets.json");
+    assert.equal(saveTargets(file, { "/wt": { target: "main" } }), false);
+    assert.equal(putTarget(file, "/wt", "main"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("saveTargets/putTarget return true on a successful write", () => {
+  const { dir, file } = tmpFile();
+  try {
+    assert.equal(saveTargets(file, { "/wt": { target: "main" } }), true);
+    assert.equal(putTarget(file, "/wt2", "dev"), true);
+    assert.equal(targetOf(file, "/wt2"), "dev");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -17,6 +17,7 @@ import {
   isGitRepo,
   detectDefaultBranch,
   listLocalBranches,
+  listRemoteBranchNames,
   detectCurrentBranch,
   listWorktrees,
   diffStat,
@@ -29,6 +30,7 @@ import { mapLimit } from "./concurrency.js";
 import {
   loadTargets,
   putTarget,
+  pruneTargets,
   worktreeTargetsFile,
   type TargetMap,
 } from "./worktree-target-store.js";
@@ -150,18 +152,62 @@ function adoptLivePrTargets(
  * still collapses to where it actually landed rather than jumping straight to the
  * repo default.
  */
+/**
+ * Pure decision core of {@link repairVanishedTargets}: given the live branch set
+ * and the record of what-lands-where, decide the new target for each of THIS
+ * repo's worktrees whose persisted target has vanished. Returns the writes to
+ * persist (empty when nothing is broken), so the I/O stays in the caller and
+ * this stays unit-testable without a repo.
+ *
+ * Two invariants it enforces, both once-live bugs:
+ *  * **Repo isolation** — `persisted` is the GLOBAL store; only paths in `here`
+ *    (this repo's worktrees) are considered, so another repo's target is never
+ *    tested against this repo's branches and rewritten to this repo's default.
+ *  * **Remote bases are live** — a target that exists on `origin` has NOT
+ *    vanished, even if it was never checked out locally. An open PR's base
+ *    (which `adoptLivePrTargets` may have just persisted) commonly lives only on
+ *    the remote, and rewriting it to the default would undo that adoption.
+ */
+export function repointVanishedTargets(args: {
+  here: ReadonlySet<string>;
+  persisted: TargetMap;
+  live: ReadonlySet<string>;
+  branchTarget: Readonly<Record<string, string>>;
+  defaultBranch: string | null;
+}): Array<{ path: string; target: string; retargetedFrom: string }> {
+  const { here, persisted, live, branchTarget, defaultBranch } = args;
+  const out: Array<{ path: string; target: string; retargetedFrom: string }> = [];
+  for (const [path, entry] of Object.entries(persisted)) {
+    if (!entry.target || !here.has(path)) continue;
+    if (live.has(entry.target)) continue;
+    const resolved = resolveThroughChain(entry.target, { live, branchTarget, defaultBranch });
+    // Nothing to fall back to (no default, or it is gone too). Leave the broken
+    // target in place: `diffStat` reports `targetResolved: false` and the UI says
+    // so, which beats inventing a destination.
+    if (!resolved || resolved === entry.target) continue;
+    out.push({ path, target: resolved, retargetedFrom: entry.target });
+  }
+  return out;
+}
+
 async function repairVanishedTargets(
   repoPath: string,
   entries: readonly { path: string; branch: string | null }[],
   persisted: TargetMap,
   defaultBranch: string | null,
 ): Promise<TargetMap> {
-  const stale = Object.entries(persisted).filter(([, e]) => e.target);
-  if (stale.length === 0) return persisted;
-  const live = new Set(await listLocalBranches(repoPath));
+  // Only this repo's worktrees carry targets we may touch; `persisted` is global.
+  const here = new Set(entries.map((e) => e.path));
+  const hasStale = Object.entries(persisted).some(([path, e]) => e.target && here.has(path));
+  if (!hasStale) return persisted;
+  // Liveness is local refs ∪ `origin`: a PR base often lives only on the remote,
+  // so a local-only check would wrongly classify it as vanished.
+  const [locals, remotes] = await Promise.all([
+    listLocalBranches(repoPath),
+    listRemoteBranchNames(repoPath),
+  ]);
+  const live = new Set<string>([...locals, ...remotes]);
   if (live.size === 0) return persisted;
-  const broken = stale.filter(([, e]) => !live.has(e.target));
-  if (broken.length === 0) return persisted;
 
   // branch -> where it lands, so a multi-link chain can be walked.
   const branchTarget: Record<string, string> = {};
@@ -170,16 +216,13 @@ async function repairVanishedTargets(
     if (e.branch && entry) branchTarget[e.branch] = entry.target;
   }
 
+  const writes = repointVanishedTargets({ here, persisted, live, branchTarget, defaultBranch });
+  if (writes.length === 0) return persisted;
   const out: TargetMap = { ...persisted };
   const file = worktreeTargetsFile();
-  for (const [path, entry] of broken) {
-    const resolved = resolveThroughChain(entry.target, { live, branchTarget, defaultBranch });
-    // Nothing to fall back to (no default, or it is gone too). Leave the broken
-    // target in place: `diffStat` will report `targetResolved: false` and the UI
-    // says so, which beats inventing a destination.
-    if (!resolved || resolved === entry.target) continue;
-    out[path] = { target: resolved, retargetedFrom: entry.target };
-    putTarget(file, path, resolved, { retargetedFrom: entry.target });
+  for (const w of writes) {
+    out[w.path] = { target: w.target, retargetedFrom: w.retargetedFrom };
+    putTarget(file, w.path, w.target, { retargetedFrom: w.retargetedFrom });
   }
   return out;
 }
@@ -209,6 +252,24 @@ export function resolveTargetBranch(args: {
   return null;
 }
 
+/**
+ * The set of currently-live worktree paths across every project in a snapshot,
+ * or `null` when the snapshot cannot be trusted to prune against.
+ *
+ * A git repo always has at least its primary worktree, so a git repo reporting
+ * ZERO worktrees means its enumeration failed (transient git error). Pruning the
+ * global target store against a partial live set would delete valid targets, so
+ * one such repo aborts the whole sweep rather than risk data loss.
+ */
+export function collectLivePathsForPrune(repos: readonly RepoDTO[]): Set<string> | null {
+  const live = new Set<string>();
+  for (const repo of repos) {
+    if (repo.isGitRepo && repo.worktrees.length === 0) return null;
+    for (const w of repo.worktrees) live.add(w.path);
+  }
+  return live;
+}
+
 export async function listRepos(
   projects: ProjectDTO[],
   sessions: Session[],
@@ -224,6 +285,16 @@ export async function listRepos(
   const repos = await mapLimit(projects, PROJECT_CONCURRENCY, (p) =>
     repoSnapshot(p, sessions, lastKnown, persistedTargets),
   );
+  // Sweep targets for worktrees that no longer exist. Paths are deterministic, so
+  // a removed-and-recreated worktree reuses a path and a surviving entry would
+  // hand the new worktree a dead target. `removeWorktree` clears its own entry,
+  // but a worktree deleted OUTSIDE makit leaves one behind; this is the sweep
+  // that collects those. `listProjects()` is the full project set, so the union
+  // of their live worktrees is authoritative. Guarded against a transient git
+  // failure (see {@link collectLivePathsForPrune}), and cheap: writes only when
+  // something is actually stale.
+  const live = collectLivePathsForPrune(repos);
+  if (live) pruneTargets(worktreeTargetsFile(), [...live]);
   return includePrs ? enrichPrs(repos, gateway, lastKnown) : repos;
 }
 

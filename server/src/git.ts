@@ -259,6 +259,11 @@ export async function diffStat(worktreePath: string, targetBranch: string | null
   }
 
   totals.filesChanged = files.size;
+  // A missed `targetResolved` check at any consumer must degrade to "nothing",
+  // not a plausible partial reading: zero the magnitudes when the target could
+  // not be resolved. The working-tree truth is still carried separately by
+  // `uncommittedFiles`, so no real information is lost.
+  if (!totals.targetResolved) return { ...ZERO_DIFF, targetResolved: false };
   return totals;
 }
 
@@ -277,18 +282,22 @@ export async function listLocalBranches(repoPath: string): Promise<string[]> {
 }
 
 /**
- * Branch names that exist on a remote, with the remote prefix stripped
- * (`origin/feat/x` -> `feat/x`).
+ * Branch names that exist on the `origin` remote, with the remote prefix
+ * stripped (`origin/feat/x` -> `feat/x`).
  *
  * Used to mark a candidate as unusable for a pull request: a PR base must exist
  * on the remote, so a local-only branch is offered but disabled rather than
  * silently accepted and rejected later by `gh`.
  *
+ * Scoped to `refs/remotes/origin` on purpose: `gh` resolves a PR base against
+ * `origin`, so a branch that exists only on another remote (`upstream`, a fork)
+ * is NOT a valid base and must not be offered as one.
+ *
  * `origin/HEAD` is skipped — it is a symbolic alias for the default branch, not a
  * branch of its own, and offering it would list the default twice.
  */
 export async function listRemoteBranchNames(repoPath: string): Promise<Set<string>> {
-  const r = await git(["for-each-ref", "--format=%(refname:short)", "refs/remotes"], repoPath);
+  const r = await git(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"], repoPath);
   const out = new Set<string>();
   if (r.code !== 0) return out;
   for (const line of r.stdout.split("\n")) {
@@ -335,22 +344,32 @@ export async function closestAncestorBranch(
   candidates: readonly string[],
 ): Promise<string | null> {
   const own = await detectCurrentBranch(worktreePath);
-  let best: { branch: string; distance: number } | null = null;
-  for (const branch of candidates) {
+  // One git read per candidate, run in parallel (bounded) instead of two serial
+  // reads each: on a repo with many branches the old fan-out was up to 2N serial
+  // subprocesses on every picker open. `rev-list --left-right --count B...HEAD`
+  // yields "<behind>\t<ahead>": B is an ancestor of HEAD iff nothing is reachable
+  // from B but not HEAD (behind === 0), and the distance is then the commits
+  // between them (ahead). `mapLimit` preserves input order, so the candidate-order
+  // tie-break below is unchanged.
+  const measured = await mapLimit(candidates, WORKTREE_READ_CONCURRENCY, async (branch) => {
     // Its own branch is an ancestor of itself; targeting yourself is meaningless.
-    if (!branch || branch === own) continue;
-    const isAncestor = await git(
-      ["merge-base", "--is-ancestor", branch, "HEAD"],
-      worktreePath,
-    );
-    if (isAncestor.code !== 0) continue;
-    const count = await git(["rev-list", "--count", `${branch}..HEAD`], worktreePath);
-    if (count.code !== 0) continue;
-    const distance = Number.parseInt(count.stdout.trim(), 10);
-    if (!Number.isFinite(distance)) continue;
+    if (!branch || branch === own) return null;
+    const r = await git(["rev-list", "--left-right", "--count", `${branch}...HEAD`], worktreePath);
+    if (r.code !== 0) return null;
+    const [behindRaw, aheadRaw] = r.stdout.trim().split(/\s+/);
+    const behind = Number.parseInt(behindRaw, 10);
+    const ahead = Number.parseInt(aheadRaw, 10);
+    // behind > 0 means B carries commits HEAD lacks: not an ancestor.
+    if (!Number.isFinite(behind) || behind !== 0) return null;
+    if (!Number.isFinite(ahead)) return null;
+    return { branch, distance: ahead };
+  });
+  let best: { branch: string; distance: number } | null = null;
+  for (const m of measured) {
+    if (m === null) continue;
     // Strictly `<`, so an equidistant later candidate never displaces an earlier
     // one — that is what makes the caller's ordering the tie-breaker.
-    if (best === null || distance < best.distance) best = { branch, distance };
+    if (best === null || m.distance < best.distance) best = m;
   }
   return best?.branch ?? null;
 }

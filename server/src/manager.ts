@@ -32,7 +32,7 @@ import {
   worktreeTargetsFile,
 } from "./worktree-target-store.js";
 import {
-  targetCandidates,
+  targetCandidates as computeTargetCandidates,
   resolveThroughChain,
   type TargetCandidate,
 } from "./target_candidates.js";
@@ -751,7 +751,11 @@ export class SessionManager extends EventEmitter {
     // Store under the canonical path so the key matches `WorktreeDTO.id`, which
     // `listWorktrees` reports symlink-resolved.
     const key = resolve(wt.path);
-    putTarget(worktreeTargetsFile(), key, targetBranch);
+    // An interactive change must not ack a success the next snapshot contradicts:
+    // if the write is refused (full/read-only disk, permissions), tell the user.
+    if (!putTarget(worktreeTargetsFile(), key, targetBranch)) {
+      throw new Error("could not save where this worktree lands (the target store is not writable)");
+    }
     return { worktreePath: key, targetBranch };
   }
 
@@ -766,7 +770,7 @@ export class SessionManager extends EventEmitter {
   async targetCandidates(projectId: string, worktreePath: string): Promise<TargetCandidate[]> {
     const { repoPath, wt } = await this._locateWorktree(projectId, worktreePath);
     if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
-    return targetCandidates(repoPath, resolve(wt.path));
+    return computeTargetCandidates(repoPath, resolve(wt.path));
   }
 
   private async _locateWorktree(
@@ -1014,7 +1018,7 @@ export class SessionManager extends EventEmitter {
     // unresolvable target now surfaces as `targetResolved: false` rather than a
     // silent partial count -- but it is why the store must never be treated as
     // authoritative without resolution.)
-    clearTarget(worktreeTargetsFile(), worktreePath);
+    clearTarget(worktreeTargetsFile(), target);
     // Reconcile sessions bound to the removed worktree (SPEC-29):
     //  - closed  → leave as-is (already preserved; it simply becomes orphaned)
     //  - draft   → kill (no transcript to keep; must not launch in a deleted dir)

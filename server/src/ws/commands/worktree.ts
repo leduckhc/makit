@@ -16,11 +16,10 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // Same rename + one-release alias as `worktree.wrapUp` below. Benign here by
     // comparison (a wrong value forks from the wrong place, which is visible and
     // deletable) but kept consistent so there is one vocabulary on the wire.
-    const targetBranch = ctx.env.targetBranch
-      ? String(ctx.env.targetBranch)
-      : ctx.env.baseBranch
-        ? String(ctx.env.baseBranch)
-        : undefined;
+    // `||` (not `??`): an explicit empty string must fall through to the alias
+    // and then to `undefined`, exactly as the old nested ternary did.
+    const rawTarget = ctx.env.targetBranch || ctx.env.baseBranch;
+    const targetBranch = rawTarget ? String(rawTarget) : undefined;
     const branchName = ctx.env.branchName ? String(ctx.env.branchName) : undefined;
     if (!projectId) {
       ctx.err(WireErrorCode.BadRequest, "worktree.create requires a projectId");
@@ -146,19 +145,21 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   // (`git diff target...HEAD`, i.e. what a PR into it would contain), what
   // `gh pr create --base` will target, and what a wrap-up fast-forwards.
   //
-  // Ordering is the whole contract here (R1/R2). The manager PERSISTS before we
-  // broadcast, and we broadcast before we ack:
-  //  * persisting after the broadcast would recompute the snapshot against the
-  //    OLD target and ship stale numbers that then look correct until some
-  //    unrelated event moved them;
-  //  * acking before the broadcast is queued would let the client re-enable its
-  //    picker while still painting the previous figures.
+  // Ordering is the whole contract here (R1/R2). The manager PERSISTS the new
+  // target before we start the broadcast: persisting after the broadcast would
+  // recompute the snapshot against the OLD target and ship stale numbers that
+  // then look correct until some unrelated event moved them.
+  // The broadcast is `void` (fire-and-forget, like all eight sibling commands;
+  // awaiting it would block the ack on a full git pass), so the ack actually
+  // returns first. That is safe: the snapshot it will ship is computed from the
+  // already-persisted target, so a client that re-enables its picker on the ack
+  // repaints against the new figures, not the previous ones.
   // Deliberately NOT throttled: `throttledReposSnapshot` exists to coalesce
   // turn-end churn, and a user-initiated change must land immediately.
   r.register("worktree.setTarget", async (ctx) => {
     const projectId = String(ctx.env.projectId ?? "");
     const worktreePath = String(ctx.env.worktreePath ?? "");
-    const targetBranch = ctx.env.targetBranch ? String(ctx.env.targetBranch) : "";
+    const targetBranch = ctx.env.targetBranch ? String(ctx.env.targetBranch) : undefined;
     if (!projectId || !worktreePath || !targetBranch) {
       ctx.err(
         WireErrorCode.BadRequest,
@@ -191,12 +192,10 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // rename sends the old key, and the manager's `?? detectDefaultBranch()`
     // fallback would then silently fast-forward the WRONG branch and ack it as a
     // success -- the one irreversible failure in this rename. Delete the alias a
-    // release after the app ships with the new key.
-    const targetBranch = ctx.env.targetBranch
-      ? String(ctx.env.targetBranch)
-      : ctx.env.baseBranch
-        ? String(ctx.env.baseBranch)
-        : undefined;
+    // release after the app ships with the new key. `||` keeps the old nested
+    // ternary's truthiness semantics (an empty string falls through).
+    const rawTarget = ctx.env.targetBranch || ctx.env.baseBranch;
+    const targetBranch = rawTarget ? String(rawTarget) : undefined;
     const expectBranch = ctx.env.expectBranch ? String(ctx.env.expectBranch) : undefined;
     if (!projectId || !worktreePath) {
       ctx.err(WireErrorCode.BadRequest, "worktree.wrapUp requires projectId and worktreePath");

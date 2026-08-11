@@ -650,7 +650,13 @@ PrStatus prStatus({
   // CTA-level only, never a signal's remedy: two facts each offering "Ship it"
   // in the detail list would be two buttons doing the same whole-branch job and
   // neither clearing the row it sat on. The facts keep `Commit & push`/`Push`.
-  final canShipIt = pr == null && !isPrimary && branch != null;
+  //
+  // Gated on `targetResolved`: when the target is set but gone there is nowhere
+  // to land, and `gh pr create` would fall back to the CLI's default base —
+  // opening the PR against the WRONG branch. The `nowhere to land` fact already
+  // says so; the fix is to pick a target (the header/menu picker), not to ship.
+  final canShipIt =
+      pr == null && !isPrimary && branch != null && targetResolved;
   final cta = canShipIt
       ? PrCta(
           'Ship it',
@@ -662,11 +668,13 @@ PrStatus prStatus({
       : _ctaFor(
           loud,
           tone: ctaTone,
-          // Unreachable while [canShipIt] covers every PR-less secondary branch,
-          // and kept as the honest fallback rather than deleted: the standing
-          // offer belongs to `_ctaFor`, and inlining its condition here would put
-          // the same rule in two places.
-          canCreatePr: pr == null && !isPrimary,
+          // Unreachable while [canShipIt] covers every PR-less secondary branch
+          // with a resolvable target, and kept as the honest fallback rather than
+          // deleted: the standing offer belongs to `_ctaFor`, and inlining its
+          // condition here would put the same rule in two places. Also gated on
+          // `targetResolved` so an unresolvable target cannot offer "Create PR"
+          // (the same wrong-base trap as Ship it) — it falls to "Ask the agent".
+          canCreatePr: pr == null && !isPrimary && targetResolved,
           branch: branch,
         );
 

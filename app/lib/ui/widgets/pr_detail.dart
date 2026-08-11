@@ -348,7 +348,7 @@ class PrDetailBody extends ConsumerWidget {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
-                      onPressed: () => _open(context),
+                      onPressed: () => _open(context, pr!.url),
                       icon: const Icon(
                         PhosphorIconsLight.arrowSquareOut,
                         size: 16,
@@ -365,8 +365,7 @@ class PrDetailBody extends ConsumerWidget {
     );
   }
 
-  void _open(BuildContext context) {
-    final url = pr!.url;
+  void _open(BuildContext context, String url) {
     Navigator.of(context).maybePop();
     openPrUrl(context, url);
   }

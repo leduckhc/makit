@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -5,6 +7,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../../store/store.dart';
 import '../widgets/pr_detail.dart';
 import '../widgets/pr_signals.dart';
 import '../widgets/pr_tone.dart';
@@ -153,18 +156,30 @@ class PrStatusChip extends ConsumerWidget {
           worktreePath: worktree.path,
           sheet: true,
           canInsertPrompt: onInsertPrompt != null,
-          onRun: (remedy) => runPrRemedy(
-            context,
-            ref,
-            remedy: remedy,
-            status: status,
-            pr: worktree.pr,
-            projectId: repo.id,
-            worktreePath: worktree.path,
-            branch: worktree.branch,
-            uncommittedFiles: worktree.uncommittedFiles,
-            onInsertPrompt: onInsertPrompt ?? (_) {},
-          ),
+          onRun: (remedy) {
+            // Re-derive from the snapshot at invocation time. This sheet hosts
+            // the "Lands in" picker, so the PR's base — and every fact derived
+            // from it — can change while it is open; a remedy run against the
+            // build-time `pr`/`status` would target the stale base (deriving
+            // `PrOpTarget.targetBranch` from an old `pr.baseRefName`). Falls back
+            // to the open-time values when the snapshot no longer carries the row.
+            final at = ref.read(reposProvider).locateWorktree(worktree.path);
+            final live = at?.worktree ?? worktree;
+            unawaited(
+              runPrRemedy(
+                context,
+                ref,
+                remedy: remedy,
+                status: at == null ? status : prStatusFor(at),
+                pr: live.pr,
+                projectId: repo.id,
+                worktreePath: live.path,
+                branch: live.branch,
+                uncommittedFiles: live.uncommittedFiles,
+                onInsertPrompt: onInsertPrompt ?? (_) {},
+              ),
+            );
+          },
         ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: kTouchRow),

@@ -139,4 +139,44 @@ void main() {
     expect(s.signals.first.label, contains('gone'));
     expect(s.signals.length, greaterThan(1));
   });
+
+  // The CTA must not offer to open a PR when the target is gone: `gh pr create`
+  // would fall back to the CLI default and raise the PR against the WRONG base.
+  group('an unresolvable target gates the PR-creating CTA', () {
+    test('a PR-less branch with a resolvable target still offers Ship it', () {
+      final s = prStatus(
+        pr: null,
+        branch: 'feat/child',
+        targetBranch: 'feat/parent',
+        targetResolved: true,
+      );
+      expect(s.cta.label, 'Ship it');
+      expect(s.cta.remedy, isA<PromptRemedy>());
+    });
+
+    test('an unresolvable target withdraws Ship it (nowhere to land)', () {
+      final s = prStatus(
+        pr: null,
+        branch: 'feat/child',
+        targetBranch: 'feat/parent',
+        targetResolved: false,
+      );
+      expect(s.cta.label, isNot('Ship it'));
+      // Falls back to the non-actionable offer rather than a wrong-base create.
+      expect(s.cta.label, 'Ask the agent');
+      expect(s.cta.isIdle, isTrue);
+    });
+
+    test(
+      'a null target (no destination set) still ships against the default',
+      () {
+        final s = prStatus(
+          pr: null,
+          branch: 'feat/child',
+          targetResolved: true,
+        );
+        expect(s.cta.label, 'Ship it');
+      },
+    );
+  });
 }
