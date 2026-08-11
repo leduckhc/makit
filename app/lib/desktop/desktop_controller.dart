@@ -121,25 +121,49 @@ class DesktopController extends ChangeNotifier {
     Future<DaemonActionResult> Function() action, {
     DaemonState? transient,
   }) async {
-    if (transient != null) {
-      // Counts as newer than any refresh already in flight: an action's
-      // `starting`/`stopping` state has to survive until the action's own
-      // refresh replaces it, or a poll that left before the button was pressed
-      // repaints it as stopped mid-start.
-      ++_refreshGeneration;
-      _summary = DaemonSummary(
-        state: transient,
-        pid: _summary.pid,
-        pairedDevices: _summary.pairedDevices,
-        runningSessions: _summary.runningSessions,
-      );
-      notifyListeners();
+    // Serialize lifecycle actions. `start`/`stop`/`restart` share the daemon's
+    // PID file and control socket (and `restart` is a `stop` then `start`), so
+    // overlapping requests — from mashing Start/Stop/Restart or a reachability
+    // change racing a manual action — can remove a freshly written PID file,
+    // launch a second daemon, or stop one another action just started. Chaining
+    // each action after the previous one makes them strictly sequential.
+    final prior = _actionTail;
+    final done = Completer<void>();
+    _actionTail = done.future;
+    if (prior != null) {
+      try {
+        await prior;
+      } catch (_) {
+        // A prior action's failure must not cancel the ones queued behind it.
+      }
     }
-    final result = await action();
-    _cliMissing = result.outcome == DaemonActionOutcome.cliNotFound;
-    await refresh();
-    return result;
+    try {
+      if (transient != null) {
+        // Counts as newer than any refresh already in flight: an action's
+        // `starting`/`stopping` state has to survive until the action's own
+        // refresh replaces it, or a poll that left before the button was pressed
+        // repaints it as stopped mid-start.
+        ++_refreshGeneration;
+        _summary = DaemonSummary(
+          state: transient,
+          pid: _summary.pid,
+          pairedDevices: _summary.pairedDevices,
+          runningSessions: _summary.runningSessions,
+        );
+        notifyListeners();
+      }
+      final result = await action();
+      _cliMissing = result.outcome == DaemonActionOutcome.cliNotFound;
+      await refresh();
+      return result;
+    } finally {
+      if (identical(_actionTail, done.future)) _actionTail = null;
+      done.complete();
+    }
   }
+
+  /// Tail of the serialized lifecycle-action chain, or null when idle.
+  Future<void>? _actionTail;
 
   /// Starts periodic polling: refreshes immediately, then every [interval]
   /// while the window is visible, dropping to [hiddenInterval] while it is not.

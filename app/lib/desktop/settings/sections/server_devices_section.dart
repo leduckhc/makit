@@ -1,9 +1,10 @@
-/// Server & Devices section body (SPEC-13 migration map).
+/// Server & Devices section body (SPEC-13 migration map, SPEC-50 D5/D6).
 ///
-/// Consolidates the desktop control surfaces — server endpoint, daemon
-/// lifecycle, CLI, paired devices, pairing QR, running sessions, and the TLS
-/// fingerprint — into one immediate-effect settings section. Existing widgets
-/// and providers are reused (embedded), not rewritten.
+/// The Server group is exactly four rows: the active profile, the one
+/// reachability question, a pair-a-phone row, and a single collapsed
+/// Diagnostics disclosure holding everything that is not a decision (lifecycle,
+/// CLI, TLS fingerprint, log path, and an Advanced escape hatch). Existing
+/// widgets and providers are reused (embedded), not rewritten.
 library;
 
 import 'dart:async';
@@ -14,23 +15,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../app/theme.dart';
+import '../../../status/status_event.dart';
+import '../../../status/status_providers.dart';
 import '../../../store/connection.dart'
     show connectionControllerProvider, connectionProvider;
+import '../../daemon/daemon_lifecycle.dart' show DaemonActionResult;
 import '../../desktop_app.dart'
-    show desktopControllerProvider, makitInstallCommand;
+    show desktopControllerProvider, makitInstallCommand, serverProfileProvider;
 import '../../screens/devices_screen.dart';
-import '../../screens/providers.dart'
-    show bundledCliPathProvider, cliInstallerProvider;
 import '../../screens/qr_screen.dart';
 import '../../screens/sessions_screen.dart';
 import '../../tray/tray_controller.dart' show DaemonState;
-import '../../../status/status_event.dart';
-import '../../../status/status_providers.dart';
 import '../server_config.dart';
 import '../settings_item_anchor.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
-import 'settings_reset_button.dart';
 
 /// Lowest valid TCP port (inclusive).
 const int _kMinPort = 1;
@@ -38,39 +37,100 @@ const int _kMinPort = 1;
 /// Highest valid TCP port (inclusive).
 const int _kMaxPort = 65535;
 
+/// Restarts the daemon so a committed config change takes effect, reporting a
+/// non-`ok` outcome through the status center (the immediate-effect contract
+/// that replaced the old "Save & restart server" two-phase commit).
+Future<void> _restartAndReport(WidgetRef ref) async {
+  // Resolved before the await: `ref` throws once the widget is unmounted, and
+  // the record must outlive the thing reporting to it.
+  final status = ref.status;
+  final result = await ref.read(desktopControllerProvider).restart();
+  if (!result.ok) {
+    status.failure(
+      'Could not restart the server',
+      source: StatusSources.settings,
+      detail: result.message,
+    );
+  }
+}
+
 /// Server & Devices section body: the single home for endpoint config, daemon
 /// lifecycle, the CLI, device pairing/management, sessions, and TLS trust.
-class ServerDevicesSection extends StatefulWidget {
+class ServerDevicesSection extends ConsumerStatefulWidget {
   /// Creates the Server & Devices section body.
   const ServerDevicesSection({super.key});
 
   @override
-  State<ServerDevicesSection> createState() => _ServerDevicesSectionState();
+  ConsumerState<ServerDevicesSection> createState() =>
+      _ServerDevicesSectionState();
 }
 
-class _ServerDevicesSectionState extends State<ServerDevicesSection> {
+class _ServerDevicesSectionState extends ConsumerState<ServerDevicesSection> {
   /// Id of the single expanded disclosure row, or null when all are collapsed.
   /// Kept here (not per-row) so the rows behave as an accordion.
   String? _openRow;
 
+  /// The deep-link target this section has already auto-expanded for, so a
+  /// rebuild while still targeted does not fight the user re-collapsing the row.
+  String? _autoExpandedForTarget;
+
   void _toggle(String id) =>
       setState(() => _openRow = _openRow == id ? null : id);
 
+  /// The disclosure row that must be open for [target]'s anchor to exist in the
+  /// tree, or null when the target lives at the top level. `_ExpandableRow`
+  /// mounts its child only when expanded, so a deep-link to a Diagnostics row
+  /// would otherwise never resolve.
+  static String? _disclosureOwning(String? target) => switch (target) {
+    'server_devices.lifecycle' ||
+    'server_devices.cli' ||
+    'server_devices.fingerprint' => 'diagnostics',
+    _ => null,
+  };
+
   @override
   Widget build(BuildContext context) {
+    final target = ref.watch(settingsTargetItemProvider);
+    if (target != _autoExpandedForTarget) {
+      _autoExpandedForTarget = target;
+      final owner = _disclosureOwning(target);
+      if (owner != null && _openRow != owner) {
+        // Defer past this build: the anchor's own reveal runs in a post-frame
+        // callback, so the row must be mounted by then.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _openRow = owner);
+        });
+      }
+    }
     return ListView(
       children: [
         const SettingsSectionHeader(title: 'Server & Devices'),
         const SettingsSectionHeader(title: 'Server'),
-        const SettingsGroup(
+        SettingsGroup(
           children: [
-            SettingsItemAnchor(
+            const _ActiveProfileRow(),
+            const SettingsItemAnchor(
               itemId: 'server_devices.endpoint',
-              child: _EndpointRow(),
+              child: _ReachabilityRow(),
             ),
-            _LifecycleRow(),
-            _CliRow(),
-            _FingerprintRow(),
+            _ExpandableRow(
+              icon: PhosphorIconsLight.qrCode,
+              title: 'Pair a phone',
+              help: 'Show a QR code to pair a new device over Tailscale.',
+              expanded: _openRow == 'pair_server',
+              onToggle: () => _toggle('pair_server'),
+              child: const QrScreen(),
+            ),
+            _ExpandableRow(
+              icon: PhosphorIconsLight.wrench,
+              title: 'Diagnostics',
+              help:
+                  'Lifecycle, CLI, TLS fingerprint, log path and advanced '
+                  'bind options.',
+              expanded: _openRow == 'diagnostics',
+              onToggle: () => _toggle('diagnostics'),
+              child: const _Diagnostics(),
+            ),
           ],
         ),
         const SettingsSectionHeader(title: 'Devices'),
@@ -114,184 +174,209 @@ class _ServerDevicesSectionState extends State<ServerDevicesSection> {
   }
 }
 
-/// Endpoint: how the local daemon binds (bind mode + optional custom host) and
-/// on which port. Applies on commit; a "Save & restart server" action pushes
-/// changes to a running daemon. The desktop app's own client always connects
-/// over loopback, so these settings only affect reachability from other
-/// devices (e.g. a paired phone).
-class _EndpointRow extends ConsumerStatefulWidget {
-  const _EndpointRow();
+/// Active-profile row: the profile this window runs against, with a live
+/// running/stopped dot. There is deliberately no switcher here (the badge owns
+/// that) and no Stop (you never stop the server you are talking to — D7).
+class _ActiveProfileRow extends ConsumerWidget {
+  const _ActiveProfileRow();
 
   @override
-  ConsumerState<_EndpointRow> createState() => _EndpointRowState();
-}
-
-class _EndpointRowState extends ConsumerState<_EndpointRow> {
-  late final TextEditingController _customHost;
-  late final TextEditingController _port;
-  String? _portError;
-
-  @override
-  void initState() {
-    super.initState();
-    final cfg = ref.read(serverConfigProvider);
-    _customHost = TextEditingController(text: cfg.customHost);
-    _port = TextEditingController(text: '${cfg.port}');
-  }
-
-  @override
-  void dispose() {
-    _customHost.dispose();
-    _port.dispose();
-    super.dispose();
-  }
-
-  /// Validates and applies the port. Rejects out-of-range values (keeping the
-  /// stored config unchanged) and surfaces an inline error.
-  void _applyPort(String value) {
-    final port = int.tryParse(value.trim());
-    if (port == null || port < _kMinPort || port > _kMaxPort) {
-      setState(() {
-        _portError = 'Port must be a number between $_kMinPort and $_kMaxPort.';
-      });
-      return;
-    }
-    setState(() => _portError = null);
-    unawaited(ref.read(serverConfigProvider.notifier).setPort(port));
-  }
-
-  Future<void> _restart() async {
-    final notifier = ref.read(serverConfigProvider.notifier);
-    if (ref.read(serverConfigProvider).bindMode == ServerBindMode.custom) {
-      unawaited(notifier.setCustomHost(_customHost.text));
-    }
-    _applyPort(_port.text);
-    if (_portError != null) return;
-    await ref.read(desktopControllerProvider).restart();
-  }
-
-  void _reset() {
-    _customHost.text = '';
-    _port.text = '$kDefaultServerPort';
-    setState(() => _portError = null);
-    final notifier = ref.read(serverConfigProvider.notifier);
-    unawaited(notifier.setBindMode(ServerBindMode.auto));
-    unawaited(notifier.setCustomHost(''));
-    unawaited(notifier.setPort(kDefaultServerPort));
-  }
-
-  static String _modeSubtitle(ServerBindMode mode) => switch (mode) {
-    ServerBindMode.auto =>
-      'Auto: Tailscale if available, else loopback. Reachable by your other '
-          'devices over Tailscale.',
-    ServerBindMode.lan =>
-      'LAN: allow access over the local network when Tailscale is off. '
-          'Tailscale still takes precedence when available; use Custom to force '
-          'a specific host. Only use on trusted Wi-Fi.',
-    ServerBindMode.loopback =>
-      'Loopback: this Mac only — not reachable from other devices.',
-    ServerBindMode.custom =>
-      'Custom: bind an explicit host (e.g. 0.0.0.0 for every interface).',
-  };
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final cfg = ref.watch(serverConfigProvider);
-    final modified =
-        cfg.bindMode != ServerBindMode.auto ||
-        cfg.port != kDefaultServerPort ||
-        cfg.customHost.isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          title: const Text('Endpoint'),
-          subtitle: Text(_modeSubtitle(cfg.bindMode)),
-          trailing: modified
-              ? SettingsResetButton(visible: true, onPressed: _reset)
-              : null,
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-          child: SegmentedButton<ServerBindMode>(
-            segments: const [
-              ButtonSegment(value: ServerBindMode.auto, label: Text('Auto')),
-              ButtonSegment(value: ServerBindMode.lan, label: Text('LAN')),
-              ButtonSegment(
-                value: ServerBindMode.loopback,
-                label: Text('Loopback'),
+    final profile = ref.watch(serverProfileProvider);
+    final controller = ref.watch(desktopControllerProvider);
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final running = controller.summary.state == DaemonState.running;
+        return ListTile(
+          leading: Icon(PhosphorIconsLight.cube, color: cs.outline),
+          title: Text(profile.name),
+          subtitle: const Text(
+            'Projects, agents, devices and sessions are separate per profile.',
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                PhosphorIconsFill.circle,
+                size: 10,
+                color: running ? cs.primary : cs.outline,
               ),
-              ButtonSegment(
-                value: ServerBindMode.custom,
-                label: Text('Custom'),
+              const SizedBox(width: kSpace8),
+              Text(
+                running ? 'Running' : 'Stopped',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.outline),
               ),
             ],
-            selected: {cfg.bindMode},
-            showSelectedIcon: false,
-            onSelectionChanged: (s) => unawaited(
-              ref.read(serverConfigProvider.notifier).setBindMode(s.first),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The one reachability question (SPEC-50 D5): two radios that each state their
+/// *consequence*, an "allow plain Wi-Fi" fallback checkbox nested under "My
+/// devices", and a read-only current-address line. Committing a change applies
+/// immediately and restarts the daemon.
+class _ReachabilityRow extends ConsumerWidget {
+  const _ReachabilityRow();
+
+  Future<void> _setReachability(WidgetRef ref, Reachability value) async {
+    await ref.read(serverConfigProvider.notifier).setReachability(value);
+    await _restartAndReport(ref);
+  }
+
+  Future<void> _setFallback(WidgetRef ref, bool allow) async {
+    await ref.read(serverConfigProvider.notifier).setAllowLanFallback(allow);
+    await _restartAndReport(ref);
+  }
+
+  /// The current bind address, read-only. The detected-address dropdown is
+  /// deferred (SPEC-50 "does not do"); this renders the *effective* bind the
+  /// daemon is configured for.
+  ///
+  /// Deliberately derived from [ServerConfig], not from the client connection:
+  /// the desktop app always talks to its own daemon over loopback, so
+  /// `connectionProvider.server.host` is `127.0.0.1` whenever connected — which
+  /// would misreport a server reachable over Tailscale/LAN as loopback exactly
+  /// when it is running.
+  String _currentAddress(ServerConfig cfg) {
+    final host = cfg.customHost.trim();
+    if (host.isNotEmpty) return host;
+    return switch (cfg.reachability) {
+      Reachability.thisMacOnly => '127.0.0.1',
+      Reachability.myDevices => 'Your devices via Tailscale',
+    };
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final cfg = ref.watch(serverConfigProvider);
+    // Transparent Material so the nested RadioListTiles paint their ink on it
+    // rather than on the deep-link highlight's tinted DecoratedBox (which would
+    // trip ListTile's "background may be invisible" assertion).
+    return Material(
+      type: MaterialType.transparency,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Text(
+              'Who can reach this server?',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          RadioGroup<Reachability>(
+            groupValue: cfg.reachability,
+            onChanged: (v) =>
+                unawaited(_setReachability(ref, v ?? cfg.reachability)),
+            child: const Column(
+              children: [
+                RadioListTile<Reachability>(
+                  value: Reachability.thisMacOnly,
+                  title: Text('Just this Mac'),
+                  subtitle: Text('Nothing else can connect.'),
+                ),
+                RadioListTile<Reachability>(
+                  value: Reachability.myDevices,
+                  title: Text('My devices'),
+                  subtitle: Text(
+                    'Reachable from your phone over Tailscale. '
+                    'No account needed.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (cfg.reachability == Reachability.myDevices)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(56, 0, 24, 4),
+              child: Row(
+                children: [
+                  Checkbox(
+                    value: cfg.allowLanFallback,
+                    onChanged: (v) => unawaited(_setFallback(ref, v ?? false)),
+                  ),
+                  const Expanded(
+                    child: Text('Also allow plain Wi-Fi when Tailscale is off'),
+                  ),
+                ],
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+            child: Row(
+              children: [
+                Text(
+                  'Address',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: cs.outline),
+                ),
+                const SizedBox(width: kSpace12),
+                Expanded(
+                  child: Text(
+                    _currentAddress(cfg),
+                    style: const TextStyle(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The Diagnostics disclosure body: everything that is not a decision, one
+/// read-only/advanced block. Each moved row keeps its retired
+/// [SettingsItemAnchor] id so deep links and settings search still resolve.
+class _Diagnostics extends ConsumerWidget {
+  const _Diagnostics();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final profile = ref.watch(serverProfileProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SettingsItemAnchor(
+          itemId: 'server_devices.lifecycle',
+          child: _LifecycleRow(),
+        ),
+        const Divider(height: 1),
+        const SettingsItemAnchor(
+          itemId: 'server_devices.cli',
+          child: _CliRow(),
+        ),
+        const Divider(height: 1),
+        const SettingsItemAnchor(
+          itemId: 'server_devices.fingerprint',
+          child: _FingerprintRow(),
+        ),
+        const Divider(height: 1),
+        ListTile(
+          leading: Icon(PhosphorIconsLight.fileText, color: cs.outline),
+          title: const Text('Log'),
+          subtitle: Text(
+            '${profile.home}/makit.log',
+            style: const TextStyle(
+              fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (cfg.bindMode == ServerBindMode.custom) ...[
-                Expanded(
-                  child: TextField(
-                    controller: _customHost,
-                    decoration: const InputDecoration(
-                      labelText: 'Host',
-                      hintText: '0.0.0.0',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    onSubmitted: (v) => unawaited(
-                      ref.read(serverConfigProvider.notifier).setCustomHost(v),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: kSpace12),
-              ],
-              SizedBox(
-                width: 140,
-                child: TextField(
-                  controller: _port,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Port',
-                    hintText: '$kDefaultServerPort',
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                    errorText: _portError,
-                  ),
-                  onSubmitted: _applyPort,
-                ),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-          child: OutlinedButton.icon(
-            onPressed: _restart,
-            icon: const Icon(PhosphorIconsLight.arrowClockwise, size: 18),
-            label: const Text('Save & restart server'),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-          child: Text(
-            'A running server keeps its current settings until restarted.',
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: cs.outline),
-          ),
-        ),
+        const Divider(height: 1),
+        const _AdvancedRow(),
       ],
     );
   }
@@ -301,6 +386,27 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
 /// the polled [desktopControllerProvider] (replaces the old daemon header).
 class _LifecycleRow extends ConsumerWidget {
   const _LifecycleRow();
+
+  /// Runs a lifecycle [action] and reports a non-`ok` outcome.
+  ///
+  /// These results were previously discarded, so a daemon that refused to start
+  /// -- most often because its port is already held by another build -- failed
+  /// with no feedback whatsoever.
+  static Future<void> _report(
+    WidgetRef ref,
+    String title,
+    Future<DaemonActionResult> Function() action,
+  ) async {
+    // Captured before the await: `ref` throws once its widget is unmounted.
+    final status = ref.status;
+    final result = await action();
+    if (result.ok) return;
+    status.failure(
+      title,
+      source: StatusSources.settings,
+      detail: result.message,
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -329,19 +435,35 @@ class _LifecycleRow extends ConsumerWidget {
             children: [
               if (!running)
                 FilledButton.icon(
-                  onPressed: starting ? null : () => controller.start(),
+                  onPressed: starting
+                      ? null
+                      : () => unawaited(
+                          _report(
+                            ref,
+                            'Could not start the server',
+                            controller.start,
+                          ),
+                        ),
                   icon: const Icon(PhosphorIconsLight.play, size: 18),
                   label: const Text('Start'),
                 ),
               if (running) ...[
                 OutlinedButton.icon(
-                  onPressed: () => controller.restart(),
+                  onPressed: () => unawaited(
+                    _report(
+                      ref,
+                      'Could not restart the server',
+                      controller.restart,
+                    ),
+                  ),
                   icon: const Icon(PhosphorIconsLight.arrowClockwise, size: 18),
                   label: const Text('Restart'),
                 ),
                 const SizedBox(width: kSpace8),
                 OutlinedButton.icon(
-                  onPressed: () => controller.stop(),
+                  onPressed: () => unawaited(
+                    _report(ref, 'Could not stop the server', controller.stop),
+                  ),
                   icon: const Icon(PhosphorIconsLight.stop, size: 18),
                   label: const Text('Stop'),
                 ),
@@ -355,7 +477,9 @@ class _LifecycleRow extends ConsumerWidget {
 }
 
 /// CLI: shows the resolved `makit` path (or a missing state) and offers a
-/// "Copy install command" action (reuses [makitInstallCommand]).
+/// "Copy install command" action (reuses [makitInstallCommand]). The one-time
+/// `Install CLI` action lives in General; here the CLI is read-only diagnostics
+/// plus an optional path override.
 class _CliRow extends ConsumerStatefulWidget {
   const _CliRow();
 
@@ -405,34 +529,6 @@ class _CliRowState extends ConsumerState<_CliRow> {
     );
   }
 
-  /// One-click install of the app-bundled CLI into `~/.local/bin/makit`,
-  /// then re-resolve so the CLI row reflects the newly installed binary.
-  Future<void> _installCli() async {
-    // Resolved before the first await: `ref` throws once its widget is
-    // unmounted, and the record must survive the thing that reported to it.
-    final status = ref.status;
-    final result = await ref.read(cliInstallerProvider).install();
-    if (result.ok) {
-      status.success(
-        'Installed makit CLI to ${result.installedPath}',
-        source: StatusSources.settings,
-        detail:
-            'If your terminal can’t find `makit`, add ~/.local/bin to your PATH.',
-      );
-    } else {
-      status.failure(
-        'Could not install the makit CLI',
-        source: StatusSources.settings,
-        detail: result.error,
-      );
-    }
-    if (result.ok && mounted) {
-      setState(() {
-        _resolved = _refreshResolved();
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -444,8 +540,8 @@ class _CliRowState extends ConsumerState<_CliRow> {
         final subtitle = resolving
             ? 'Locating the makit CLI…'
             : (path ??
-                  'The makit CLI was not found. Install it to control '
-                      'the server from here.');
+                  'The makit CLI was not found. Install it from General to '
+                      'control the server from here.');
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -462,15 +558,6 @@ class _CliRowState extends ConsumerState<_CliRow> {
                 onPressed: _copyInstallCommand,
               ),
             ),
-            if (ref.read(bundledCliPathProvider) != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-                child: OutlinedButton.icon(
-                  onPressed: () => unawaited(_installCli()),
-                  icon: const Icon(PhosphorIconsLight.downloadSimple, size: 18),
-                  label: const Text('Install CLI'),
-                ),
-              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
               child: TextField(
@@ -533,6 +620,97 @@ class _FingerprintRow extends ConsumerWidget {
   static String _shorten(String fingerprint) => fingerprint.length <= 24
       ? fingerprint
       : '${fingerprint.substring(0, 24)}…';
+}
+
+/// Advanced (Diagnostics → Advanced): the custom-host escape hatch and the
+/// port. Committing either applies immediately and restarts the daemon. Kept
+/// collapsed so it is not the fourth thing a new user reads.
+class _AdvancedRow extends ConsumerStatefulWidget {
+  const _AdvancedRow();
+
+  @override
+  ConsumerState<_AdvancedRow> createState() => _AdvancedRowState();
+}
+
+class _AdvancedRowState extends ConsumerState<_AdvancedRow> {
+  late final TextEditingController _customHost;
+  late final TextEditingController _port;
+  String? _portError;
+
+  @override
+  void initState() {
+    super.initState();
+    final cfg = ref.read(serverConfigProvider);
+    _customHost = TextEditingController(text: cfg.customHost);
+    _port = TextEditingController(text: '${cfg.port}');
+  }
+
+  @override
+  void dispose() {
+    _customHost.dispose();
+    _port.dispose();
+    super.dispose();
+  }
+
+  Future<void> _applyHost(String value) async {
+    await ref.read(serverConfigProvider.notifier).setCustomHost(value);
+    await _restartAndReport(ref);
+  }
+
+  /// Validates and applies the port. Rejects out-of-range values (keeping the
+  /// stored config unchanged) and surfaces an inline error.
+  Future<void> _applyPort(String value) async {
+    final port = int.tryParse(value.trim());
+    if (port == null || port < _kMinPort || port > _kMaxPort) {
+      setState(() {
+        _portError = 'Port must be a number between $_kMinPort and $_kMaxPort.';
+      });
+      return;
+    }
+    setState(() => _portError = null);
+    await ref.read(serverConfigProvider.notifier).setPort(port);
+    await _restartAndReport(ref);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ExpansionTile(
+      leading: Icon(PhosphorIconsLight.slidersHorizontal, color: cs.outline),
+      title: const Text('Advanced'),
+      subtitle: const Text('Custom bind host and port.'),
+      childrenPadding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+      children: [
+        TextField(
+          controller: _customHost,
+          decoration: const InputDecoration(
+            labelText: 'Host',
+            hintText: '0.0.0.0',
+            helperText: 'Overrides the reachability choice above.',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onSubmitted: (v) => unawaited(_applyHost(v)),
+        ),
+        const SizedBox(height: kSpace12),
+        SizedBox(
+          width: 160,
+          child: TextField(
+            controller: _port,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Port',
+              hintText: '$kDefaultServerPort',
+              border: const OutlineInputBorder(),
+              isDense: true,
+              errorText: _portError,
+            ),
+            onSubmitted: (v) => unawaited(_applyPort(v)),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// A settings row that discloses [child] *inline* when tapped, rather than

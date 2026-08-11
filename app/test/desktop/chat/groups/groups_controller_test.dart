@@ -13,6 +13,7 @@ import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_worktree.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:makit/store/prefs/profile_scoped_prefs.dart';
 
 WorkspaceState _treeWith(List<String?> sessionIds) {
   // A split always has at least one tab, so an "empty" tree is one empty tab.
@@ -528,7 +529,7 @@ void main() {
 
     test('mutations survive a reload, versioned', () async {
       final prefs = await SharedPreferences.getInstance();
-      final c = GroupsController.load(prefs);
+      final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
       final id = c.newBoard(label: 'Review');
       c.addMember(id, 's1', location: _loc('/tmp/wt/main'));
       // Writes are coalesced to the end of the microtask queue (a divider drag
@@ -539,7 +540,9 @@ void main() {
       final raw = jsonDecode(prefs.getString(kGroupsPrefsKey)!) as Map;
       expect(raw['v'], 1, reason: 'the payload is versioned from day one');
 
-      final reloaded = GroupsController.load(prefs);
+      final reloaded = GroupsController.load(
+        ProfileScopedPrefs.unscoped(prefs),
+      );
       expect(reloaded.state, c.state);
       expect(reloaded.groupById(id)!.members, ['s1']);
     });
@@ -547,7 +550,7 @@ void main() {
     test('corrupt JSON falls back to the fresh-launch state', () async {
       SharedPreferences.setMockInitialValues({kGroupsPrefsKey: '{not json'});
       final prefs = await SharedPreferences.getInstance();
-      final c = GroupsController.load(prefs);
+      final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
       expect(c.state.groups, hasLength(1));
       expect(c.state.groups.single.kind, GroupKind.board);
       expect(c.state.groups.single.label, 'Board 1');
@@ -565,7 +568,9 @@ void main() {
         });
         final prefs = await SharedPreferences.getInstance();
         expect(
-          GroupsController.load(prefs).state.groups.single.label,
+          GroupsController.load(
+            ProfileScopedPrefs.unscoped(prefs),
+          ).state.groups.single.label,
           'Board 1',
         );
       },
@@ -584,7 +589,7 @@ void main() {
         }),
       });
       final prefs = await SharedPreferences.getInstance();
-      final c = GroupsController.load(prefs);
+      final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
       expect(c.state.groups.map((g) => g.id), ['b1']);
     });
 
@@ -592,7 +597,7 @@ void main() {
       'the preview pointer survives a reload (SPEC-51 decision 10)',
       () async {
         final prefs = await SharedPreferences.getInstance();
-        final c = GroupsController.load(prefs);
+        final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
         final id = c.openWorktreeGroup(
           projectId: 'p1',
           worktreePath: '/tmp/wt/a',
@@ -601,7 +606,9 @@ void main() {
         );
         await pumpEventQueue();
 
-        final reloaded = GroupsController.load(prefs);
+        final reloaded = GroupsController.load(
+          ProfileScopedPrefs.unscoped(prefs),
+        );
         expect(reloaded.state.previewGroupId, id);
         expect(reloaded.state, c.state);
       },
@@ -617,7 +624,12 @@ void main() {
         }),
       });
       final prefs = await SharedPreferences.getInstance();
-      expect(GroupsController.load(prefs).state.previewGroupId, isNull);
+      expect(
+        GroupsController.load(
+          ProfileScopedPrefs.unscoped(prefs),
+        ).state.previewGroupId,
+        isNull,
+      );
     });
 
     test('a stale previewGroupId degrades to no preview', () async {
@@ -631,7 +643,12 @@ void main() {
         }),
       });
       final prefs = await SharedPreferences.getInstance();
-      expect(GroupsController.load(prefs).state.previewGroupId, isNull);
+      expect(
+        GroupsController.load(
+          ProfileScopedPrefs.unscoped(prefs),
+        ).state.previewGroupId,
+        isNull,
+      );
     });
 
     test('a previewGroupId that matches a board decodes to no preview — the '
@@ -649,7 +666,9 @@ void main() {
         }),
       });
       final prefs = await SharedPreferences.getInstance();
-      final reloaded = GroupsController.load(prefs);
+      final reloaded = GroupsController.load(
+        ProfileScopedPrefs.unscoped(prefs),
+      );
       expect(reloaded.state.previewGroupId, isNull);
       expect(reloaded.state.groups.map((g) => g.id), ['b1']);
     });
@@ -664,7 +683,12 @@ void main() {
         }),
       });
       final prefs = await SharedPreferences.getInstance();
-      expect(GroupsController.load(prefs).state.activeGroupId, 'b1');
+      expect(
+        GroupsController.load(
+          ProfileScopedPrefs.unscoped(prefs),
+        ).state.activeGroupId,
+        'b1',
+      );
     });
   });
 
@@ -705,7 +729,7 @@ void main() {
       });
       final prefs = await SharedPreferences.getInstance();
       resetNodeIds();
-      final c = GroupsController.load(prefs);
+      final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
 
       // Every id in the restored closed board must be below the counter, so a
       // freshly minted id can never collide with it.
@@ -758,7 +782,7 @@ void main() {
           kWorkspacePrefsKey: jsonEncode(legacy.toJson()),
         });
         final prefs = await SharedPreferences.getInstance();
-        final c = GroupsController.load(prefs);
+        final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
 
         expect(c.state.groups, hasLength(1));
         final board = c.state.groups.single;
@@ -773,7 +797,7 @@ void main() {
     test('a corrupt legacy blob still yields a usable fresh state', () async {
       SharedPreferences.setMockInitialValues({kWorkspacePrefsKey: '{not json'});
       final prefs = await SharedPreferences.getInstance();
-      final c = GroupsController.load(prefs);
+      final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
       expect(c.state.groups.single.label, 'Board 1');
       expect(c.state.groups.single.members, isEmpty);
     });

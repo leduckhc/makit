@@ -38,6 +38,7 @@ import 'package:makit/desktop/settings/settings_window.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/store/prefs/profile_scoped_prefs.dart';
 import 'package:makit/ui/home/repo_monogram.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -107,7 +108,10 @@ Widget _app() => ProviderScope(
   overrides: [
     reposProvider.overrideWithValue(ReposState(_repos)),
     serverConfigProvider.overrideWith(
-      (ref) => ServerConfigController(_prefs, const ServerConfig()),
+      (ref) => ServerConfigController(
+        ProfileScopedPrefs.unscoped(_prefs),
+        const ServerConfig(),
+      ),
     ),
     desktopControllerProvider.overrideWithValue(
       DesktopController(

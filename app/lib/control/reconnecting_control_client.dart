@@ -97,9 +97,25 @@ class ReconnectingControlClient implements ControlClient {
   }
 
   /// Disposes any live connection. Safe to call multiple times.
+  ///
+  /// An in-flight connect is awaited first: `close()` only nulling `_current`
+  /// would let a pending `_connectNew` complete *after* close and install a live
+  /// socket into `_current` that nothing ever closes. This leaked the old
+  /// profile's connection on a switch, which then kept polling under a torn-down
+  /// runtime. Awaiting the pending connect lets it settle into `_current` (or
+  /// fail and dispose itself), after which the single disposal below covers it.
   Future<void> close() async {
+    final connecting = _connecting;
+    if (connecting != null) {
+      try {
+        await connecting;
+      } catch (_) {
+        // A failed connect already disposed its client in _connectNew.
+      }
+    }
     final current = _current;
     _current = null;
+    _connecting = null;
     if (current != null) await _safeDispose(current);
   }
 

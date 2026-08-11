@@ -1,121 +1,257 @@
-/// The isolated server "profile" a desktop app instance runs against.
+/// The isolated server **profile** an app instance runs against.
 ///
-/// A single Mac can run several makit desktop builds at once — e.g. one built
-/// from `main` and one from a feature worktree. Without isolation they collide:
-/// they share `~/.makit` (control socket, pid, db), the default port, and the
-/// `NSUserDefaults` prefs domain, so one window's "restart server" hijacks the
-/// other's daemon. See `docs/DEVELOPMENT.md`.
+/// A profile owns a whole server instance: its own `MAKIT_HOME` (and therefore
+/// its own daemon, database, media, pairings and projects), its own port, and
+/// its own slice of app preferences. Several may run at once — a `Work` profile
+/// and a feature worktree's dev profile coexist on different ports without
+/// seeing each other. See `docs/specs/2026-08-10-SPEC-50-profiles.md`.
 ///
-/// A [ServerProfile] gives each build its own `MAKIT_HOME`, port, prefs prefix,
-/// and window label — derived deterministically from the running `.app`'s path,
-/// so two builds never step on each other and each is stable across rebuilds in
-/// the same location. No user configuration required.
-///
-/// The **default** profile (an installed app, e.g. in `/Applications`, whose
-/// path is not a Flutter dev-build path) keeps the historical `~/.makit` + port
-/// 7777 + `flutter.` prefs prefix, so shipped users are unaffected.
+/// Identity is **persisted, not derived** (SPEC-50 D3). `ProfileRegistry` mints
+/// [id] once into `~/.makit/profiles.json`; path-hashing survives only as the
+/// bootstrap for a dev build the registry has never seen. Deriving the id from
+/// the filesystem path — as this class used to — silently orphaned a profile's
+/// home, pairings and prefs whenever a worktree moved.
 library;
 
-import 'dart:io';
+import 'dart:io' show Platform;
 
-import '../settings/server_config.dart' show kDefaultServerPort;
+import 'server_profile_paths.dart';
 
-/// A per-build server profile. Immutable; derived by [ServerProfile.resolve].
+String _resolvedExecutable() => Platform.resolvedExecutable;
+String _homeDir() => Platform.environment['HOME'] ?? '';
+
+/// How a profile came into existence.
+enum ProfileKind {
+  /// Created deliberately by the user (e.g. `Work`, `Personal`). Never
+  /// auto-removed, and never considered stale.
+  user,
+
+  /// Auto-created for a Flutter dev build so a worktree cannot collide with the
+  /// installed app. Carries an [ServerProfile.origin] and can go stale.
+  dev,
+}
+
+/// Which on-disk key layout a profile's preferences and secrets use.
+///
+/// This is a **compatibility** fact, frozen at creation — deliberately separate
+/// from [ServerProfile.name], which is a UI fact the user may change at will
+/// (SPEC-50 D2). Fusing the two into one `isDefault` boolean was what made the
+/// installed profile un-renameable.
+enum ProfileStorage {
+  /// The shipped layout: unprefixed preference keys (so the effective
+  /// `NSUserDefaults` key stays `flutter.<key>`) and the unsuffixed secure-store
+  /// file. **At most one profile may use this**, and it is implicitly protected:
+  /// it is the profile holding `AuthKey_*.p8`, `ota/`, `push.json` and
+  /// `host.json`.
+  legacy,
+
+  /// Keys and secrets namespaced by [ServerProfile.id].
+  namespaced,
+}
+
+/// Matches an id safe to interpolate into a path or a preference key.
+final RegExp _safeProfileId = RegExp(r'^[a-z0-9][a-z0-9-]*$');
+
+/// Whether [id] is safe to use in a filesystem path and a preference key.
+///
+/// Lowercase alphanumerics and `-` only, and never empty. Rejects `.`, `/`, `..`
+/// and every separator, which is what keeps a hand-edited `profiles.json` from
+/// steering a file operation out of its directory.
+bool isSafeProfileId(String id) =>
+    id.isNotEmpty && id.length <= 64 && _safeProfileId.hasMatch(id);
+
+/// A persisted server profile. Immutable; mutate via [copyWith].
 class ServerProfile {
-  /// Creates a profile. Prefer [ServerProfile.resolve].
+  /// Creates a profile. Prefer `ProfileRegistry` over constructing directly.
   const ServerProfile({
     required this.id,
-    required this.label,
-    required this.isDefault,
-    required this.makitHome,
+    required this.name,
+    required this.kind,
+    required this.home,
     required this.port,
+    required this.storage,
+    this.origin,
   });
 
-  /// Stable, filesystem/prefs-safe key fragment. `'default'` for the installed
-  /// app; an 8-char hex hash of the repo root for a dev build.
-  final String id;
-
-  /// Human label used in the window title and the in-app badge — the repo/
-  /// worktree folder name for a dev build, or `'makit'` for the default.
-  final String label;
-
-  /// True for the installed app: uses the historical `~/.makit`, port 7777, and
-  /// the legacy `flutter.` prefs prefix (backward compatible).
-  final bool isDefault;
-
-  /// Absolute `MAKIT_HOME` this instance's daemon and control socket live under.
-  final String makitHome;
-
-  /// The default bind port seeded into this instance's [ServerConfig] (the user
-  /// can still override it in Settings; that override is stored per profile).
-  final int port;
-
-  /// Where this instance's daemon exposes its control socket. The app's control
-  /// client connects here; the spawned CLI (with `MAKIT_HOME=[makitHome]`)
-  /// creates it here.
-  String get controlSocketPath => '$makitHome/control.sock';
-
-  /// The `SharedPreferences` key prefix that namespaces this instance's
-  /// settings. The default profile keeps `flutter.` so existing prefs survive.
-  String get prefsPrefix => isDefault ? 'flutter.' : 'flutter.$id.';
-
-  /// The native window title, so builds are distinguishable in Cmd-Tab / the
-  /// Window menu / Mission Control.
-  String get windowTitle => isDefault ? 'Makit' : 'Makit — $label';
-
-  /// The `MAKIT_HOME` environment override passed to the spawned `makit` CLI.
-  Map<String, String> get environment => {'MAKIT_HOME': makitHome};
-
-  /// Matches a macOS Flutter dev-build executable path and captures the repo
-  /// root in group 1:
-  /// `<repoRoot>/app/build/macos/Build/Products/<cfg>/<name>.app/Contents/MacOS/<exe>`
-  static final RegExp _devBuildPath = RegExp(
-    r'^(.*)/app/build/macos/Build/Products/[^/]+/[^/]+\.app/Contents/MacOS/[^/]+$',
-  );
-
-  /// Derives the profile for the running instance.
+  /// Reads a profile from its `profiles.json` object, tolerating unknown and
+  /// missing fields so a newer registry never hard-fails an older build.
   ///
-  /// [executablePath] defaults to [Platform.resolvedExecutable] and [home] to
-  /// `$HOME`; both are injectable for tests.
-  static ServerProfile resolve({String? executablePath, String? home}) {
-    final exe = executablePath ?? Platform.resolvedExecutable;
-    final resolvedHome = home ?? Platform.environment['HOME'] ?? '';
-
-    final match = _devBuildPath.firstMatch(exe);
-    if (match == null) {
-      return ServerProfile(
-        id: 'default',
-        label: 'makit',
-        isDefault: true,
-        makitHome: '$resolvedHome/.makit',
-        port: kDefaultServerPort,
-      );
-    }
-
-    final repoRoot = match.group(1)!;
-    final h = _fnv1a(repoRoot);
-    final id = h.toRadixString(16).padLeft(8, '0');
-    final label = repoRoot.split('/').where((s) => s.isNotEmpty).last;
-    // 7800–7899: a stable, collision-unlikely dev range that avoids the 7777
-    // default. A user can still override the port per profile in Settings.
-    final port = 7800 + (h % 100);
+  /// Returns `null` when the entry lacks the fields that have no safe default
+  /// ([id], [home]) — the caller drops it rather than inventing an identity — or
+  /// when [id] is not a safe slug.
+  ///
+  /// The charset check is a containment guard, not tidiness: `id` is interpolated
+  /// into a filesystem path (the secure-store namespace file) and into preference
+  /// keys. `profiles.json` is a plain user-writable file, so a hand-edited id of
+  /// `../../../../tmp/x` would otherwise steer a delete outside the app-support
+  /// directory. Anything the registry itself mints already satisfies this.
+  static ServerProfile? fromJson(Map<String, Object?> json) {
+    final id = json['id'];
+    final home = json['home'];
+    if (id is! String || !isSafeProfileId(id)) return null;
+    if (home is! String || !home.startsWith('/')) return null;
+    final port = json['port'];
+    final name = json['name'];
+    final origin = json['origin'];
     return ServerProfile(
       id: id,
-      label: label,
-      isDefault: false,
-      makitHome: '$resolvedHome/.makit-dev/$id',
-      port: port,
+      name: (name is String && name.isNotEmpty) ? name : id,
+      kind: json['kind'] == 'dev' ? ProfileKind.dev : ProfileKind.user,
+      home: home,
+      // Reject out-of-range ports the same way missing/non-positive ones are
+      // rejected: a hand-edited `{"port": 70000}` cannot be bound, so falling
+      // back keeps the profile startable instead of silently wedging it. Mirrors
+      // ProfileRegistry.setPort's own `> 65535` guard.
+      port: (port is int && port > 0 && port <= 65535)
+          ? port
+          : kFallbackServerPort,
+      storage: json['storage'] == 'legacy'
+          ? ProfileStorage.legacy
+          : ProfileStorage.namespaced,
+      origin: (origin is String && origin.isNotEmpty) ? origin : null,
     );
   }
 
-  /// 32-bit FNV-1a — a small, deterministic, cross-launch-stable string hash.
-  /// (Dart's `String.hashCode` is not guaranteed stable across runs.)
-  static int _fnv1a(String s) {
-    var hash = 0x811c9dc5;
-    for (final c in s.codeUnits) {
-      hash ^= c;
-      hash = (hash * 0x01000193) & 0xffffffff;
+  /// Serialises to its `profiles.json` object. `origin` is omitted when absent
+  /// so a user profile's entry stays free of null noise.
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'kind': kind.name,
+    'home': home,
+    'port': port,
+    'storage': storage.name,
+    if (origin != null) 'origin': origin,
+  };
+
+  /// A profile derived from [executablePath] alone, without consulting the
+  /// registry.
+  ///
+  /// The fallback for contexts that have no registry: widget tests, and a safety
+  /// net should a future entry point forget to override `serverProfileProvider`.
+  /// It reproduces what `ProfileRegistry.resolveFor` mints for the same path —
+  /// same id, home and *guessed* port — but persists nothing and does **not**
+  /// probe the port, so two bootstrap profiles can collide. Production resolves
+  /// through the registry, which persists identity and probes (SPEC-50 D3/D4).
+  static ServerProfile bootstrap({String? executablePath, String? home}) {
+    final exe = executablePath ?? _resolvedExecutable();
+    final resolvedHome = home ?? _homeDir();
+    final repoRoot = devBuildRepoRoot(exe);
+    if (repoRoot == null) {
+      return ServerProfile(
+        id: 'default',
+        name: 'Makit',
+        kind: ProfileKind.user,
+        home: '$resolvedHome/.makit',
+        port: kDefaultServerPort,
+        storage: ProfileStorage.legacy,
+      );
     }
-    return hash;
+    final id = devIdGuess(repoRoot);
+    return ServerProfile(
+      id: id,
+      name: labelForRepoRoot(repoRoot),
+      kind: ProfileKind.dev,
+      home: '$resolvedHome/.makit-dev/$id',
+      port: devPortGuess(repoRoot),
+      storage: ProfileStorage.namespaced,
+      origin: repoRoot,
+    );
   }
+
+  /// Stable, filesystem- and prefs-safe key. Minted once and never re-derived.
+  final String id;
+
+  /// What the user calls this profile. Editable, and shown in the window title,
+  /// the switcher badge and the Profiles list.
+  final String name;
+
+  /// Whether the user created this profile or a dev build did.
+  final ProfileKind kind;
+
+  /// Absolute `MAKIT_HOME` this profile's daemon and control socket live under.
+  final String home;
+
+  /// The port this profile's daemon binds. Allocated once by probing and
+  /// persisted (SPEC-50 D4) — never recomputed from a hash.
+  final int port;
+
+  /// Which on-disk key layout this profile uses. Frozen at creation.
+  final ProfileStorage storage;
+
+  /// For [ProfileKind.dev]: the repo root this profile was created from.
+  ///
+  /// Two jobs, both cheap: re-bind a moved or rebuilt dev build to its existing
+  /// profile instead of forking a new one, and detect staleness with a plain
+  /// `existsSync` (SPEC-50 D3/D9) — no hashing, no guessing.
+  final String? origin;
+
+  /// Where this profile's daemon exposes its control socket.
+  String get controlSocketPath => '$home/control.sock';
+
+  /// Where this profile's daemon records its OS process id, mirroring the
+  /// server's `pidFilePath()` (`$MAKIT_HOME/makit.pid`). Read *before* stopping
+  /// a daemon, because `makit stop` removes this file the instant it signals.
+  String get pidFilePath => '$home/makit.pid';
+
+  /// The prefix this profile's **own** preference keys carry.
+  ///
+  /// This is the mechanism in use (SPEC-50 D11): `ProfileRuntime.create` wraps
+  /// the shared `SharedPreferences` in a `ProfileScopedPrefs` with this prefix.
+  /// Deliberately *not* `SharedPreferences.setPrefix`, which throws once
+  /// `getInstance()` has run and so makes in-place switching impossible. Because
+  /// the plugin composes keys by plain concatenation, `'flutter.' + '<id>.key'`
+  /// is byte-identical to the key the old `setPrefix('flutter.<id>.')` produced,
+  /// so adopting it needed no migration (asserted in `profile_registry_test.dart`).
+  String get prefsKeyPrefix => storage == ProfileStorage.legacy ? '' : '$id.';
+
+  /// The secure-store namespace, or `null` for the legacy unsuffixed file.
+  String? get secureStoreNamespace =>
+      storage == ProfileStorage.legacy ? null : id;
+
+  /// True when this profile may never be deleted. Implied by
+  /// [ProfileStorage.legacy] rather than stored separately, so the two can never
+  /// drift apart.
+  bool get isProtected => storage == ProfileStorage.legacy;
+
+  /// The native window title, so builds are distinguishable in Cmd-Tab.
+  String get windowTitle => 'Makit — $name';
+
+  /// The `MAKIT_HOME` override passed to this profile's spawned `makit` CLI.
+  Map<String, String> get environment => {'MAKIT_HOME': home};
+
+  /// Returns a copy with the given overrides. [storage], [id] and [kind] are
+  /// deliberately absent: they are frozen at creation.
+  ServerProfile copyWith({
+    String? name,
+    String? home,
+    int? port,
+    String? origin,
+  }) => ServerProfile(
+    id: id,
+    name: name ?? this.name,
+    kind: kind,
+    home: home ?? this.home,
+    port: port ?? this.port,
+    storage: storage,
+    origin: origin ?? this.origin,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is ServerProfile &&
+      other.id == id &&
+      other.name == name &&
+      other.kind == kind &&
+      other.home == home &&
+      other.port == port &&
+      other.storage == storage &&
+      other.origin == origin;
+
+  @override
+  int get hashCode => Object.hash(id, name, kind, home, port, storage, origin);
+
+  @override
+  String toString() =>
+      'ServerProfile($id, $name, ${kind.name}, $home, $port, ${storage.name})';
 }

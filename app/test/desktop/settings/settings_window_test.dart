@@ -16,6 +16,7 @@ import 'package:makit/desktop/settings/settings_nav_pane.dart';
 import 'package:makit/desktop/settings/settings_window.dart';
 import 'package:makit/store/connection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:makit/store/prefs/profile_scoped_prefs.dart';
 
 class _RecordingObserver extends NavigatorObserver {
   final List<Route<dynamic>> pushed = [];
@@ -40,7 +41,10 @@ ProviderContainer _sectionContainer({PreferencesController? controller}) {
       if (controller != null)
         preferencesControllerProvider.overrideWith((ref) => controller),
       serverConfigProvider.overrideWith(
-        (ref) => ServerConfigController(_prefs, const ServerConfig()),
+        (ref) => ServerConfigController(
+          ProfileScopedPrefs.unscoped(_prefs),
+          const ServerConfig(),
+        ),
       ),
       desktopControllerProvider.overrideWithValue(
         DesktopController(
