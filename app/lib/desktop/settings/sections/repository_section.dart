@@ -33,6 +33,8 @@ class RepoSettingsView {
     this.forgeAuthed = false,
     this.worktreeRootOverridden = false,
     this.editable = true,
+    this.providerChoice = ForgeChoice.auto,
+    this.branches = const [],
   });
 
   final String name;
@@ -60,10 +62,35 @@ class RepoSettingsView {
   /// that earns a reset button.
   final bool worktreeRootOverridden;
 
+  /// What the user picked for the provider. [ForgeChoice.auto] means "believe
+  /// detection", and is the default — an override exists for the case detection
+  /// cannot solve (a private instance with no token, or a proxy hiding
+  /// `/api/forgejo/v1/version`), not as a preference.
+  final ForgeChoice providerChoice;
+
+  /// Branches offered when picking a default. Empty = nothing to pick from, so the
+  /// row stays read-only rather than opening an empty picker.
+  final List<String> branches;
+
   /// False on a client that may read but not write: per-repo writes are accepted
   /// only from a loopback connection (SPEC-48 D16), so a paired phone shows the
   /// same values read-only rather than offering a control that would be refused.
   final bool editable;
+}
+
+/// The provider the user chose, or [auto] to believe detection.
+enum ForgeChoice {
+  auto,
+  forgejo,
+  gitea,
+  github;
+
+  String get label => switch (this) {
+    ForgeChoice.auto => 'Auto',
+    ForgeChoice.forgejo => 'Forgejo',
+    ForgeChoice.gitea => 'Gitea',
+    ForgeChoice.github => 'GitHub',
+  };
 }
 
 /// One repository's Settings section.
@@ -77,17 +104,24 @@ class RepositorySettingsSection extends StatelessWidget {
     required this.view,
     this.onEditWorktreeRoot,
     this.onResetWorktreeRoot,
+    this.onEditLogo,
+    this.onChangeRootPath,
+    this.onChooseProvider,
+    this.onChooseDefaultBranch,
     super.key,
   });
 
   final RepoSettingsView view;
   final VoidCallback? onEditWorktreeRoot;
   final VoidCallback? onResetWorktreeRoot;
+  final VoidCallback? onEditLogo;
+  final VoidCallback? onChangeRootPath;
+  final ValueChanged<ForgeChoice>? onChooseProvider;
+  final VoidCallback? onChooseDefaultBranch;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final forge = view.forge;
 
     return ListView(
       children: [
@@ -101,39 +135,56 @@ class RepositorySettingsSection extends StatelessWidget {
             _SettingsValueRow(
               leading: RepoMonogram(name: view.name),
               title: 'Logo',
+              enabled: view.editable,
+              onTap: onEditLogo,
               badge: _Badge(label: 'from name', color: cs.outline),
+              // A chevron, not a text field: the choice is a colour and a glyph
+              // from a fixed set. Two repos that hash to the same hue are
+              // indistinguishable in the sidebar, which is the one thing the
+              // monogram exists to prevent — so it must be overridable.
+              action: _Chevron(enabled: view.editable),
             ),
             _SettingsValueRow(
               leading: Icon(PhosphorIconsLight.folder, size: 20, color: cs.outline),
               title: 'Root path',
+              enabled: view.editable,
+              onTap: onChangeRootPath,
               value: _tilde(view.path),
               mono: true,
+              // Editable, reversing an earlier "identity is immutable" position:
+              // when a repo MOVES on disk, remove-and-re-add loses its persisted
+              // id and everything keyed to it (settings, session history).
+              // Re-pointing keeps the id, which is the whole reason the id exists.
               action: IconButton(
                 tooltip: 'Copy path',
                 icon: Icon(PhosphorIconsLight.copy, size: 18, color: cs.outline),
                 onPressed: () => Clipboard.setData(ClipboardData(text: view.path)),
               ),
             ),
-            if (forge != null)
-              _SettingsValueRow(
-                leading: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: forgeGlyphFor(forge).build(size: 20, color: cs.primary),
-                ),
-                title: 'Git provider',
-                // The host is a second FACT, not a description of the row.
-                subtitle: _forgeSubtitle(view),
-                value: forgeNameFor(forge),
-                badge: _Badge(label: 'detected', color: cs.primary),
-              ),
+            // Row + segmented control below, exactly as `Endpoint` does it: the
+            // subtitle says what `Auto` resolved to, so the default is legible
+            // rather than mysterious. An override is here for the case detection
+            // cannot solve — a private instance answering 401, or a proxy hiding
+            // `/api/forgejo/v1/version` — where the repo is otherwise unusable
+            // with no recourse.
+            _ProviderRow(
+              view: view,
+              onChoose: view.editable ? onChooseProvider : null,
+            ),
             if (view.defaultBranch != null)
               _SettingsValueRow(
                 leading: Icon(PhosphorIconsLight.gitBranch, size: 20, color: cs.outline),
                 title: 'Default branch',
+                // Pickable from the repo's own branches, never free text: a typo
+                // here silently breaks diff-vs-default and the PR base. Needed
+                // because `origin/HEAD` is genuinely absent after a
+                // `--single-branch` clone or a default-branch rename.
+                enabled: view.editable && view.branches.isNotEmpty,
+                onTap: onChooseDefaultBranch,
                 value: view.defaultBranch,
                 mono: true,
                 badge: _Badge(label: 'from remote', color: cs.outline),
+                action: _Chevron(enabled: view.editable && view.branches.isNotEmpty),
               ),
           ],
         ),
@@ -179,8 +230,15 @@ class RepositorySettingsSection extends StatelessWidget {
     return '~${path.substring(home.length)}';
   }
 
-  static String _forgeSubtitle(RepoSettingsView v) {
+  /// Visible for [_ProviderRow].
+  static String forgeSubtitle(RepoSettingsView v) {
+    if (v.providerChoice != ForgeChoice.auto) {
+      return 'Set to ${v.providerChoice.label}'
+          '${v.forgeHost == null ? '' : ' · ${v.forgeHost}'}';
+    }
+    if (v.forge == null) return 'Auto: not identified yet';
     final parts = <String>[
+      'Auto: ${forgeNameFor(v.forge!)}',
       if (v.forgeHost != null) v.forgeHost!,
       v.forgeAuthed ? 'token set' : 'no token',
     ];
@@ -197,14 +255,13 @@ class RepositorySettingsSection extends StatelessWidget {
 /// from `CLI`/`Fingerprint` in Server & Devices, which put their value in the
 /// subtitle; that is a deliberate, recorded divergence rather than an oversight.
 ///
-/// [subtitle] is for a SECOND fact worth showing (the forge's host), never for a
-/// description of the row — "Monogram from the name" under a row labelled "Logo"
-/// is words about words.
+/// No subtitle slot: a description under a row labelled "Logo" is words about
+/// words. The one row with a genuine second fact — the forge's host — builds its
+/// own ListTile in [_ProviderRow].
 class _SettingsValueRow extends StatelessWidget {
   const _SettingsValueRow({
     required this.title,
     this.leading,
-    this.subtitle,
     this.value,
     this.mono = false,
     this.badge,
@@ -217,7 +274,6 @@ class _SettingsValueRow extends StatelessWidget {
 
   final String title;
   final Widget? leading;
-  final String? subtitle;
   final String? value;
   /// Render [value] monospaced — paths and refs, where character shape matters.
   final bool mono;
@@ -239,7 +295,6 @@ class _SettingsValueRow extends StatelessWidget {
       onTap: enabled ? onTap : null,
       leading: leading,
       title: Text(title),
-      subtitle: subtitle == null ? null : Text(subtitle!),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -263,6 +318,84 @@ class _SettingsValueRow extends StatelessWidget {
           else
             SettingsResetButton(visible: resetVisible, onPressed: onReset ?? () {}),
         ],
+      ),
+    );
+  }
+}
+
+/// The Git provider row and its selector.
+///
+/// Row then segmented control below, exactly as `Endpoint` does it, so the
+/// subtitle can say what `Auto` resolved to and the default is legible rather than
+/// mysterious.
+class _ProviderRow extends StatelessWidget {
+  const _ProviderRow({required this.view, this.onChoose});
+  final RepoSettingsView view;
+  final ValueChanged<ForgeChoice>? onChoose;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final detected = view.forge;
+    final overridden = view.providerChoice != ForgeChoice.auto;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          leading: detected == null
+              ? Icon(PhosphorIconsLight.question, size: 20, color: cs.outline)
+              : SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: forgeGlyphFor(detected).build(size: 20, color: cs.primary),
+                ),
+          title: const Text('Git provider'),
+          subtitle: Text(RepositorySettingsSection.forgeSubtitle(view)),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _Badge(
+                label: overridden ? 'overridden' : 'detected',
+                color: overridden ? cs.primary : cs.outline,
+              ),
+              SettingsResetButton(
+                visible: overridden && view.editable,
+                onPressed: () => onChoose?.call(ForgeChoice.auto),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(kSpace24, 0, kSpace24, kSpace8),
+          child: SegmentedButton<ForgeChoice>(
+            segments: [
+              for (final c in ForgeChoice.values)
+                ButtonSegment(value: c, label: Text(c.label)),
+            ],
+            selected: {view.providerChoice},
+            showSelectedIcon: false,
+            onSelectionChanged: onChoose == null ? null : (s) => onChoose!(s.first),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The "opens something" affordance, sized to the reset slot so every row keeps
+/// one right edge whether it navigates, copies or resets.
+class _Chevron extends StatelessWidget {
+  const _Chevron({required this.enabled});
+  final bool enabled;
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: 40,
+      child: Icon(
+        PhosphorIconsLight.caretRight,
+        size: 16,
+        color: enabled ? cs.outline : cs.outline.withValues(alpha: 0.35),
       ),
     );
   }

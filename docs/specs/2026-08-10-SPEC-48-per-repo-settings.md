@@ -1,6 +1,6 @@
 # SPEC-48 — Per-repo settings: one Settings section per repository
 
-**Status:** Draft (rev 2.2) — review rounds 1, 2 and 3 applied · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
+**Status:** Draft (rev 3) — rows 1–4 made editable; see *Rev 3* · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
 **Depends on:** SPEC-11 (repo-centric home — `RepoDTO`, `repos.snapshot`, the repo card and its
 `dotsThree` menu), SPEC-19 (`SettingsResetButton` as the one shared "reset to default" widget, and
 `SettingsGroup` as the grouped-list idiom), and the forge-detection work already on this branch
@@ -244,3 +244,38 @@ requirement (keep the glyph, test fixed name→output fixtures); P4; and "pixel-
 No provider override, ever (D3′). No global settings store, so no four-level chain (D8′). No mobile
 repo-settings destination in P1 (D23). No script execution (P3). No GitLab provider. No custom logo
 image. No `All repositories…` overflow.
+
+
+---
+
+# Rev 3 — the four identity rows become editable
+
+Requested after seeing the built section: **Logo, Root path, Git provider and Default branch must be
+editable/selectable.** That reverses D4 and D14 as written, and re-opens two cuts that review round 1
+made — so each reversal is justified by the *concrete failure case* the reviewer said was missing,
+rather than by the request alone.
+
+| # | Reversal | The failure case that justifies it |
+| --- | --- | --- |
+| **D3″** (was D3′, "read-out, no override, ever") | The provider is **selectable**: `Auto \| Forgejo \| Gitea \| GitHub`, `Auto` selected by default and its subtitle naming what it resolved to. | Round 1 cut this for having "no concrete failure case". There are two. Detection returns `unknown` for a private instance that answers 401 to an anonymous probe, and for an instance behind a proxy that hides `/api/forgejo/v1/version` — I verified both endpoints are the only discriminators. In either case the repo is routed to the *unsupported* provider and is unusable, **with no recourse anywhere in the product**. An override is the recourse. The reviewer's real objection stands and is accepted: it must control routing, auth lookup and PR rendering — not be a display preference. That is P2 work, and D3″ is not satisfied by the control alone. |
+| **D4′** (was "displayed, not editable") | Root path is **changeable**. | "Remove and re-add" is not equivalent: it mints a new `PersistedProject.id`, and everything keyed to that id — per-repo settings, session history — is lost. A repo that simply **moved on disk** should keep its identity. Re-pointing preserves the id, which is the entire reason the id exists (`project-store.ts:28`). Constraint: it must re-validate that the target is a git repo and re-run detection, because the forge and default branch may both change. |
+| **D14′** (monogram only) | The logo is **selectable** (colour + glyph from fixed sets). A custom *image* stays deferred. | Two repos whose names hash to the same hue are indistinguishable in the sidebar — which defeats the one thing the monogram exists for. Choosing from a palette needs no byte transfer, so it does not drag in the upload path that made a custom image P4. |
+| **Default branch** (round 1: "no demonstrated consumer") | **Pickable from the repo's own branches.** | The consumer is concrete: `origin/HEAD` is genuinely absent after a `--single-branch` clone or a default-branch rename, and makit then shows the wrong base — so diff-vs-default and the PR base are both wrong. Picked from known branches, never free text: a typo silently breaks both. |
+
+## What rev 3 does not change
+
+D16 still governs: **only a loopback client may write any of these.** A non-loopback client sees the
+same values, the selector inert, and one line saying where they are editable. Asserted by test.
+
+And the controls are affordances only until P2 supplies persistence and, for the provider, the routing
+change D3″ demands. A selector that reports a choice nothing acts on is exactly the "ornamental"
+failure round 1 named; it is acceptable *only* because P1 was explicitly sequenced UI-first, and the
+plan's P2 now owns four writes rather than one.
+
+## Verification (rev 3)
+
+Interaction is proven by **widget test, not on the real app** — a stated coverage gap. Driving the built
+macOS app with `cua-driver` did not work: a sidebar row *and* a 107×28pt segmented-button segment both
+returned `"effect":"unverifiable"` and left the UI unchanged, on two separate builds. The real-app pass
+therefore covers appearance only. 15 widget tests cover behaviour, two proven to bite by reverting the
+read-only gate and by making reset freeze the detected forge instead of asking for `Auto`.

@@ -31,6 +31,7 @@ final _scenes = <String, RepoSettingsView>{
     forgeHost: 'forgejo.internal.xdent.ai',
     forgeAuthed: true,
     worktreeRoot: '/Users/le/.worktrees',
+    branches: ['main', 'develop', 'release/16'],
   ),
   'makit — GitHub, overridden root': const RepoSettingsView(
     name: 'makit',
@@ -41,6 +42,7 @@ final _scenes = <String, RepoSettingsView>{
     forgeAuthed: true,
     worktreeRoot: '/Users/le/.worktrees/makit',
     worktreeRootOverridden: true,
+    branches: ['main', 'gh-pages'],
   ),
   'piano — Gitea, no token': const RepoSettingsView(
     name: 'piano',
@@ -90,6 +92,7 @@ class _ShellState extends State<_Shell> {
   // Default to the OVERRIDDEN scene: the reset button is the affordance the whole
   // inheritance model depends on, so it must be the one you see first.
   String _key = _scenes.keys.elementAt(1);
+  final Map<String, ForgeChoice> _choice = {};
 
   @override
   Widget build(BuildContext context) {
@@ -159,15 +162,57 @@ class _ShellState extends State<_Shell> {
           ),
           const VerticalDivider(width: 1),
           Expanded(
-            child: RepositorySettingsSection(
-              key: ValueKey(_key),
-              view: _scenes[_key]!,
-              onEditWorktreeRoot: () {},
-              onResetWorktreeRoot: () {},
+            child: _Section(
+              scene: _key,
+              base: _scenes[_key]!,
+              choice: _choice[_key] ?? ForgeChoice.auto,
+              onChoose: (c) => setState(() => _choice[_key] = c),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+
+/// Re-projects the seeded scene with whatever the user has since selected, so the
+/// controls visibly respond and a screenshot proves they are wired rather than
+/// decorative.
+class _Section extends StatelessWidget {
+  const _Section({
+    required this.scene,
+    required this.base,
+    required this.choice,
+    required this.onChoose,
+  });
+
+  final String scene;
+  final RepoSettingsView base;
+  final ForgeChoice choice;
+  final ValueChanged<ForgeChoice> onChoose;
+
+  @override
+  Widget build(BuildContext context) => RepositorySettingsSection(
+    key: ValueKey(scene),
+    view: RepoSettingsView(
+      name: base.name,
+      path: base.path,
+      worktreeRoot: base.worktreeRoot,
+      defaultBranch: base.defaultBranch,
+      forge: base.forge,
+      forgeHost: base.forgeHost,
+      forgeAuthed: base.forgeAuthed,
+      worktreeRootOverridden: base.worktreeRootOverridden,
+      editable: base.editable,
+      providerChoice: choice,
+      branches: base.branches,
+    ),
+    onChooseProvider: onChoose,
+    onEditLogo: () {},
+    onChangeRootPath: () {},
+    onChooseDefaultBranch: () {},
+    onEditWorktreeRoot: () {},
+    onResetWorktreeRoot: () {},
+  );
 }
