@@ -166,6 +166,11 @@
   configuration task. What survives is <code>inherited</code> / <code>overridden</code> on Worktree root,
   the one row with no subtitle, where the distinction is the whole point.
   <br><br>
+  The provider selector also offers <strong>None</strong>: makit talks to no forge and stops checking
+  pull requests. That is an <em>instruction</em>, distinct from Auto failing to identify one — and it
+  gives the two states that previously read identically their own words: “Auto: no remote, so no forge”
+  is a conclusion, “Auto: not identified yet” is a probe still pending.
+  <br><br>
   <strong>Provider auto-detection is already built and verified</strong> (<code>server/src/forge/detect.ts</code>).
   It probes <code>/api/forgejo/v1/version</code>, <code>/api/v1/version</code> and <code>/api/v4/version</code>,
   once per host, cached — correctly identifying Forgejo (self-hosted + Codeberg), Gitea, GitLab and an unrelated
@@ -221,7 +226,7 @@
                   <div class="lbl">Git provider<div class="sub">Auto: Forgejo · forgejo.internal.xdent.ai · token set</div></div>
                   <span class="reset hidden"></span></div>
                 <div class="srow" style="padding-top:0"><div class="lbl"></div>
-                  <span class="seg"><b>Auto</b><i>Forgejo</i><i>Gitea</i><i>GitHub</i></span>
+                  <span class="seg"><b>Auto</b><i>None</i><i>Forgejo</i><i>Gitea</i><i>GitHub</i></span>
                   <span class="reset hidden"></span></div>
                 <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-branch"/></svg>
                   <div class="lbl">Default branch</div>

@@ -34,6 +34,7 @@ class RepoSettingsView {
     this.editable = true,
     this.providerChoice = ForgeChoice.auto,
     this.branches = const [],
+    this.hasRemote = true,
   });
 
   final String name;
@@ -67,6 +68,11 @@ class RepoSettingsView {
   /// `/api/forgejo/v1/version`), not as a preference.
   final ForgeChoice providerChoice;
 
+  /// Whether the repo has an `origin` remote at all. False means no forge is
+  /// possible — which is a **different statement** from "not identified yet", and
+  /// rendering them the same implies a probe is still pending when none can help.
+  final bool hasRemote;
+
   /// Branches offered when picking a default. Empty = nothing to pick from, so the
   /// row stays read-only rather than opening an empty picker.
   final List<String> branches;
@@ -80,12 +86,22 @@ class RepoSettingsView {
 /// The provider the user chose, or [auto] to believe detection.
 enum ForgeChoice {
   auto,
+
+  /// No forge for this repository: makit does not talk to one, and does not poll
+  /// pull requests. Distinct from [auto] failing to identify something — this is
+  /// an instruction, not an outcome. Two reasons it earns a place beside the three
+  /// forges: a purely local repo has no remote and never will, and a repo whose
+  /// forge you simply do not care about (a mirror, a vendored copy) should be able
+  /// to stop generating PR chatter.
+  none,
+
   forgejo,
   gitea,
   github;
 
   String get label => switch (this) {
     ForgeChoice.auto => 'Auto',
+    ForgeChoice.none => 'None',
     ForgeChoice.forgejo => 'Forgejo',
     ForgeChoice.gitea => 'Gitea',
     ForgeChoice.github => 'GitHub',
@@ -234,10 +250,17 @@ class RepositorySettingsSection extends StatelessWidget {
 
   /// Visible for [_ProviderRow].
   static String forgeSubtitle(RepoSettingsView v) {
+    if (v.providerChoice == ForgeChoice.none) {
+      return 'No forge · pull requests are not checked for this repository';
+    }
     if (v.providerChoice != ForgeChoice.auto) {
       return 'Set to ${v.providerChoice.label}'
           '${v.forgeHost == null ? '' : ' · ${v.forgeHost}'}';
     }
+    // "No remote" is a conclusion; "not identified yet" is a pending probe. Saying
+    // the second when the first is true sends the reader looking for a fix that
+    // does not exist.
+    if (!v.hasRemote) return 'Auto: no remote, so no forge';
     if (v.forge == null) return 'Auto: not identified yet';
     final parts = <String>[
       'Auto: ${forgeNameFor(v.forge!)}',
@@ -344,7 +367,10 @@ class _ProviderRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ListTile(
-          leading: detected == null
+          leading: view.providerChoice == ForgeChoice.none || !view.hasRemote
+              // Not a question mark: nothing is being asked. This state is settled.
+              ? Icon(PhosphorIconsLight.prohibit, size: 20, color: cs.outline)
+              : detected == null
               ? Icon(PhosphorIconsLight.question, size: 20, color: cs.outline)
               : SizedBox(
                   width: 20,

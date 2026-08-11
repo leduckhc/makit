@@ -33,6 +33,7 @@ RepoSettingsView _view({
   ForgeChoice providerChoice = ForgeChoice.auto,
   List<String> branches = const ['main', 'develop'],
   String? defaultBranch = 'main',
+  bool hasRemote = true,
 }) => RepoSettingsView(
   name: _base.name,
   path: _base.path,
@@ -45,6 +46,7 @@ RepoSettingsView _view({
   editable: editable,
   providerChoice: providerChoice,
   branches: branches,
+  hasRemote: hasRemote,
 );
 
 Future<void> _pump(
@@ -120,6 +122,50 @@ void main() {
       expect(find.byTooltip('Copy path'), findsNothing);
       // …and the one badge that carries state is still there.
       expect(find.text('inherited'), findsOneWidget);
+    });
+  });
+
+  group('no forge at all', () {
+    testWidgets('None is offered beside the three forges', (t) async {
+      await _pump(t, _view());
+      expect(find.text('None'), findsOneWidget);
+    });
+
+    testWidgets('choosing None reports it', (t) async {
+      final chosen = <ForgeChoice>[];
+      await _pump(t, _view(), onChoose: chosen.add);
+      await t.tap(find.text('None'));
+      await t.pumpAndSettle();
+      expect(chosen, [ForgeChoice.none]);
+    });
+
+    testWidgets('None says what it means for polling, not just that it is set', (t) async {
+      await _pump(t, _view(providerChoice: ForgeChoice.none));
+      expect(
+        find.text('No forge · pull requests are not checked for this repository'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a repo with no remote is a conclusion, not a pending probe', (t) async {
+      // These two states must NOT read the same: one has an answer, the other is
+      // waiting for one, and only the second is worth looking into.
+      await _pump(t, _view(forge: null, forgeHost: null, hasRemote: false));
+      expect(find.text('Auto: no remote, so no forge'), findsOneWidget);
+      expect(find.text('Auto: not identified yet'), findsNothing);
+    });
+
+    testWidgets('an unprobed repo WITH a remote still says a probe is pending', (t) async {
+      await _pump(t, _view(forge: null, forgeHost: null));
+      expect(find.text('Auto: not identified yet'), findsOneWidget);
+    });
+
+    testWidgets('None is an override, so it offers a way back to Auto', (t) async {
+      final chosen = <ForgeChoice>[];
+      await _pump(t, _view(providerChoice: ForgeChoice.none), onChoose: chosen.add);
+      await t.tap(find.byTooltip('Reset to default').first);
+      await t.pumpAndSettle();
+      expect(chosen, [ForgeChoice.auto]);
     });
   });
 

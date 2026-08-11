@@ -58,6 +58,25 @@ final _scenes = <String, RepoSettingsView>{
     defaultBranch: 'main',
     worktreeRoot: '/Users/le/.worktrees',
   ),
+  'local-only — no remote': const RepoSettingsView(
+    name: 'scratch',
+    path: '/Users/le/Work/scratch',
+    defaultBranch: 'main',
+    worktreeRoot: '/Users/le/.worktrees',
+    hasRemote: false,
+    branches: ['main'],
+  ),
+  'set to None — polling off': const RepoSettingsView(
+    name: 'vendored-mirror',
+    path: '/Users/le/Work/Vibe/vendored-mirror',
+    defaultBranch: 'main',
+    forge: ForgeKind.github,
+    forgeHost: 'github.com',
+    forgeAuthed: true,
+    worktreeRoot: '/Users/le/.worktrees',
+    providerChoice: ForgeChoice.none,
+    branches: ['main'],
+  ),
   'read-only (paired phone)': const RepoSettingsView(
     name: 'Diana',
     path: '/Users/le/Work/XDent/Diana',
@@ -89,9 +108,9 @@ class _Shell extends StatefulWidget {
 }
 
 class _ShellState extends State<_Shell> {
-  // Default to the OVERRIDDEN scene: the reset button is the affordance the whole
-  // inheritance model depends on, so it must be the one you see first.
-  String _key = _scenes.keys.elementAt(1);
+  // Default to the "set to None" scene: it is the newest state and the one whose
+  // wording matters most, since it must read as a decision rather than a failure.
+  String _key = _scenes.keys.elementAt(5);
   final Map<String, ForgeChoice> _choice = {};
 
   @override
@@ -165,7 +184,9 @@ class _ShellState extends State<_Shell> {
             child: _Section(
               scene: _key,
               base: _scenes[_key]!,
-              choice: _choice[_key] ?? ForgeChoice.auto,
+              // Fall back to the SCENE's own choice, not to auto -- otherwise a
+              // scene that exists to show an override renders as if it had none.
+              choice: _choice[_key] ?? _scenes[_key]!.providerChoice,
               onChoose: (c) => setState(() => _choice[_key] = c),
             ),
           ),

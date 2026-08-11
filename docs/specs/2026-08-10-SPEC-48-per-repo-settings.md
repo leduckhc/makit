@@ -1,6 +1,6 @@
 # SPEC-48 — Per-repo settings: one Settings section per repository
 
-**Status:** Draft (rev 3.1) — editable rows; provenance badges cut · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
+**Status:** Draft (rev 3.2) — editable rows; badges cut; provider gains None · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
 **Depends on:** SPEC-11 (repo-centric home — `RepoDTO`, `repos.snapshot`, the repo card and its
 `dotsThree` menu), SPEC-19 (`SettingsResetButton` as the one shared "reset to default" widget, and
 `SettingsGroup` as the grouped-list idiom), and the forge-detection work already on this branch
@@ -300,3 +300,24 @@ families kept the chrome round 1 objected to. Rev 3.1 finishes the cut.
 
 Pinned by a negative test (`provenance badges are absent`) so they cannot creep back, and by one
 asserting that with **two** things overridden there are two reset buttons but exactly **one** badge.
+
+
+## Rev 3.2 — the provider can be None
+
+`Auto | None | Forgejo | Gitea | GitHub`. **None** means makit talks to no forge for this repository and
+stops checking pull requests.
+
+It earns a segment because it answers two things nothing else could:
+
+| Case | Before | After |
+| --- | --- | --- |
+| A purely local repo, no `origin` at all | `Auto: not identified yet` — implies a probe is pending when none can ever help. And the router sends it to the `gh` gateway, which fails on every poll. | `Auto: no remote, so no forge`, with a prohibit glyph. A conclusion, not a wait. |
+| A mirror or vendored copy whose forge you do not care about | No way to stop the PR chatter | `None`, selected explicitly — an instruction, not an outcome |
+
+The distinction is the point: **"we could not tell" and "there is nothing to tell" must not read the
+same**, because only the first is worth investigating. Pinned by a test asserting the two subtitles are
+different strings and that the pending one is absent when there is no remote.
+
+This adds one fact to the DTO — `hasRemote` — which the server already computes (`git remote get-url
+origin` runs in the routing path today) and currently throws away. And it makes P2's write set five:
+worktree root, logo, root path, default branch, provider choice.
