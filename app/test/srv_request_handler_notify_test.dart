@@ -278,6 +278,10 @@ void main() {
       );
       expect(find.textContaining('Fix the parser'), findsOneWidget);
       expect(find.textContaining('codex'), findsOneWidget);
+      // The handoff reason too, exactly as the permission prompt asserts it:
+      // this test's whole claim is that D13 routes both kinds "the same way", so
+      // a caption lost from _showInput alone must fail here.
+      expect(find.textContaining('risky refactor'), findsOneWidget);
     },
   );
 
@@ -597,5 +601,128 @@ void main() {
     await tester.pump(const Duration(minutes: 2));
     await tester.pump();
     expect(notifications.shown, isEmpty);
+  });
+
+  // -------------------------------------------------------------------------
+  // A captioned prompt stays readable on a phone
+  //
+  // D14 made these dialogs open-ended: the caption can carry a long title and a
+  // whole handoff reason, and the message is whatever the agent wrote. Neither
+  // dialog's content was scrollable, so on a compact device — with the keyboard
+  // up for an elicitation — a long prompt is content the user cannot read and,
+  // worse, cannot scroll past to reach Approve/Deny. An unreadable permission
+  // prompt trains the user to answer without reading, which is the exact failure
+  // D14 exists to prevent.
+  // -------------------------------------------------------------------------
+
+  void useSmallPhone(WidgetTester tester) {
+    tester.view.physicalSize = const Size(320, 320);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
+  const verboseSession = {
+    'title': 'Make the migration idempotent across every tenant schema',
+    'agent': 'codex',
+    'parentId': 'parent-session',
+    'handoffReason':
+        'the parent ran out of context after a long risky refactor of the '
+        'migration runner and its rollback path',
+    'origin': 'agent',
+  };
+
+  testWidgets(
+    'a long captioned confirmAction is scrollable, so Approve stays reachable',
+    (tester) async {
+      useSmallPhone(tester);
+      final (transport, _, _) = await pumpHandler(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      transport.emit(
+        Envelope(
+          t: MsgType.srvRequest,
+          id: 'req-long-confirm',
+          body: {
+            'kind': 'confirmAction',
+            'title': 'Allow rm -rf build?',
+            'sessionId': 'ghost-session',
+            'session': verboseSession,
+            'message': List.filled(
+              12,
+              'the agent wants to delete the build directory and recreate it '
+              'from scratch, discarding uncommitted artefacts',
+            ).join(' '),
+            'preview': List.generate(
+              30,
+              (i) => 'rm -rf build/step-\$i',
+            ).join('\n'),
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: 'no layout error');
+      // The whole content must scroll — not merely the preview's own
+      // SelectableText, which has an internal Scrollable of its own and would
+      // satisfy a looser assertion while the caption and message stayed stuck.
+      expect(
+        find.ancestor(
+          of: find.textContaining('Handed off:'),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        findsWidgets,
+        reason: 'a prompt that can be arbitrarily long must scroll as a whole',
+      );
+      // And the decision is still reachable — a prompt you cannot answer is worse
+      // than no prompt.
+      expect(find.text('Approve'), findsOneWidget);
+      expect(find.text('Deny'), findsOneWidget);
+      await tester.tap(find.text('Approve'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+    },
+  );
+
+  testWidgets('a long captioned elicitation is scrollable and still sendable', (
+    tester,
+  ) async {
+    useSmallPhone(tester);
+    final (transport, _, _) = await pumpHandler(tester);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
+    transport.emit(
+      Envelope(
+        t: MsgType.srvRequest,
+        id: 'req-long-input',
+        body: {
+          'kind': 'input',
+          'title': 'Which tenant should the migration start with?',
+          'sessionId': 'ghost-session',
+          'session': verboseSession,
+          'multiline': true,
+          'placeholder': 'a tenant id, or "all"',
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: 'no layout error');
+    expect(
+      find.ancestor(
+        of: find.textContaining('Handed off:'),
+        matching: find.byType(SingleChildScrollView),
+      ),
+      findsWidgets,
+      reason:
+          'an 8-line field under an open-ended caption must scroll as a whole',
+    );
+    expect(find.text('Send'), findsOneWidget);
   });
 }

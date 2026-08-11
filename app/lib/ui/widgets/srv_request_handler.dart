@@ -334,6 +334,12 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
+        // D14 made this dialog open-ended: the caption carries a whole handoff
+        // reason and the message is whatever the agent wrote. Unscrollable, a
+        // long prompt is text the user can neither finish reading nor scroll
+        // past to reach Deny/Approve — which trains them to answer without
+        // reading, the very thing captioning them was meant to prevent.
+        scrollable: true,
         title: Text(body['title']?.toString() ?? 'Confirm'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -388,6 +394,9 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
+        // Scrollable for the same reason as the permission prompt, and more so:
+        // an 8-line field sits under the caption here, with the keyboard up.
+        scrollable: true,
         title: Text(body['title']?.toString() ?? 'Input'),
         // Captioned like a permission prompt (D14): D13 routes an elicitation up
         // the same ladder, so this dialog can equally reach a phone that has

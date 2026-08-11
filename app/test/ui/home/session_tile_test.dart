@@ -169,6 +169,10 @@ void main() {
     await _pumpSession(tester, _session());
 
     expect(find.textContaining('Handed off'), findsNothing);
+    // And not the fork wording either. Asserting only on 'Handed off' passed
+    // against a _handoffCaption that stopped checking `parentId == null` and
+    // captioned every session 'Continued from another session'.
+    expect(find.textContaining('Continued from'), findsNothing);
   });
 
   // The parent may be archived or simply uncached, so the caption must still
