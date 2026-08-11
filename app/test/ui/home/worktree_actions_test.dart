@@ -388,8 +388,8 @@ void main() {
     testWidgets('tapping it opens the picker (bottom sheet on touch)', (
       tester,
     ) async {
-      final repo = _repo([_wt(targetBranch: 'main')]);
-      await _pump(
+      final repo = _repo([_wt(targetBranch: 'feat/parent')]);
+      final store = await _pump(
         tester,
         WorktreeRow(
           repo: repo,
@@ -405,6 +405,12 @@ void main() {
 
       // The picker renders its own candidate row for the branch it fetched.
       expect(find.byKey(const Key('landsInCandidate-main')), findsOneWidget);
+
+      // Choosing a candidate that differs from the current target issues the
+      // retarget — the step that actually matters, not just that the picker drew.
+      await tester.tap(find.byKey(const Key('landsInCandidate-main')));
+      await tester.pumpAndSettle();
+      expect(store.retargeted, [('/tmp/demo/.wt/add-login', 'main')]);
     });
   });
 

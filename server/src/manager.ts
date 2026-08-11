@@ -47,7 +47,6 @@ import {
   removeWorktree,
   renameBranch,
   listLocalBranches,
-  listRemoteBranchNames,
   deleteBranch,
   syncBaseBranch,
   listOpenPrs,
@@ -610,7 +609,14 @@ export class SessionManager extends EventEmitter {
       // Persist the target now that we know the worktree's path. Without this
       // the answer is lost the moment `git worktree add` returns, and every
       // consumer falls back to the repo default -- the original bug.
-      putTarget(worktreeTargetsFile(), path, target);
+      if (!putTarget(worktreeTargetsFile(), path, target)) {
+        // The worktree exists; we cannot un-create it, so this is best-effort.
+        // Log so a failed persist (full/read-only store) is observable instead of
+        // silently degrading the diff to the repo default.
+        log.warn(
+          `[makit] created worktree ${path} but could not persist its target ${target} (store not writable)`,
+        );
+      }
       return { path, branch };
     });
   }
@@ -967,9 +973,8 @@ export class SessionManager extends EventEmitter {
     // Cheap pre-check on the GLOBAL store: skip the git work when nothing anywhere
     // lands in the gone branch.
     if (!Object.values(all).some((e) => e.target === goneBranch)) return;
-    const [locals, remotes, trees, defaultBranch] = await Promise.all([
+    const [locals, trees, defaultBranch] = await Promise.all([
       listLocalBranches(repoPath),
-      listRemoteBranchNames(repoPath),
       listWorktrees(repoPath),
       detectDefaultBranch(repoPath),
     ]);
@@ -982,12 +987,12 @@ export class SessionManager extends EventEmitter {
       ([path, e]) => e.target === goneBranch && here.has(path),
     );
     if (affected.length === 0) return;
-    // Liveness is local refs ∪ `origin`: when a wrap-up's fetch did not land
-    // (offline, transient failure), `landedIn` exists only as a remote ref, and a
-    // local-only check would treat it as gone and hand every child down to the
-    // repo default — pointing them at (e.g.) `main` instead of the branch their PR
-    // actually targets.
-    const live = new Set<string>([...locals, ...remotes]);
+    // `landedIn` is the branch this wrap-up actually landed on (the PR's base or
+    // the repo default), so it is authoritative even when the fetch did not land
+    // it locally (offline). Seed it into the live set directly rather than
+    // trusting `refs/remotes/origin/*`: a stale remote-tracking ref left behind
+    // after a merged branch is auto-deleted is NOT proof the branch still exists.
+    const live = new Set<string>([...locals, landedIn]);
     // branch -> where it lands, so the chain can be walked without re-reading.
     const branchTarget: Record<string, string> = {};
     for (const t of trees) {
@@ -1002,7 +1007,14 @@ export class SessionManager extends EventEmitter {
     });
     if (!resolved) return;
     for (const [path] of affected) {
-      putTarget(file, path, resolved, { retargetedFrom: goneBranch });
+      if (!putTarget(file, path, resolved, { retargetedFrom: goneBranch })) {
+        // Best-effort: the branch is already gone, so we cannot fail the wrap-up.
+        // Log so a full/read-only store is observable rather than leaving the
+        // child silently aimed at the deleted branch with no trace.
+        log.warn(
+          `[makit] handing ${path} down to ${resolved} could not be persisted (target store not writable)`,
+        );
+      }
     }
   }
 
@@ -1040,7 +1052,15 @@ export class SessionManager extends EventEmitter {
     // unresolvable target now surfaces as `targetResolved: false` rather than a
     // silent partial count -- but it is why the store must never be treated as
     // authoritative without resolution.)
-    clearTarget(worktreeTargetsFile(), target);
+    if (!clearTarget(worktreeTargetsFile(), target)) {
+      // The worktree is already removed, so this cannot fail the operation. Log
+      // so a failed delete (full/read-only store) is observable: a surviving
+      // stale entry could otherwise hand a recreated worktree at the same
+      // deterministic path the dead one's target.
+      log.warn(
+        `[makit] removed worktree ${target} but could not clear its stored target (store not writable)`,
+      );
+    }
     // Reconcile sessions bound to the removed worktree (SPEC-29):
     //  - closed  → leave as-is (already preserved; it simply becomes orphaned)
     //  - draft   → kill (no transcript to keep; must not launch in a deleted dir)
@@ -1303,8 +1323,11 @@ export class SessionManager extends EventEmitter {
    * runs this native session/thread id.
    */
   private toSessionListItem(info: AgentSessionInfo, agent: string): AgentSessionListItem {
+    // A CLOSED session keeps its `agentSessionId` but holds a `DetachedAdapter`
+    // with no live process (SPEC-29), so it must NOT report `attached` — doing so
+    // would suppress the attach/resume affordance for a session that is not live.
     const attached = [...this.sessions.values()].some(
-      (s) => s.agentSessionId === info.id,
+      (s) => s.agentSessionId === info.id && !s.closed,
     );
     return {
       piSessionId: info.id,
@@ -1330,7 +1353,17 @@ export class SessionManager extends EventEmitter {
     const existingId = this.attachedByPi.get(piSessionId);
     if (existingId) {
       const existing = this.sessions.get(existingId);
-      if (existing) return existing;
+      if (existing) {
+        // A closed session keeps its registry entry and attach mapping but holds a
+        // `DetachedAdapter` — returning it as-is would honour this method's
+        // "resume live" promise with a session that launches no process. Bring it
+        // back live first.
+        if (existing.closed) {
+          await this.reopenSession(existingId);
+          await this.ensureLive(existingId);
+        }
+        return existing;
+      }
       this.attachedByPi.delete(piSessionId);
     }
 
@@ -1526,7 +1559,22 @@ export class SessionManager extends EventEmitter {
     // Seed history BEFORE the adapter goes live so it precedes new events.
     if (opts.backfill && opts.backfill.length > 0) session.backfill(opts.backfill);
 
-    await activeAdapter.start(this.startOpts(project.dto.path, session.id, opts.resumeSessionPath));
+    try {
+      await activeAdapter.start(this.startOpts(project.dto.path, session.id, opts.resumeSessionPath));
+    } catch (e) {
+      // `start()` can spawn/handshake a child and then fail (e.g. model config),
+      // exactly as the reattach path documents. This adapter was never registered
+      // in `this.sessions`, so nothing else will ever reap it — kill the
+      // half-started child before propagating, or it leaks a live agent process.
+      try {
+        await activeAdapter.kill();
+      } catch (killErr) {
+        log.warn(
+          `[makit] createSession(${session.id.slice(0, 8)}): stopping the half-started agent failed: ${reason(killErr)}`,
+        );
+      }
+      throw e;
+    }
     // Persist the live adapter's native session/thread id for restart-resume.
     session.captureAgentSessionId();
     this.sessions.set(session.id, session);

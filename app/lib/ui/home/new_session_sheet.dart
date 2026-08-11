@@ -33,7 +33,8 @@ class NewSessionChoice {
   /// The existing worktree path when [source] is [WorktreeSource.existing].
   final String? worktreePath;
 
-  /// The base branch to fork from when [source] is [WorktreeSource.newBranch].
+  /// The target branch the new worktree's work will land in (and which it forks
+  /// from) when [source] is [WorktreeSource.newBranch].
   final String? targetBranch;
 
   /// The PR number to fork from when [source] is [WorktreeSource.fromPr].

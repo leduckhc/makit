@@ -29,6 +29,29 @@ void main() {
     })!;
     expect(c.hasPreview, isFalse);
     expect(c.insertions, isNull);
+    expect(c.deletions, isNull);
+  });
+
+  test('a half-filled preview is not a preview', () {
+    // The picker force-unwraps BOTH `insertions!` and `deletions!` behind
+    // `hasPreview`, so one count alone must NOT report a preview or the picker
+    // would throw on the missing half.
+    final onlyIns = TargetCandidate.fromJson({
+      'branch': 'zz-other',
+      'group': 'other',
+      'onRemote': true,
+      'isSelf': false,
+      'insertions': 5,
+    })!;
+    expect(onlyIns.hasPreview, isFalse);
+    final onlyDel = TargetCandidate.fromJson({
+      'branch': 'zz-other',
+      'group': 'other',
+      'onRemote': true,
+      'isSelf': false,
+      'deletions': 5,
+    })!;
+    expect(onlyDel.hasPreview, isFalse);
   });
 
   test('an unknown group falls back to other rather than throwing', () {

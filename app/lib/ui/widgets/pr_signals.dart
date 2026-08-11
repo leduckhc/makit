@@ -846,6 +846,11 @@ PrStatus prStatusFor(
         ? const PrResidue()
         : PrResidue(
             sessions: w.sessionIds.length,
+            // NB: `PrResidue.targetBranch` is NOT the same concept as the
+            // `prStatus(targetBranch:)` argument above. That one is THIS
+            // worktree's own landing target (drives the "nowhere to land"
+            // signal); this is the PRIMARY checkout's branch, named only so the
+            // "<main> is N behind" residue fact reads naturally.
             targetBranch: primary?.branch,
             targetBehind: primary?.behindCount ?? 0,
           ),

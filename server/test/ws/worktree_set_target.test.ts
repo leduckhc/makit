@@ -93,10 +93,17 @@ function byBranch(c: Client, branch: string): WtDTO {
 }
 
 /** Wait for the snapshot burst to settle, then return the count seen. */
-async function settle(c: Client): Promise<number> {
+async function settle(c: Client, timeoutMs = 8000): Promise<number> {
   await waitFor(() => c.msgs.filter(isReposSnapshot).length > 0, "first repos.snapshot");
+  // Bound the quiet loop with a deadline: if snapshot frames keep arriving faster
+  // than the 120ms quiet window, resetting `quiet` on every change would spin
+  // forever. A deadline turns that into a readable failure instead of a hang.
+  const deadline = Date.now() + timeoutMs;
   let stable = -1;
   for (let quiet = 0; quiet < 4; quiet++) {
+    if (Date.now() > deadline) {
+      throw new Error(`settle: repos.snapshot stream never went quiet within ${timeoutMs}ms`);
+    }
     await new Promise((r) => setTimeout(r, 120));
     const n = c.msgs.filter(isReposSnapshot).length;
     if (n !== stable) {

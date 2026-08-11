@@ -5,6 +5,7 @@
 // alone makes the row identical to a clean worktree: the user has committed work
 // and the UI says nothing. This signal is what closes that gap.
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/store/models.dart';
 import 'package:makit/ui/widgets/pr_signals.dart';
 
 void main() {
@@ -129,8 +130,20 @@ void main() {
 
   test('the signal survives alongside an open PR', () {
     // Retargeting an open PR is legitimate, so a PR does not suppress this.
+    // Pass an actual OPEN PR (not null) so the test exercises the contract its
+    // name states, not merely the commitsAhead path.
+    const openPr = PullRequest(
+      number: 4,
+      url: 'https://example.test/4',
+      state: 'OPEN',
+      title: 'child',
+      isDraft: false,
+      checkRollup: 'none',
+      unresolvedComments: 0,
+      checks: [],
+    );
     final s = prStatus(
-      pr: null,
+      pr: openPr,
       branch: 'feat/child',
       commitsAhead: 3,
       targetBranch: 'feat/parent',

@@ -186,16 +186,23 @@ export function renameTargetBranch(
     all[path] = { ...entry, target: newName };
     moved++;
   }
-  if (moved > 0) saveTargets(file, all);
+  if (moved > 0 && !saveTargets(file, all)) {
+    // The rename could not be persisted: report zero moved so the caller does not
+    // trust an on-disk change that did not land (the affected worktrees still
+    // point at the old, now-deleted branch name).
+    return 0;
+  }
   return moved;
 }
 
-/** Forget `worktreePath`'s target. A key that is already absent is a no-op. */
-export function clearTarget(file: string, worktreePath: string): void {
+/** Forget `worktreePath`'s target. A key that is already absent is a no-op.
+ * Returns whether the store is consistent on disk afterwards (a no-op is `true`),
+ * so `removeWorktree` can tell when a stale entry may survive a failed write. */
+export function clearTarget(file: string, worktreePath: string): boolean {
   const all = loadTargets(file);
-  if (!(worktreePath in all)) return;
+  if (!(worktreePath in all)) return true;
   delete all[worktreePath];
-  saveTargets(file, all);
+  return saveTargets(file, all);
 }
 
 /**
@@ -215,6 +222,9 @@ export function pruneTargets(file: string, livePaths: readonly string[]): number
   const stale = Object.keys(all).filter((p) => !live.has(p));
   if (stale.length === 0) return 0;
   for (const p of stale) delete all[p];
-  saveTargets(file, all);
+  // Report zero pruned when the write is refused, for the same reason as
+  // `renameTargetBranch`: a caller must not trust an on-disk change that did not
+  // land.
+  if (!saveTargets(file, all)) return 0;
   return stale.length;
 }

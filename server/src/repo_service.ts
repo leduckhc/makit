@@ -17,7 +17,6 @@ import {
   isGitRepo,
   detectDefaultBranch,
   listLocalBranches,
-  listRemoteBranchNames,
   detectCurrentBranch,
   listWorktrees,
   diffStat,
@@ -69,34 +68,6 @@ const PR_CONCURRENCY = 6;
  * wait on the network.
  */
 /**
- * The single owner of "what branch does this worktree land in?".
- *
- * Precedence, and why:
- *  1. **Primary or detached -> null.** The primary checkout *is* where branches
- *     land; a detached worktree has no branch to land. Neither has a target, and
- *     `diffStat` reads a null target as "count the working tree", which is the
- *     honest answer for both.
- *  2. **An open PR's `baseRefName`.** Once a PR exists the forge is
- *     authoritative -- and this is precisely how makit inherits GitHub's
- *     automatic PR retargeting (when a parent PR merges and its branch is
- *     deleted, GitHub repoints the children at the merged PR's own base) without
- *     reimplementing any of it.
- *  3. **The persisted user choice** (`worktree-target-store`): the answer given
- *     at creation time or via `worktree.setTarget`.
- *  4. **The repo default.** Deliberately last, and deliberately the fallback:
- *     it reproduces the pre-feature behaviour exactly, so upgrading an existing
- *     install moves nobody's numbers until they choose a target.
- *
- * A winner equal to the worktree's own branch is discarded and resolution
- * continues. That is reachable in practice: `renameBranch` keeps the worktree
- * path (and therefore its stored target) while changing the branch name, so a
- * rename onto the target's name would otherwise leave the worktree silently
- * self-targeting -- which `diffStat` would report as working-tree-only with no
- * indication anything was wrong.
- *
- * Pure, so the precedence rules are testable without a repo or a network.
- */
-/**
  * Persist the base of any **live** pull request that disagrees with what we have
  * stored, and return the effective map.
  *
@@ -128,29 +99,26 @@ function adoptLivePrTargets(
   for (const e of entries) {
     if (!e.branch) continue;
     const pr = lastKnown(repoPath, e.branch);
-    if (!pr || pr.state?.toUpperCase() !== "OPEN") continue;
+    // Only a FRESH, live PR is authoritative. A `stale` PR is last-known data
+    // retained by `enrichPrs` when a lookup could not complete; adopting its base
+    // during a GitHub outage could overwrite a freshly-chosen user target with an
+    // unverified — possibly closed or since-retargeted — base.
+    if (!pr || pr.stale || pr.state?.toUpperCase() !== "OPEN") continue;
     const base = pr.baseRefName;
     // A PR cannot land in its own head branch; treat that as bad data rather than
     // persisting a self-target we would then have to discard on every read.
     if (!base || base === e.branch) continue;
     const current = persisted[e.path]?.target;
     if (current === base) continue;
+    // Reflect the adoption in the returned map ONLY if it actually persisted, so a
+    // full/read-only store cannot make this snapshot report a base it never saved.
+    if (!putTarget(file, e.path, base, current ? { retargetedFrom: current } : {})) continue;
     out ??= { ...persisted };
     out[e.path] = current ? { target: base, retargetedFrom: current } : { target: base };
-    putTarget(file, e.path, base, current ? { retargetedFrom: current } : {});
   }
   return out ?? persisted;
 }
 
-/**
- * Repoint any worktree whose persisted target no longer exists, and return the
- * effective map. Pure with respect to its inputs; writes to the store only when a
- * repair was needed.
- *
- * Uses {@link resolveThroughChain} so a stack that landed bottom-up outside makit
- * still collapses to where it actually landed rather than jumping straight to the
- * repo default.
- */
 /**
  * Pure decision core of {@link repairVanishedTargets}: given the live branch set
  * and the record of what-lands-where, decide the new target for each of THIS
@@ -162,19 +130,21 @@ function adoptLivePrTargets(
  *  * **Repo isolation** — `persisted` is the GLOBAL store; only paths in `here`
  *    (this repo's worktrees) are considered, so another repo's target is never
  *    tested against this repo's branches and rewritten to this repo's default.
- *  * **Remote bases are live** — a target that exists on `origin` has NOT
- *    vanished, even if it was never checked out locally. An open PR's base
- *    (which `adoptLivePrTargets` may have just persisted) commonly lives only on
- *    the remote, and rewriting it to the default would undo that adoption.
+ *  * **Remote-only PR bases are live** — the caller adds the base of any OPEN PR
+ *    to `live`, so a target that exists only on the remote (which
+ *    `adoptLivePrTargets` may have just persisted) is not rewritten to the
+ *    default. A stale `refs/remotes/origin/*` ref is deliberately NOT trusted as
+ *    liveness, so a merged-and-auto-deleted branch is still repaired.
  */
 export function repointVanishedTargets(args: {
   here: ReadonlySet<string>;
   persisted: TargetMap;
   live: ReadonlySet<string>;
   branchTarget: Readonly<Record<string, string>>;
+  ownBranch: Readonly<Record<string, string>>;
   defaultBranch: string | null;
 }): Array<{ path: string; target: string; retargetedFrom: string }> {
-  const { here, persisted, live, branchTarget, defaultBranch } = args;
+  const { here, persisted, live, branchTarget, ownBranch, defaultBranch } = args;
   const out: Array<{ path: string; target: string; retargetedFrom: string }> = [];
   for (const [path, entry] of Object.entries(persisted)) {
     if (!entry.target || !here.has(path)) continue;
@@ -184,48 +154,113 @@ export function repointVanishedTargets(args: {
     // target in place: `diffStat` reports `targetResolved: false` and the UI says
     // so, which beats inventing a destination.
     if (!resolved || resolved === entry.target) continue;
+    // A resolution onto the worktree's OWN branch is a self-target (reachable via
+    // a mutual stack: W→feat/y, feat/y→W's branch, feat/y deleted). `resolveTargetBranch`
+    // discards a self-target on every read, so persisting it would only record a
+    // value that is never used and announce a move that never took effect — the
+    // same guard `adoptLivePrTargets` already applies.
+    if (resolved === ownBranch[path]) continue;
     out.push({ path, target: resolved, retargetedFrom: entry.target });
   }
   return out;
 }
 
+/**
+ * Repoint any worktree whose persisted target no longer exists, and return the
+ * effective map. Pure with respect to its inputs; writes to the store only when a
+ * repair was needed.
+ *
+ * Uses {@link resolveThroughChain} so a stack that landed bottom-up outside makit
+ * still collapses to where it actually landed rather than jumping straight to the
+ * repo default.
+ */
 async function repairVanishedTargets(
   repoPath: string,
   entries: readonly { path: string; branch: string | null }[],
   persisted: TargetMap,
   defaultBranch: string | null,
+  lastKnown: LastKnownPr,
 ): Promise<TargetMap> {
   // Only this repo's worktrees carry targets we may touch; `persisted` is global.
   const here = new Set(entries.map((e) => e.path));
-  const hasStale = Object.entries(persisted).some(([path, e]) => e.target && here.has(path));
-  if (!hasStale) return persisted;
-  // Liveness is local refs ∪ `origin`: a PR base often lives only on the remote,
-  // so a local-only check would wrongly classify it as vanished.
-  const [locals, remotes] = await Promise.all([
-    listLocalBranches(repoPath),
-    listRemoteBranchNames(repoPath),
-  ]);
-  const live = new Set<string>([...locals, ...remotes]);
-  if (live.size === 0) return persisted;
-
-  // branch -> where it lands, so a multi-link chain can be walked.
-  const branchTarget: Record<string, string> = {};
+  const hasCandidates = Object.entries(persisted).some(([path, e]) => e.target && here.has(path));
+  if (!hasCandidates) return persisted;
+  const locals = await listLocalBranches(repoPath);
+  if (locals.length === 0) return persisted;
+  // Liveness is local refs ∪ the bases of currently-OPEN PRs. A PR base can live
+  // only on the remote (never checked out locally), and it is authoritative while
+  // the PR is open — but we must NOT treat every `refs/remotes/origin/*` ref as
+  // live: a stale one left behind after a merged branch is auto-deleted would
+  // block the repair this function exists to perform, indefinitely.
+  const live = new Set<string>(locals);
   for (const e of entries) {
-    const entry = e.branch ? persisted[e.path] : undefined;
-    if (e.branch && entry) branchTarget[e.branch] = entry.target;
+    if (!e.branch) continue;
+    const pr = lastKnown(repoPath, e.branch);
+    if (pr && !pr.stale && pr.state?.toUpperCase() === "OPEN" && pr.baseRefName) {
+      live.add(pr.baseRefName);
+    }
   }
 
-  const writes = repointVanishedTargets({ here, persisted, live, branchTarget, defaultBranch });
+  // branch -> where it lands, and path -> its own branch, so a multi-link chain
+  // can be walked and a self-target rejected without re-reading.
+  const branchTarget: Record<string, string> = {};
+  const ownBranch: Record<string, string> = {};
+  for (const e of entries) {
+    if (!e.branch) continue;
+    ownBranch[e.path] = e.branch;
+    const entry = persisted[e.path];
+    if (entry) branchTarget[e.branch] = entry.target;
+  }
+
+  const writes = repointVanishedTargets({
+    here,
+    persisted,
+    live,
+    branchTarget,
+    ownBranch,
+    defaultBranch,
+  });
   if (writes.length === 0) return persisted;
   const out: TargetMap = { ...persisted };
   const file = worktreeTargetsFile();
   for (const w of writes) {
+    // Reflect the repair in the returned map ONLY when it persisted, so a
+    // full/read-only store cannot make this snapshot report a repair that the
+    // next read will contradict.
+    if (!putTarget(file, w.path, w.target, { retargetedFrom: w.retargetedFrom })) continue;
     out[w.path] = { target: w.target, retargetedFrom: w.retargetedFrom };
-    putTarget(file, w.path, w.target, { retargetedFrom: w.retargetedFrom });
   }
   return out;
 }
 
+/**
+ * The single owner of "what branch does this worktree land in?".
+ *
+ * Precedence, and why:
+ *  1. **Primary or detached -> null.** The primary checkout *is* where branches
+ *     land; a detached worktree has no branch to land. Neither has a target, and
+ *     `diffStat` reads a null target as "count the working tree", which is the
+ *     honest answer for both.
+ *  2. **An open PR's `baseRefName`.** Once a PR exists the forge is
+ *     authoritative -- and this is precisely how makit inherits GitHub's
+ *     automatic PR retargeting (when a parent PR merges and its branch is
+ *     deleted, GitHub repoints the children at the merged PR's own base) without
+ *     reimplementing any of it.
+ *  3. **The persisted user choice** (`worktree-target-store`): the answer given
+ *     at creation time or via `worktree.setTarget`.
+ *  4. **The repo default.** Deliberately last, and deliberately the fallback:
+ *     it reproduces the pre-feature behaviour exactly, so upgrading an existing
+ *     install moves nobody's numbers until they choose a target.
+ *
+ * A winner equal to the worktree's own branch is discarded and resolution
+ * continues. That is reachable in practice: `renameBranch` keeps the worktree
+ * path (and therefore its stored target) while changing the branch name, so a
+ * rename onto the target's name would otherwise leave the worktree silently
+ * self-targeting -- which `diffStat` would report as working-tree-only with no
+ * indication anything was wrong.
+ *
+ * Pure, so the precedence rules are testable without a repo or a network.
+ */
 export function resolveTargetBranch(args: {
   branch: string | null;
   isPrimary: boolean;
@@ -339,7 +374,7 @@ async function repoSnapshot(
   // longer matches reality.
   const adopted = gitRepo ? adoptLivePrTargets(repoPath, entries, persistedTargets, lastKnown) : persistedTargets;
   const repaired = gitRepo
-    ? await repairVanishedTargets(repoPath, entries, adopted, defaultBranch)
+    ? await repairVanishedTargets(repoPath, entries, adopted, defaultBranch, lastKnown)
     : adopted;
 
   const worktrees: WorktreeDTO[] = await mapLimit(entries, WORKTREE_CONCURRENCY, async (e) => {
@@ -353,11 +388,12 @@ async function repoSnapshot(
     // against the persisted value while the UI showed the PR's base, inside one
     // broadcast. `lastKnown` hands us the previous poll's PR synchronously,
     // which is what makes PR-first precedence possible in the git-only phase.
+    const knownPr = e.branch ? lastKnown(repoPath, e.branch) : null;
     const targetBranch = resolveTargetBranch({
       branch: e.branch,
       isPrimary: e.isPrimary,
-      prBaseRefName: e.branch ? lastKnown(repoPath, e.branch)?.baseRefName : null,
-      prState: e.branch ? lastKnown(repoPath, e.branch)?.state : null,
+      prBaseRefName: knownPr?.baseRefName,
+      prState: knownPr?.state,
       persisted: repaired[e.path]?.target,
       defaultBranch,
     });

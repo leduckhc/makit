@@ -11,8 +11,8 @@ import '../../store/ports.dart';
 import '../../store/store.dart';
 import '../../ui/home/repo_chips.dart';
 import '../../ui/ports/ports_popover.dart';
-import '../../ui/widgets/lands_in_picker.dart';
 import '../../ui/ports/session_ports_glyph.dart';
+import '../../ui/widgets/lands_in_picker.dart';
 import '../../ui/widgets/pr_state_style.dart';
 import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
@@ -635,12 +635,21 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                       // NOT `sheet: true`: desktop wants the
                                       // dialog form of the picker, not a bottom
                                       // sheet. It persists the choice itself.
+                                      // Re-derive the live worktree: a snapshot
+                                      // may have retargeted or moved it while the
+                                      // menu was open, so act on today's value.
+                                      final live =
+                                          ref
+                                              .read(reposProvider)
+                                              .locateWorktree(worktree.path)
+                                              ?.worktree ??
+                                          worktree;
                                       unawaited(
                                         showLandsInPicker(
                                           context,
                                           ref,
                                           projectId: repo.id,
-                                          worktree: worktree,
+                                          worktree: live,
                                         ),
                                       );
                                     case 'delete':

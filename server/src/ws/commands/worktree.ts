@@ -18,6 +18,8 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // deletable) but kept consistent so there is one vocabulary on the wire.
     // `||` (not `??`): an explicit empty string must fall through to the alias
     // and then to `undefined`, exactly as the old nested ternary did.
+    // TODO(SPEC-51): drop the `baseBranch` alias one release after the app ships
+    // with `targetBranch`.
     const rawTarget = ctx.env.targetBranch || ctx.env.baseBranch;
     const targetBranch = rawTarget ? String(rawTarget) : undefined;
     const branchName = ctx.env.branchName ? String(ctx.env.branchName) : undefined;
@@ -194,6 +196,8 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // success -- the one irreversible failure in this rename. Delete the alias a
     // release after the app ships with the new key. `||` keeps the old nested
     // ternary's truthiness semantics (an empty string falls through).
+    // TODO(SPEC-51): drop the `baseBranch` alias one release after the app ships
+    // with `targetBranch`.
     const rawTarget = ctx.env.targetBranch || ctx.env.baseBranch;
     const targetBranch = rawTarget ? String(rawTarget) : undefined;
     const expectBranch = ctx.env.expectBranch ? String(ctx.env.expectBranch) : undefined;

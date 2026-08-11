@@ -306,9 +306,9 @@ test("resolveTargetBranch: state is matched case-insensitively", () => {
   );
 });
 
-// repointVanishedTargets — the pure core of the vanished-target repair. Two
-// once-live bugs are pinned here: cross-repo corruption and clobbering a
-// remote-only PR base.
+// repointVanishedTargets — the pure core of the vanished-target repair. Bugs
+// pinned here: cross-repo corruption, respecting an open PR's (possibly
+// remote-only) base as live, and never persisting a self-target.
 
 test("repointVanishedTargets: a genuinely vanished target repoints to the default", () => {
   const writes = repointVanishedTargets({
@@ -316,6 +316,7 @@ test("repointVanishedTargets: a genuinely vanished target repoints to the defaul
     persisted: { "/wt": { target: "feat/gone" } },
     live: new Set(["main"]),
     branchTarget: {},
+    ownBranch: { "/wt": "feat/child" },
     defaultBranch: "main",
   });
   assert.deepEqual(writes, [{ path: "/wt", target: "main", retargetedFrom: "feat/gone" }]);
@@ -332,22 +333,39 @@ test("repointVanishedTargets: leaves another repo's persisted target untouched",
     },
     live: new Set(["main"]),
     branchTarget: {},
+    ownBranch: { "/wt": "feat/child" },
     defaultBranch: "main",
   });
   assert.deepEqual(writes, [], "no writes: /wt is fine and /other is not ours");
 });
 
-test("repointVanishedTargets: a target that exists only on origin is not clobbered", () => {
-  // `adoptLivePrTargets` may have just persisted a PR base that lives only on the
-  // remote. `live` includes origin branches, so it is NOT treated as vanished.
+test("repointVanishedTargets: a live target (e.g. an open PR base) is not clobbered", () => {
+  // The caller adds an open PR's base to `live` even when it exists only on the
+  // remote, so it is NOT treated as vanished.
   const writes = repointVanishedTargets({
     here: new Set(["/wt"]),
     persisted: { "/wt": { target: "release/1.4" } },
     live: new Set(["main", "release/1.4"]),
     branchTarget: {},
+    ownBranch: { "/wt": "feat/child" },
     defaultBranch: "main",
   });
-  assert.deepEqual(writes, [], "a remote-only base is live, so nothing is repointed");
+  assert.deepEqual(writes, [], "a live base is not repointed");
+});
+
+test("repointVanishedTargets: never persists a self-target (mutual stack)", () => {
+  // W is on feat/x, targets feat/y; feat/y targets feat/x; feat/y is deleted.
+  // The chain resolves feat/y -> feat/x, which is W's OWN branch. Persisting that
+  // would record a value resolveTargetBranch discards on every read.
+  const writes = repointVanishedTargets({
+    here: new Set(["/wt-x"]),
+    persisted: { "/wt-x": { target: "feat/y" } },
+    live: new Set(["feat/x", "main"]),
+    branchTarget: { "feat/y": "feat/x" },
+    ownBranch: { "/wt-x": "feat/x" },
+    defaultBranch: "main",
+  });
+  assert.deepEqual(writes, [], "a resolution onto the worktree's own branch is skipped");
 });
 
 test("repointVanishedTargets: leaves a broken target in place when nothing resolves", () => {
@@ -356,6 +374,7 @@ test("repointVanishedTargets: leaves a broken target in place when nothing resol
     persisted: { "/wt": { target: "feat/gone" } },
     live: new Set(["unrelated"]),
     branchTarget: {},
+    ownBranch: { "/wt": "feat/child" },
     defaultBranch: null,
   });
   assert.deepEqual(writes, [], "no default to fall back to: surface targetResolved:false instead");

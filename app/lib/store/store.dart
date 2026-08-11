@@ -908,6 +908,8 @@ class StoreController extends StateNotifier<StoreState> {
         // Sent for one release as well, so a server that predates the
         // base->target rename still receives the value instead of silently
         // falling back to the repo default.
+        // TODO(SPEC-51): drop the `baseBranch` alias one release after the
+        // server ships with `targetBranch`.
         'baseBranch': ?targetBranch,
         'branchName': ?branchName,
       },
@@ -1077,6 +1079,8 @@ class StoreController extends StateNotifier<StoreState> {
         // See `worktree.create` above: one-release compatibility. Here it also
         // guards the only irreversible case — a server reading the old key would
         // otherwise fast-forward the WRONG branch and report success.
+        // TODO(SPEC-51): drop the `baseBranch` alias one release after the
+        // server ships with `targetBranch`.
         'baseBranch': ?targetBranch,
         'expectBranch': ?expectBranch,
       },

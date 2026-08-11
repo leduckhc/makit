@@ -173,8 +173,14 @@ export async function targetCandidates(
     return a.branch.localeCompare(b.branch);
   });
 
-  // Preview only the leading, selectable candidates.
-  const previewable = candidates.filter((c) => !c.isSelf).slice(0, PREVIEW_LIMIT);
+  // Preview only the leading SELECTABLE candidates: not self, and on the remote
+  // (an off-remote candidate is offered but disabled, so it must not consume a
+  // preview slot a selectable remote-backed candidate could have used). In a
+  // repo with no remote every candidate is `onRemote: true` (the vacuous rule
+  // above), so this does not starve previews there.
+  const previewable = candidates
+    .filter((c) => !c.isSelf && c.onRemote)
+    .slice(0, PREVIEW_LIMIT);
   const stats = await mapLimit(previewable, PREVIEW_CONCURRENCY, (c) =>
     diffStat(worktreePath, c.branch),
   );

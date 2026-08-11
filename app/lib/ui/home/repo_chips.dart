@@ -157,6 +157,11 @@ class PrStatusChip extends ConsumerWidget {
           sheet: true,
           canInsertPrompt: onInsertPrompt != null,
           onRun: (remedy) {
+            // Guard `context.mounted` before touching `ref`: the chip can be
+            // removed from the tree by a repos snapshot while the sheet is still
+            // open, and reading `ref` (here and inside runPrRemedy's `ref.status`)
+            // on a defunct element throws.
+            if (!context.mounted) return;
             // Re-derive from the snapshot at invocation time. This sheet hosts
             // the "Lands in" picker, so the PR's base — and every fact derived
             // from it — can change while it is open; a remedy run against the

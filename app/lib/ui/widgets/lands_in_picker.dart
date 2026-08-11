@@ -282,16 +282,21 @@ class _CandidateList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final rows = <Widget>[];
+    // A flat list of row BUILDERS (headers + candidates), so `ListView.builder`
+    // can lazily construct only what is on screen. The `other` group is "all
+    // branches", so a branch-heavy repo would otherwise materialise every
+    // `ListTile` on each rebuild.
+    final rows = <Widget Function(BuildContext)>[];
     TargetCandidateGroup? seen;
     for (final c in all) {
       if (c.group != seen) {
         seen = c.group;
+        final label = c.group.label.toUpperCase();
         rows.add(
-          Padding(
+          (context) => Padding(
             padding: const EdgeInsets.fromLTRB(16, kSpace12, 16, kSpace4),
             child: Text(
-              c.group.label.toUpperCase(),
+              label,
               style: Theme.of(context).textTheme.labelXs?.copyWith(
                 color: cs.outline,
                 fontWeight: FontWeight.w700,
@@ -301,9 +306,14 @@ class _CandidateList extends StatelessWidget {
           ),
         );
       }
-      rows.add(_CandidateRow(candidate: c, isCurrent: c.branch == current));
+      final isCurrent = c.branch == current;
+      rows.add((context) => _CandidateRow(candidate: c, isCurrent: isCurrent));
     }
-    return ListView(shrinkWrap: true, children: rows);
+    return ListView.builder(
+      shrinkWrap: true,
+      itemCount: rows.length,
+      itemBuilder: (context, i) => rows[i](context),
+    );
   }
 }
 

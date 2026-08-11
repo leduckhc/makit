@@ -26,6 +26,7 @@ import {
   branchExists,
   listLocalBranches,
   listRemoteBranchNames,
+  hasAnyRemote,
   closestAncestorBranch,
 } from "./git.js";
 
@@ -695,6 +696,21 @@ test("listRemoteBranchNames strips the remote prefix and skips HEAD", async () =
       false,
       "a branch on a non-origin remote is not a PR base",
     );
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(clone, { recursive: true, force: true });
+  }
+});
+
+test("hasAnyRemote distinguishes a plain init from a clone", async () => {
+  // Gates the whole "a PR base must exist on the remote" rule in the picker; the
+  // no-remote regression it guards was found only by driving the real app.
+  const origin = makeRepo();
+  const clone = mkdtempSync(join(tmpdir(), "makit-clone-"));
+  try {
+    assert.equal(await hasAnyRemote(origin), false, "a plain `git init` has no remote");
+    execFileSync("git", ["clone", "-q", origin, clone]);
+    assert.equal(await hasAnyRemote(clone), true);
   } finally {
     rmSync(origin, { recursive: true, force: true });
     rmSync(clone, { recursive: true, force: true });

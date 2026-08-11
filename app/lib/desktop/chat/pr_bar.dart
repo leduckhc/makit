@@ -132,19 +132,34 @@ class PrComposerBar extends ConsumerWidget {
     onRun: (remedy) => _run(context, ref, remedy),
   );
 
-  Future<void> _run(BuildContext context, WidgetRef ref, PrRemedy remedy) =>
-      runPrRemedy(
-        context,
-        ref,
-        remedy: remedy,
-        status: status,
-        pr: pr,
-        projectId: projectId,
-        worktreePath: worktreePath,
-        branch: branch,
-        uncommittedFiles: uncommittedFiles,
-        onInsertPrompt: onInsertPrompt,
-      );
+  Future<void> _run(
+    BuildContext context,
+    WidgetRef ref,
+    PrRemedy remedy,
+  ) async {
+    // Re-derive from the snapshot at call time: the in-dialog "Lands in" picker
+    // can change the PR base (and the derived facts) while the dialog is open, so
+    // a remedy must act on today's target, not the build-time `status`/`pr`.
+    // Guard `context.mounted` first — the bar can be torn down by a snapshot and
+    // reading `ref` on a defunct element throws. Falls back to open-time values
+    // when the row is gone from the snapshot.
+    if (!context.mounted) return;
+    final at = ref.read(reposProvider).locateWorktree(worktreePath);
+    await runPrRemedy(
+      context,
+      ref,
+      remedy: remedy,
+      status: at == null ? status : prStatusFor(at),
+      pr: at == null ? pr : at.worktree.pr,
+      projectId: projectId,
+      worktreePath: worktreePath,
+      branch: at == null ? branch : at.worktree.branch,
+      uncommittedFiles: at == null
+          ? uncommittedFiles
+          : at.worktree.uncommittedFiles,
+      onInsertPrompt: onInsertPrompt,
+    );
+  }
 }
 
 /// The sentence: a status dot, the PR number (or branch), and the loud fact.

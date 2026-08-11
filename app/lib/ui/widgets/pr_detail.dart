@@ -843,12 +843,18 @@ List<Widget> buildPrActionMenu(
           children: [
             Text('Lands in', style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(width: kSpace10),
-            Text(
-              worktree.targetBranch ?? 'not set',
-              style: Theme.of(context).textTheme.labelSmall?.mono.copyWith(
-                color: worktree.targetUnresolved
-                    ? Theme.of(context).colorScheme.statusWarningText
-                    : Theme.of(context).colorScheme.outline,
+            // Flexible + ellipsis: a long target branch must truncate, not blow
+            // the menu row past the screen edge (matches `LandsInLine`).
+            Flexible(
+              child: Text(
+                worktree.targetBranch ?? 'not set',
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: Theme.of(context).textTheme.labelSmall?.mono.copyWith(
+                  color: worktree.targetUnresolved
+                      ? Theme.of(context).colorScheme.statusWarningText
+                      : Theme.of(context).colorScheme.outline,
+                ),
               ),
             ),
           ],

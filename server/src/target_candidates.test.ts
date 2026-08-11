@@ -83,6 +83,29 @@ test("ranks forkedFrom first, then default, then other worktrees, then the rest"
   }
 });
 
+test("a branch checked out in another worktree ranks in the worktree group", async () => {
+  const s = await makeStack();
+  try {
+    // A sibling worktree on a branch that is neither the child's fork point nor
+    // the repo default — the only thing that lands in the `worktree` group.
+    await addWorktree({
+      repoPath: s.repo,
+      name: "sibling",
+      branch: "feat/sibling",
+      startPoint: "main",
+      baseDir: s.base,
+    });
+    const cands = await targetCandidates(s.repo, s.child);
+    const sib = cands.find((c) => c.branch === "feat/sibling")!;
+    assert.equal(sib.group, "worktree", "a sibling worktree's branch is group 3");
+    const iSib = cands.findIndex((c) => c.branch === "feat/sibling");
+    const iOther = cands.findIndex((c) => c.branch === "zz-other");
+    assert.ok(iSib < iOther, "the worktree group ranks ahead of the plain other group");
+  } finally {
+    s.cleanup();
+  }
+});
+
 test("the worktree's own branch is offered but flagged, and sorts last in its group", async () => {
   const s = await makeStack();
   try {
