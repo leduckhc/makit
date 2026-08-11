@@ -178,4 +178,11 @@ class ProfilesController extends ChangeNotifier {
     _running[id] = running;
     notifyListeners();
   }
+
+  /// Repaints the list after the registry changed underneath it.
+  ///
+  /// Needed because a delete performed elsewhere (the host, after a
+  /// switch-away-and-delete) mutates the shared registry directly, and
+  /// `notifyListeners` is protected to subclasses.
+  void notifyRegistryChanged() => notifyListeners();
 }

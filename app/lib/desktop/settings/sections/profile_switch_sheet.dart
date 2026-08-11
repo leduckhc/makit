@@ -108,6 +108,74 @@ class _SwitchSheet extends StatelessWidget {
   }
 }
 
+/// Asks whether to switch away from [victim] to [target] **and delete** [victim].
+///
+/// One sheet rather than two, because it is one intent. It has to carry both
+/// consequences honestly: the window moves, and a profile's data is erased. The
+/// “kept” line matters most — people read “delete” next to a path beside their
+/// worktree as “deletes my branch”.
+Future<bool> confirmSwitchAwayAndDelete(
+  BuildContext context, {
+  required ServerProfile victim,
+  required ServerProfile target,
+}) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) {
+      final cs = Theme.of(context).colorScheme;
+      final text = Theme.of(context).textTheme;
+      return AlertDialog(
+        title: Text('Delete “${victim.name}”?'),
+        content: SizedBox(
+          width: 430,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '“${victim.name}” is the profile this window is using, so the '
+                'window will switch to “${target.name}” first.',
+                style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: kSpace16),
+              _Block(
+                label: 'What happens',
+                tone: cs.error,
+                lines: [
+                  'this window switches to “${target.name}”',
+                  '“${victim.name}” is stopped, then its server state is erased',
+                  'its sessions, transcripts, pairings and TLS identity go',
+                ],
+              ),
+              const SizedBox(height: kSpace12),
+              _Block(
+                label: 'What is kept',
+                tone: cs.primary,
+                lines: const [
+                  'your worktrees and repos are never touched',
+                  'every other profile is unaffected',
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: cs.error),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Switch & delete “${victim.name}”'),
+          ),
+        ],
+      );
+    },
+  );
+  return result ?? false;
+}
+
 class _Block extends StatelessWidget {
   const _Block({required this.label, required this.tone, required this.lines});
 

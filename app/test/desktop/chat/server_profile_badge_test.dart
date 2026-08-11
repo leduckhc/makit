@@ -90,7 +90,10 @@ Future<({List<String> switched, StatusCenter center})> _pump(
           _lifecycle(targetRunning: targetRunning),
         ),
         statusCenterProvider.overrideWithValue(center),
-        profileSwitcherProvider.overrideWithValue((target) async {
+        profileSwitcherProvider.overrideWithValue((
+          target, {
+          ServerProfile? deleteAfter,
+        }) async {
           switched.add(target.id);
           return switcher(target);
         }),

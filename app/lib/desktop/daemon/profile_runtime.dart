@@ -28,6 +28,43 @@ import 'profile_registry.dart';
 import 'profiles_controller.dart';
 import 'server_profile.dart';
 
+/// Confirms [target] is reachable, and only then calls [handOver].
+///
+/// The order is the entire safety property of a profile switch (SPEC-50 D10):
+/// the target is started and confirmed *answering* while the current profile is
+/// still live, so a target that cannot come up leaves the window exactly as it
+/// was. [handOver] performs the irreversible part — build the new runtime, swap
+/// it in, dispose the old — and is called at most once, never on a failure.
+///
+/// Extracted from the widget that owns the `ProviderScope` so this sequence can
+/// be tested without a widget tree; that scope swap is untestable in a unit test,
+/// but the decision of *whether* to swap is the part that can go wrong.
+Future<String?> verifyThenHandOver({
+  required ServerProfile target,
+  required ProfileLifecycle lifecycle,
+  required Future<void> Function() handOver,
+}) async {
+  if (!await lifecycle.isRunning(target)) {
+    final started = await lifecycle.start(target);
+    if (!started.ok) {
+      // Always name the profile. The CLI's own message can be as bare as
+      // "makit start exited 1", and this string is sometimes surfaced on its own
+      // (folded into the switch-away-and-delete report), where an unnamed
+      // failure tells the user nothing.
+      final why = started.message;
+      return (why == null || why.trim().isEmpty)
+          ? 'could not start “${target.name}”'
+          : 'could not start “${target.name}”: ${why.trim()}';
+    }
+    if (!await lifecycle.isRunning(target)) {
+      return '“${target.name}” started but is not answering on its control '
+          'socket';
+    }
+  }
+  await handOver();
+  return null;
+}
+
 /// The per-profile half of the app's object graph.
 class ProfileRuntime {
   ProfileRuntime._({

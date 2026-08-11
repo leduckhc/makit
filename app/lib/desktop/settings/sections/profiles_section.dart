@@ -28,6 +28,7 @@ import '../../daemon/server_profile.dart';
 import 'profile_delete_sheet.dart';
 import 'profile_reclaim_sheet.dart';
 import 'profiles_format.dart';
+import 'profile_switch_sheet.dart';
 import 'profiles_providers.dart';
 
 /// The Profiles section body.
@@ -288,7 +289,15 @@ class _ProfileMenu extends ConsumerWidget {
       case 'reveal':
         await revealInFinder(status.profile.home);
       case 'delete':
-        if (context.mounted) await showProfileDeleteSheet(context, ref, status);
+        if (!context.mounted) return;
+        // ProfileDeleter refuses the ACTIVE profile by design (D8), so deleting
+        // the one you are using means switching away first. Offering a menu item
+        // that could only ever fail would be worse than offering none.
+        if (isActive) {
+          await switchAwayAndDelete(context, ref, status.profile);
+        } else {
+          await showProfileDeleteSheet(context, ref, status);
+        }
     }
   }
 }
@@ -630,4 +639,73 @@ String _tildeHome(String path) {
     return '~${path.substring(home.length)}';
   }
   return path;
+}
+
+/// Switches away from [victim] and then deletes it.
+///
+/// `ProfileDeleter` refuses the active profile (SPEC-50 D8) — a profile cannot be
+/// deleted from under the window using it — so this picks another profile, hands
+/// the window over, and lets the host delete the old one from the *new* runtime,
+/// where it is no longer active. Both steps are confirmed: the switch sheet
+/// first, then the delete sheet's own consequences are folded into it, because
+/// two modal sheets in a row for one intent is worse UX than one honest one.
+Future<void> switchAwayAndDelete(
+  BuildContext context,
+  WidgetRef ref,
+  ServerProfile victim,
+) async {
+  final controller = ref.read(profilesControllerProvider);
+  final switcher = ref.read(profileSwitcherProvider);
+  final status = ref.status;
+
+  if (switcher == null) {
+    status.failure(
+      'Cannot delete the active profile',
+      source: StatusSources.settings,
+      detail: 'Profile switching is not available on this surface.',
+    );
+    return;
+  }
+
+  // Prefer the protected/installed profile as the place to land: it always
+  // exists and can never itself be deleted.
+  final candidates =
+      controller.rows
+          .where((r) => r.profile.id != victim.id && !r.stale)
+          .toList()
+        ..sort((a, b) {
+          if (a.profile.isProtected) return -1;
+          if (b.profile.isProtected) return 1;
+          return 0;
+        });
+  if (candidates.isEmpty) {
+    status.failure(
+      'Cannot delete the only profile',
+      source: StatusSources.settings,
+      detail: 'Create another profile first, then switch to it.',
+    );
+    return;
+  }
+  final target = candidates.first.profile;
+
+  final ok = await confirmSwitchAwayAndDelete(
+    context,
+    victim: victim,
+    target: target,
+  );
+  if (!ok) return;
+
+  final failure = await switcher(target, deleteAfter: victim);
+  if (failure == null) {
+    status.success(
+      'Deleted ${victim.name} and switched to ${target.name}',
+      source: StatusSources.settings,
+    );
+  } else {
+    status.failure(
+      'Could not delete ${victim.name}',
+      source: StatusSources.settings,
+      detail: failure,
+    );
+  }
 }

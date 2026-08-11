@@ -39,7 +39,11 @@ final profileDeleterProvider = Provider<ProfileDeleter>(
 ///
 /// Returns `null` on success, or a human-readable reason on failure — in which
 /// case nothing changed. Overridden in `runDesktopApp`; tests supply a fake.
-typedef ProfileSwitcher = Future<String?> Function(ServerProfile target);
+typedef ProfileSwitcher =
+    Future<String?> Function(
+      ServerProfile target, {
+      ServerProfile? deleteAfter,
+    });
 
 /// The active [ProfileSwitcher], or `null` where switching is not wired.
 ///

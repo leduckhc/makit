@@ -41,6 +41,7 @@ import 'chat/loopback_pairing.dart';
 import 'chat/groups/groups_controller.dart';
 import 'chat/sidebar_layout.dart';
 import 'daemon/daemon_lifecycle.dart';
+import 'daemon/profile_deleter.dart';
 import 'daemon/profile_registry.dart';
 import 'daemon/profile_runtime.dart';
 import 'daemon/server_profile.dart';
@@ -440,35 +441,54 @@ class _ProfileHostState extends State<_ProfileHost> {
   /// case nothing has changed and the caller reports it. The order is the whole
   /// point: start and confirm the target while the current profile is still
   /// live, so a target that cannot come up leaves the window exactly as it was.
-  Future<String?> switchTo(ServerProfile target) async {
+  /// Switches to [target], verifying it is reachable BEFORE tearing anything
+  /// down, and optionally deleting [deleteAfter] once the switch has landed.
+  ///
+  /// Returns `null` on success, or a human-readable reason on failure — in which
+  /// case nothing has changed and the caller reports it.
+  ///
+  /// [deleteAfter] exists because `ProfileDeleter` refuses the *active* profile
+  /// by design (D8), so "switch away and delete" cannot be done by the widget
+  /// that offers it: the ProviderScope it lives in is disposed by the switch. The
+  /// host survives that rebuild, so it runs the delete afterwards through the NEW
+  /// runtime's deleter, which correctly sees the old profile as inactive.
+  Future<String?> switchTo(
+    ServerProfile target, {
+    ServerProfile? deleteAfter,
+  }) async {
     if (target.id == _runtime.profile.id) return null;
 
-    final lifecycle = _runtime.profileLifecycle;
-    if (!await lifecycle.isRunning(target)) {
-      final started = await lifecycle.start(target);
-      if (!started.ok) {
-        return started.message ?? 'could not start ${target.name}';
-      }
-      if (!await lifecycle.isRunning(target)) {
-        return '${target.name} started but is not answering on its socket';
-      }
-    }
-
-    final next = ProfileRuntime.create(
-      profile: target,
-      registry: widget.registry,
-      prefs: widget.prefs,
+    final failure = await verifyThenHandOver(
+      target: target,
+      lifecycle: _runtime.profileLifecycle,
+      handOver: () async {
+        final next = ProfileRuntime.create(
+          profile: target,
+          registry: widget.registry,
+          prefs: widget.prefs,
+        );
+        final previous = _runtime;
+        holder.runtime = next;
+        next.startPolling();
+        holder.attachTray();
+        if (mounted) setState(() {});
+        // Only now is the old graph safe to tear down.
+        await previous.dispose();
+      },
     );
-    final previous = _runtime;
-    holder.runtime = next;
-    next.startPolling();
-    holder.attachTray();
-    if (mounted) setState(() {});
-    // Only now is the old graph safe to tear down.
-    await previous.dispose();
+    if (failure != null) return failure;
 
     if (widget.registry.setLastActive(target.id)) widget.registry.save();
     await windowManager.setTitle(target.windowTitle);
+
+    if (deleteAfter != null && deleteAfter.id != target.id) {
+      final result = await holder.runtime.profileDeleter.delete(deleteAfter);
+      if (result.outcome != ProfileDeletionOutcome.deleted) {
+        return 'switched to ${target.name}, but could not delete '
+            '${deleteAfter.name}: ${result.skipped.join('; ')}';
+      }
+      holder.runtime.profilesController.notifyRegistryChanged();
+    }
     return null;
   }
 
