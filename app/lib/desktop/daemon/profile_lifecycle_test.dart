@@ -283,5 +283,53 @@ void main() {
         expect(ok, isFalse, reason: 'must not unlink under a live process');
       },
     );
+
+    test('returns false when the stop command itself fails', () async {
+      // A failed `makit stop` (or a missing CLI) means no shutdown was issued.
+      // Combined with a stale/absent socket and no pid, the old code would have
+      // returned true and let the delete proceed under a live daemon.
+      final runner = _RecordingRunner()
+        ..result = ProcessResult(0, 1, 'boom', 'bind failed');
+      var probed = false;
+      final lifecycle = ProfileLifecycle(
+        resolver: _resolver(),
+        run: runner.run,
+        socketExists: (_) {
+          probed = true;
+          return false;
+        },
+        readPid: (_) => null,
+        sleep: (_) async {},
+      );
+
+      final ok = await lifecycle.stopAndConfirm(
+        _profile(),
+        timeout: const Duration(seconds: 5),
+      );
+
+      expect(ok, isFalse);
+      expect(
+        probed,
+        isFalse,
+        reason: 'must abort before probing on stop failure',
+      );
+    });
+
+    test('returns false when the makit CLI cannot be found', () async {
+      final lifecycle = ProfileLifecycle(
+        resolver: _resolver(path: null),
+        run: _RecordingRunner().run,
+        socketExists: (_) => false,
+        readPid: (_) => null,
+        sleep: (_) async {},
+      );
+
+      final ok = await lifecycle.stopAndConfirm(
+        _profile(),
+        timeout: const Duration(seconds: 5),
+      );
+
+      expect(ok, isFalse);
+    });
   });
 }

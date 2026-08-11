@@ -65,8 +65,14 @@ class ProfileRegistry {
   final FileSystemAdapter _fs;
 
   /// Ids this instance deleted, so a concurrent-write merge cannot resurrect
-  /// them from a stale on-disk copy.
+  /// them from a stale on-disk copy. Persisted as `deletedIds` tombstones so
+  /// *other* instances honour the deletion too (SPEC-50 D1).
   final Set<String> _deleted = {};
+
+  /// Ids this instance actually mutated (rename/setPort/setOrigin/create), so
+  /// [save] overrides the on-disk copy only for profiles it truly changed and
+  /// never reverts another window's edit to a profile it merely happens to hold.
+  final Set<String> _modified = {};
 
   /// Where the registry file lives.
   String get filePath => '$_makitRoot/profiles.json';
@@ -93,14 +99,45 @@ class ProfileRegistry {
   }) {
     final io = fs ?? const FileSystemAdapter();
     final raw = io.readOrNull('$makitRoot/profiles.json');
+    final deleted = _parseDeletedIds(raw);
+    final parsed = raw == null ? const <ServerProfile>[] : _parse(raw);
+    // Honour tombstones from any instance, then break any port collisions the
+    // file may carry (a hand-edited or fallback port that duplicates another,
+    // notably the legacy 7777) before they reach a daemon as `EADDRINUSE`.
+    final live = [
+      for (final p in parsed)
+        if (!deleted.contains(p.id)) p,
+    ];
     final reg = ProfileRegistry(
       makitRoot: makitRoot,
-      profiles: raw == null ? const [] : _parse(raw),
+      profiles: _dedupePorts(live),
       probe: probe,
       fs: io,
     );
     reg._lastActiveId = _parseLastActive(raw);
+    reg._deleted.addAll(deleted);
     return reg;
+  }
+
+  /// Reads the `deletedIds` tombstone list, tolerating every shape the file may
+  /// take.
+  static Set<String> _parseDeletedIds(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, Object?>) {
+        final v = decoded['deletedIds'];
+        if (v is List) {
+          return {
+            for (final e in v)
+              if (e is String && e.isNotEmpty) e,
+          };
+        }
+      }
+    } on FormatException {
+      return {};
+    }
+    return {};
   }
 
   /// Reads `lastActive`, tolerating every shape the file may take.
@@ -125,6 +162,7 @@ class ProfileRegistry {
   /// profile, and dev profiles re-bind by `origin`, so little is lost.
   static List<ServerProfile> _parse(String raw) {
     final parsed = <ServerProfile>[];
+    var seenLegacy = false;
     try {
       final decoded = jsonDecode(raw);
       final list = decoded is Map<String, Object?>
@@ -134,9 +172,19 @@ class ProfileRegistry {
         for (final entry in list) {
           if (entry is! Map<String, Object?>) continue;
           final p = ServerProfile.fromJson(entry);
+          if (p == null) continue;
           // Drop a duplicate id rather than letting two entries fight over one
           // home: first-seen wins, matching server-side mergeProjects.
-          if (p != null && !parsed.any((e) => e.id == p.id)) parsed.add(p);
+          if (parsed.any((e) => e.id == p.id)) continue;
+          // At most one legacy profile may exist (SPEC-50 D2): it owns the
+          // unprefixed prefs keys and the unsuffixed secure-store file. A
+          // hand-edited file with two would silently clobber each other's
+          // settings and credentials, so extra legacy entries are dropped.
+          if (p.storage == ProfileStorage.legacy) {
+            if (seenLegacy) continue;
+            seenLegacy = true;
+          }
+          parsed.add(p);
         }
       }
     } on FormatException {
@@ -178,13 +226,29 @@ class ProfileRegistry {
   /// of `save()`.
   void save() {
     _fs.withLock(filePath, () {
+      final diskRaw = _fs.readOrNull(filePath);
+      // Learn deletions made by other instances so an unrelated save cannot
+      // resurrect a profile another window already erased (its on-disk stores
+      // are gone, so a revived entry would point at deleted data).
+      _deleted.addAll(_parseDeletedIds(diskRaw));
+      final diskProfiles = (diskRaw == null || diskRaw.trim().isEmpty)
+          ? const <ServerProfile>[]
+          : _parse(diskRaw);
+
       final merged = <String, ServerProfile>{};
-      for (final p in _readFromDisk()) {
+      for (final p in diskProfiles) {
         if (_deleted.contains(p.id)) continue;
         merged[p.id] = p;
       }
       for (final p in _profiles) {
-        merged[p.id] = p;
+        if (_deleted.contains(p.id)) continue;
+        // Override the on-disk copy only for profiles THIS instance actually
+        // changed (or newly created / not yet on disk). An unmodified profile
+        // this window merely holds must not overwrite another window's newer
+        // rename/port/origin edit.
+        if (_modified.contains(p.id) || !merged.containsKey(p.id)) {
+          merged[p.id] = p;
+        }
       }
       // Preserve this instance's order for the profiles it knows, then append
       // any it learned about from disk, so the list does not shuffle under the
@@ -195,29 +259,70 @@ class ProfileRegistry {
         for (final entry in merged.entries)
           if (!_profiles.any((p) => p.id == entry.key)) entry.value,
       ];
+      // Break any port collision the merge produced: two instances can each
+      // allocate the same free port before either writes (SPEC-50 D1), so the
+      // reconcile happens here, under the lock, on the merged set.
       _profiles
         ..clear()
-        ..addAll(ordered);
+        ..addAll(_dedupePorts(ordered));
 
       // Keep the newer on-disk selection unless this instance changed it.
       if (!_lastActiveTouched) {
-        _lastActiveId =
-            _parseLastActive(_fs.readOrNull(filePath)) ?? _lastActiveId;
+        _lastActiveId = _parseLastActive(diskRaw) ?? _lastActiveId;
       }
 
       final body = const JsonEncoder.withIndent('  ').convert({
         'profiles': [for (final p in _profiles) p.toJson()],
+        if (_deleted.isNotEmpty) 'deletedIds': (_deleted.toList()..sort()),
         if (_lastActiveId != null) 'lastActive': _lastActiveId,
       });
       _fs.writeAtomic(filePath, '$body\n');
+      // These edits are now persisted; a later unrelated save must not re-assert
+      // them over another window's newer change (the reverse lost-update).
+      _modified.clear();
     });
   }
 
-  /// Re-parses `profiles.json`, or an empty list when it is absent or corrupt.
-  List<ServerProfile> _readFromDisk() {
-    final raw = _fs.readOrNull(filePath);
-    if (raw == null || raw.trim().isEmpty) return const [];
-    return _parse(raw);
+  /// Reassigns any profile whose port duplicates an earlier one to a free port
+  /// in the dev range, so no two profiles ever claim the same port.
+  ///
+  /// Protected (legacy) profiles keep their port unconditionally — 7777 is the
+  /// shipped default and the one every device is paired against. A synchronous,
+  /// deterministic reassignment (no probe) is enough: it only has to make the
+  /// *set* internally consistent; a port also held by an external process is
+  /// still caught by the daemon's own `EADDRINUSE` path.
+  static List<ServerProfile> _dedupePorts(List<ServerProfile> profiles) {
+    final claimed = <int>{
+      for (final p in profiles)
+        if (p.isProtected) p.port,
+    };
+    final result = <ServerProfile>[];
+    for (final p in profiles) {
+      if (p.isProtected) {
+        result.add(p);
+        continue;
+      }
+      if (!claimed.contains(p.port)) {
+        claimed.add(p.port);
+        result.add(p);
+      } else {
+        final port = _firstFreeDevPort(claimed);
+        claimed.add(port);
+        result.add(p.copyWith(port: port));
+      }
+    }
+    return result;
+  }
+
+  /// The lowest dev-range port not in [claimed], wrapping to the range start.
+  static int _firstFreeDevPort(Set<int> claimed) {
+    for (var i = 0; i < kDevPortRangeLength; i++) {
+      final candidate = kDevPortRangeStart + i;
+      if (!claimed.contains(candidate)) return candidate;
+    }
+    // Every dev port is claimed (thousands of profiles): fall back to the start
+    // and let the daemon's EADDRINUSE path sort it out rather than throwing.
+    return kDevPortRangeStart;
   }
 
   /// Resolves the profile this executable should run against, creating one when
@@ -248,6 +353,7 @@ class ProfileRegistry {
         storage: ProfileStorage.legacy,
       );
       _profiles.insert(0, created);
+      _modified.add(created.id);
       return (profile: created, created: true);
     }
 
@@ -267,6 +373,7 @@ class ProfileRegistry {
       origin: repoRoot,
     );
     _profiles.add(created);
+    _modified.add(id);
     return (profile: created, created: true);
   }
 
@@ -289,6 +396,7 @@ class ProfileRegistry {
       storage: ProfileStorage.namespaced,
     );
     _profiles.add(created);
+    _modified.add(id);
     return created;
   }
 
@@ -299,6 +407,7 @@ class ProfileRegistry {
     final i = _profiles.indexWhere((p) => p.id == id);
     if (i < 0) return false;
     _profiles[i] = _profiles[i].copyWith(name: trimmed);
+    _modified.add(id);
     return true;
   }
 
@@ -321,6 +430,7 @@ class ProfileRegistry {
     final i = _profiles.indexWhere((p) => p.id == id);
     if (i < 0 || port <= 0 || port > 65535) return false;
     _profiles[i] = _profiles[i].copyWith(port: port);
+    _modified.add(id);
     return true;
   }
 
@@ -330,6 +440,7 @@ class ProfileRegistry {
     final i = _profiles.indexWhere((p) => p.id == id);
     if (i < 0) return false;
     _profiles[i] = _profiles[i].copyWith(origin: repoRoot);
+    _modified.add(id);
     return true;
   }
 

@@ -395,8 +395,9 @@ class _ProfileDetail extends ConsumerWidget {
   }
 }
 
-/// The delete row. Present only for a non-protected profile; disabled with a
-/// tooltip for the active one (switching is not wired yet).
+/// The delete row. Present only for a non-protected profile. For the active
+/// profile the button reads “Switch away & delete…” and runs that flow (a
+/// profile cannot be deleted from under itself), matching the overflow menu.
 class _DangerZone extends ConsumerWidget {
   const _DangerZone({required this.status, required this.isActive});
 
@@ -409,7 +410,7 @@ class _DangerZone extends ConsumerWidget {
     final deleteButton = OutlinedButton(
       style: OutlinedButton.styleFrom(foregroundColor: cs.error),
       onPressed: isActive
-          ? null
+          ? () => switchAwayAndDelete(context, ref, status.profile)
           : () => showProfileDeleteSheet(context, ref, status),
       child: Text(isActive ? 'Switch away & delete…' : 'Delete…'),
     );

@@ -36,6 +36,9 @@ class _FakeFs implements ProfileFileSystem {
     deleted.add(path);
     paths.remove(path);
   }
+
+  @override
+  String? resolveRealPath(String path) => null;
 }
 
 /// A [ProfileFileSystem] that throws a [FileSystemException] on a chosen store
@@ -61,6 +64,9 @@ class _ThrowingFs implements ProfileFileSystem {
 
   @override
   Future<void> deleteFile(String path) async => paths.remove(path);
+
+  @override
+  String? resolveRealPath(String path) => null;
 }
 
 MakitCliResolver _resolver() => MakitCliResolver(

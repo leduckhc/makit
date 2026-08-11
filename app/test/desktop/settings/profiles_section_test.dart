@@ -41,6 +41,8 @@ class _FakeProfileFs implements ProfileFileSystem {
   Future<void> deleteDirectory(String path) async => deleted.add(path);
   @override
   Future<void> deleteFile(String path) async => deleted.add(path);
+  @override
+  String? resolveRealPath(String path) => null;
 }
 
 const _homeDir = '/Users/test';
@@ -321,6 +323,37 @@ void main() {
     expect(find.widgetWithText(PopupMenuItem<String>, 'Stop'), findsNothing);
     expect(find.widgetWithText(PopupMenuItem<String>, 'Start'), findsNothing);
   });
+
+  testWidgets(
+    'the active profile detail delete button is enabled (switch away & delete)',
+    (tester) async {
+      // Regression: the danger-zone button was permanently disabled for the
+      // active profile even though it promises the switch-then-delete flow.
+      final w = _wiring(
+        profiles: [_dev(id: 'active-dev', name: 'Active', origin: null)],
+        activeId: 'active-dev',
+      );
+      await _pump(
+        tester,
+        controller: w.controller,
+        deleter: w.deleter,
+        lifecycle: w.lifecycle,
+      );
+
+      // Expand the profile's inline detail.
+      await tester.tap(find.byType(ListTile).first);
+      await tester.pumpAndSettle();
+
+      final button = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, 'Switch away & delete…'),
+      );
+      expect(
+        button.onPressed,
+        isNotNull,
+        reason: 'the active danger-zone button must run switch-away-&-delete',
+      );
+    },
+  );
 
   testWidgets('delete sheet names both what goes and what stays', (
     tester,

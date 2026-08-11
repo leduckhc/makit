@@ -89,7 +89,7 @@ class ServerProfile {
     final id = json['id'];
     final home = json['home'];
     if (id is! String || !isSafeProfileId(id)) return null;
-    if (home is! String || home.isEmpty) return null;
+    if (home is! String || !home.startsWith('/')) return null;
     final port = json['port'];
     final name = json['name'];
     final origin = json['origin'];

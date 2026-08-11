@@ -119,9 +119,11 @@ void main() {
     expect(Directory(profile.home).existsSync(), isFalse);
     expect(built.registry.byId('dev1'), isNull);
     // Persisted, not just in memory: the profile must not come back on relaunch.
-    final saved = File('${root.path}/.makit/profiles.json').readAsStringSync();
-    expect(saved, isNot(contains('dev1')));
-    expect(saved, contains('default'));
+    // (The id survives only as a `deletedIds` tombstone, so a stale window can't
+    // resurrect it — assert on the reloaded registry, not a raw substring.)
+    final reloaded = ProfileRegistry.load(makitRoot: '${root.path}/.makit');
+    expect(reloaded.byId('dev1'), isNull);
+    expect(reloaded.byId('default'), isNotNull);
     // The database was the bulk of it, so bytes freed must be non-trivial.
     expect(result.bytesFreed, greaterThan(0));
   });
@@ -553,6 +555,39 @@ void main() {
       File('${outside.path}/keepme.txt').existsSync(),
       isTrue,
       reason: 'recursive delete followed a symlink out of the namespace',
+    );
+  });
+
+  test('an ancestor symlink out of the namespace is refused', () async {
+    // The Critical case: a *parent* component is a symlink, so a lexically-
+    // contained home (`~/.makit/profiles/victim`) resolves to an external dir.
+    // Directory.delete follows ancestor symlinks, so the guard must resolve
+    // them and re-check containment rather than trust the lexical path.
+    final external = Directory('${root.path}/outside/victim')
+      ..createSync(recursive: true);
+    File('${external.path}/keepme.txt').writeAsStringSync('keep');
+
+    // `~/.makit/profiles` -> `~/outside`, so `.../profiles/victim` is external.
+    Directory('${root.path}/.makit').createSync(recursive: true);
+    Link('${root.path}/.makit/profiles').createSync('${root.path}/outside');
+    final home = '${root.path}/.makit/profiles/victim';
+
+    final profile = ServerProfile(
+      id: 'victim',
+      name: 'victim',
+      kind: ProfileKind.dev,
+      home: home,
+      port: 7803,
+      storage: ProfileStorage.namespaced,
+    );
+
+    final result = await build(profile).deleter.delete(profile);
+
+    expect(result.outcome, ProfileDeletionOutcome.refusedUnsafePath);
+    expect(
+      File('${external.path}/keepme.txt').existsSync(),
+      isTrue,
+      reason: 'delete followed an ancestor symlink out of the namespace',
     );
   });
 }

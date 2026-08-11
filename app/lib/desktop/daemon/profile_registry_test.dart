@@ -129,6 +129,25 @@ void main() {
       expect(ServerProfile.fromJson({'id': '', 'home': '/h'}), isNull);
     });
 
+    test(
+      'fromJson rejects a relative home (must be an absolute MAKIT_HOME)',
+      () {
+        // A relative home resolves against the spawned CLI's cwd, putting the
+        // daemon and its data in the wrong place.
+        expect(ServerProfile.fromJson({'id': 'x', 'home': '.makit'}), isNull);
+        expect(
+          ServerProfile.fromJson({'id': 'x', 'home': 'relative/path'}),
+          isNull,
+        );
+        expect(ServerProfile.fromJson({'id': 'x', 'home': ''}), isNull);
+        // An absolute home is accepted.
+        expect(
+          ServerProfile.fromJson({'id': 'x', 'home': '/abs/home'}),
+          isNotNull,
+        );
+      },
+    );
+
     test('fromJson repairs a missing name/port/storage', () {
       final p = ServerProfile.fromJson({'id': 'x', 'home': '/h'})!;
       expect(p.name, 'x');
@@ -422,6 +441,168 @@ void main() {
       expect(onDisk.byId(_dev.id), isNull);
     });
 
+    test('an unmodified profile does not revert another window\'s rename', () {
+      // Window A renames X and saves; window B (loaded before) saves an
+      // unrelated change. B must not write its stale copy of X back over A's
+      // rename (SPEC-50 D1 lost-update).
+      final fs = _MemoryFs();
+      final a = ProfileRegistry(
+        makitRoot: kRoot,
+        probe: _allFree,
+        fs: fs,
+        profiles: const [_legacy, _dev],
+      );
+      final b = ProfileRegistry(
+        makitRoot: kRoot,
+        probe: _allFree,
+        fs: fs,
+        profiles: const [_legacy, _dev],
+      );
+
+      a.rename(_dev.id, 'Renamed');
+      a.save();
+
+      // B never touched _dev, but still holds it; its unrelated save must keep
+      // A's rename rather than clobber it.
+      b.rename('default', 'Work');
+      b.save();
+
+      final onDisk = ProfileRegistry.load(
+        makitRoot: kRoot,
+        fs: _MemoryFs(fs.written['$kRoot/profiles.json']),
+        probe: _allFree,
+      );
+      expect(onDisk.byId(_dev.id)!.name, 'Renamed');
+      expect(onDisk.byId('default')!.name, 'Work');
+    });
+
+    test('a deletion by another window is honoured, not resurrected', () {
+      // A deletes X (persisting a tombstone) after B loaded X. B's later save
+      // must not bring X back — its on-disk stores are already gone.
+      final fs = _MemoryFs();
+      final a = ProfileRegistry(
+        makitRoot: kRoot,
+        probe: _allFree,
+        fs: fs,
+        profiles: const [_legacy, _dev],
+      );
+      final b = ProfileRegistry(
+        makitRoot: kRoot,
+        probe: _allFree,
+        fs: fs,
+        profiles: const [_legacy, _dev],
+      );
+      a.save();
+
+      a.remove(_dev.id);
+      a.save(); // writes deletedIds: [_dev.id]
+
+      // B still lists _dev and saves an unrelated edit.
+      b.rename('default', 'Work');
+      b.save();
+
+      final onDisk = ProfileRegistry.load(
+        makitRoot: kRoot,
+        fs: _MemoryFs(fs.written['$kRoot/profiles.json']),
+        probe: _allFree,
+      );
+      expect(
+        onDisk.byId(_dev.id),
+        isNull,
+        reason: 'a stale window resurrected a deleted profile',
+      );
+    });
+
+    test('a duplicate port on load is reassigned to a free one', () {
+      // A hand-edited (or fallback-7777) namespaced profile that collides with
+      // the legacy port must be moved off it, or its daemon fails to bind.
+      final raw = jsonEncode({
+        'profiles': [
+          {
+            'id': 'default',
+            'home': '/h/.makit',
+            'name': 'Work',
+            'storage': 'legacy',
+            'port': 7777,
+          },
+          {
+            'id': 'clash',
+            'home': '/h/.makit-dev/clash',
+            'name': 'Clash',
+            'storage': 'namespaced',
+            'port': 7777,
+          },
+        ],
+      });
+      final reg = ProfileRegistry.load(
+        makitRoot: kRoot,
+        fs: _MemoryFs(raw),
+        probe: _allFree,
+      );
+      expect(reg.byId('default')!.port, 7777, reason: 'legacy keeps its port');
+      expect(reg.byId('clash')!.port, isNot(7777));
+    });
+
+    test('a second legacy profile is dropped on load (D2)', () {
+      final raw = jsonEncode({
+        'profiles': [
+          {'id': 'default', 'home': '/h/.makit', 'storage': 'legacy'},
+          {'id': 'intruder', 'home': '/h/.makit2', 'storage': 'legacy'},
+        ],
+      });
+      final reg = ProfileRegistry.load(
+        makitRoot: kRoot,
+        fs: _MemoryFs(raw),
+        probe: _allFree,
+      );
+      expect(reg.byId('default'), isNotNull);
+      expect(
+        reg.byId('intruder'),
+        isNull,
+        reason: 'two legacy profiles would share creds and prefs',
+      );
+    });
+
+    test(
+      'two instances that allocate the same port are reconciled on save',
+      () async {
+        // Each instance probes with only its own list visible, so both can pick
+        // the same free port. save() must detect the post-merge collision and
+        // move one, or a daemon fails with EADDRINUSE next launch.
+        final fs = _MemoryFs();
+        final a = ProfileRegistry(
+          makitRoot: kRoot,
+          probe: _allFree,
+          fs: fs,
+          profiles: const [_legacy],
+        );
+        final b = ProfileRegistry(
+          makitRoot: kRoot,
+          probe: _allFree,
+          fs: fs,
+          profiles: const [_legacy],
+        );
+
+        final pa = await a.createUserProfile(name: 'Alpha');
+        final pb = await b.createUserProfile(name: 'Beta');
+        expect(pa.port, pb.port, reason: 'the scenario needs them to collide');
+
+        a.save();
+        b.save();
+
+        final onDisk = ProfileRegistry.load(
+          makitRoot: kRoot,
+          fs: _MemoryFs(fs.written['$kRoot/profiles.json']),
+          probe: _allFree,
+        );
+        final ports = onDisk.profiles.map((p) => p.port).toList();
+        expect(
+          ports.toSet().length,
+          ports.length,
+          reason: 'no two profiles may share a port after the merge',
+        );
+      },
+    );
     // The id is interpolated into a filesystem path (the secure-store namespace
     // file) and into preference keys, and profiles.json is user-writable.
     test('an id that could escape its directory is dropped', () {

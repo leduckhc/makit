@@ -126,13 +126,18 @@ class ProfileLifecycle {
   /// `false` if it is still alive when time runs out — the caller must then abort
   /// the delete. When the pid cannot be read (older daemon, race), it falls back
   /// to the socket-liveness check ([isRunning]) so a profile is never made
-  /// permanently undeletable.
+  /// permanently undeletable. If the stop command itself fails (CLI not found,
+  /// permission error), returns `false` immediately without polling.
   Future<bool> stopAndConfirm(
     ServerProfile profile, {
     Duration timeout = _kDefaultStopTimeout,
   }) async {
     final pid = _readPid(profile);
-    await stop(profile);
+    final stopResult = await stop(profile);
+    if (stopResult.outcome == DaemonActionOutcome.failed ||
+        stopResult.outcome == DaemonActionOutcome.cliNotFound) {
+      return false;
+    }
     var elapsed = Duration.zero;
 
     // Phase 1: wait for the control socket to stop answering.

@@ -86,6 +86,12 @@ abstract interface class ProfileFileSystem {
 
   /// Deletes the file at [path]. A no-op when absent.
   Future<void> deleteFile(String path);
+
+  /// Resolves [path] to its canonical real path, following symlinks in every
+  /// ancestor component. Returns `null` when the path does not exist or cannot
+  /// be resolved — the destructive guard treats “cannot resolve” as “no symlink
+  /// to verify” and falls back to the lexical check.
+  String? resolveRealPath(String path);
 }
 
 /// [ProfileFileSystem] over `dart:io`.
@@ -143,6 +149,19 @@ class RealProfileFileSystem implements ProfileFileSystem {
   Future<void> deleteFile(String path) async {
     final file = File(path);
     if (file.existsSync()) await file.delete();
+  }
+
+  @override
+  String? resolveRealPath(String path) {
+    try {
+      return Directory(path).resolveSymbolicLinksSync();
+    } on FileSystemException {
+      try {
+        return File(path).resolveSymbolicLinksSync();
+      } on FileSystemException {
+        return null;
+      }
+    }
   }
 }
 
@@ -386,6 +405,30 @@ class ProfileDeleter {
     );
     if (sharers.isNotEmpty) {
       return 'home "$home" is also claimed by "${sharers.first.id}" — refused';
+    }
+
+    // Rule 4: the *symlink-resolved* path must also be contained. The lexical
+    // rules above are defeated by a symlinked ancestor: `~/.makit/profiles` may
+    // itself be a link to an external directory, so a recursive delete would
+    // follow it and destroy data outside `~/.makit*`. `Directory.delete` follows
+    // ancestor symlinks, so the guard must too. Both sides are resolved so a
+    // symlinked home dir (e.g. macOS temp `/var` → `/private/var`) is not a
+    // false positive. "Cannot resolve" (absent path) falls back to the lexical
+    // rules, since there is then nothing on disk to follow.
+    final real = fs.resolveRealPath(profile.home);
+    if (real != null) {
+      final realHome = _canonical(real);
+      final resolvedBase = fs.resolveRealPath(homeDir);
+      final realBase = resolvedBase != null ? _canonical(resolvedBase) : base;
+      final insideReal =
+          realHome != null &&
+          realBase != null &&
+          (realHome.startsWith('$realBase/.makit/') ||
+              realHome.startsWith('$realBase/.makit-dev/'));
+      if (!insideReal) {
+        return 'home "${profile.home}" resolves via symlink to "$real", '
+            'outside ~/.makit/ or ~/.makit-dev/ — refused';
+      }
     }
     return null;
   }
