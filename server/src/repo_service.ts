@@ -229,7 +229,16 @@ async function repairVanishedTargets(
   // it just is not here yet); a wrong redirect is unrecoverable data loss of the
   // user's intent. Never trade the second for the first.
   const remotes = await listRemoteBranchNames(repoPath);
-  const live = new Set<string>([...locals, ...remotes]);
+  const live = new Set<string>(locals);
+  for (const b of remotes) {
+    // BOTH spellings. `listRemoteBranchNames` strips the prefix, but a stored
+    // target (and `resolveDefaultBranch`'s answer for a remote-only branch) is the
+    // QUALIFIED `origin/<b>` — git cannot resolve a bare name against
+    // `refs/remotes/origin/`. Recording only one form left `resolveThroughChain`
+    // rejecting a perfectly live default as "gone" and skipping the repair.
+    live.add(b);
+    live.add(`origin/${b}`);
+  }
   for (const e of entries) {
     if (!e.branch) continue;
     const pr = lastKnown(repoPath, e.branch);

@@ -379,3 +379,37 @@ test("repointVanishedTargets: leaves a broken target in place when nothing resol
   });
   assert.deepEqual(writes, [], "no default to fall back to: surface targetResolved:false instead");
 });
+
+test("repointVanishedTargets: repairs to a remote-only, origin/-qualified default", () => {
+  // `resolveDefaultBranch` returns a remote-only default QUALIFIED (`origin/release`)
+  // because git cannot resolve a bare name against `refs/remotes/origin/`, while
+  // `listRemoteBranchNames` strips the prefix. The caller therefore records BOTH
+  // spellings in `live`; with only the bare one, `resolveThroughChain` rejected a
+  // live default as "gone" and the repair was skipped, leaving a broken target.
+  const writes = repointVanishedTargets({
+    here: new Set(["/wt"]),
+    persisted: { "/wt": { target: "feat/gone" } },
+    live: new Set(["release", "origin/release"]),
+    branchTarget: {},
+    ownBranch: { "/wt": "feat/child" },
+    defaultBranch: "origin/release",
+  });
+  assert.deepEqual(writes, [
+    { path: "/wt", target: "origin/release", retargetedFrom: "feat/gone" },
+  ]);
+});
+
+test("repointVanishedTargets: a default absent from `live` is never invented", () => {
+  // Pins WHY the caller must record both spellings: a `live` set carrying only the
+  // bare `release` cannot honour an `origin/release` default, and inventing a
+  // destination is worse than reporting `targetResolved: false`.
+  const writes = repointVanishedTargets({
+    here: new Set(["/wt"]),
+    persisted: { "/wt": { target: "feat/gone" } },
+    live: new Set(["release"]),
+    branchTarget: {},
+    ownBranch: { "/wt": "feat/child" },
+    defaultBranch: "origin/release",
+  });
+  assert.deepEqual(writes, []);
+});

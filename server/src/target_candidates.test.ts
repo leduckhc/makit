@@ -358,3 +358,25 @@ test("resolveThroughChain refuses a default branch that does not exist either", 
     null,
   );
 });
+
+test("a remote-only default branch is still offered, and grouped as the default", async () => {
+  // `resolveDefaultBranch` returns a remote-only override QUALIFIED (`origin/x`),
+  // because git cannot resolve a bare name against `refs/remotes/origin/`. Building
+  // the candidate list from local branches alone dropped it, so the picker could
+  // not offer the very branch every diff and new worktree measures against.
+  const s = await makeStack();
+  try {
+    const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: s.repo }).toString().trim();
+    execFileSync("git", ["remote", "add", "origin", "https://example.test/x/y.git"], {
+      cwd: s.repo,
+    });
+    execFileSync("git", ["update-ref", "refs/remotes/origin/release", sha], { cwd: s.repo });
+    const cands = await targetCandidates(s.repo, s.child, "release");
+    const def = cands.find((c) => c.group === "default");
+    assert.equal(def?.branch, "origin/release", "the remote-only default is offered");
+    assert.equal(def?.onRemote, true, "it is on the remote by definition, so selectable");
+    assert.equal(def?.isSelf, false);
+  } finally {
+    s.cleanup();
+  }
+});

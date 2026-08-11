@@ -131,10 +131,19 @@ export async function targetCandidates(
   if (locals.length === 0) return [];
 
   const self = trees.find((t) => t.path === worktreePath)?.branch ?? null;
+  // The resolved default may be a remote-only branch, which `resolveDefaultBranch`
+  // returns QUALIFIED (`origin/release`) because git cannot resolve a bare name
+  // against `refs/remotes/origin/`. It is therefore absent from `locals`, and
+  // building the list from `locals` alone dropped it entirely — no candidate got
+  // the `default` group and the picker could not offer the very branch every diff
+  // and new worktree measures against. Offer it explicitly.
+  const remoteOnlyDefault =
+    defaultBranch && !locals.includes(defaultBranch) ? defaultBranch : null;
+  const selectable = remoteOnlyDefault ? [...locals, remoteOnlyDefault] : locals;
   // Candidate order matters: `closestAncestorBranch` breaks distance ties by it,
   // and the repo default is the tie we most want to win.
   const ordered = [
-    ...(defaultBranch && locals.includes(defaultBranch) ? [defaultBranch] : []),
+    ...(defaultBranch && selectable.includes(defaultBranch) ? [defaultBranch] : []),
     ...locals.filter((b) => b !== defaultBranch),
   ];
   const forkedFrom = await closestAncestorBranch(worktreePath, ordered);
@@ -159,7 +168,7 @@ export async function targetCandidates(
     other: 3,
   };
 
-  const candidates: TargetCandidate[] = locals.map((branch) => ({
+  const candidates: TargetCandidate[] = selectable.map((branch) => ({
     branch,
     group: groupOf(branch),
     // The push-state gate exists because a PULL REQUEST base must live on the
@@ -173,7 +182,9 @@ export async function targetCandidates(
     // repo whose only remote is `upstream` has a remote but no origin branches, so
     // an "any remote" gate would switch the rule ON against an EMPTY set and
     // disable every candidate.
-    onRemote: originExists ? onRemote.has(branch) : true,
+    // A remote-only default is `origin/<b>`, which is by definition on the remote
+    // but never in the stripped `onRemote` set — treat it as pushed.
+    onRemote: originExists ? branch === remoteOnlyDefault || onRemote.has(branch) : true,
     isSelf: branch === self,
   }));
 
