@@ -1,6 +1,6 @@
 # SPEC-48 — Per-repo settings: one Settings section per repository
 
-**Status:** Draft (rev 3.2) — editable rows; badges cut; provider gains None · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
+**Status:** P1 Implemented (rev 3.2) · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
 **Depends on:** SPEC-11 (repo-centric home — `RepoDTO`, `repos.snapshot`, the repo card and its
 `dotsThree` menu), SPEC-19 (`SettingsResetButton` as the one shared "reset to default" widget, and
 `SettingsGroup` as the grouped-list idiom), and the forge-detection work already on this branch
@@ -321,3 +321,42 @@ different strings and that the pending one is absent when there is no remote.
 This adds one fact to the DTO — `hasRemote` — which the server already computes (`git remote get-url
 origin` runs in the routing path today) and currently throws away. And it makes P2's write set five:
 worktree root, logo, root path, default branch, provider choice.
+
+
+---
+
+## P1 implemented — results
+
+| Piece | Where | Proof |
+| --- | --- | --- |
+| Settings model, resolution, validation | `server/src/repo_settings.ts` | 21 tests |
+| Lossless persistence, unknown keys included | `project-store.ts`, `manager.ts` | 3 round-trip tests |
+| Per-repo worktree root, **all three consumers** | `manager.worktreeRootFor` → `addWorktree`, `addWorktreeForPr`, `uniqueWorktreeDir` | 5 tests, incl. a collision that only exists under the override |
+| Host-only writes | `ws/commands/repo_settings.ts`, gated on `WsClient.isLocal` | 14 tests |
+| Forge decision record + inspector port | `forge/router.ts` | 6 tests |
+| Settings on the wire | `protocol.ts` `RepoSettingsDTO`, `repo_service.ts`, `manager.settingsDtoFor` | typed DTO |
+| Wire → view mapping | `repoSettingsViewFor` | 11 tests |
+| Dynamic sidebar sections | `sectionsFor(repos)`, `settings_window`, `settings_nav_pane` | 8 tests |
+| The section itself | `repository_section.dart`, `repository_settings_page.dart` | 23 tests |
+
+**Server 1429/1429, typecheck clean. `flutter analyze` clean.** Every group above had at
+least one bite proven by reverting the production line: the loopback gate, the override lookup, the
+collision-check root, the pinned filter, the nav-pane search threading, the read-only gate, and reset's
+return to `Auto`.
+
+### Two bugs the tests found that review did not
+
+- **The `..` rejection was dead code.** It split a *normalised* copy of the path, and `normalize()`
+  collapses `..`. The test could not catch it either, because `path.join` collapses too — the case only
+  became reachable once the test built the string by concatenation. A traversal would have been rejected
+  by the containment rule instead, with a misleading message.
+- **`realpath` fails on a path that does not exist**, so canonicalisation had to walk to the nearest
+  existing ancestor. Without that, naming a worktree root before creating it — the common case — would
+  have been refused.
+
+### What P1 does not do, and is honest about on screen
+
+`Root path` shows a notice rather than an edit: re-pointing a project needs the daemon to re-check it is
+a git repo and re-run detection, and getting that wrong silently detaches a project from its sessions.
+The provider choice is **stored and served but does not yet re-route** — `D3″` demands it drive routing,
+auth lookup and PR rendering, which is P2. Lifecycle scripts remain P3 behind `D13`.

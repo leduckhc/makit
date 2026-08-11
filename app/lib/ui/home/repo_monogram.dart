@@ -13,13 +13,18 @@ import '../../app/theme.dart';
 /// drawn marks for the same repo drift in colour and letter, and the Settings
 /// sidebar plus the repo-centric home are exactly two such places (SPEC-48 D15).
 class RepoMonogram extends StatelessWidget {
-  const RepoMonogram({required this.name, this.size = 22, super.key});
+  const RepoMonogram({required this.name, this.size = 22, this.hue, super.key});
 
   /// The repository name. Only its first character is drawn.
   final String name;
 
   /// Edge length of the (square, rounded) mark.
   final double size;
+
+  /// Explicit palette index, when the user has chosen one. Null derives it from
+  /// the name — which is the default precisely because two repos sharing a hue is
+  /// the only reason to choose.
+  final int? hue;
 
   /// Hue for [name], stable across runs and devices.
   ///
@@ -50,6 +55,13 @@ class RepoMonogram extends StatelessWidget {
     return trimmed.contains(RegExp(r'[A-Z]')) ? first.toUpperCase() : first;
   }
 
+  /// Palette entry [i], wrapped so a picker can show the choices without the
+  /// palette becoming public mutable state.
+  static Color paletteAt(int i) => _palette[i % _palette.length];
+
+  /// How many hues a picker may offer.
+  static int get paletteLength => _palette.length;
+
   static const List<Color> _palette = [
     Color(0xFF4ADE80),
     Color(0xFFA371F7),
@@ -61,13 +73,13 @@ class RepoMonogram extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hue = hueFor(name);
+    final tint = hue == null ? hueFor(name) : paletteAt(hue!);
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: hue,
+        color: tint,
         borderRadius: BorderRadius.circular(kRadius6),
       ),
       child: Text(

@@ -790,6 +790,27 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
+  /// Write per-repo settings (SPEC-48). Fire-and-forget: the server persists, then
+  /// re-broadcasts the repos snapshot, and the settings page re-renders from that.
+  ///
+  /// No optimistic local state on purpose — a write refused because this client is
+  /// not on loopback must not leave the UI showing a value the daemon rejected.
+  void setRepoSettings(String projectId, Map<String, Object?> settings) {
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.cmd,
+            id: 'rs-${DateTime.now().microsecondsSinceEpoch}',
+            body: {
+              'kind': 'repo.settings.set',
+              'projectId': projectId,
+              'settings': settings,
+            },
+          ),
+        );
+  }
+
   /// Spawn a fresh agent session in the given project, in the worktree the
   /// caller already resolved (creating it first when the user asked for a new
   /// branch or a PR). Resolves with the new session id once the server acks.
