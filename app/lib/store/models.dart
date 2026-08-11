@@ -1237,6 +1237,8 @@ class Session {
     this.parentId,
     this.handoffReason,
     this.origin,
+    this.agentSessionId,
+    this.transcriptPath,
     this.queued = const [],
   });
 
@@ -1296,6 +1298,18 @@ class Session {
   /// Null on pre-SPEC-46 rows; a plain string so an unknown value never throws.
   final String? origin;
 
+  /// The underlying agent's own session id — pi's ACP `sessionId` (which is pi's
+  /// OWN session uuid, reused by `pi-acp`) or codex's `threadId`. Null for a
+  /// draft, for a back end with no native session concept, and for any server
+  /// older than SPEC-52 (D1).
+  final String? agentSessionId;
+
+  /// Absolute path to the transcript on the SERVER's host, resolved server-side
+  /// (D2/D3) — the app never derives it, because the slug algorithm is pi's and
+  /// the app cannot stat the server's filesystem to check itself. Null for codex
+  /// in P1 (D16) and whenever no file was found (D9).
+  final String? transcriptPath;
+
   /// Messages submitted while the agent was busy that could not be steered into
   /// the running turn (SPEC-35), oldest first. They are delivered one per idle
   /// transition and can be cancelled until then.
@@ -1319,6 +1333,8 @@ class Session {
     String? parentId,
     String? handoffReason,
     String? origin,
+    String? agentSessionId,
+    String? transcriptPath,
     List<QueuedMessage>? queued,
   }) => Session(
     id: id,
@@ -1341,6 +1357,8 @@ class Session {
     parentId: parentId ?? this.parentId,
     handoffReason: handoffReason ?? this.handoffReason,
     origin: origin ?? this.origin,
+    agentSessionId: agentSessionId ?? this.agentSessionId,
+    transcriptPath: transcriptPath ?? this.transcriptPath,
     queued: queued ?? this.queued,
   );
 }

@@ -912,6 +912,36 @@ export interface SessionDTO {
   handoffReason?: string;
   /** SPEC-46 (D10): which client created this session. Absent means "app" (pre-SPEC-46 rows). */
   origin?: SessionOrigin;
+  /**
+   * The underlying agent's OWN session id — the native ACP `sessionId` or codex
+   * `threadId` (SPEC-52 D1). For pi this is pi's own session uuid, because
+   * `pi-acp` reuses it as the ACP session id, so it is exactly the value pi's
+   * `/session` prints and `pi --session` accepts.
+   *
+   * Optional on the wire, deliberately: a newer app paired with an older server
+   * must render one fewer row rather than a fabricated one. Same rule as
+   * `createdAt` (SPEC-47 D12). Undefined for a draft and for a back end with no
+   * native session concept (`DetachedAdapter`, the stub).
+   *
+   * Already persisted through `SessionMeta` (SPEC-29), so a CLOSED session still
+   * reports it — which is the point: yesterday's session id is still copyable.
+   */
+  agentSessionId?: string;
+  /**
+   * Absolute path to this session's transcript on the SERVER's host, or
+   * undefined when none was resolved (SPEC-52 D3).
+   *
+   * Resolved server-side only (D2): the slug algorithm is pi's and lives in
+   * `pi-sessions.ts`, and the app cannot stat this filesystem to check itself.
+   * Absolute rather than `~`-relative (D4) because the receiver is another
+   * agent's shell or prompt, and because the app cannot know this host's home
+   * directory. Undefined for codex in P1 (D16).
+   *
+   * NOTE (D21): this discloses the host's filesystem layout, including its
+   * username, to any paired device — accepted under the same pairing trust model
+   * that already carries `worktreePath`, and read-only in that direction.
+   */
+  transcriptPath?: string;
 }
 
 /**

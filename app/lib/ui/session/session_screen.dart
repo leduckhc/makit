@@ -27,6 +27,7 @@ import 'navigator/message_navigator_overlay.dart';
 import 'navigator/messages_sheet.dart';
 import 'navigator/transcript_jumper.dart';
 import 'session_pr_chip.dart';
+import 'session_identity.dart';
 import 'transcript_list.dart';
 import '../../app/routes.dart';
 import '../widgets/pr_signals.dart';
@@ -546,6 +547,16 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   sessionId: widget.sessionId,
                   jumper: _jumper,
                 );
+              case 'details':
+                // Reads state the client already holds — not capability gated,
+                // so grouped with Rename / My messages (D13). `desktop: false`
+                // for the mobile bottom sheet; `sessionId` so the open panel
+                // watches and fills in live (D19).
+                showSessionIdentity(
+                  context: context,
+                  desktop: false,
+                  sessionId: widget.sessionId,
+                );
               case 'close':
                 _confirmClose();
             }
@@ -579,6 +590,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 value: 'messages',
                 icon: PhosphorIconsLight.listMagnifyingGlass,
                 label: 'My messages',
+              ),
+              // SPEC-52 D13: the identity panel's mobile door. Grouped with
+              // Rename / My messages because it too reads state the client
+              // already holds (the makit id at minimum) and is not capability
+              // gated — it works on every agent.
+              themedMenuItem(
+                value: 'details',
+                icon: PhosphorIconsLight.fingerprint,
+                label: 'Session details',
               ),
               if (canModel)
                 themedMenuItem(

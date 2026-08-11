@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' hide Tab, Split;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -7,6 +8,7 @@ import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
+import '../../ui/session/session_identity.dart';
 import '../../ui/widgets/menu_item.dart';
 import 'desktop_chat_pane.dart';
 import 'groups/agent_picker.dart';
@@ -665,9 +667,11 @@ class _TabChip extends ConsumerWidget {
     );
   }
 
-  /// Tab context menu (right-click / long-press). One item — "Rename session"
-  /// — styled to the design system's primary body scale (`bodyMedium` text
-  /// with a matching 16px glyph).
+  /// Tab context menu (right-click / long-press): **Rename session** and
+  /// **Copy session id**. Deliberately NOT a *Session details…* item (D13): a
+  /// third door onto the same sheet, one pixel from the pane-header kebab on the
+  /// same platform, was cut on review. **Copy session id** stays because it is a
+  /// different job — right-click → one click → the bare id, no dialog.
   Future<void> _showContextMenu(
     BuildContext context,
     WidgetRef ref,
@@ -678,6 +682,23 @@ class _TabChip extends ConsumerWidget {
     if (overlayState == null) return;
     final overlayBox = overlayState.context.findRenderObject();
     if (overlayBox is! RenderBox) return;
+    // Resolved before the `showMenu` await (SPEC-48 D3): `ref` dies with its
+    // widget, and the copy path reports its outcome after an await.
+    final status = ref.status;
+    // The identity is hoisted for the SAME reason, and it is not optional care:
+    // this menu lives in the Navigator's overlay, so it outlives the tab chip
+    // that opened it. Close the tab while the menu is open — a server snapshot
+    // dropping the session does it for real — and a `ref.read` down in the
+    // `copyId` branch would run on a dead `ref` and throw `Cannot use "ref"
+    // after the widget was disposed`, i.e. crash instead of copying.
+    //
+    // The cost is that the id is sampled at menu-open rather than at click. That
+    // is sub-second for a right-click → click, and it is the RIGHT trade here:
+    // the live-filling surface is the panel, which watches (D19). Rejected
+    // alternative: guarding the late read with `context.mounted`, which keeps the
+    // read fresh but leaves `ref` use after an await — the hazard SPEC-48 D3
+    // exists to remove.
+    final identity = ref.read(sessionIdentityProvider(sessionId));
     final selected = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
@@ -691,8 +712,47 @@ class _TabChip extends ConsumerWidget {
           icon: PhosphorIconsLight.pencilSimple,
           label: 'Rename session',
         ),
+        themedMenuItem(
+          value: 'copyId',
+          icon: PhosphorIconsLight.copy,
+          label: 'Copy session id',
+        ),
       ],
     );
+    if (selected == 'copyId') {
+      // The BARE agent session id (D6), not `sessionIdentityText` — that whole
+      // label:value payload is `Copy all`'s job in the panel. No dialog.
+      final id = identity.agentSessionId;
+      if (id == null) {
+        status.warning(
+          'No agent session id yet',
+          source: StatusSources.session,
+          sessionId: sessionId,
+        );
+        return;
+      }
+      // A clipboard write can throw for real (another process holds it on
+      // Windows; the host denies it). Unreported, the user gets neither the id
+      // nor a reason. Same contract as the panel's `Copy all` and `/session id`.
+      try {
+        await Clipboard.setData(ClipboardData(text: id));
+      } catch (e) {
+        status.failure(
+          'Could not copy session id',
+          error: e,
+          source: StatusSources.session,
+          sessionId: sessionId,
+        );
+        return;
+      }
+      status.info(
+        'Session id copied',
+        source: StatusSources.session,
+        detail: id,
+        sessionId: sessionId,
+      );
+      return;
+    }
     if (selected != 'rename' || !context.mounted) return;
     await handleClientCommand(
       '/name',

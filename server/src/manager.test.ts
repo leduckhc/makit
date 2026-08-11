@@ -2877,3 +2877,143 @@ test("reopenSession on an already-open session is a no-op", async () => {
     store.close();
   }
 });
+
+// --- SPEC-52 C1b: agentSessionId + transcriptPath in the projected DTO ---------
+
+// A real UUIDv7 pi session id (see transcript-path.test.ts for the collision pair).
+const SPEC51_ID = "019fa9f4-443d-7d86-8f4c-d9c4988ddf4f";
+
+/** Seed a pi transcript for `cwd` named `<ts>_<id>.jsonl`; returns its path. */
+function seedPiTranscript(agentDir: string, cwd: string, id: string): string {
+  const dir = piSessionsDir(cwd, agentDir);
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `2026-01-01T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(
+    path,
+    JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd }) + "\n",
+  );
+  return path;
+}
+
+/** Run `body` with a throwaway MAKIT_PI_AGENT_DIR, restoring + cleaning after. */
+function withSpec51AgentDir(body: (agentDir: string) => void): void {
+  const agentDir = mkdtempSync(join(tmpdir(), "makit-c1b-"));
+  const prev = process.env.MAKIT_PI_AGENT_DIR;
+  process.env.MAKIT_PI_AGENT_DIR = agentDir;
+  try {
+    body(agentDir);
+  } finally {
+    if (prev === undefined) delete process.env.MAKIT_PI_AGENT_DIR;
+    else process.env.MAKIT_PI_AGENT_DIR = prev;
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+}
+
+test("listSessions resolves transcriptPath from the WORKTREE slug, not the project slug (SPEC-52 D3)", () => {
+  withSpec51AgentDir((agentDir) => {
+    const store = new SqliteEventStore();
+    const projectPath = "/repo/root";
+    const worktreePath = "/repo/root/.wt/feat-x";
+    // The SAME id is seeded under BOTH slugs: a project-slug resolver would find
+    // the decoy, so the test can only pass if the worktree slug is used.
+    seedPiTranscript(agentDir, projectPath, SPEC51_ID); // decoy
+    const wtFile = seedPiTranscript(agentDir, worktreePath, SPEC51_ID);
+    store.saveSession({
+      id: "sess-wt",
+      projectId: "proj-x",
+      agent: "pi",
+      title: "wt work",
+      status: "idle",
+      policy: "ask-on-risky",
+      createdAt: 1,
+      lastActivityAt: 2,
+      lastPreview: "",
+      agentSessionId: SPEC51_ID,
+      branch: "feat-x",
+      worktreePath,
+    });
+    try {
+      const mgr = new SessionManager({ projects: [{ id: "proj-x", path: projectPath }], store });
+      const dto = mgr.listSessions().find((d) => d.id === "sess-wt")!;
+      assert.equal(dto.transcriptPath, wtFile);
+    } finally {
+      store.close();
+    }
+  });
+});
+
+test("listSessions projects transcriptPath into the DTO (SPEC-52)", () => {
+  const store = new SqliteEventStore();
+  // A resumeSessionPath is authoritative and dir-independent, so this proves the
+  // whole path-into-DTO wiring without depending on a slug lookup.
+  seedColdSession(store, "sess-path", { agentSessionId: "pi-x", resumeSessionPath: "/disk/transcript.jsonl" });
+  try {
+    const mgr = new SessionManager({ projects: [], store });
+    const dto = mgr.listSessions().find((d) => d.id === "sess-path")!;
+    assert.equal(dto.transcriptPath, "/disk/transcript.jsonl");
+  } finally {
+    store.close();
+  }
+});
+
+test("listSessions projects agentSessionId into the DTO (SPEC-52)", () => {
+  const store = new SqliteEventStore();
+  seedColdSession(store, "sess-id", { agentSessionId: "pi-42" });
+  try {
+    const mgr = new SessionManager({ projects: [], store });
+    const dto = mgr.listSessions().find((d) => d.id === "sess-id")!;
+    assert.equal(dto.agentSessionId, "pi-42");
+  } finally {
+    store.close();
+  }
+});
+
+test("a draft projects neither agentSessionId nor transcriptPath (SPEC-52 D9)", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-c1b-draft-"));
+  try {
+    const mgr = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = mgr.listProjects()[0].id;
+    const draft = await mgr.spawnPendingSession(projectId);
+    const dto = mgr.listSessions().find((d) => d.id === draft.id)!;
+    assert.equal(dto.agentSessionId, undefined);
+    assert.equal(dto.transcriptPath, undefined);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a closed/cold session still projects its agentSessionId (SPEC-29 persistence)", async () => {
+  const store = new SqliteEventStore();
+  seedColdSession(store, "sess-closed", { agentSessionId: "pi-cold", closed: true });
+  try {
+    const mgr = new SessionManager({ projects: [{ id: "proj-x", path: "/repo/root" }], store });
+    const dto = (await mgr.listClosedSessions()).find((d) => d.id === "sess-closed")!;
+    assert.equal(dto.agentSessionId, "pi-cold");
+  } finally {
+    store.close();
+  }
+});
+
+test("two projections of the same session perform only ONE transcript resolution (memoization)", () => {
+  const store = new SqliteEventStore();
+  seedColdSession(store, "sess-memo", { agentSessionId: "pi-memo" });
+  let reads = 0;
+  try {
+    const mgr = new SessionManager({
+      projects: [],
+      store,
+      // Inject the resolver so the readdir is observable (D3 memoization).
+      transcriptResolver: () => {
+        reads++;
+        return "/resolved/once.jsonl";
+      },
+    });
+    const first = mgr.listSessions().find((d) => d.id === "sess-memo")!;
+    const second = mgr.listSessions().find((d) => d.id === "sess-memo")!;
+    assert.equal(first.transcriptPath, "/resolved/once.jsonl");
+    assert.equal(second.transcriptPath, "/resolved/once.jsonl");
+    assert.equal(reads, 1, "resolved once, then served from the memo");
+  } finally {
+    store.close();
+  }
+});
