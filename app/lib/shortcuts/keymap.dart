@@ -38,6 +38,12 @@ class Keymap {
       ShortcutAction.previousSession: primary(LogicalKeyboardKey.bracketLeft),
       ShortcutAction.openSettings: primary(LogicalKeyboardKey.comma),
       ShortcutAction.openPorts: primary(LogicalKeyboardKey.keyP, shift: true),
+      // SPEC-49 D8: shaped like openPorts above. `keyC` with the primary
+      // modifier alone belongs to the platform's copy; +shift is free.
+      ShortcutAction.copyNewestNotice: primary(
+        LogicalKeyboardKey.keyC,
+        shift: true,
+      ),
       ShortcutAction.splitVertical: primary(LogicalKeyboardKey.keyD),
       ShortcutAction.splitHorizontal: primary(
         LogicalKeyboardKey.keyD,

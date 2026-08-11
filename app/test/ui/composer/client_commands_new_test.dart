@@ -12,6 +12,8 @@ import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/ui/composer/client_commands.dart';
 
 class _EmptyStorage implements SecureStore {
@@ -61,7 +63,11 @@ Session _session({String? worktreePath, String? branch}) => Session(
   branch: branch,
 );
 
-Future<_FakeStore> _runNew(WidgetTester tester, Session session) async {
+Future<_FakeStore> _runNew(
+  WidgetTester tester,
+  Session session, {
+  StatusCenter? status,
+}) async {
   late _FakeStore store;
   final container = ProviderContainer(
     overrides: [
@@ -73,6 +79,7 @@ Future<_FakeStore> _runNew(WidgetTester tester, Session session) async {
         store = _FakeStore(ref);
         return store;
       }),
+      if (status != null) statusCenterProvider.overrideWithValue(status),
     ],
   );
   addTearDown(container.dispose);
@@ -134,9 +141,11 @@ void main() {
   ) async {
     // A worktree-less session cannot say where the new agent should run, and a
     // bare spawn would land in the primary checkout — so refuse instead.
-    final store = await _runNew(tester, _session());
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    final store = await _runNew(tester, _session(), status: center);
 
     expect(store.spawnCount, 0);
-    expect(find.textContaining('worktree'), findsOneWidget);
+    expect(center.events.single.title, contains('worktree'));
   });
 }

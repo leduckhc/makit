@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'new_session_sheet.dart';
 import 'repo_chips.dart';
 import '../../app/routes.dart';
@@ -37,10 +39,12 @@ Future<void> startSessionFlow(
   RepoInfo repo, {
   Worktree? worktree,
 }) async {
+  // Resolved before the first await: `ref` throws once its widget is
+  // unmounted, and the record must survive the thing that reported to it.
+  final status = ref.status;
   if (_startingSession) return;
   _startingSession = true;
   try {
-    final messenger = ScaffoldMessenger.of(context);
     final store = ref.read(storeControllerProvider.notifier);
     final branches = branchOptionsForRepo(repo);
     final worktrees = sortWorktreesForDisplay(repo.worktrees);
@@ -129,11 +133,11 @@ Future<void> startSessionFlow(
       if (createdWorktree != null) {
         await store.removeWorktree(repo.id, createdWorktree).catchError((_) {});
       }
-      if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('Could not start session: $e')),
-        );
-      }
+      status.failure(
+        'Could not start session',
+        error: e,
+        source: StatusSources.session,
+      );
     }
   } finally {
     _startingSession = false;

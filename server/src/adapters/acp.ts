@@ -37,6 +37,7 @@ import { sharedMediaStore, type MediaStore } from "../media/store.js";
 import { LocalMediaResolver, rewriteMarkdownImages } from "../media/local.js";
 import { prepareTurnOrFail } from "../media/attach.js";
 import { spawnLineProcess } from "./child_transport.js";
+import { onPath } from "./catalog.js";
 import { mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord } from "./wire.js";
 import type { AskUser } from "../uicall.js";
@@ -91,6 +92,12 @@ export class AcpAdapter extends SubprocessAdapter {
 
   private readonly spec: AcpSpawnSpec;
   private readonly connectFn: (cwd: string, env: Record<string, string>) => AcpTransport;
+  /**
+   * True when this adapter spawns {@link AcpSpawnSpec.command} for real, so
+   * `start` can preflight that the binary exists. An injected `connect` (tests,
+   * in-process pairs) has no binary to check.
+   */
+  private readonly spawnsRealBinary: boolean;
 
   private transport?: AcpTransport;
   private conn?: ClientSideConnection;
@@ -129,6 +136,7 @@ export class AcpAdapter extends SubprocessAdapter {
     this.spec = opts.spec;
     this.agent = opts.spec.agent;
     this.connectFn = opts.connect ?? defaultConnect(opts.spec);
+    this.spawnsRealBinary = opts.connect === undefined;
     const media = (this.media = opts.media ?? sharedMediaStore());
     this.mapper = new AcpEventMapper({
       emit: (e) => this.emit("event", e),
@@ -179,6 +187,22 @@ export class AcpAdapter extends SubprocessAdapter {
     this.workspaceRoot = cwd;
 
     const env = { ...(this.spec.env ?? {}), ...(opts.env ?? {}) };
+    // Preflight the binary. Without this the spawn faults asynchronously and
+    // the SDK rejects the handshake with "ACP connection closed", which tells
+    // the user nothing about the actual cause (a missing binary / a PATH that
+    // does not contain it).
+    //
+    // Resolve against the child's actual PATH, not the parent's: `spawnLineProcess`
+    // spawns with `{ ...process.env, ...opts.env }`, so an `opts.env.PATH` (or
+    // `spec.env.PATH`) override reaches the child. Passing the merged env here
+    // means a caller that widens PATH for the child is not spuriously rejected,
+    // and one that narrows it is caught before the useless SDK handshake error.
+    const preflightEnv = { ...process.env, ...env };
+    if (this.spawnsRealBinary && !onPath(this.spec.command, preflightEnv)) {
+      throw new Error(
+        `${this.spec.command} was not found on PATH — install it, or start makit from a shell where it resolves`,
+      );
+    }
     this.transport = this.connectFn(cwd, env);
     this.transport.onExit((code) => this.handleExit(code));
 

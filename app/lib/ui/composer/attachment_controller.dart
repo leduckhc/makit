@@ -18,6 +18,8 @@ import '../../store/chat_items.dart';
 import '../../store/composer_attachments.dart';
 import '../../store/media.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../widgets/sheet_header.dart';
 import 'attachment_sources.dart';
 import 'composer.dart';
@@ -142,6 +144,9 @@ Future<void> _showAttachMenu(
   ComposerAttachments notifier,
   String key,
 ) async {
+  // Resolved before the sheet/picker awaits so a failure can still be recorded
+  // if the composer's element is gone by the time the picker returns.
+  final status = statusOf(context);
   final source = supportsPhotoPickers
       ? await showModalBottomSheet<AttachSource>(
           context: context,
@@ -185,11 +190,11 @@ Future<void> _showAttachMenu(
   try {
     image = await pickImage(source);
   } catch (e) {
-    if (context.mounted) {
-      ScaffoldMessenger.maybeOf(
-        context,
-      )?.showSnackBar(SnackBar(content: Text(_pickFailureMessage(e))));
-    }
+    status.failure(
+      _pickFailureMessage(e),
+      error: e,
+      source: StatusSources.attachment,
+    );
     return;
   }
   // Cancelled, or an unsupported type. `pickImage` collapses both to null and

@@ -8,6 +8,8 @@ import '../../app/theme.dart';
 import '../../store/elicitation.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../composer/attachment_controller.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
@@ -126,9 +128,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     ) {
       if (next == null) return;
       if (prev?.seq == next.seq) return;
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${next.action} failed: ${next.reason}')),
+      ref.status.failure(
+        '${next.action} failed',
+        detail: next.reason,
+        source: StatusSources.session,
+        sessionId: widget.sessionId,
       );
     });
 
@@ -211,7 +215,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                           key: ValueKey('ask-${pendingAsk!.requestId}'),
                           child: transcriptRow(AskCard(ask: pendingAsk)),
                         )
-                      : transcriptRow(const WorkingIndicator());
+                      : transcriptRow(
+                          WorkingIndicator(sessionId: widget.sessionId),
+                        );
                 }
                 final index = items.length - 1 - (hasTrailer ? i - 1 : i);
                 final item = items[index];
@@ -345,11 +351,16 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                 ),
                               if (session?.pane != null &&
                                   prStatus != null &&
-                                  !prStatus.isQuiet)
+                                  prStatus.hasSomethingToOffer)
                                 const SizedBox(width: kSpace6),
-                              // A clean primary checkout has nothing to report,
-                              // so it gets no chip.
-                              if (prStatus != null && !prStatus.isQuiet)
+                              // A clean primary checkout has nothing to report and
+                              // nothing to offer, so it gets no chip. Anything with
+                              // an actionable CTA does, even when it is otherwise
+                              // quiet — this chip is the only way into the CTA on
+                              // mobile, so `isQuiet` would hide "Ship it" on a
+                              // branch that is ready to ship.
+                              if (prStatus != null &&
+                                  prStatus.hasSomethingToOffer)
                                 SessionPrChip(
                                   status: prStatus,
                                   pr: pr,
@@ -597,6 +608,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   }
 
   Future<void> _confirmArchive() async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
@@ -618,14 +632,18 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       ),
     );
     if (ok != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref
           .read(storeControllerProvider.notifier)
           .archiveSession(widget.sessionId);
       if (mounted) context.go(kRouteRepos);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not archive: $e')));
+      status.failure(
+        'Could not archive session',
+        error: e,
+        source: StatusSources.session,
+        sessionId: widget.sessionId,
+      );
     }
   }
 

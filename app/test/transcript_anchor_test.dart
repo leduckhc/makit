@@ -11,6 +11,7 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/session/session_screen.dart';
+import 'package:makit/ui/session/tool_renderers.dart' show ToolCodeBlock;
 import 'package:makit/ui/session/transcript_list.dart';
 
 class _EmptyStorage implements SecureStore {
@@ -40,7 +41,7 @@ List<ChatItem> mixedTranscript() => [
         ts: 0,
         callId: 'c$i',
         name: 'bash',
-        args: {'command': 'echo $i'},
+        args: {'command': 'tool$i --run'},
         output: 'out $i',
         ended: true,
         exitCode: 0,
@@ -117,12 +118,12 @@ void main() {
   ) async {
     final items = mixedTranscript();
     final (controller, push) = await pumpStreaming(tester, initial: items);
-    final header = find.text('Ran echo 2');
+    final header = find.text('Run tool2', findRichText: true);
     await scrollTo(tester, controller, header);
 
     await tester.tap(header);
     await tester.pumpAndSettle();
-    expect(find.text('Output'), findsOneWidget);
+    expect(find.byType(ToolCodeBlock), findsOneWidget);
 
     // A new message streams in at the newest end (the reversed list's index 0).
     push([...items, AgentMessageItem(seq: 900, ts: 0, text: 'incoming')]);
@@ -130,7 +131,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(
-      find.text('Output'),
+      find.byType(ToolCodeBlock),
       findsOneWidget,
       reason: 'the row the user unfolded must stay unfolded',
     );
@@ -212,7 +213,7 @@ void main() {
   ) async {
     final items = mixedTranscript();
     final (controller, _) = await pumpStreaming(tester, initial: items);
-    final header = find.text('Ran echo 11');
+    final header = find.text('Run tool11', findRichText: true);
     await scrollTo(tester, controller, header);
     final before = tester.getTopLeft(header).dy;
 
@@ -220,7 +221,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.getTopLeft(find.text('Ran')).dy,
+      tester.getTopLeft(header).dy,
       moreOrLessEquals(before, epsilon: 1.0),
     );
   });
@@ -230,20 +231,20 @@ void main() {
   ) async {
     final items = mixedTranscript();
     final (controller, _) = await pumpStreaming(tester, initial: items);
-    final header = find.text('Ran echo 11');
+    final header = find.text('Run tool11', findRichText: true);
     await scrollTo(tester, controller, header);
 
     await tester.tap(header);
     await tester.pumpAndSettle();
-    final expandedDy = tester.getTopLeft(find.text('Ran')).dy;
+    final expandedDy = tester.getTopLeft(header).dy;
 
     // Folding shrinks the row, so the correction runs the other way: the header
     // must still not move.
-    await tester.tap(find.text('Ran'));
+    await tester.tap(header);
     await tester.pumpAndSettle();
 
     expect(
-      tester.getTopLeft(find.text('Ran echo 11')).dy,
+      tester.getTopLeft(find.text('Run tool11', findRichText: true)).dy,
       moreOrLessEquals(expandedDy, epsilon: 1.0),
     );
   });

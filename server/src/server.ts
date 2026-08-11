@@ -32,7 +32,13 @@
 
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Envelope, RepoDTO, GithubBudgetDTO } from "./protocol.js";
+import type {
+  Envelope,
+  RepoDTO,
+  GithubBudgetDTO,
+  PortKillTarget,
+  ForwardGrantDTO,
+} from "./protocol.js";
 import { PROTOCOL_VERSION, newId } from "./protocol.js";
 import { decodeFrame, encodeFrame, WireErrorCode } from "./protocol/codec.js";
 import type { SessionManager } from "./manager.js";
@@ -47,7 +53,7 @@ import { CommandRouter } from "./ws/command_router.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
 import { WakeCoordinator } from "./push/wake_coordinator.js";
 import { NoopPushSender, type PushSender } from "./push/sender.js";
-import { buildWakePayload } from "./push/payload.js";
+import { buildPortDownPayload, buildWakePayload } from "./push/payload.js";
 import { registerPushCommands } from "./push/register_cmd.js";
 import { register as registerSessionCommands } from "./ws/commands/session.js";
 import { register as registerProjectCommands } from "./ws/commands/project.js";
@@ -78,6 +84,16 @@ import { WireMeter } from "./metrics/wire_meter.js";
 import { CpuLedger } from "./metrics/ledger.js";
 import { register as registerPortsCommands } from "./ws/commands/ports.js";
 import { PortsService } from "./ports/service.js";
+import { ForwardGrants } from "./ports/forward_grants.js";
+import { attachForwardRoute, FORWARD_PREFIX } from "./ports/forward_route.js";
+import { classifyForward, forwardRefusalMessage } from "./ports/forward_eligibility.js";
+import {
+  loadWatchedPorts,
+  saveWatchedPorts,
+  setWatchedPort as setWatchedPortIn,
+  watchedPortsFile,
+  type WatchedPort,
+} from "./ports/watch_store.js";
 import { loadHistory, saveHistory, historyFile } from "./ports/history_store.js";
 import { PortHealthProbe, createNetConnector } from "./ports/health.js";
 import { tailnetAddressFromBindHost } from "./ports/attribute.js";
@@ -143,6 +159,14 @@ export interface ServerOpts {
     now?: () => number;
     setTimer?: (fn: () => void, ms: number) => unknown;
     clearTimer?: (handle: unknown) => void;
+    /**
+     * SPEC-43: how a kill delivers its signal. Injected ONLY by tests — an e2e
+     * test drives a scripted scan whose pids are fictional, and `process.kill`
+     * on a fictional pid can hit a real, unrelated process.
+     */
+    signal?: (pid: number, sig: NodeJS.Signals) => void;
+    /** SPEC-43: the SIGTERM grace wait, so a test does not spend 2 s. */
+    sleep?: (ms: number) => Promise<void>;
   };
 }
 
@@ -594,6 +618,43 @@ export function startWsServer(opts: ServerOpts) {
     kind: "ports.snapshot",
     snapshot,
   });
+  // SPEC-44 D7: the watch list lives in one JSON file and is held in memory so
+  // every scan can read it without touching the disk. Load never throws, so a
+  // corrupt file costs the watches, never the startup.
+  let watchedPorts: WatchedPort[] = loadWatchedPorts(watchedPortsFile());
+  const setWatchedPort = (target: WatchedPort, on: boolean): void => {
+    watchedPorts = setWatchedPortIn(watchedPorts, target, on);
+    saveWatchedPorts(watchedPortsFile(), watchedPorts);
+  };
+  /**
+   * SPEC-44 D8: one push per outage, to every paired token-bearing device — the
+   * SAME sender SPEC-07/08 already uses, never a second notification path. The
+   * payload carries the port number only (see `buildPortDownPayload`).
+   */
+  const notifyPortDown = ({ port }: WatchedPort): void => {
+    if (!sender.enabled) return;
+    const payload = buildPortDownPayload({ port });
+    for (const device of registry.list()) {
+      if (!device.pushToken) continue;
+      void sender
+        .wake(
+          {
+            deviceId: device.id,
+            token: device.pushToken,
+            platform: device.pushPlatform ?? "apns",
+            env: device.pushEnv,
+          },
+          payload,
+        )
+        .then((result) => {
+          if (result === "dead") registry.clearPushToken(device.id);
+        })
+        .catch(() => {
+          /* best-effort: a port alert must never take the scan loop down */
+        });
+    }
+  };
+
   const portsService = new PortsService({
     exec: portsExec,
     probe: portsProbe,
@@ -604,6 +665,8 @@ export function startWsServer(opts: ServerOpts) {
     loadHistory: () => loadHistory(historyFile()),
     saveHistory: (history) => saveHistory(historyFile(), history, Date.now()),
     listSessionRoots,
+    watchedPorts: () => watchedPorts,
+    onPortDown: notifyPortDown,
     // The tailnet address the server ALREADY discovered at bind time (spec D2),
     // derived PURELY from the bind host — never a `tailscale` subprocess on the
     // scan path (a hung CLI would block the event loop mid-scan). A wildcard
@@ -616,8 +679,84 @@ export function startWsServer(opts: ServerOpts) {
     now: opts.ports?.now ?? (() => Date.now()),
     setTimer: opts.ports?.setTimer ?? ((fn, ms) => setInterval(fn, ms)),
     clearTimer: opts.ports?.clearTimer ?? ((h) => clearInterval(h as NodeJS.Timeout)),
+    ...(opts.ports?.signal !== undefined ? { signal: opts.ports.signal } : {}),
+    ...(opts.ports?.sleep !== undefined ? { sleep: opts.ports.sleep } : {}),
   });
   https.on("close", () => portsService.stop());
+
+  // SPEC-44 P4b: the forward grants + the proxy route. The route runs on the
+  // listener(s) that already carry the WS (no new host port is bound), and is
+  // installed on both so the loopback/dev path works too — exactly like
+  // `attachMediaRoute`.
+  const forwardGrants = new ForwardGrants({ now: () => Date.now() });
+  /**
+   * Owner recorded for a grant minted by a bearer-less loopback client under
+   * `--no-auth`. Named once because four places must agree on it: the route's
+   * `loopbackDeviceId`, the mint, `stop`, and the drop-on-disconnect — and a
+   * mismatch there is invisible except as a grant that outlives its socket.
+   */
+  const LOOPBACK_DEVICE_ID = "loopback";
+  /** The identity a socket acts as: its paired device, or the loopback stand-in. */
+  const ownerOf = (deviceId?: string): string | undefined =>
+    deviceId ?? (trustLocalhost ? LOOPBACK_DEVICE_ID : undefined);
+  const forwardDeps = {
+    grants: forwardGrants,
+    registry,
+    trustLoopback: trustLocalhost,
+    // Under `--no-auth` a loopback caller has no bearer; attribute it to the one
+    // paired device so it can resolve the grant it just minted.
+    loopbackDeviceId: trustLocalhost ? LOOPBACK_DEVICE_ID : undefined,
+  };
+  attachForwardRoute(https, forwardDeps);
+  if (localHttps) attachForwardRoute(localHttps, forwardDeps);
+
+  /** Mint a grant if the port passes every D4 rule, else say why not. */
+  const forwardPort = async (
+    target: { worktreePath: string; port: number; browser?: boolean },
+    deviceId?: string,
+  ): Promise<{ grant?: ForwardGrantDTO; refusal?: string }> => {
+    // A fresh scan, NOT the published cache: forwarding is a capability grant, so
+    // the eligibility check must judge what is listening now — and the cache only
+    // exists while somebody holds a watch (an e2e test caught exactly that).
+    const snapshot = await portsService.scanNow();
+    if (!snapshot.scanOk) {
+      return { refusal: "could not read this machine’s sockets" };
+    }
+    const decision = classifyForward({
+      worktreePath: target.worktreePath,
+      port: target.port,
+      ports: snapshot.ports,
+      serverPort: port,
+    });
+    if (!decision.ok) {
+      return { refusal: forwardRefusalMessage(decision.refusal!) };
+    }
+    const owner = ownerOf(deviceId);
+    if (owner === undefined) return { refusal: "this device is not paired" };
+    const grant = forwardGrants.mint({
+      deviceId: owner,
+      port: target.port,
+      worktreePath: target.worktreePath,
+      browser: target.browser === true,
+    });
+    log.info(
+      `[ports] forward :${target.port} → device=${owner} grant=${grant.grantId.slice(0, 8)}… ` +
+        `mode=${grant.browser ? "browser" : "strict"} ` +
+        `expires=${new Date(grant.expiresAt).toISOString()}`,
+    );
+    return {
+      grant: {
+        grantId: grant.grantId,
+        port: grant.port,
+        createdAt: grant.createdAt,
+        expiresAt: grant.expiresAt,
+        // A PATH, not a URL: only the client knows which of this host's addresses
+        // it can actually reach (loopback in dev, tailnet from a phone).
+        path: `${FORWARD_PREFIX}${grant.grantId}/`,
+        browser: grant.browser,
+      },
+    };
+  };
 
   const countPortsWatchers = (): number => {
     let n = 0;
@@ -714,6 +853,21 @@ export function startWsServer(opts: ServerOpts) {
       // Docs screen open never sends `docs.watch {on:false}`.
       state.watchingDocs = false;
       recomputeDocsWatchers();
+      // SPEC-44 D3: revoke this device's forward grants. A `browser:true` grant
+      // resolves on its id alone, so without this the URL would keep working for
+      // up to its TTL after the device that asked for it went away — and the
+      // device is the only thing that could have told us to stop.
+      // SPEC-44 D3: revoke this device's forward grants. A `browser:true` grant
+      // resolves on its id alone, so without this the URL would keep working for
+      // up to its TTL after the device that asked for it went away — and the
+      // device is the only thing that could have told us to stop.
+      //
+      // Under `--no-auth` every bearer-less loopback socket shares
+      // {@link LOOPBACK_DEVICE_ID}, so closing one dev window also drops another
+      // dev window's grants. Accepted: dev-only, and re-minting is one tap — a
+      // better failure than a live tunnel nobody can revoke.
+      const grantOwner = ownerOf(state.deviceId);
+      if (grantOwner !== undefined) forwardGrants.dropDevice(grantOwner);
       broadcastSnapshots();
     });
 
@@ -803,6 +957,14 @@ export function startWsServer(opts: ServerOpts) {
       onDocsWatchersChanged: recomputeDocsWatchers,
       sendDocsSnapshot,
       docs: docsService,
+      killPort: (target: PortKillTarget, deviceId?: string) =>
+        portsService.killPort(target, { deviceId }),
+      killOrphans: (deviceId?: string) => portsService.killOrphans({ deviceId }),
+      setWatchedPort,
+      forwardPort,
+      stopForward: (grantId: string, deviceId?: string) =>
+        void forwardGrants.stop(grantId, ownerOf(deviceId)),
+      rescanPorts: () => void portsService.rescanNow(),
     };
 
     registerSessionCommands(r, deps);

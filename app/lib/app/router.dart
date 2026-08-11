@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../diagnostics/diagnostics_screen.dart';
+import '../status/activity_screen.dart';
 import '../pairing/onboarding_controller.dart';
 import '../pairing/onboarding_screen.dart';
 import '../pairing/readiness.dart';
@@ -70,6 +71,10 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'diagnostics',
                 builder: (_, _) => const DiagnosticsScreen(),
+              ),
+              GoRoute(
+                path: 'activity',
+                builder: (_, _) => const ActivityScreen(),
               ),
               GoRoute(
                 path: 'session/:id',

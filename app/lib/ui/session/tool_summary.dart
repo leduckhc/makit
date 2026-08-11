@@ -161,3 +161,408 @@ List<String> _splitTopLevel(String command) {
   segments.add(buf.toString());
   return segments.map(oneLine).where((s) => s.isNotEmpty).toList();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Command-name summary
+//
+// A collapsed shell row lists the *commands* the agent ran, not their
+// arguments: `Run grep, gh pr, sed, makit serve, python, head, lsof`. The
+// arguments are still one hover (tooltip) or one tap (expanded body) away, and
+// they were never readable inside 40 ellipsised characters anyway.
+//
+// The rule ladder below is documented — with its full test corpus — in
+// `mockups/tool-one-liner.html` §2. Keep the two in step.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Binaries that run *another* command; the interesting name is the wrapped
+/// one, so these are skipped over rather than reported.
+const Set<String> _wrappers = {
+  'sudo',
+  'doas',
+  'env',
+  'time',
+  'nice',
+  'nohup',
+  'exec',
+  'command',
+  'builtin',
+  'stdbuf',
+  'xargs',
+  'timeout',
+  'caffeinate',
+  'script',
+  'strace',
+  'ltrace',
+  'dtruss',
+  'watch',
+};
+
+/// Shell syntax that can appear where a command name would be.
+const Set<String> _shellKeywords = {
+  'then',
+  'else',
+  'elif',
+  'fi',
+  'do',
+  'done',
+  'esac',
+  'in',
+  'function',
+  '{',
+  '}',
+  '[[',
+  ']]',
+  '!',
+  '(',
+  ')',
+  'coproc',
+};
+
+/// Openers of a compound statement. The whole segment is plumbing (`for f in
+/// *.dart`), while the body arrives as a later segment (`do wc -l "$f"`), so
+/// the segment is dropped rather than scanned.
+const Set<String> _compoundHeads = {
+  'for',
+  'while',
+  'until',
+  'case',
+  'if',
+  'elif',
+  'select',
+};
+
+/// Heads of a prologue segment: entering the tree, mutating the environment,
+/// setting shell options. Never worth a name of its own.
+const Set<String> _prologueHeads = {
+  'cd',
+  'export',
+  'source',
+  '.',
+  'set',
+  'shopt',
+  'umask',
+  'ulimit',
+  'unset',
+  'alias',
+  'eval',
+};
+
+/// Subcommands that are pure plumbing: the *next* word is the information
+/// (`pnpm run build` → `pnpm build`).
+const Set<String> _fillerSubcommands = {'run', 'exec', 'dlx', '--'};
+
+/// Multiplexers — binaries whose bare name leaves you asking "doing what?", so
+/// the first bare-word argument is kept (`git commit`, `gh pr`, `makit serve`).
+/// Everything absent from this set renders as its bare name, which is never
+/// wrong: `sed`, `lsof`, `curl`, `jq` and friends say what they did already.
+const Set<String> _multiplexers = {
+  // VCS / forges
+  'git', 'jj', 'hg', 'svn', 'gh', 'glab',
+  // containers / infra
+  'docker', 'podman', 'kubectl', 'helm', 'terraform', 'ansible', 'vagrant',
+  // language toolchains
+  'npm', 'pnpm', 'yarn', 'bun', 'npx', 'deno', 'pip', 'uv', 'poetry', 'pipx',
+  'cargo', 'go', 'rustup', 'dotnet', 'composer',
+  // dart / apple
+  'dart', 'flutter', 'xcrun', 'swift', 'pod', 'fastlane', 'gradle',
+  // package managers / version managers
+  'brew', 'apt', 'apt-get', 'dnf', 'pacman', 'nix', 'mise', 'asdf', 'pyenv',
+  'nvm',
+  // system
+  'systemctl', 'launchctl', 'journalctl', 'defaults', 'security', 'scutil',
+  'networksetup', 'pmset', 'tailscale',
+  // clouds
+  'aws', 'gcloud', 'az', 'fly', 'vercel', 'wrangler', 'supabase', 'heroku',
+  // task runners / agents
+  'make', 'just', 'task', 'rake', 'mvn', 'tmux', 'screen', 'code', 'pi',
+  'codex', 'claude', 'makit', 'ocr', 'openssl', 'systemd-run',
+};
+
+/// Interpreters whose trailing version is noise (`python3.12` → `python`).
+const Set<String> _versionedTools = {
+  'python',
+  'pip',
+  'php',
+  'ruby',
+  'perl',
+  'node',
+  'clang',
+  'gcc',
+  'g++',
+  'llvm-config',
+};
+
+/// Names shown before the list is truncated to `… +N`. A safety valve for a
+/// 30-segment script, not a width control — the row already ellipsises.
+const int _maxCommandNames = 8;
+
+/// A token that can be a subcommand: a bare lowercase word. Excludes flags,
+/// paths, values and anything with a dot, so `git -C /repo status` still finds
+/// `status` and `sed -i '' 's/a/b/'` finds nothing.
+final RegExp _subcommandWord = RegExp(r'^[a-z][a-z0-9:_+-]*$');
+
+/// `FOO=bar` — an assignment, not a command.
+final RegExp _assignment = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*=');
+
+/// A redirection: `>`, `>>`, `<`, `2>`, `&>`, `>&2`, or any of those with the
+/// target attached (`>out.txt`, `2>/dev/null`).
+///
+/// Neither the operator nor its target is a command. Before this existed,
+/// `pnpm typecheck > /tmp/tc.log 2>&1` summarised as `pnpm typecheck, 1` — the
+/// `&` split off a segment holding the bare file descriptor.
+final RegExp _redirection = RegExp(r'^(?:[0-9]*(?:>>?|<)|&>>?)');
+
+/// A redirection operator that still needs the *next* token as its target, so
+/// that token is plumbing too (`> out.txt`, `2> err.log`, `>& out.txt`).
+///
+/// Deliberately does not match a descriptor duplication like `2>&1` or `>&2`:
+/// those carry their own target, and treating them as bare made `2>&1 grep foo`
+/// name `foo` — the trailing digit is what distinguishes the two.
+final RegExp _bareRedirection = RegExp(r'^(?:[0-9]*(?:>>?|<)&?|&>>?)$');
+
+/// A trailing version on an interpreter name: `python3`, `python3.12`, `pip3`.
+/// The separator is matched *outside* the captured group: with `-` inside the
+/// character class the capture kept it (`clang-`), so `clang-15` never matched a
+/// name in [_versionedTools].
+final RegExp _trailingVersion = RegExp(
+  r'^([A-Za-z_+]+(?:-[A-Za-z_+]+)*)-?[0-9]+(?:\.[0-9]+)*$',
+);
+
+/// Trailing slashes stripped before taking a basename. Hoisted so it compiles
+/// once instead of on every token of every segment.
+final RegExp _trailingSlashes = RegExp(r'/+$');
+
+/// The distinct commands [command] runs, in first-seen order, joined with
+/// `, ` — the payload of a collapsed shell row. Empty when the command is
+/// empty or is nothing but prologue.
+String commandNames(String command) {
+  final segments = _splitForNames(_stripHeredocs(command));
+  final order = <String>[];
+  for (final segment in segments) {
+    final name = _segmentName(segment);
+    if (name == null || order.contains(name)) continue;
+    order.add(name);
+  }
+  if (order.isEmpty) return '';
+  if (order.length <= _maxCommandNames) return order.join(', ');
+  final shown = order.take(_maxCommandNames);
+  return '${shown.join(', ')} +${order.length - _maxCommandNames}';
+}
+
+/// Split for [commandNames]: like [_splitTopLevel] but pipes and `&` are
+/// separators too (each pipeline member is its own command), and the body of
+/// every `$( … )` / backtick substitution is appended as further segments —
+/// that is where `lsof` hides in `kill $(lsof -t -i:9787)`.
+List<String> _splitForNames(String command) {
+  final segments = <String>[];
+  final nested = <String>[];
+  final buf = StringBuffer();
+  String? quote;
+  void flush() {
+    final s = oneLine(buf.toString());
+    if (s.isNotEmpty) segments.add(s);
+    buf.clear();
+  }
+
+  for (var i = 0; i < command.length; i++) {
+    final c = command[i];
+    if (c == r'\' && quote != "'" && i + 1 < command.length) {
+      buf.write(c);
+      buf.write(command[i + 1]);
+      i++;
+      continue;
+    }
+    if (quote != null) {
+      buf.write(c);
+      if (c == quote) quote = null;
+      continue;
+    }
+    if (c == "'" || c == '"') {
+      quote = c;
+      buf.write(c);
+      continue;
+    }
+    // Command substitution: capture the body, drop it from this segment.
+    final substitution =
+        (c == r'$' && i + 1 < command.length && command[i + 1] == '(')
+        ? 2
+        : (c == '`' ? 1 : 0);
+    if (substitution > 0) {
+      final close = c == '`' ? '`' : ')';
+      var depth = 1;
+      var j = i + substitution;
+      final body = StringBuffer();
+      // Quote-aware, like the outer loop. Counting parentheses alone let a `)`
+      // inside a quoted argument close the substitution early, and the stray
+      // quote then swallowed the rest of the command:
+      // `echo $(grep ')' file) && rm -rf build` lost the `rm` completely.
+      String? bodyQuote;
+      while (j < command.length) {
+        final d = command[j];
+        if (d == r'\' && bodyQuote != "'" && j + 1 < command.length) {
+          body.write(d);
+          body.write(command[j + 1]);
+          j += 2;
+          continue;
+        }
+        if (bodyQuote != null) {
+          if (d == bodyQuote) bodyQuote = null;
+          body.write(d);
+          j++;
+          continue;
+        }
+        if (d == "'" || d == '"') {
+          bodyQuote = d;
+          body.write(d);
+          j++;
+          continue;
+        }
+        if (d == '(' && close == ')') {
+          depth++;
+        } else if (d == close) {
+          depth--;
+          if (depth == 0) break;
+        }
+        body.write(d);
+        j++;
+      }
+      nested.add(body.toString());
+      buf.write(' ');
+      i = j;
+      continue;
+    }
+    final two = i + 1 < command.length ? command.substring(i, i + 2) : '';
+    if (two == '&&' || two == '||') {
+      flush();
+      i++;
+      continue;
+    }
+    // `&` separates a background job, but the `&` in `2>&1`, `>&2` and `&>` is
+    // part of the redirection and must stay in the token.
+    final prev = buf.isEmpty ? '' : buf.toString().substring(buf.length - 1);
+    final next = i + 1 < command.length ? command[i + 1] : '';
+    final redirecting = c == '&' && (prev == '>' || prev == '<' || next == '>');
+    if (!redirecting && (c == ';' || c == '\n' || c == '|' || c == '&')) {
+      flush();
+      continue;
+    }
+    buf.write(c);
+  }
+  flush();
+  for (final body in nested) {
+    segments.addAll(_splitForNames(body));
+  }
+  return segments;
+}
+
+/// Split [segment] into shell words, dropping quotes and escapes.
+List<String> _words(String segment) {
+  final words = <String>[];
+  final buf = StringBuffer();
+  String? quote;
+  for (var i = 0; i < segment.length; i++) {
+    final c = segment[i];
+    if (c == r'\' && quote != "'" && i + 1 < segment.length) {
+      buf.write(segment[i + 1]);
+      i++;
+      continue;
+    }
+    if (quote != null) {
+      if (c == quote) {
+        quote = null;
+      } else {
+        buf.write(c);
+      }
+      continue;
+    }
+    if (c == "'" || c == '"') {
+      quote = c;
+      continue;
+    }
+    if (c.trim().isEmpty) {
+      if (buf.isNotEmpty) {
+        words.add(buf.toString());
+        buf.clear();
+      }
+      continue;
+    }
+    buf.write(c);
+  }
+  if (buf.isNotEmpty) words.add(buf.toString());
+  return words;
+}
+
+/// `~/flutter/bin/flutter` → `flutter`; `./scripts/deploy.sh` → `deploy.sh`.
+String _basename(String token) {
+  final trimmed = token.replaceAll(_trailingSlashes, '');
+  final slash = trimmed.lastIndexOf('/');
+  final name = slash < 0 ? trimmed : trimmed.substring(slash + 1);
+  return name.isEmpty ? token : name;
+}
+
+/// `python3.12` → `python`, but only for known interpreters (so `s3cmd` and
+/// `7z` keep their digits).
+String _unversioned(String name) {
+  final m = _trailingVersion.firstMatch(name);
+  if (m == null) return name;
+  return _versionedTools.contains(m[1]) ? m[1]! : name;
+}
+
+/// The one name [segment] contributes, or null when it contributes none
+/// (prologue, a compound-statement head, or nothing but flags).
+String? _segmentName(String segment) {
+  final words = _words(segment);
+  if (words.isEmpty) return null;
+  if (_compoundHeads.contains(words.first)) return null;
+
+  var i = 0;
+  while (i < words.length) {
+    final word = words[i];
+    final base = _unversioned(_basename(word));
+    // A redirection and its target are plumbing. `> out.txt grep foo` must find
+    // `grep`, so a bare operator swallows the token that follows it.
+    if (_redirection.hasMatch(word)) {
+      i += _bareRedirection.hasMatch(word) ? 2 : 1;
+      continue;
+    }
+    if (_assignment.hasMatch(word) ||
+        _shellKeywords.contains(word) ||
+        _wrappers.contains(base) ||
+        word.startsWith('-') ||
+        word.startsWith('«')) {
+      i++;
+      continue;
+    }
+    if (_prologueHeads.contains(base)) return null;
+    break;
+  }
+  if (i >= words.length) return null;
+
+  final name = _unversioned(_basename(words[i]));
+  if (!_multiplexers.contains(name)) return name;
+
+  // Keep the first bare-word argument as the subcommand, skipping filler.
+  for (var j = i + 1; j < words.length; j++) {
+    final word = words[j];
+    if (!_subcommandWord.hasMatch(word)) continue;
+    if (_fillerSubcommands.contains(word)) continue;
+    return '$name $word';
+  }
+  return name;
+}
+
+/// A collapsed one-liner split into its leading verb and the rest, so the row
+/// can render the verb at a heavier weight (the payload is the same colour and
+/// size — see `mockups/tool-one-liner.html` §5).
+typedef VerbLine = ({String verb, String rest});
+
+/// Split [line] at [verb] when it opens the line; otherwise the whole line is
+/// payload (an unregistered tool's summary is its raw name, which is not a
+/// verb and must not be emphasised).
+VerbLine splitVerb(String line, String verb) {
+  if (verb.isNotEmpty && line == verb) return (verb: verb, rest: '');
+  if (verb.isNotEmpty && line.startsWith('$verb ')) {
+    return (verb: verb, rest: line.substring(verb.length + 1));
+  }
+  return (verb: '', rest: line);
+}

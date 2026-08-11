@@ -351,4 +351,329 @@ void main() {
       expect(calls, isEmpty);
     });
   });
+
+  group('SPEC-43 killPort', () {
+    const target = PortKillTarget(
+      address: '127.0.0.1',
+      port: 5173,
+      pid: 48211,
+      startedAt: 1700000,
+    );
+
+    test(
+      'sends the exact tuple the confirm displayed, and decodes the outcome',
+      () async {
+        final sent = <Map<String, dynamic>>[];
+        final killer = PortsKiller((body) async {
+          sent.add(body);
+          return {'outcome': 'released', 'address': '127.0.0.1', 'port': 5173};
+        });
+        final outcome = await killer.kill(
+          const PortKillTarget(
+            address: '127.0.0.1',
+            port: 5173,
+            pid: 48211,
+            startedAt: 1700000,
+          ),
+        );
+        expect(outcome, PortKillOutcome.released);
+        expect(sent, [
+          {
+            'kind': 'ports.kill',
+            'address': '127.0.0.1',
+            'port': 5173,
+            'pid': 48211,
+            'startedAt': 1700000,
+          },
+        ]);
+      },
+    );
+
+    test('every server outcome decodes', () {
+      expect(parsePortKillOutcome('released'), PortKillOutcome.released);
+      expect(parsePortKillOutcome('force-killed'), PortKillOutcome.forceKilled);
+      expect(parsePortKillOutcome('survived'), PortKillOutcome.survived);
+      expect(parsePortKillOutcome('not_found'), PortKillOutcome.notFound);
+      expect(
+        parsePortKillOutcome('identity_mismatch'),
+        PortKillOutcome.identityMismatch,
+      );
+      expect(parsePortKillOutcome('not_owned'), PortKillOutcome.notOwned);
+      expect(
+        parsePortKillOutcome('refused_protected'),
+        PortKillOutcome.refusedProtected,
+      );
+      expect(parsePortKillOutcome('refused_self'), PortKillOutcome.refusedSelf);
+      expect(
+        parsePortKillOutcome('refused_session'),
+        PortKillOutcome.refusedSession,
+      );
+      expect(
+        parsePortKillOutcome('scan_unavailable'),
+        PortKillOutcome.scanUnavailable,
+      );
+    });
+
+    test('an unknown outcome is a FAILURE, never a silent success', () {
+      // Decoding an unrecognised string as `released` would tell the user the
+      // process is gone when the server said something we do not understand.
+      expect(parsePortKillOutcome('teleported'), PortKillOutcome.failed);
+      expect(parsePortKillOutcome(null), PortKillOutcome.failed);
+      expect(parsePortKillOutcome(7), PortKillOutcome.failed);
+      expect(PortKillOutcome.failed.releasedThePort, isFalse);
+    });
+
+    test('only released / force-killed count as the port being freed', () {
+      expect(PortKillOutcome.released.releasedThePort, isTrue);
+      expect(PortKillOutcome.forceKilled.releasedThePort, isTrue);
+      for (final o in PortKillOutcome.values.where(
+        (o) =>
+            o != PortKillOutcome.released && o != PortKillOutcome.forceKilled,
+      )) {
+        expect(o.releasedThePort, isFalse, reason: '$o must not read as freed');
+      }
+    });
+
+    test(
+      'a rejected request degrades to failed rather than throwing',
+      () async {
+        final killer = PortsKiller(
+          (_) async => throw StateError('bad_request'),
+        );
+        expect(await killer.kill(target), PortKillOutcome.failed);
+      },
+    );
+
+    test(
+      'PortKillTarget.of refuses a port whose startedAt is unknown (D1)',
+      () {
+        // Unverifiable identity ⇒ the UI must not offer a kill at all.
+        expect(PortKillTarget.of(PortInfo.fromJson(_portJson())!), isNull);
+        final withStart = PortInfo.fromJson(_portJson(startedAt: 1700000));
+        final target = PortKillTarget.of(withStart!);
+        expect(target, isNotNull);
+        expect(target!.startedAt, 1700000);
+        expect(target.pid, withStart.pid);
+        expect(target.address, withStart.address);
+        expect(target.port, withStart.port);
+      },
+    );
+  });
+
+  group('SPEC-44 watched ports', () {
+    test('watched decodes, and defaults to false when absent', () {
+      expect(PortInfo.fromJson(_portJson())!.watched, isFalse);
+      expect(
+        PortInfo.fromJson({..._portJson(), 'watched': true})!.watched,
+        isTrue,
+      );
+      // Junk is not a watch: only a real `true` counts.
+      expect(
+        PortInfo.fromJson({..._portJson(), 'watched': 'yes'})!.watched,
+        isFalse,
+      );
+    });
+
+    test(
+      'the toggle sends (worktreePath, port, on) — never the snapshot key',
+      () async {
+        final sent = <Map<String, dynamic>>[];
+        final watcher = PortsWatchPort((body) async {
+          sent.add(body);
+          return const {};
+        });
+        expect(
+          await watcher.set(worktreePath: '/wt/a', port: 5173, on: true),
+          isTrue,
+        );
+        expect(sent, [
+          {
+            'kind': 'ports.watchPort',
+            'worktreePath': '/wt/a',
+            'port': 5173,
+            'on': true,
+          },
+        ]);
+      },
+    );
+
+    test('a failed toggle reports false so the UI can revert', () async {
+      final watcher = PortsWatchPort((_) async => throw StateError('nope'));
+      expect(
+        await watcher.set(worktreePath: '/wt/a', port: 5173, on: true),
+        isFalse,
+      );
+    });
+  });
+
+  group('SPEC-43 killOrphans (store)', () {
+    test(
+      'sends a payload-free command and decodes one outcome per endpoint',
+      () async {
+        final sent = <Map<String, dynamic>>[];
+        final killer = PortsKiller((body) async {
+          sent.add(body);
+          return {
+            'results': [
+              {'outcome': 'released', 'address': '127.0.0.1', 'port': 5180},
+              {'outcome': 'survived', 'address': '127.0.0.1', 'port': 5181},
+            ],
+          };
+        });
+        final outcomes = await killer.killOrphans();
+        // No endpoints from the client: the orphan SET is the server's, which is
+        // also what stops this becoming "kill an arbitrary list".
+        expect(sent, [
+          {'kind': 'ports.killOrphans'},
+        ]);
+        expect(outcomes, [PortKillOutcome.released, PortKillOutcome.survived]);
+      },
+    );
+
+    test(
+      'a malformed results list degrades to a single failure, never to empty',
+      () async {
+        // Empty would read as "no orphans left" — a success the server never said.
+        expect(await PortsKiller((_) async => const {}).killOrphans(), [
+          PortKillOutcome.failed,
+        ]);
+        expect(
+          await PortsKiller((_) async => {'results': 'nope'}).killOrphans(),
+          [PortKillOutcome.failed],
+        );
+        expect(
+          await PortsKiller((_) async => throw StateError('x')).killOrphans(),
+          [PortKillOutcome.failed],
+        );
+      },
+    );
+
+    test(
+      'an unreadable entry inside a valid list is a failure, not a success',
+      () async {
+        final outcomes = await PortsKiller(
+          (_) async => {
+            'results': [
+              {'outcome': 'released'},
+              'garbage',
+              {'nope': true},
+            ],
+          },
+        ).killOrphans();
+        expect(outcomes, [
+          PortKillOutcome.released,
+          PortKillOutcome.failed,
+          PortKillOutcome.failed,
+        ]);
+      },
+    );
+  });
+
+  group('SPEC-44 forwarding (store)', () {
+    test(
+      'ForwardGrant decodes what the client must have, and nothing less',
+      () {
+        final grant = ForwardGrant.fromJson({
+          'grantId': 'G',
+          'port': 5173,
+          'path': '/forward/G/',
+          'createdAt': 1,
+          'expiresAt': 2,
+          'browser': true,
+        });
+        expect(grant, isNotNull);
+        expect(grant!.grantId, 'G');
+        expect(grant.path, '/forward/G/');
+        expect(grant.expiresAt, 2);
+        expect(grant.browser, isTrue);
+
+        // Any missing essential → null, so a half-grant can never be launched.
+        for (final key in ['grantId', 'port', 'path', 'expiresAt']) {
+          final partial = {
+            'grantId': 'G',
+            'port': 5173,
+            'path': '/forward/G/',
+            'expiresAt': 2,
+          }..remove(key);
+          expect(
+            ForwardGrant.fromJson(partial),
+            isNull,
+            reason: 'missing $key',
+          );
+        }
+        // `browser` is the weaker credential mode: only a literal true counts.
+        expect(
+          ForwardGrant.fromJson({
+            'grantId': 'G',
+            'port': 5173,
+            'path': '/forward/G/',
+            'expiresAt': 2,
+            'browser': 'true',
+          })!.browser,
+          isFalse,
+        );
+      },
+    );
+
+    test('forward sends the tuple plus the explicit browser flag', () async {
+      final sent = <Map<String, dynamic>>[];
+      final forwarder = PortsForwarder((body) async {
+        sent.add(body);
+        return {
+          'grant': {
+            'grantId': 'G',
+            'port': 5173,
+            'path': '/forward/G/',
+            'expiresAt': 9,
+            'browser': true,
+          },
+        };
+      });
+      final result = await forwarder.forward(
+        worktreePath: '/wt/a',
+        port: 5173,
+        browser: true,
+      );
+      expect(result.grant?.grantId, 'G');
+      expect(result.refusal, isNull);
+      expect(sent, [
+        {
+          'kind': 'ports.forward',
+          'worktreePath': '/wt/a',
+          'port': 5173,
+          'browser': true,
+        },
+      ]);
+    });
+
+    test('a refusal surfaces the server REASON verbatim', () async {
+      // The server errs with the actual rule ("database and shell ports are
+      // never forwarded"), which is the only useful thing to show.
+      final forwarder = PortsForwarder(
+        (_) async =>
+            throw StateError('database and shell ports are never forwarded'),
+      );
+      final result = await forwarder.forward(worktreePath: '/wt/a', port: 5432);
+      expect(result.grant, isNull);
+      expect(result.refusal, 'database and shell ports are never forwarded');
+    });
+
+    test(
+      'an ack with no usable grant is a refusal, not a silent success',
+      () async {
+        final result = await PortsForwarder(
+          (_) async => const {'grant': null},
+        ).forward(worktreePath: '/wt/a', port: 5173);
+        expect(result.grant, isNull);
+        expect(result.refusal, isNotNull);
+      },
+    );
+
+    test(
+      'stop never throws, because a dead grant is already the goal',
+      () async {
+        await PortsForwarder((_) async => throw StateError('gone')).stop('G');
+      },
+    );
+  });
 }

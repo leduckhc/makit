@@ -134,6 +134,18 @@ enum ShortcutAction {
     scope: ShortcutScope.global,
   ),
 
+  /// Put the newest notice on the clipboard (SPEC-49 D8).
+  ///
+  /// Reads the [StatusCenter] record rather than the screen, so it still works
+  /// after the notice has faded — which is the half of "I cannot review what was
+  /// just popping" that a card cannot answer.
+  copyNewestNotice(
+    id: 'copyNewestNotice',
+    label: 'Copy latest notice',
+    description: 'Copy the most recent status message to the clipboard',
+    scope: ShortcutScope.global,
+  ),
+
   // SPEC-30 decision 16: ⌘1…⌘9 switch to the 1st–9th group. There is
   // deliberately no action for a tenth group — no wrap-around, no "⌘9 = last";
   // groups past the ninth are reached by clicking or scrolling the rail.

@@ -14,6 +14,8 @@
 /// it in [toolRenderers].
 library;
 
+import 'dart:convert' show utf8;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
@@ -60,9 +62,24 @@ abstract class ToolRenderer {
   String summaryLine(ToolCallItem item) => displayName;
 
   /// Short header label shown when the row is **expanded** — just the verb
-  /// (`Ran`, `Read`, `Edited`, …), since the full command/path/argument is
+  /// (`Run`, `Read`, `Edit`, …), since the full command/path/argument is
   /// already visible in the body. Defaults to [displayName].
   String label(ToolCallItem item) => displayName;
+
+  /// The leading verb of [summaryLine], rendered a weight heavier than the rest
+  /// of the collapsed row (see `mockups/tool-one-liner.html` §5). Defaults to
+  /// [label] — the two are the same word for every renderer whose summary reads
+  /// `<verb> <payload>`; override only where the summary carries a longer
+  /// phrase than the verb (`Ask the user`).
+  String verb(ToolCallItem item) => label(item);
+
+  /// Hover text recovering what the collapsed line dropped, or null when it
+  /// dropped nothing (a path is shown in full; a command *list* is not).
+  ///
+  /// Not necessarily verbatim — `_BashRenderer` returns [compactCommand], which
+  /// keeps everything except the `cd`/`export` prologue. See
+  /// `mockups/tool-one-liner.html` §4A.
+  String? tooltip(ToolCallItem item) => null;
 
   /// Expanded body sections shown inline when the row is opened. Default:
   /// readable args + result text.
@@ -70,33 +87,66 @@ abstract class ToolRenderer {
       genericToolBody(context, item);
 }
 
-/// Generic body for tools without a bespoke renderer. Shows arguments as
-/// readable label/value rows (never a raw JSON blob) and the result text.
+/// Generic body for tools without a bespoke renderer: short arguments become
+/// facts, long ones become captioned payloads, and the result follows.
 List<Widget> genericToolBody(BuildContext context, ToolCallItem item) {
-  final args = item.args;
+  final short = <ToolFact>[];
+  final long = <(String, String)>[];
+  for (final e in item.args.entries) {
+    final value = valueString(e.value);
+    if (isFactResult(value)) {
+      short.add(ToolFact(e.key, value));
+    } else {
+      long.add((e.key, value));
+    }
+  }
+  final facts = [...short, ...resultFacts(item)];
+  return [
+    if (facts.isNotEmpty) ToolFacts(facts),
+    for (final (key, value) in long)
+      ToolBlock(caption: key, child: ToolCodeBlock(value)),
+    ...resultPayload(context, item, caption: long.isEmpty ? null : 'output'),
+  ];
+}
+
+/// The facts a body ends with: a one-line result (`307 lines`,
+/// `No matches found`) belongs in the strip rather than a highlighted panel
+/// (see [isFactResult]), and a failure always states its exit code — including
+/// when the message is long enough to become a payload of its own.
+List<ToolFact> resultFacts(ToolCallItem item) {
   final text = extractToolResultText(item.resultText);
   final failed = item.ended && (item.exitCode ?? 0) != 0;
+  final key = failed ? 'error' : 'result';
   return [
-    if (args.isNotEmpty)
-      ToolSection(
-        title: 'Arguments',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final e in args.entries) ParamRow(e.key, valueString(e.value)),
-          ],
-        ),
+    if (isFactResult(text))
+      ToolFact(key, oneLine(text), error: failed)
+    else if (text.trim().isEmpty && item.ended)
+      ToolFact(
+        key,
+        item.summary ?? 'exit ${item.exitCode ?? 0}',
+        error: failed,
       ),
-    if (text.isNotEmpty)
-      ToolSection(
-        title: failed ? 'Error' : 'Output',
-        child: ToolCodeBlock(text, language: 'plaintext', error: failed),
-      )
-    else if (item.ended)
-      ToolSection(
-        title: failed ? 'Error' : 'Result',
-        child: MonoText(item.summary ?? 'exit ${item.exitCode ?? 0}'),
-      ),
+    if (failed) ToolFact('exit', '${item.exitCode}', error: true),
+  ];
+}
+
+/// The result as a payload block, or nothing when [resultFacts] already placed
+/// it in the strip.
+List<Widget> resultPayload(
+  BuildContext context,
+  ToolCallItem item, {
+  String? caption,
+}) {
+  final text = extractToolResultText(item.resultText);
+  if (text.trim().isEmpty || isFactResult(text)) return const [];
+  final failed = item.ended && (item.exitCode ?? 0) != 0;
+  final exitLabel = failed ? 'exit ${item.exitCode ?? 0}' : null;
+  return [
+    ToolBlock(
+      caption: exitLabel ?? caption,
+      error: failed,
+      child: ToolCodeBlock(text, language: 'plaintext', error: failed),
+    ),
   ];
 }
 
@@ -119,34 +169,179 @@ String toolSummaryLine(ToolCallItem item, {String? root}) => compactPathsIn(
 String toolLabel(ToolCallItem item) =>
     rendererFor(item)?.label(item) ?? item.name;
 
-/// Titled section used in tool bodies.
-class ToolSection extends StatelessWidget {
-  const ToolSection({super.key, required this.title, required this.child});
-  final String title;
-  final Widget child;
+/// The verb that opens [item]'s collapsed one-liner, for [splitVerb]. Empty for
+/// an unregistered tool, whose summary is a bare tool name rather than a verb
+/// phrase — nothing to emphasise.
+String toolVerb(ToolCallItem item) => rendererFor(item)?.verb(item) ?? '';
+
+/// Hover text for [item]'s collapsed row, or null when the row is not lossy.
+String? toolTooltip(ToolCallItem item) => rendererFor(item)?.tooltip(item);
+
+/// A caption above a payload block — a *label*, not a heading: `labelSmall`
+/// uppercased in `onSurfaceVariant`, with tracking to carry the caps.
+///
+/// Only rendered when a body has two or more payloads (a `bash` call's command
+/// and its output). A single-payload body has nothing to disambiguate, and the
+/// row's own header already names the subject — see
+/// `mockups/tool-expanded-body.html` §3/§5.
+class ToolCaption extends StatelessWidget {
+  const ToolCaption(this.text, {super.key, this.error = false});
+
+  final String text;
+
+  /// Failure is the one thing that earns colour here.
+  final bool error;
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.only(bottom: kSpace4),
+      child: Text(
+        text.toUpperCase(),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: error ? cs.error : cs.onSurfaceVariant,
+          letterSpacing: 0.7,
+          height: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+/// One short `key value` fact, as used by [ToolFacts]. [error] tones the pair
+/// with `colorScheme.error`: a failure is the one thing in this body that earns
+/// colour, and it must read the same whether its message landed in the strip
+/// (short) or in a payload (long).
+class ToolFact {
+  const ToolFact(this.key, this.value, {this.error = false});
+
+  final String key;
+  final String value;
+  final bool error;
+}
+
+/// The facts strip: short, structured values — a line count, an exit code, a
+/// grep's pattern and glob — laid out as dim `key value` pairs that wrap.
+///
+/// Deliberately *not* a panel and *not* a table. The old `ParamRow` gave every
+/// key a fixed 72 px gutter, which marooned `path` four characters into empty
+/// space and wrapped its value at whatever width was left; and wrapping those
+/// rows in a container drew a frame around text that needed none.
+class ToolFacts extends StatelessWidget {
+  const ToolFacts(this.facts, {super.key});
+
+  final List<ToolFact> facts;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final base = Theme.of(context).textTheme.bodySmall;
+    TextStyle? keyStyle(ToolFact f) => base?.copyWith(
+      color: f.error ? cs.error : cs.onSurfaceVariant.withValues(alpha: 0.75),
+      height: 1.2,
+    );
+    TextStyle? valueStyle(ToolFact f) => base?.mono.copyWith(
+      color: f.error ? cs.error : cs.onSurfaceVariant,
+      height: 1.2,
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: kSpace6),
+      child: Wrap(
+        spacing: kSpace12,
+        runSpacing: kSpace4,
         children: [
-          Text(title, style: Theme.of(context).textTheme.titleSmall?.mono),
-          const SizedBox(height: kSpace6),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(kSpace12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainer,
-              borderRadius: BorderRadius.circular(kRadius10),
+          for (final fact in facts)
+            // A fact is short, but `isFactResult` allows up to 80 characters,
+            // which is wider than a 430 pt pane: the value has to be able to
+            // shrink and wrap, or the Row overflows (it did, by 147 px).
+            ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: kReadableContentMaxWidth,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(fact.key, style: keyStyle(fact)),
+                  const SizedBox(width: kSpace4),
+                  // Selectable: an exit code or a match count is the kind of
+                  // thing you paste into the next question.
+                  Flexible(
+                    child: SelectableText(fact.value, style: valueStyle(fact)),
+                  ),
+                ],
+              ),
             ),
-            child: child,
-          ),
         ],
       ),
     );
   }
+}
+
+/// The single frame a payload gets: a fill from the app's own ramp, a hairline,
+/// a small radius, clipped.
+///
+/// Defined once and applied by [ToolBlock], so a code payload and a diff payload
+/// are framed identically and "one frame per payload" holds by construction
+/// rather than by convention. Diffs previously borrowed a frame from the old
+/// `ToolSection` container; when that went away they rendered as full-bleed
+/// tinted bands next to neatly panelled neighbours.
+class ToolPanel extends StatelessWidget {
+  const ToolPanel({super.key, required this.child, this.error = false});
+
+  final Widget child;
+  final bool error;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        // The app's own ramp, not the highlight theme's blue-grey (#282C34 /
+        // #F0F1F4): those belong to atom-one-dark and github, and a panel in a
+        // foreign neutral was a large part of why this body read as a guest in
+        // the transcript.
+        color: cs.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(kChatRadiusSmall),
+        border: Border.all(
+          color: error ? cs.error : cs.outlineVariant,
+          width: kChatCodeBorderWidth,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: child,
+    );
+  }
+}
+
+/// A payload plus its optional [caption] and the gap that separates it from the
+/// next block. The payload is wrapped in exactly one [ToolPanel].
+class ToolBlock extends StatelessWidget {
+  const ToolBlock({
+    super.key,
+    required this.child,
+    this.caption,
+    this.error = false,
+  });
+
+  final Widget child;
+
+  /// Omitted for a single-payload body.
+  final String? caption;
+  final bool error;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: kSpace10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (caption != null) ToolCaption(caption!, error: error),
+        ToolPanel(error: error, child: child),
+      ],
+    ),
+  );
 }
 
 /// Selectable monospace text — used for short result/summary strings.
@@ -163,11 +358,28 @@ class MonoText extends StatelessWidget {
   );
 }
 
+/// The highlight theme with its own panel background stripped.
+///
+/// [HighlightView] paints `theme['root'].backgroundColor` *inside* whatever
+/// container it is given, so colouring [ToolCodeBlock]'s box was not enough:
+/// the block still rendered atom-one-dark's `#282C34` (found on the real app,
+/// after a widget test asserting the container's colour had already passed).
+/// Token colours still highlight the code — only the panel is the app's.
+Map<String, TextStyle> _withoutPanel(Map<String, TextStyle> theme) => {
+  ...theme,
+  'root': (theme['root'] ?? const TextStyle()).copyWith(
+    backgroundColor: Colors.transparent,
+  ),
+};
+
+final Map<String, TextStyle> _codeThemeDark = _withoutPanel(atomOneDarkTheme);
+final Map<String, TextStyle> _codeThemeLight = _withoutPanel(githubTheme);
+
 /// A block of code/CLI output rendered with syntax highlighting in a rounded,
 /// horizontally-scrollable panel with a copy button — matching the markdown
 /// code-block look in `chat_message.dart`. Not text-selectable (HighlightView
 /// renders RichText); the copy button covers copy needs.
-class ToolCodeBlock extends StatelessWidget {
+class ToolCodeBlock extends StatefulWidget {
   const ToolCodeBlock(
     this.code, {
     super.key,
@@ -180,16 +392,32 @@ class ToolCodeBlock extends StatelessWidget {
   final bool error;
 
   @override
+  State<ToolCodeBlock> createState() => _ToolCodeBlockState();
+}
+
+class _ToolCodeBlockState extends State<ToolCodeBlock> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final code = widget.code;
+    final language = widget.language;
+    final error = widget.error;
     final cs = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        color: dark ? const Color(0xFF282C34) : const Color(0xFFF0F1F4),
-        borderRadius: BorderRadius.circular(kChatRadiusSmall),
-        border: Border.all(color: error ? cs.error : cs.outlineVariant),
-      ),
-      clipBehavior: Clip.antiAlias,
+    // On a pointer the copy affordance is hover-revealed, like the row's own
+    // disclosure caret; a touch platform has no hover, so it stays put.
+    final pointer = switch (Theme.of(context).platform) {
+      TargetPlatform.macOS ||
+      TargetPlatform.windows ||
+      TargetPlatform.linux => true,
+      _ => false,
+    };
+    // The frame belongs to [ToolPanel] (applied by [ToolBlock]); this draws only
+    // the code and its copy affordance.
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
       child: Stack(
         children: [
           SingleChildScrollView(
@@ -197,15 +425,23 @@ class ToolCodeBlock extends StatelessWidget {
             child: HighlightView(
               code.isEmpty ? '(empty)' : code,
               language: language.isEmpty ? 'plaintext' : language,
-              theme: dark ? atomOneDarkTheme : githubTheme,
-              padding: const EdgeInsets.fromLTRB(12, 12, 40, 12),
+              theme: dark ? _codeThemeDark : _codeThemeLight,
+              padding: const EdgeInsets.fromLTRB(11, 9, 34, 9),
               textStyle:
                   (Theme.of(context).textTheme.bodySmall ?? const TextStyle())
                       .mono
                       .copyWith(color: error ? cs.error : null),
             ),
           ),
-          Positioned(top: 2, right: 2, child: _CopyButton(code: code)),
+          Positioned(
+            top: 2,
+            right: 2,
+            child: AnimatedOpacity(
+              opacity: !pointer || _hovered ? 1 : 0,
+              duration: const Duration(milliseconds: 120),
+              child: _CopyButton(code: code),
+            ),
+          ),
         ],
       ),
     );
@@ -245,40 +481,6 @@ class _CopyButtonState extends State<_CopyButton> {
         color: _copied ? cs.primary : cs.onSurfaceVariant,
       ),
       onPressed: _copy,
-    );
-  }
-}
-
-/// Small label + value row, used to summarise tool parameters.
-class ParamRow extends StatelessWidget {
-  const ParamRow(this.label, this.value, {super.key});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.bodySmall?.mono.copyWith(
-                color: Theme.of(context).colorScheme.outline,
-              ),
-            ),
-          ),
-          Expanded(
-            child: SelectableText(
-              value,
-              style: Theme.of(context).textTheme.bodySmall?.mono,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -335,22 +537,19 @@ class _ReadRenderer extends ToolRenderer {
     final content = extractToolResultText(item.output ?? item.deltas.join());
     final offset = item.args['offset'];
     final limit = item.args['limit'];
+    // No `path` fact and no caption: the row's header still reads
+    // `Read <path>` while expanded, so the body is the file and nothing else.
+    final facts = <ToolFact>[
+      if (offset != null) ToolFact('offset', '$offset'),
+      if (limit != null) ToolFact('limit', '$limit'),
+      ...resultFacts(item),
+    ];
     return [
-      ToolSection(
-        title: 'Arguments',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ParamRow('path', path),
-            if (offset != null) ParamRow('offset', '$offset'),
-            if (limit != null) ParamRow('limit', '$limit'),
-          ],
+      if (facts.isNotEmpty) ToolFacts(facts),
+      if (content.trim().isNotEmpty && !isFactResult(content))
+        ToolBlock(
+          child: ToolCodeBlock(content, language: languageForPath(path)),
         ),
-      ),
-      ToolSection(
-        title: 'Content',
-        child: ToolCodeBlock(content, language: languageForPath(path)),
-      ),
     ];
   }
 }
@@ -364,10 +563,10 @@ class _WriteRenderer extends ToolRenderer {
 
   @override
   String summaryLine(ToolCallItem item) =>
-      'Wrote ${item.args['path'] ?? '(no path)'}';
+      'Write ${item.args['path'] ?? '(no path)'}';
 
   @override
-  String label(ToolCallItem item) => 'Wrote';
+  String label(ToolCallItem item) => 'Write';
 
   @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
@@ -375,14 +574,20 @@ class _WriteRenderer extends ToolRenderer {
     final content =
         item.args['content']?.toString() ?? item.args['text']?.toString() ?? '';
     final result = extractToolResultText(item.output ?? item.summary ?? '');
+    final facts = <ToolFact>[
+      // Encoded bytes, not `content.length`: that counts UTF-16 code units, so
+      // an emoji measured 2 and a 3-byte character measured 1.
+      ToolFact('bytes', '${utf8.encode(content).length}'),
+      if (isFactResult(result)) ToolFact('result', oneLine(result)),
+    ];
     return [
-      ToolSection(title: 'Arguments', child: ParamRow('path', path)),
-      ToolSection(
-        title: 'Content written',
-        child: ToolCodeBlock(content, language: languageForPath(path)),
-      ),
-      if (result.isNotEmpty)
-        ToolSection(title: 'Result', child: MonoText(result)),
+      ToolFacts(facts),
+      if (content.trim().isNotEmpty)
+        ToolBlock(
+          child: ToolCodeBlock(content, language: languageForPath(path)),
+        ),
+      if (result.trim().isNotEmpty && !isFactResult(result))
+        ToolBlock(caption: 'result', child: ToolCodeBlock(result)),
     ];
   }
 }
@@ -396,10 +601,10 @@ class _EditRenderer extends ToolRenderer {
 
   @override
   String summaryLine(ToolCallItem item) =>
-      'Edited ${item.args['path'] ?? '(no path)'}';
+      'Edit ${item.args['path'] ?? '(no path)'}';
 
   @override
-  String label(ToolCallItem item) => 'Edited';
+  String label(ToolCallItem item) => 'Edit';
 
   /// Read the "before"/"after" text from whichever key the agent used.
   /// Different agents name these differently (edit/StrReplace tools commonly
@@ -414,7 +619,6 @@ class _EditRenderer extends ToolRenderer {
 
   @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
-    final path = item.args['path']?.toString();
     final oldText = _pick(item.args, const [
       'oldText',
       'old_string',
@@ -433,28 +637,31 @@ class _EditRenderer extends ToolRenderer {
     final hasDiff = oldText.isNotEmpty || newText.isNotEmpty;
     final output = extractToolResultText(item.resultText);
 
+    // One diff, not two sections: the agent's own diff output when it sent one
+    // (it is already a hashline diff), otherwise the one computed from the
+    // before/after text. The shape goes in the strip where it can be read at a
+    // glance; the path stays in the row's header.
+    final added = lines.where((l) => l.kind == DiffKind.added).length;
+    final removed = lines.where((l) => l.kind == DiffKind.removed).length;
     return [
-      if (path != null && path.isNotEmpty)
-        ToolSection(title: 'Arguments', child: ParamRow('path', path)),
-      if (hasDiff)
-        ToolSection(
-          title: 'Changes',
+      if (added > 0 || removed > 0)
+        ToolFacts([
+          ToolFact('added', '+$added'),
+          ToolFact('removed', '−$removed'),
+        ]),
+      if (output.isNotEmpty)
+        ToolBlock(child: DiffText(output))
+      else if (hasDiff)
+        ToolBlock(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [for (final line in lines) DiffLineRow(line: line)],
           ),
-        ),
-      // The edit tool's result is itself a diff (hashline `+`/`-`/context rows
-      // under a `[path#HASH]` header) — render it colour-coded.
-      if (output.isNotEmpty)
-        ToolSection(title: 'Diff', child: DiffText(output))
-      else if (!hasDiff)
-        ToolSection(
-          title: 'Changes',
-          child: Text(
-            'No diff details provided by the agent.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+        )
+      else
+        Text(
+          'No diff details provided by the agent.',
+          style: Theme.of(context).textTheme.bodySmall,
         ),
     ];
   }
@@ -469,7 +676,7 @@ class _ApplyPatchRenderer extends ToolRenderer {
   @override
   String get name => 'apply_patch';
   @override
-  String get displayName => 'Edited';
+  String get displayName => 'Edit';
   @override
   IconData get icon => PhosphorIconsLight.pencil;
 
@@ -486,14 +693,14 @@ class _ApplyPatchRenderer extends ToolRenderer {
   String summaryLine(ToolCallItem item) {
     final changes = _changes(item);
     if (changes.length == 1) {
-      return 'Edited ${changes.first['path'] ?? '(no path)'}';
+      return 'Edit ${changes.first['path'] ?? '(no path)'}';
     }
-    if (changes.isEmpty) return 'Edited';
-    return 'Edited ${changes.length} files';
+    if (changes.isEmpty) return 'Edit';
+    return 'Edit ${changes.length} files';
   }
 
   @override
-  String label(ToolCallItem item) => 'Edited';
+  String label(ToolCallItem item) => 'Edit';
 
   @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
@@ -501,8 +708,11 @@ class _ApplyPatchRenderer extends ToolRenderer {
     if (changes.isEmpty) return genericToolBody(context, item);
     return [
       for (final change in changes)
-        ToolSection(
-          title: change['path']?.toString() ?? '(no path)',
+        ToolBlock(
+          // N files means N payloads, so each one is captioned with its path.
+          caption: changes.length == 1
+              ? null
+              : change['path']?.toString() ?? '(no path)',
           child: (change['diff']?.toString() ?? '').isEmpty
               ? Text(
                   'No diff details provided by the agent.',
@@ -521,36 +731,49 @@ class _BashRenderer extends ToolRenderer {
   @override
   IconData get icon => PhosphorIconsLight.terminalWindow;
 
+  /// The commands, not their arguments: `Run grep, gh pr, sed, makit serve`.
+  /// The verbatim command is one hover (the row's tooltip) or one tap (the
+  /// expanded body) away — see `mockups/tool-one-liner.html` §2/§4.
+  ///
+  /// A **destructive** call is the exception: `Run rm` hides exactly what the
+  /// reader needs (found by QA on the real app), and this is the row the whole
+  /// scheme keeps its signal in reserve for — so it shows the full command,
+  /// matching its tinted glyph.
   @override
   String summaryLine(ToolCallItem item) {
-    final cmd = compactCommand(item.args['command']?.toString() ?? '');
-    return cmd.isEmpty ? 'Ran' : 'Ran $cmd';
+    final command = item.args['command']?.toString() ?? '';
+    final payload = item.risk == ToolRisk.destructive
+        ? compactCommand(command)
+        : commandNames(command);
+    return payload.isEmpty ? 'Run' : 'Run $payload';
   }
 
   @override
-  String label(ToolCallItem item) => 'Ran';
+  String label(ToolCallItem item) => 'Run';
+
+  // The names alone cannot say *what* was grepped, so the row hands the whole
+  // command back on hover — prologue stripped, everything else verbatim.
+  @override
+  String? tooltip(ToolCallItem item) {
+    final full = compactCommand(item.args['command']?.toString() ?? '');
+    return full.isEmpty ? null : full;
+  }
 
   @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
     final command = item.args['command']?.toString() ?? '';
-    final output = extractToolResultText(item.resultText);
-    final failed = item.ended && (item.exitCode ?? 0) != 0;
+    final output = resultPayload(context, item, caption: 'output');
+    final facts = resultFacts(item);
     return [
       if (command.isNotEmpty)
-        ToolSection(
-          title: 'Command',
+        ToolBlock(
+          // Captioned only when the output is a payload too: one block needs no
+          // label, and shell text is self-evidently the command (rule 1).
+          caption: output.isEmpty ? null : 'command',
           child: ToolCodeBlock(command, language: 'bash'),
         ),
-      if (output.isNotEmpty)
-        ToolSection(
-          title: failed ? 'Error' : 'Output',
-          child: ToolCodeBlock(output, language: 'plaintext', error: failed),
-        )
-      else if (item.ended)
-        ToolSection(
-          title: failed ? 'Error' : 'Result',
-          child: MonoText(item.summary ?? 'exit ${item.exitCode ?? 0}'),
-        ),
+      ...output,
+      if (facts.isNotEmpty) ToolFacts(facts),
     ];
   }
 }
@@ -577,28 +800,18 @@ class _GrepRenderer extends ToolRenderer {
     final glob = item.args['glob']?.toString();
     final path = item.args['path']?.toString();
     final output = extractToolResultText(item.output ?? item.deltas.join());
+    final matches = output.trim().isEmpty
+        ? 0
+        : output.trim().split('\n').length;
     return [
-      ToolSection(
-        title: 'Search',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (pattern.isNotEmpty) ParamRow('pattern', pattern),
-            if (glob != null) ParamRow('glob', glob),
-            if (path != null) ParamRow('path', path),
-          ],
-        ),
-      ),
-      if (output.isNotEmpty)
-        ToolSection(
-          title: 'Results',
-          child: ToolCodeBlock(output, language: 'plaintext'),
-        )
-      else if (item.ended)
-        ToolSection(
-          title: 'Results',
-          child: MonoText(item.summary ?? 'No matches found'),
-        ),
+      ToolFacts([
+        if (pattern.isNotEmpty) ToolFact('pattern', pattern),
+        if (glob != null) ToolFact('glob', glob),
+        if (path != null) ToolFact('path', path),
+        if (item.ended) ToolFact('matches', '$matches'),
+      ]),
+      if (output.trim().isNotEmpty)
+        ToolBlock(child: ToolCodeBlock(output, language: 'plaintext')),
     ];
   }
 }
@@ -621,23 +834,7 @@ class _MemoryRenderer extends ToolRenderer {
 
   @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
-    final args = item.args;
-    final result = extractToolResultText(item.resultText);
-    return [
-      if (args.isNotEmpty)
-        ToolSection(
-          title: 'Input',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final e in args.entries)
-                ParamRow(e.key, valueString(e.value)),
-            ],
-          ),
-        ),
-      if (result.isNotEmpty)
-        ToolSection(title: 'Result', child: MonoText(result)),
-    ];
+    return genericToolBody(context, item);
   }
 }
 
@@ -659,25 +856,8 @@ class _SkillRenderer extends ToolRenderer {
   String label(ToolCallItem item) => 'Skill';
 
   @override
-  List<Widget> body(BuildContext context, ToolCallItem item) {
-    final args = item.args;
-    final result = extractToolResultText(item.resultText);
-    return [
-      if (args.isNotEmpty)
-        ToolSection(
-          title: 'Arguments',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final e in args.entries)
-                ParamRow(e.key, valueString(e.value)),
-            ],
-          ),
-        ),
-      if (result.isNotEmpty)
-        ToolSection(title: 'Description', child: MonoText(result)),
-    ];
-  }
+  List<Widget> body(BuildContext context, ToolCallItem item) =>
+      genericToolBody(context, item);
 }
 
 /// Registry. Order does not matter — first matching name wins.
@@ -725,6 +905,10 @@ class _AskUserQuestionRenderer extends ToolRenderer {
 
   @override
   String summaryLine(ToolCallItem item) => 'Ask the user';
+
+  // The verb is one word; "the user" is payload, so only "Ask" is emphasised.
+  @override
+  String verb(ToolCallItem item) => 'Ask';
 
   List<Map<String, dynamic>> _questions(ToolCallItem item) {
     final raw = item.args['questions'];

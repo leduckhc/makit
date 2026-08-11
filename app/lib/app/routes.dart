@@ -21,6 +21,10 @@ const kRouteSettings = '$kRouteRepos/settings';
 const kRouteArchived = '$kRouteRepos/archived';
 const kRouteDiagnostics = '$kRouteRepos/diagnostics';
 
+/// The Activity feed (SPEC-48) — every outcome the app has reported, with the
+/// error text still attached.
+const kRouteActivity = '$kRouteRepos/activity';
+
 /// The global Ports screen (SPEC-42 P2a) — "everything, all repos". Accepts an
 /// optional `?repo=<id>` that pre-selects the *This repo* filter.
 const kRoutePorts = '$kRouteRepos/ports';

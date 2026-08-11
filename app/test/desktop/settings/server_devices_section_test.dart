@@ -13,6 +13,8 @@ import 'package:makit/desktop/screens/providers.dart'
     show cliInstallerProvider, controlClientProvider;
 import 'package:makit/desktop/settings/sections/server_devices_section.dart';
 import 'package:makit/desktop/settings/server_config.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/connection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -43,6 +45,7 @@ Future<void> _pump(
   DesktopController? controller,
   MakitConnState? connection,
   CliInstaller? installer,
+  StatusCenter? statusCenter,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -54,6 +57,8 @@ Future<void> _pump(
         connectionProvider.overrideWithValue(connection ?? MakitConnState()),
         if (installer != null)
           cliInstallerProvider.overrideWithValue(installer),
+        if (statusCenter != null)
+          statusCenterProvider.overrideWithValue(statusCenter),
       ],
       child: const MaterialApp(home: Scaffold(body: ServerDevicesSection())),
     ),
@@ -346,10 +351,13 @@ void main() {
     testWidgets('shown when the app bundles a CLI; installs on tap', (
       tester,
     ) async {
+      final center = StatusCenter();
+      addTearDown(center.dispose);
       await _pump(
         tester,
         config: await makeConfig(),
         installer: installerWithBundle(bundled: true),
+        statusCenter: center,
       );
       await scrollToCli(tester);
 
@@ -361,7 +369,7 @@ void main() {
       await tester.pump();
 
       expect(File('${tmp.path}/.local/bin/makit').existsSync(), isTrue);
-      expect(find.textContaining('Installed makit CLI'), findsOneWidget);
+      expect(center.events.single.title, startsWith('Installed makit CLI'));
     });
 
     testWidgets('hidden when the build has no bundled CLI', (tester) async {

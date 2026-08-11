@@ -9,13 +9,18 @@ import 'package:makit/transport/protocol.dart';
 import 'package:makit/ui/session/diff_view.dart';
 import 'package:makit/ui/session/tool_renderers.dart';
 
-ToolCallItem _tool(String name, Map<String, dynamic> args) => ToolCallItem(
+ToolCallItem _tool(
+  String name,
+  Map<String, dynamic> args, {
+  ToolRisk risk = ToolRisk.safe,
+}) => ToolCallItem(
   seq: 1,
   ts: 0,
   callId: 'c1',
   name: name,
   args: args,
   ended: true,
+  risk: risk,
 );
 
 /// Pump a renderer's inline [ToolRenderer.body] inside a minimal scaffold —
@@ -67,23 +72,54 @@ void main() {
   });
 
   group('summaryLine — the collapsed one-liner', () {
-    test('bash summarises the command', () {
+    // The shell row lists the commands, not their arguments — the full command
+    // moves to the row's tooltip and its expanded body. See `commandNames` in
+    // tool_summary.dart and `mockups/tool-one-liner.html` §2.
+    test('bash lists the commands it ran', () {
       expect(
         toolSummaryLine(_tool('bash', {'command': 'echo hi'})),
-        'Ran echo hi',
+        'Run echo',
+      );
+      expect(
+        toolSummaryLine(
+          _tool('bash', {'command': 'grep -rn x src | head -20'}),
+        ),
+        'Run grep, head',
       );
     });
-    test('bash drops the cd/export prologue and chains the rest', () {
+    test('bash drops the cd/export prologue', () {
       expect(
         toolSummaryLine(_tool('bash', {'command': 'cd /x &&\n  pnpm  server'})),
-        'Ran pnpm server',
+        'Run pnpm server',
       );
       expect(
         toolSummaryLine(
           _tool('bash', {'command': 'cd /x && export PATH=/y && pnpm test'}),
         ),
-        'Ran pnpm test +env',
+        'Run pnpm test',
       );
+    });
+    // Found by QA on the real macOS app: `rm -rf ~/Library/Caches/… && rm -rf
+    // build` collapsed to `Run rm`, hiding the one thing a destructive row must
+    // show. A destructive call is the exception the whole scheme reserves its
+    // signal for, so it keeps its arguments.
+    test('a destructive call keeps its arguments', () {
+      expect(
+        toolSummaryLine(
+          _tool('bash', {
+            'command': 'cd /repo && rm -rf ~/Library/Caches/x && rm -rf build',
+          }, risk: ToolRisk.destructive),
+        ),
+        'Run rm -rf ~/Library/Caches/x › rm -rf build',
+      );
+    });
+
+    test('bash hands the whole command back as the row tooltip', () {
+      expect(
+        toolTooltip(_tool('bash', {'command': 'cd /x && grep -rn y src'})),
+        'grep -rn y src',
+      );
+      expect(toolTooltip(_tool('read', {'path': 'lib/foo.dart'})), isNull);
     });
     test('paths are shown relative to the session worktree', () {
       expect(
@@ -97,7 +133,7 @@ void main() {
     test('edit/read/write/grep summarise their target', () {
       expect(
         toolSummaryLine(_tool('edit', {'path': 'lib/foo.dart'})),
-        'Edited lib/foo.dart',
+        'Edit lib/foo.dart',
       );
       expect(
         toolSummaryLine(_tool('read', {'path': 'lib/foo.dart'})),
@@ -105,7 +141,7 @@ void main() {
       );
       expect(
         toolSummaryLine(_tool('write', {'path': 'out.txt'})),
-        'Wrote out.txt',
+        'Write out.txt',
       );
       expect(toolSummaryLine(_tool('grep', {'pattern': 'TODO'})), 'Grep TODO');
     });
@@ -128,7 +164,7 @@ void main() {
             ],
           }),
         ),
-        'Edited lib/foo.dart',
+        'Edit lib/foo.dart',
       );
       expect(
         toolSummaryLine(
@@ -139,23 +175,23 @@ void main() {
             ],
           }),
         ),
-        'Edited 2 files',
+        'Edit 2 files',
       );
       expect(
         toolSummaryLine(
           _tool('apply_patch', {'changes': <Map<String, dynamic>>[]}),
         ),
-        'Edited',
+        'Edit',
       );
     });
   });
 
   group('label — the short header shown when expanded', () {
     test('registered tools expose just the verb', () {
-      expect(toolLabel(_tool('bash', {'command': 'echo hi'})), 'Ran');
+      expect(toolLabel(_tool('bash', {'command': 'echo hi'})), 'Run');
       expect(toolLabel(_tool('read', {'path': 'x'})), 'Read');
-      expect(toolLabel(_tool('write', {'path': 'x'})), 'Wrote');
-      expect(toolLabel(_tool('edit', {'path': 'x'})), 'Edited');
+      expect(toolLabel(_tool('write', {'path': 'x'})), 'Write');
+      expect(toolLabel(_tool('edit', {'path': 'x'})), 'Edit');
       expect(toolLabel(_tool('grep', {'pattern': 'x'})), 'Grep');
       expect(toolLabel(_tool('memory', {'action': 'add'})), 'Memory');
       expect(toolLabel(_tool('skill', {'name': 'x'})), 'Skill');
@@ -177,23 +213,25 @@ void main() {
   });
 
   group('read renderer body', () {
-    testWidgets('shows path and file content in a code block', (tester) async {
+    // The path is NOT repeated here: the row's header keeps reading
+    // `Read lib/main.dart` while expanded (tool_body_test.dart).
+    testWidgets('is the file content and nothing else', (tester) async {
       final item = ToolCallItem(
         seq: 1,
         ts: 0,
         callId: 'c1',
         name: 'read',
         args: const {'path': 'lib/main.dart'},
-        output: 'void main() {}',
+        output: 'void main() {}\nfinal x = 1;',
         ended: true,
       );
       await _pumpBody(tester, item);
 
-      expect(find.text('lib/main.dart'), findsOneWidget);
-      expect(_codeBlocks(tester), contains('void main() {}'));
+      expect(find.text('lib/main.dart'), findsNothing);
+      expect(_codeBlocks(tester), contains('void main() {}\nfinal x = 1;'));
     });
 
-    testWidgets('renders an (empty) code block when output is blank', (
+    testWidgets('a blank result is a fact, not an (empty) code block', (
       tester,
     ) async {
       final item = ToolCallItem(
@@ -206,13 +244,15 @@ void main() {
         ended: true,
       );
       await _pumpBody(tester, item);
-      expect(find.byType(ToolCodeBlock), findsOneWidget);
-      expect(_codeBlocks(tester), contains(''));
+      expect(find.byType(ToolCodeBlock), findsNothing);
+      expect(find.text('exit 0'), findsOneWidget);
     });
   });
 
   group('write renderer body', () {
-    testWidgets('shows path and written content', (tester) async {
+    testWidgets('is the written content, with its size as a fact', (
+      tester,
+    ) async {
       final item = ToolCallItem(
         seq: 1,
         ts: 0,
@@ -223,7 +263,8 @@ void main() {
       );
       await _pumpBody(tester, item);
 
-      expect(find.text('out.txt'), findsOneWidget);
+      expect(find.text('out.txt'), findsNothing, reason: 'the header has it');
+      expect(find.text('11'), findsOneWidget, reason: 'bytes');
       expect(_codeBlocks(tester), contains('hello world'));
     });
   });
@@ -238,17 +279,17 @@ void main() {
         callId: 'c1',
         name: 'bash',
         args: const {'command': 'echo hi'},
-        output: 'hi',
+        output: 'hi\nthere',
         ended: true,
         exitCode: 0,
       );
       await _pumpBody(tester, item);
 
-      expect(find.text('Command'), findsOneWidget);
-      expect(find.text('Output'), findsOneWidget);
+      expect(find.text('COMMAND'), findsOneWidget);
+      expect(find.text('OUTPUT'), findsOneWidget);
       final blocks = _codeBlocks(tester);
       expect(blocks, contains('echo hi'));
-      expect(blocks, contains('hi'));
+      expect(blocks, contains('hi\nthere'));
     });
   });
 
@@ -281,7 +322,10 @@ void main() {
       });
       await _pumpBody(tester, item);
 
-      expect(find.text('lib/foo.dart'), findsOneWidget);
+      // The path is in the row's header, not the body; the shape is a fact.
+      expect(find.text('lib/foo.dart'), findsNothing);
+      expect(find.text('+1'), findsOneWidget);
+      expect(find.text('\u22121'), findsOneWidget);
       expect(find.text('final x = 1;'), findsOneWidget);
       expect(find.text('final x = 2;'), findsOneWidget);
       // Removed gutter uses U+2212 MINUS; added uses '+'.
@@ -326,9 +370,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Arguments'), findsOneWidget);
-      // Values render as readable rows, not `{"fix":true,...}`.
+      // Short values are facts in the strip — no section, no panel — and still
+      // never a raw `{"fix":true,…}` blob.
+      expect(find.byType(ToolFacts), findsOneWidget);
       expect(find.text('true'), findsOneWidget);
+      expect(find.text('fix'), findsOneWidget);
       expect(find.textContaining('{'), findsNothing);
     });
   });
@@ -347,8 +393,8 @@ void main() {
         ended: true,
       );
       await _pumpBody(tester, item);
-      expect(find.text('Input'), findsOneWidget);
       expect(find.text('Saved'), findsNothing);
+      expect(find.text('add'), findsOneWidget);
       expect(find.text('remember this'), findsOneWidget);
     });
 
@@ -363,8 +409,7 @@ void main() {
         ended: true,
       );
       await _pumpBody(tester, item);
-      expect(find.text('Arguments'), findsOneWidget);
-      expect(find.text('Description'), findsOneWidget);
+      expect(find.text('cavecrew'), findsOneWidget);
       expect(find.text('how to delegate'), findsOneWidget);
     });
   });
@@ -449,8 +494,9 @@ void main() {
       await _pumpBody(tester, item);
 
       expect(find.byType(DiffText), findsNWidgets(2));
-      expect(find.text('lib/foo.dart'), findsOneWidget);
-      expect(find.text('lib/new.dart'), findsOneWidget);
+      // Two payloads, so each is captioned with its own path (uppercased).
+      expect(find.text('LIB/FOO.DART'), findsOneWidget);
+      expect(find.text('LIB/NEW.DART'), findsOneWidget);
       expect(find.text('-final x = 1;'), findsOneWidget);
       expect(find.text('+final x = 2;'), findsOneWidget);
     });
@@ -473,7 +519,9 @@ void main() {
       await _pumpBody(tester, item);
 
       expect(find.byType(DiffText), findsNothing);
-      expect(find.text('lib/no_diff.dart'), findsOneWidget);
+      // One file = one payload = no caption; the header already names it.
+      expect(find.text('lib/no_diff.dart'), findsNothing);
+      expect(find.byType(ToolCaption), findsNothing);
       expect(
         find.text('No diff details provided by the agent.'),
         findsOneWidget,

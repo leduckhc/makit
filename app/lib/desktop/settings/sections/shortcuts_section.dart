@@ -17,6 +17,8 @@ import '../../../shortcuts/key_chord.dart';
 import '../../../shortcuts/keymap.dart';
 import '../../../shortcuts/keymap_controller.dart';
 import '../../../shortcuts/shortcut_action.dart';
+import '../../../status/status_event.dart';
+import '../../../status/status_providers.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
 import 'settings_reset_button.dart';
@@ -127,32 +129,32 @@ class _ShortcutRow extends ConsumerWidget {
   }
 
   Future<void> _rebind(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final chord = await showDialog<KeyChord>(
       context: context,
       builder: (_) => _RecordChordDialog(action: action),
     );
     if (chord == null) return;
     // The dialog is async; bail if the section was disposed meanwhile so we
-    // don't touch a stale messenger/ref.
+    // don't touch a stale ref.
     if (!context.mounted) return;
 
     // Global shortcuts must carry a non-shift modifier or they would swallow
     // ordinary typing; composer shortcuts (e.g. plain Enter) may be bare.
     if (action.scope == ShortcutScope.global && !chord.hasNonShiftModifier) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Window shortcuts need ⌘, ⌃, or ⌥.')),
+      status.warning(
+        'Window shortcuts need ⌘, ⌃, or ⌥.',
+        source: StatusSources.settings,
       );
       return;
     }
     final conflict = keymap.conflictFor(chord, action.scope, ignore: action);
     if (conflict != null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            '${chord.label} is already used by "${conflict.label}".',
-          ),
-        ),
+      status.warning(
+        '${chord.label} is already used by "${conflict.label}".',
+        source: StatusSources.settings,
       );
       return;
     }

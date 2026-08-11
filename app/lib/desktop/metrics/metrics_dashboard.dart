@@ -24,6 +24,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../../store/metrics.dart';
 import 'charts.dart';
 import 'frame_timings.dart';
@@ -1060,9 +1062,7 @@ class _Footer extends ConsumerWidget {
           const SizedBox(width: kSpace8),
           OutlinedButton.icon(
             key: kDashboardExportKey,
-            onPressed: history.isEmpty
-                ? null
-                : () => _copyExport(context, ref, history),
+            onPressed: history.isEmpty ? null : () => _copyExport(ref, history),
             icon: const Icon(PhosphorIconsLight.download, size: 14),
             label: const Text('Export snapshot'),
             style: OutlinedButton.styleFrom(
@@ -1085,21 +1085,16 @@ class _Footer extends ConsumerWidget {
   /// but the samples behind them could not, so nobody could re-examine or diff
   /// them. This is still the only path from a sample to disk, and only on an
   /// explicit click (decision 5).
-  Future<void> _copyExport(
-    BuildContext context,
-    WidgetRef ref,
-    List<MetricsSample> history,
-  ) async {
+  Future<void> _copyExport(WidgetRef ref, List<MetricsSample> history) async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final md = metricsExportMarkdown(
       history: history,
       appVersion: 'makit',
       platform: defaultTargetPlatform.name,
       baseline: baseline,
     );
-    // Captured BEFORE the first await: the messenger must not be looked up from a
-    // context that may have been unmounted while the file was being written.
-    final messenger = ScaffoldMessenger.maybeOf(context);
-
     // The two halves are independent and must fail independently: a clipboard
     // that refuses (no platform handler, a locked pasteboard) must not cost the
     // user the JSON artifact, and vice versa.
@@ -1131,18 +1126,29 @@ class _Footer extends ConsumerWidget {
     } catch (_) {
       copied = false;
     }
-    final String message;
     if (copied && path != null) {
-      message = 'Copied as markdown · JSON written to $path';
+      status.success(
+        'Copied metrics markdown and wrote the JSON snapshot',
+        source: StatusSources.metrics,
+        detail: path,
+      );
     } else if (copied) {
-      message = 'Copied as markdown — could not write the JSON snapshot';
+      status.warning(
+        'Copied metrics markdown, but could not write the JSON snapshot',
+        source: StatusSources.metrics,
+      );
     } else if (path != null) {
-      message = 'JSON written to $path — could not copy to the clipboard';
+      status.warning(
+        'Wrote the JSON snapshot, but could not copy to the clipboard',
+        source: StatusSources.metrics,
+        detail: path,
+      );
     } else {
-      message =
-          'Export failed — neither the clipboard nor the file was written';
+      status.failure(
+        'Export failed — neither the clipboard nor the file was written',
+        source: StatusSources.metrics,
+      );
     }
-    messenger?.showSnackBar(SnackBar(content: Text(message)));
   }
 }
 

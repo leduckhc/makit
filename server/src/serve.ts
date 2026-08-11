@@ -19,6 +19,7 @@ import { type PushSender } from "./push/sender.js";
 import { buildWakePayload } from "./push/payload.js";
 import { startBridge } from "./bridge.js";
 import { installProcessCrashHandlers } from "./crash_capture.js";
+import { adoptLoginShellPathIfMinimal } from "./login_path.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve as resolvePath } from "node:path";
 import { loadOrCreateCert, chooseBindHost, type BindMode } from "./pairing/cert.js";
@@ -128,6 +129,9 @@ export async function runServe(opts: ServeArgs) {
   // In-app logging: capture uncaught errors / rejections into the server log
   // (~/.makit/makit.log) with a consistent, greppable tag before anything else.
   installProcessCrashHandlers();
+  // A daemon spawned by the GUI app inherits launchd's PATH, where no agent
+  // binary resolves. Repair it before anything can spawn one.
+  adoptLoginShellPathIfMinimal();
   const cert = await loadOrCreateCert();
   const registry = new DeviceRegistry();
 

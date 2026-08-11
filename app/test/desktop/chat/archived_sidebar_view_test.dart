@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/archived_sidebar_view.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
@@ -89,8 +91,9 @@ RepoInfo _repo() => const RepoInfo(
 
 Future<_ArchiveConn> _pumpArchived(
   WidgetTester tester,
-  List<Map<String, dynamic>> archived,
-) async {
+  List<Map<String, dynamic>> archived, {
+  StatusCenter? statusCenter,
+}) async {
   final conn = _ArchiveConn(archived);
   final container = ProviderContainer(
     overrides: [
@@ -99,6 +102,8 @@ Future<_ArchiveConn> _pumpArchived(
       sidebarArchivedProvider.overrideWith(
         (_) => true,
       ), // start in archived view
+      if (statusCenter != null)
+        statusCenterProvider.overrideWithValue(statusCenter),
     ],
   );
   addTearDown(container.dispose);
@@ -168,7 +173,11 @@ void main() {
   testWidgets('Restore reloads the list without surfacing an error', (
     tester,
   ) async {
-    final conn = await _pumpArchived(tester, [_arch('s1', 'Adapter resume')]);
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    final conn = await _pumpArchived(tester, [
+      _arch('s1', 'Adapter resume'),
+    ], statusCenter: center);
     final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await gesture.addPointer(location: Offset.zero);
     addTearDown(gesture.removePointer);
@@ -179,9 +188,9 @@ void main() {
     await tester.pumpAndSettle();
 
     // The buggy `setState(() => _future = _load())` returned a Future, whose
-    // assertion was caught by _restore and shown as a "Could not restore"
-    // snackbar even though the unarchive succeeded. Guard against regressing.
-    expect(find.textContaining('Could not restore'), findsNothing);
+    // assertion was caught by _restore and recorded as a "Could not restore"
+    // failure even though the unarchive succeeded. Guard against regressing.
+    expect(center.events, isEmpty);
     // And the list refetches so the restored row drops out of the archive.
     final reloads = conn.sent
         .where((b) => b['kind'] == 'session.listArchived')

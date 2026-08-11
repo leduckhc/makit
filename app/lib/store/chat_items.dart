@@ -183,6 +183,7 @@ class ThinkingItem extends ChatItem {
     required this.text,
     this.thinkId,
     this.streaming = false,
+    this.lastTs,
   });
   final String text;
 
@@ -193,13 +194,21 @@ class ThinkingItem extends ChatItem {
   /// True while reasoning tokens are still streaming in.
   final bool streaming;
 
-  ThinkingItem copyWith({String? text, bool? streaming}) => ThinkingItem(
-    seq: seq,
-    ts: ts,
-    text: text ?? this.text,
-    thinkId: thinkId,
-    streaming: streaming ?? this.streaming,
-  );
+  /// Timestamp of the last observed reasoning event — the final `agent.thinking`
+  /// or, for a still-streaming card, the most recent `agent.thinking.delta`
+  /// (SPEC-47 D1). Null when no terminal/delta event has landed. [ts] stays the
+  /// start, so the reasoning span is `[ts, lastTs]`.
+  final int? lastTs;
+
+  ThinkingItem copyWith({String? text, bool? streaming, int? lastTs}) =>
+      ThinkingItem(
+        seq: seq,
+        ts: ts,
+        text: text ?? this.text,
+        thinkId: thinkId,
+        streaming: streaming ?? this.streaming,
+        lastTs: lastTs ?? this.lastTs,
+      );
 }
 
 class ToolCallItem extends ChatItem {
@@ -216,6 +225,7 @@ class ToolCallItem extends ChatItem {
     this.output,
     this.details,
     this.risk = ToolRisk.safe,
+    this.endedTs,
   });
 
   final String callId;
@@ -233,6 +243,13 @@ class ToolCallItem extends ChatItem {
   /// renderers that want more than the text. Null for most tools.
   final Map<String, dynamic>? details;
   final ToolRisk risk;
+
+  /// Timestamp of the `tool.call.end` that closed this call (SPEC-47 D1), or
+  /// null when no terminal event was observed. Null is NOT "still running":
+  /// codex can leave an aborted call with no end forever (D6a), so a live
+  /// counter must freeze at its turn's close rather than trust this. [ts] stays
+  /// the start, so the span is `[ts, endedTs]`.
+  final int? endedTs;
 
   /// The tool result text: streamed [deltas] when present, else the final
   /// [output] (empty string when neither is set). The single source of this
@@ -253,6 +270,7 @@ class ToolCallItem extends ChatItem {
     String? summary,
     String? output,
     Map<String, dynamic>? details,
+    int? endedTs,
   }) => ToolCallItem(
     seq: seq,
     ts: ts,
@@ -266,12 +284,37 @@ class ToolCallItem extends ChatItem {
     summary: summary ?? this.summary,
     output: output ?? this.output,
     details: details ?? this.details,
+    endedTs: endedTs ?? this.endedTs,
   );
 }
 
 class ErrorItem extends ChatItem {
   ErrorItem({required super.seq, required super.ts, required this.message});
   final String message;
+}
+
+/// A closed turn's receipt row (SPEC-47 D9): a dim `2m 13s · 14 tools`, plus a
+/// `… waiting on you` gate token when the turn was actually blocked. Projected
+/// into the chat items from [deriveTurns] at the closing edge — NOT built inside
+/// [foldEvents] (D18). [seq]/[ts] are the closing `idle`'s, so it orders after
+/// the turn's last content row.
+class TurnReceiptItem extends ChatItem {
+  TurnReceiptItem({
+    required super.seq,
+    required super.ts,
+    required this.wallMs,
+    required this.gatedMs,
+    required this.toolCount,
+  });
+
+  /// The turn's wall clock (headline figure).
+  final int wallMs;
+
+  /// Time the turn was blocked on the user; the gate token shows only when > 0.
+  final int gatedMs;
+
+  /// Tool calls in the turn (pluralised per D20).
+  final int toolCount;
 }
 
 /// Find the in-progress [ChatItem] registered under [id] in [index] and update
@@ -383,8 +426,9 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
             text: chunk,
             thinkId: thinkId,
             streaming: true,
+            lastTs: e.ts,
           ),
-          (cur) => cur.copyWith(text: cur.text + chunk),
+          (cur) => cur.copyWith(text: cur.text + chunk, lastTs: e.ts),
         );
       case EventKind.agentThinking:
         // Final (authoritative) thinking. Finalizes the streamed thinkId's card
@@ -397,9 +441,9 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           byThink,
           thinkId,
           () => text.trim().isNotEmpty
-              ? ThinkingItem(seq: e.seq, ts: e.ts, text: text)
+              ? ThinkingItem(seq: e.seq, ts: e.ts, text: text, lastTs: e.ts)
               : null,
-          (cur) => cur.copyWith(text: text, streaming: false),
+          (cur) => cur.copyWith(text: text, streaming: false, lastTs: e.ts),
           register: false,
         );
       case EventKind.toolCallStart:
@@ -438,6 +482,7 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
             summary: e.payload['summary'] as String?,
             output: e.payload['output'] as String?,
             details: (e.payload['details'] as Map?)?.cast<String, dynamic>(),
+            endedTs: e.ts,
           );
         }
       case EventKind.sessionStatus:

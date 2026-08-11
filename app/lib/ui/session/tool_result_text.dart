@@ -83,3 +83,23 @@ String valueString(dynamic value) {
     return value.toString();
   }
 }
+
+/// Longest single-line result still treated as a fact rather than a payload.
+/// Beyond this it stops fitting the facts strip and wants a block of its own.
+const int kToolFactMaxChars = 80;
+
+/// True when [text] is a *fact* — one short line, like `307 lines`,
+/// `No matches found` or `exit 0` — rather than a payload.
+///
+/// A fact belongs in the expanded body's dim key/value strip; a payload gets a
+/// panel with syntax highlighting and a copy button. Rendering `307 lines`
+/// as a payload is what put a highlighter and a copy button on a line of prose
+/// (see `mockups/tool-expanded-body.html` §5, rule 3).
+///
+/// Empty is neither: callers omit it entirely.
+bool isFactResult(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return false;
+  if (trimmed.contains('\n')) return false;
+  return trimmed.length <= kToolFactMaxChars;
+}
