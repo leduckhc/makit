@@ -5,7 +5,7 @@
 ///
 /// 1. `$MAKIT_HOME/` — the database, media, pairings, projects, certs and logs.
 /// 2. The secure-store namespace file — the pairing bearer (`secure_store.<id>`).
-/// 3. `NSUserDefaults` keys under the profile's key segment.
+/// 3. The profile's scoped preference keys (`<id>.*`).
 /// 4. The registry entry in `profiles.json`.
 ///
 /// Deleting only (1) leaks the other three; omitting (4) resurrects the profile
@@ -77,6 +77,11 @@ abstract interface class ProfileFileSystem {
   /// Whether [path] exists (file or directory).
   bool exists(String path);
 
+  /// Whether [path] exists **and is a directory**. Distinguished from [exists]
+  /// because a `home` that is a regular file would silently no-op a recursive
+  /// directory delete while still looking removed.
+  bool isDirectory(String path);
+
   /// Recursive byte sum of [path] (a file's own size, or every file under a
   /// directory). `0` when [path] does not exist.
   Future<int> sizeOf(String path);
@@ -102,6 +107,9 @@ class RealProfileFileSystem implements ProfileFileSystem {
   @override
   bool exists(String path) =>
       File(path).existsSync() || Directory(path).existsSync();
+
+  @override
+  bool isDirectory(String path) => Directory(path).existsSync();
 
   @override
   Future<int> sizeOf(String path) async {
@@ -180,9 +188,11 @@ class ProfileDeleter {
     String? homeDir,
     ProfileFileSystem? fs,
     bool? isMacOS,
+    Future<int> Function(ServerProfile profile)? purgePrefs,
   }) : homeDir = homeDir ?? (Platform.environment['HOME'] ?? ''),
        fs = fs ?? const RealProfileFileSystem(),
-       _isMacOS = isMacOS ?? Platform.isMacOS;
+       _isMacOS = isMacOS ?? Platform.isMacOS,
+       _purgePrefs = purgePrefs;
 
   /// The registry whose entry is removed last.
   final ProfileRegistry registry;
@@ -200,6 +210,12 @@ class ProfileDeleter {
   final ProfileFileSystem fs;
 
   final bool _isMacOS;
+
+  /// Purges a profile's preference keys, returning how many were removed (or a
+  /// negative number when the scope refuses, e.g. the unscoped legacy view).
+  /// Null where no prefs are wired (tests, headless contexts), in which case the
+  /// store is honestly reported as skipped.
+  final Future<int> Function(ServerProfile profile)? _purgePrefs;
 
   /// Recursive byte sum of [profile]'s `MAKIT_HOME`, for the Profiles UI size
   /// column. `0` when the home is gone. Does not include the tiny secure-store
@@ -230,16 +246,13 @@ class ProfileDeleter {
 
   /// Erases [profile] across its four stores, or refuses.
   ///
-  /// The prefs store (3) is the honest exception. Under SPEC-50 D11 the app
-  /// scopes preferences with `SharedPreferences.setPrefix`, and the plugin
-  /// throws once `getInstance()` has run — so this process's `SharedPreferences`
-  /// instance is pinned to the *active* profile's prefix and can neither see nor
-  /// delete another profile's keys. The active profile is refused outright, so
-  /// the only profiles that reach here are non-active ones whose prefs are, by
-  /// construction, unreachable from here. We therefore do **not** attempt a
-  /// silent no-op: the keys are reported in [ProfileDeletionResult.skipped] with
-  /// this reason, and purging them is deferred to the process that owns that
-  /// prefix (or a future migration off `setPrefix`).
+  /// The prefs store (3) is purged through the injected `purgePrefs` hook. This
+  /// is reachable because prefs are scoped by **key prefix**
+  /// (`ProfileScopedPrefs`) rather than the global
+  /// `SharedPreferences.setPrefix`, which could not be re-called after
+  /// `getInstance()` and so pinned this process to the active profile. Where no
+  /// prefs are wired (tests, headless contexts) the store is honestly reported in
+  /// [ProfileDeletionResult.skipped] rather than silently no-op'd.
   Future<ProfileDeletionResult> delete(ServerProfile profile) async {
     if (profile.isProtected) {
       return const ProfileDeletionResult(
@@ -282,10 +295,17 @@ class ProfileDeleter {
     // the registry entry survives to resurrect an empty home next launch. Each
     // failure is recorded in `skipped` and a result is always returned.
     try {
-      if (fs.exists(profile.home)) {
+      if (fs.isDirectory(profile.home)) {
         bytesFreed += await fs.sizeOf(profile.home);
         await fs.deleteDirectory(profile.home);
         removed.add('MAKIT_HOME ${profile.home}');
+      } else if (fs.exists(profile.home)) {
+        // A regular file at `home` is not a profile home. A recursive directory
+        // delete silently no-ops on it, so reporting it removed would be a lie;
+        // erase it as a file instead.
+        bytesFreed += await fs.sizeOf(profile.home);
+        await fs.deleteFile(profile.home);
+        removed.add('MAKIT_HOME ${profile.home} (was a file, not a directory)');
       } else {
         skipped.add('MAKIT_HOME ${profile.home}: already absent');
       }
@@ -313,13 +333,33 @@ class ProfileDeleter {
       }
     }
 
-    // (3) NSUserDefaults keys — see the doc comment: unreachable from this
-    // process for a non-active profile under the current setPrefix usage.
-    skipped.add(
-      'NSUserDefaults keys under "${profile.prefsKeyPrefix}": not purgeable '
-      'from this process (SharedPreferences.setPrefix pins the active profile; '
-      'see SPEC-50 D11)',
-    );
+    // (3) preference keys. Reachable for a non-active profile now that prefs are
+    // scoped by key prefix (ProfileScopedPrefs) rather than the global
+    // SharedPreferences.setPrefix, so this actually purges instead of always
+    // reporting the store skipped.
+    final purge = _purgePrefs;
+    if (purge == null) {
+      skipped.add(
+        'preference keys under "${profile.prefsKeyPrefix}": no prefs wired in '
+        'this context',
+      );
+    } else {
+      try {
+        final count = await purge(profile);
+        if (count < 0) {
+          skipped.add(
+            'preference keys under "${profile.prefsKeyPrefix}": refused — an '
+            'unscoped view cannot tell this profile\'s keys from another\'s',
+          );
+        } else {
+          removed.add(
+            '$count preference key(s) under "${profile.prefsKeyPrefix}"',
+          );
+        }
+      } catch (e) {
+        skipped.add('preference keys under "${profile.prefsKeyPrefix}": $e');
+      }
+    }
 
     // (4) registry entry, LAST
     try {

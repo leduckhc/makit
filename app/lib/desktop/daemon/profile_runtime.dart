@@ -123,10 +123,24 @@ class ProfileRuntime {
       serveArgs: () => configController.current.serveArgs(),
     );
 
+    // Lifecycle actions may target ANY profile, not just this one, so the CLI
+    // path and endpoint arguments are resolved per target from that profile's
+    // own scoped config. Using the active profile's values started a target on
+    // the wrong binary and on the CLI's default port instead of its allocated
+    // one (colliding with the legacy daemon).
+    ServerConfig configFor(ServerProfile target) => identical(target, profile)
+        ? configController.current
+        : ServerConfigController.load(
+            ProfileScopedPrefs(prefs, target.prefsKeyPrefix),
+            defaultPort: target.port,
+          );
+
     final profileLifecycle = ProfileLifecycle(
       resolver: MakitCliResolver(
         overridePath: () => configController.current.cliPath,
       ),
+      cliPathFor: (target) => configFor(target).cliPath,
+      serveArgsFor: (target) => configFor(target).serveArgs(),
     );
     // All three share ONE registry instance: the deleter removes the entry
     // directly and the controller repaints from the same list, so two copies
@@ -135,6 +149,11 @@ class ProfileRuntime {
       registry: registry,
       lifecycle: profileLifecycle,
       activeProfileId: profile.id,
+      // Store (3): a NON-active profile's keys are reachable now that prefs are
+      // scoped by key prefix rather than the global setPrefix, so the deleter can
+      // actually purge them instead of always reporting them skipped.
+      purgePrefs: (target) =>
+          ProfileScopedPrefs(prefs, target.prefsKeyPrefix).clearScope(),
     );
 
     return ProfileRuntime._(

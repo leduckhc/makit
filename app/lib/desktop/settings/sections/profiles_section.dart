@@ -527,7 +527,20 @@ Future<void> promptCreateProfile(BuildContext context, WidgetRef ref) async {
   final controller = ref.read(profilesControllerProvider);
   final name = await _promptForName(context, title: 'New profile');
   if (name == null) return;
-  final created = await controller.create(name);
+  // `create` persists, so it can throw on an unwritable registry (or a failed
+  // port allocation). Without this the promise to report an outcome is broken:
+  // the user sees nothing and the error escapes the async gap.
+  ServerProfile? created;
+  try {
+    created = await controller.create(name);
+  } catch (error) {
+    statusCenter.failure(
+      'Could not create profile',
+      source: StatusSources.settings,
+      detail: error.toString(),
+    );
+    return;
+  }
   if (created == null) {
     statusCenter.failure(
       'Could not create profile',

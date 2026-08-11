@@ -63,12 +63,16 @@ class ProfileLifecycle {
     Future<void> Function(Duration duration)? sleep,
     int? Function(ServerProfile profile)? readPid,
     Future<bool> Function(int pid)? processAlive,
+    String? Function(ServerProfile profile)? cliPathFor,
+    List<String> Function(ServerProfile profile)? serveArgsFor,
   }) : run = run ?? _defaultRun,
        _socketExists = socketExists ?? _fileExists,
        _statusProbe = statusProbe ?? _connectProbe,
        _sleep = sleep ?? Future<void>.delayed,
        _readPid = readPid ?? _readPidFile,
-       _processAlive = processAlive ?? _posixProcessAlive;
+       _processAlive = processAlive ?? _posixProcessAlive,
+       _cliPathFor = cliPathFor,
+       _serveArgsFor = serveArgsFor;
 
   /// Locates the `makit` executable.
   final MakitCliResolver resolver;
@@ -81,6 +85,18 @@ class ProfileLifecycle {
   final Future<void> Function(Duration duration) _sleep;
   final int? Function(ServerProfile profile) _readPid;
   final Future<bool> Function(int pid) _processAlive;
+
+  /// The `makit` binary configured for a **given** profile, or null to fall back
+  /// to [resolver]'s own override. Without this, starting profile B from A's
+  /// window used A's configured `cliPath`.
+  final String? Function(ServerProfile profile)? _cliPathFor;
+
+  /// The `serve` arguments configured for a **given** profile (host/port), used
+  /// by [start]. Without this, `makit start` fell back to the CLI's default port
+  /// (7777) instead of the target profile's allocated port — colliding with the
+  /// legacy daemon or landing on an endpoint its own `ServerConfig` disagrees
+  /// with.
+  final List<String> Function(ServerProfile profile)? _serveArgsFor;
 
   /// Runs `MAKIT_HOME=<profile.home> makit start`.
   Future<DaemonActionResult> start(ServerProfile profile) =>
@@ -155,7 +171,10 @@ class ProfileLifecycle {
     String verb,
     DaemonActionOutcome onSuccess,
   ) async {
-    final path = await resolver.resolve();
+    // The TARGET profile's configured binary, not the active profile's.
+    final path = await resolver.resolve(
+      overridePath: _cliPathFor?.call(profile),
+    );
     if (path == null) {
       return const DaemonActionResult(
         DaemonActionOutcome.cliNotFound,
@@ -163,8 +182,13 @@ class ProfileLifecycle {
             'The makit CLI was not found. Install it to control the server.',
       );
     }
+    // Only `start` takes endpoint arguments; `stop` needs none.
+    final args = <String>[
+      verb,
+      if (verb == 'start') ...?_serveArgsFor?.call(profile),
+    ];
     try {
-      final res = await run(path, [verb], environment: profile.environment);
+      final res = await run(path, args, environment: profile.environment);
       if (res.exitCode == 0) return DaemonActionResult(onSuccess);
       return DaemonActionResult(
         DaemonActionOutcome.failed,

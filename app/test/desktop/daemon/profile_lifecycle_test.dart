@@ -91,6 +91,49 @@ void main() {
       expect(runner.calls, isEmpty);
     });
 
+    test('start uses the TARGET profile\'s serve args and CLI path', () async {
+      // Lifecycle actions target arbitrary profiles. Using the active profile's
+      // config started a target on the wrong binary and on the CLI's default
+      // port instead of the port the registry allocated for it.
+      final runner = _RecordingRunner();
+      final lifecycle = ProfileLifecycle(
+        resolver: MakitCliResolver(
+          candidatePaths: const ['/fallback/makit'],
+          exists: (_) => true,
+          shellLookup: () async => null,
+          overridePath: () => '/active/profile/makit',
+        ),
+        run: runner.run,
+        cliPathFor: (p) => '/target/${p.id}/makit',
+        serveArgsFor: (p) => ['--host', '127.0.0.1', '--port', '${p.port}'],
+      );
+
+      final result = await lifecycle.start(_profile());
+
+      expect(result.outcome, DaemonActionOutcome.started);
+      expect(runner.calls.single.exe, '/target/work/makit');
+      expect(runner.calls.single.args, [
+        'start',
+        '--host',
+        '127.0.0.1',
+        '--port',
+        '7801',
+      ]);
+    });
+
+    test('stop passes no endpoint args', () async {
+      final runner = _RecordingRunner();
+      final lifecycle = ProfileLifecycle(
+        resolver: _resolver(),
+        run: runner.run,
+        serveArgsFor: (p) => ['--port', '${p.port}'],
+      );
+
+      await lifecycle.stop(_profile());
+
+      expect(runner.calls.single.args, ['stop']);
+    });
+
     test('reports failed with both streams on a non-zero exit', () async {
       final runner = _RecordingRunner()
         ..result = ProcessResult(0, 1, 'port in use', 'bind failed');

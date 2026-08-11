@@ -15,12 +15,19 @@ const String _homeDir = '/Users/tester';
 /// In-memory [ProfileFileSystem]: `paths` maps an existing path to its byte
 /// size; every delete is recorded so tests can assert what was unlinked.
 class _FakeFs implements ProfileFileSystem {
-  _FakeFs(this.paths);
+  _FakeFs(this.paths, {this.files = const {}});
   final Map<String, int> paths;
+
+  /// Seeded paths that are regular FILES rather than directories.
+  final Set<String> files;
   final List<String> deleted = [];
 
   @override
   bool exists(String path) => paths.containsKey(path);
+
+  @override
+  bool isDirectory(String path) =>
+      paths.containsKey(path) && !files.contains(path);
 
   @override
   Future<int> sizeOf(String path) async => paths[path] ?? 0;
@@ -50,6 +57,9 @@ class _ThrowingFs implements ProfileFileSystem {
 
   @override
   bool exists(String path) => paths.containsKey(path);
+
+  @override
+  bool isDirectory(String path) => paths.containsKey(path);
 
   @override
   Future<int> sizeOf(String path) async => paths[path] ?? 0;
@@ -117,6 +127,7 @@ ProfileDeleter _deleter({
   required ProfileLifecycle lifecycle,
   required _FakeFs fs,
   String activeProfileId = 'other',
+  Future<int> Function(ServerProfile)? purgePrefs,
 }) => ProfileDeleter(
   registry: registry,
   lifecycle: lifecycle,
@@ -124,6 +135,7 @@ ProfileDeleter _deleter({
   homeDir: _homeDir,
   fs: fs,
   isMacOS: true,
+  purgePrefs: purgePrefs,
 );
 
 void main() {
@@ -229,24 +241,80 @@ void main() {
       },
     );
 
-    test(
-      'reports NSUserDefaults keys as skipped — the honest prefs limit',
-      () async {
-        final profile = _profile();
-        final fs = _FakeFs({profile.home: 10});
-        final result = await _deleter(
-          registry: _registry([profile]),
-          lifecycle: _lifecycle(running: false),
-          fs: fs,
-        ).delete(profile);
+    test('purges the profile\'s preference keys (store 3)', () async {
+      // Prefs are reachable for a non-active profile now that scoping is by key
+      // prefix, so the deleter must actually purge them rather than always
+      // reporting the store skipped.
+      final profile = _profile();
+      final fs = _FakeFs({profile.home: 10});
+      final purged = <String>[];
+      final result = await _deleter(
+        registry: _registry([profile]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+        purgePrefs: (p) async {
+          purged.add(p.id);
+          return 4;
+        },
+      ).delete(profile);
 
-        expect(
-          result.skipped.any((s) => s.contains('NSUserDefaults')),
-          isTrue,
-          reason: 'prefs must be reported as skipped, never silently dropped',
-        );
-      },
-    );
+      expect(purged, ['work']);
+      expect(
+        result.removed.any((s) => s.contains('4 preference key(s)')),
+        isTrue,
+        reason: 'a successful purge must be reported as removed, not skipped',
+      );
+    });
+
+    test('reports prefs as skipped when no prefs are wired', () async {
+      final profile = _profile();
+      final fs = _FakeFs({profile.home: 10});
+      final result = await _deleter(
+        registry: _registry([profile]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs, // no purgePrefs
+      ).delete(profile);
+
+      expect(
+        result.skipped.any((s) => s.contains('preference keys')),
+        isTrue,
+        reason: 'prefs must be reported, never silently dropped',
+      );
+    });
+
+    test('a prefs purge failure is recorded, not thrown', () async {
+      final profile = _profile();
+      final fs = _FakeFs({profile.home: 10});
+      final result = await _deleter(
+        registry: _registry([profile]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+        purgePrefs: (_) async => throw Exception('prefs boom'),
+      ).delete(profile);
+
+      expect(result.outcome, ProfileDeletionOutcome.deleted);
+      expect(result.skipped.any((s) => s.contains('prefs boom')), isTrue);
+    });
+
+    test('a regular file at home is erased, not falsely reported', () async {
+      // fs.exists() is true for files too, so a recursive directory delete would
+      // silently no-op while the result still claimed the home was removed.
+      final profile = _profile();
+      final fs = _FakeFs({profile.home: 10}, files: {profile.home});
+      final result = await _deleter(
+        registry: _registry([profile]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+      ).delete(profile);
+
+      expect(result.outcome, ProfileDeletionOutcome.deleted);
+      expect(fs.deleted, contains(profile.home));
+      expect(
+        result.removed.any((s) => s.contains('was a file, not a directory')),
+        isTrue,
+        reason: 'the file case must be named honestly in the result',
+      );
+    });
 
     test('persists the registry removal to disk', () async {
       final profile = _profile();

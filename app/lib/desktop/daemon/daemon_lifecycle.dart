@@ -49,8 +49,13 @@ class MakitCliResolver {
   final String Function()? _overridePath;
 
   /// Returns the absolute path to `makit`, or `null` if it cannot be found.
-  Future<String?> resolve() async {
-    final override = _overridePath?.call().trim() ?? '';
+  ///
+  /// [overridePath] takes precedence over the constructor's `overridePath`
+  /// closure, so a caller acting on **another** profile can supply that
+  /// profile's configured binary instead of the active profile's.
+  Future<String?> resolve({String? overridePath}) async {
+    final configured = overridePath ?? _overridePath?.call();
+    final override = configured?.trim() ?? '';
     if (override.isNotEmpty && _exists(override)) return override;
     for (final path in candidatePaths) {
       if (_exists(path)) return path;

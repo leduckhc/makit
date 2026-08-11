@@ -41,6 +41,8 @@ class _FakeProfileFs implements ProfileFileSystem {
   bool exists(String path) =>
       sizes.containsKey(path) && !deleted.contains(path);
   @override
+  bool isDirectory(String path) => exists(path);
+  @override
   Future<int> sizeOf(String path) async => sizes[path] ?? 0;
   @override
   Future<void> deleteDirectory(String path) async => deleted.add(path);
