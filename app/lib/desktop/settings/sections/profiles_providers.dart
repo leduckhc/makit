@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../daemon/profile_deleter.dart';
 import '../../daemon/profile_lifecycle.dart';
 import '../../daemon/profiles_controller.dart';
+import '../../daemon/server_profile.dart';
 
 /// The observable Profiles controller (list, create, rename, forget, refresh).
 final profilesControllerProvider = Provider<ProfilesController>(
@@ -32,3 +33,23 @@ final profileLifecycleProvider = Provider<ProfileLifecycle>(
 final profileDeleterProvider = Provider<ProfileDeleter>(
   (ref) => throw UnimplementedError('overridden in runDesktopApp / tests'),
 );
+
+/// Switches the window to another profile, verifying the target is reachable
+/// before anything is torn down (SPEC-50 D10).
+///
+/// Returns `null` on success, or a human-readable reason on failure — in which
+/// case nothing changed. Overridden in `runDesktopApp`; tests supply a fake.
+typedef ProfileSwitcher = Future<String?> Function(ServerProfile target);
+
+/// The active [ProfileSwitcher], or `null` where switching is not wired.
+///
+/// Nullable with a `null` default on purpose: the title-bar badge is mounted by
+/// many surfaces (and by most widget tests) that have no profile wiring at all.
+/// A throwing default would turn those into crashes; instead the badge degrades
+/// to a plain, calm label — which is also the honest UI when there is nothing to
+/// switch to.
+final profileSwitcherProvider = Provider<ProfileSwitcher?>((ref) => null);
+
+/// The controller the title-bar switcher lists profiles from, or `null` where
+/// profiles are not wired. Same reasoning as [profileSwitcherProvider].
+final switcherProfilesProvider = Provider<ProfilesController?>((ref) => null);

@@ -93,7 +93,10 @@ void main() {
           controlClientProvider.overrideWithValue(client),
           desktopControllerProvider.overrideWithValue(controller),
           serverConfigProvider.overrideWith(
-            (ref) => ServerConfigController(ProfileScopedPrefs.unscoped(prefs), const ServerConfig()),
+            (ref) => ServerConfigController(
+              ProfileScopedPrefs.unscoped(prefs),
+              const ServerConfig(),
+            ),
           ),
           connectionProvider.overrideWithValue(MakitConnState()),
         ],
@@ -151,7 +154,10 @@ void main() {
 
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final config = ServerConfigController(ProfileScopedPrefs.unscoped(prefs), const ServerConfig());
+    final config = ServerConfigController(
+      ProfileScopedPrefs.unscoped(prefs),
+      const ServerConfig(),
+    );
 
     final client = ReconnectingControlClient(
       create: () => MakitControlClient(socketPath: _socketPath),

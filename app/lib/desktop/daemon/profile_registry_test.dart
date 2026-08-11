@@ -528,6 +528,75 @@ void main() {
     });
   });
 
+  group('last active profile', () {
+    Future<ProfileRegistry> seeded(_MemoryFs fs) async {
+      final reg = ProfileRegistry(
+        makitRoot: kRoot,
+        probe: _allFree,
+        fs: fs,
+        profiles: const [_legacy],
+      );
+      await reg.createUserProfile(name: 'Personal');
+      return reg;
+    }
+
+    test('round-trips through profiles.json', () async {
+      final fs = _MemoryFs();
+      final reg = await seeded(fs);
+      expect(reg.setLastActive('personal'), isTrue);
+      reg.save();
+
+      final again = ProfileRegistry.load(
+        makitRoot: kRoot,
+        fs: _MemoryFs(fs.written['$kRoot/profiles.json']),
+        probe: _allFree,
+      );
+      expect(again.lastActiveId, 'personal');
+    });
+
+    test(
+      'an unknown id is refused, so a stale value is never written',
+      () async {
+        final reg = await seeded(_MemoryFs());
+        expect(reg.setLastActive('nope'), isFalse);
+        expect(reg.lastActiveId, isNull);
+      },
+    );
+
+    test('the installed app reopens the last profile chosen', () async {
+      final reg = await seeded(_MemoryFs());
+      reg.setLastActive('personal');
+      expect(reg.preferredFor(_legacy).id, 'personal');
+    });
+
+    // A dev build exists to isolate its worktree. Reopening Work would make
+    // building that worktree look like it did nothing.
+    test(
+      'a dev build always opens its own profile, ignoring last active',
+      () async {
+        final reg = await seeded(_MemoryFs());
+        reg.setLastActive('personal');
+        expect(reg.preferredFor(_dev).id, _dev.id);
+      },
+    );
+
+    test(
+      'a last-active profile that has since been deleted falls back',
+      () async {
+        final reg = await seeded(_MemoryFs());
+        reg.setLastActive('personal');
+        reg.remove('personal');
+        expect(reg.preferredFor(_legacy).id, _legacy.id);
+      },
+    );
+
+    test('absent lastActive leaves the file free of the key', () async {
+      final fs = _MemoryFs();
+      (await seeded(fs)).save();
+      expect(fs.written['$kRoot/profiles.json'], isNot(contains('lastActive')));
+    });
+  });
+
   group('ProfileRegistry.staleProfiles', () {
     test('lists dev profiles whose origin is gone, and only those', () async {
       final reg = _empty();

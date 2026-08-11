@@ -23,7 +23,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../status/activity_badge.dart';
 import '../status/status_toast.dart';
 import '../app/theme.dart';
-import '../control/control_client.dart';
 import '../control/reconnecting_control_client.dart';
 import '../shortcuts/keymap_controller.dart';
 import '../store/cached_commands.dart';
@@ -42,10 +41,8 @@ import 'chat/loopback_pairing.dart';
 import 'chat/groups/groups_controller.dart';
 import 'chat/sidebar_layout.dart';
 import 'daemon/daemon_lifecycle.dart';
-import 'daemon/profile_deleter.dart';
-import 'daemon/profile_lifecycle.dart';
 import 'daemon/profile_registry.dart';
-import 'daemon/profiles_controller.dart';
+import 'daemon/profile_runtime.dart';
 import 'daemon/server_profile.dart';
 import 'settings/sections/profiles_providers.dart';
 import 'desktop_controller.dart';
@@ -55,7 +52,6 @@ import '../store/prefs/navigator_preference_bridge.dart';
 import '../store/prefs/preference_entries.dart';
 import '../store/prefs/preferences_controller.dart';
 import '../store/prefs/preferences_providers.dart';
-import '../store/prefs/profile_scoped_prefs.dart';
 import '../ui/session/navigator/navigator_style.dart';
 import 'settings/server_config.dart';
 import 'settings/settings_window.dart';
@@ -102,61 +98,20 @@ Future<void> runDesktopApp() async {
     executablePath: Platform.resolvedExecutable,
     home: resolvedHome,
   );
-  final profile = resolution.profile;
+  // Honour the profile the user last switched to, but only for the installed
+  // app: a dev build always opens its own profile (SPEC-50 D10).
+  final profile = registry.preferredFor(resolution.profile);
   // Only write when the set actually changed: launching must not rewrite the
   // registry (and bump its mtime) on every start.
   if (resolution.created) registry.save();
 
-  final socketPath = profile.controlSocketPath;
-  final client = ReconnectingControlClient(
-    create: () => MakitControlClient(socketPath: socketPath),
-    connect: (c) => (c as MakitControlClient).connect(),
-    dispose: (c) => (c as MakitControlClient).dispose(),
-  );
-  // Namespace only SERVER-BOUND preferences per profile (SPEC-50 D11): server
-  // config, groups and the pane layouts groups persist. Appearance, shortcuts,
-  // recent models and cached commands are user-level and stay SHARED across
-  // profiles — the old blanket `SharedPreferences.setPrefix` is why a worktree
-  // build opened with a default theme and empty shortcuts. Because the plugin
-  // composes keys by plain concatenation, `profile.prefsKeyPrefix` lands on the
-  // byte-identical stored key the retired `setPrefix` produced, so no migration
-  // is needed (asserted in profile_registry_test.dart).
   final prefs = await SharedPreferences.getInstance();
-  final scoped = ProfileScopedPrefs(prefs, profile.prefsKeyPrefix);
-  final configController = ServerConfigController(
-    scoped,
-    ServerConfigController.load(scoped, defaultPort: profile.port),
-    defaultPort: profile.port,
-  );
-  final lifecycle = DaemonLifecycle(
-    resolver: MakitCliResolver(
-      // Honor the user's optional CLI-path override (read live so a settings
-      // change takes effect without an app restart).
-      overridePath: () => configController.current.cliPath,
-    ),
-    // Pass MAKIT_HOME so the spawned daemon writes its socket/pid/db under this
-    // profile's home — matching the control socket the app connects to above.
-    environment: profile.environment,
+  final runtime = ProfileRuntime.create(
+    profile: profile,
+    registry: registry,
+    prefs: prefs,
   );
 
-  // Profiles (SPEC-50 D7/D8/D9). All three share ONE registry instance: the
-  // deleter removes the entry directly and the controller repaints from the same
-  // list, so two copies would show a profile that no longer exists.
-  final cliResolver = MakitCliResolver(
-    overridePath: () => configController.current.cliPath,
-  );
-  final profileLifecycle = ProfileLifecycle(resolver: cliResolver);
-  final profileDeleter = ProfileDeleter(
-    registry: registry,
-    lifecycle: profileLifecycle,
-    activeProfileId: profile.id,
-  );
-  final profilesController = ProfilesController(
-    registry: registry,
-    activeProfileId: profile.id,
-    isRunning: profileLifecycle.isRunning,
-    diskUsage: profileDeleter.diskUsage,
-  );
   final keymapController = KeymapController.load(
     prefs,
     cmdIsPrimary: cmdIsPrimaryModifier,
@@ -166,17 +121,15 @@ Future<void> runDesktopApp() async {
   // SPEC-45: the starter pane's slash palette, remembered across restarts —
   // otherwise every relaunch shows it empty until a session has run.
   final cachedCommandsController = CachedCommandsController.load(prefs);
-  final groupsController = GroupsController.load(scoped);
-  final controller = DesktopController(
-    client: client,
-    lifecycle: lifecycle,
-    serveArgs: () => configController.current.serveArgs(),
-  );
-
+  // The tray must read the runtime through a holder, not close over one
+  // DesktopController: after a profile switch the old controller is disposed, and
+  // a menubar still pointing at it would drive a dead object.
+  final host = _ProfileHostState.holder;
+  host.runtime = runtime;
   final tray = TrayController(
-    stateAccessor: () => controller.summary,
-    onStart: () => controller.start(),
-    onStop: () => controller.stop(),
+    stateAccessor: () => host.runtime.controller.summary,
+    onStart: () => host.runtime.controller.start(),
+    onStop: () => host.runtime.controller.stop(),
     onOpenDashboard: _showWindow,
     onOpenQr: _showWindow,
     // SPEC-42 D15: the menubar's one ports action. The desktop shell is not a
@@ -189,17 +142,19 @@ Future<void> runDesktopApp() async {
     // Real quit: cancel the poll timer, then terminate the process — which also
     // removes the tray icon. (windowManager.destroy alone left it running.)
     onQuit: () {
-      controller.dispose();
+      host.runtime.controller.dispose();
       exit(0);
     },
   );
   await tray.init();
-  // Keep the tray menu/tooltip in sync as the controller refreshes.
-  controller.addListener(() => unawaited(tray.update(controller.summary)));
+  host.tray = tray;
+  // Keep the tray menu/tooltip in sync as the active controller refreshes. The
+  // listener is re-attached on every switch (see _ProfileHostState._adopt).
+  host.attachTray();
 
   // Poll the daemon so state stays fresh whether it is started from the app,
   // the CLI, or crashes underneath us.
-  controller.startPolling();
+  runtime.startPolling();
 
   final options = WindowOptions(
     size: const Size(1120, 760),
@@ -221,44 +176,14 @@ Future<void> runDesktopApp() async {
   );
 
   runApp(
-    ProviderScope(
-      observers: const [SidebarLayoutPrefsObserver()],
-      overrides: [
-        controlClientProvider.overrideWithValue(client),
-        desktopControllerProvider.overrideWithValue(controller),
-        serverProfileProvider.overrideWithValue(profile),
-        profileRegistryProvider.overrideWithValue(registry),
-        profilesControllerProvider.overrideWithValue(profilesController),
-        profileLifecycleProvider.overrideWithValue(profileLifecycle),
-        profileDeleterProvider.overrideWithValue(profileDeleter),
-        // Per-profile pairing bearer so main and worktree builds never clobber
-        // each other's stored server (a shared bearer wedged the app into
-        // permanent "Reconnecting").
-        secureStorageProvider.overrideWithValue(
-          defaultSecureStore(namespace: profile.secureStoreNamespace),
-        ),
-        serverConfigProvider.overrideWith((ref) => configController),
-        keymapProvider.overrideWith((ref) => keymapController),
-        preferencesControllerProvider.overrideWith(
-          (ref) => preferencesController,
-        ),
-        recentModelsControllerProvider.overrideWith(
-          (ref) => recentModelsController,
-        ),
-        cachedCommandsControllerProvider.overrideWith(
-          (ref) => cachedCommandsController,
-        ),
-        groupsControllerProvider.overrideWith((ref) => groupsController),
-        // SPEC-34: hand the stored rail on/off + options to the shared
-        // transcript providers (shared `ui/` cannot read `desktop/` prefs).
-        messageNavigatorStyleProvider.overrideWith(
-          (ref) => ref.watch(desktopNavigatorStyleProvider),
-        ),
-        railOptionsProvider.overrideWith(
-          (ref) => ref.watch(desktopRailOptionsProvider),
-        ),
-      ],
-      child: _DesktopApp(tray: tray),
+    _ProfileHost(
+      prefs: prefs,
+      registry: registry,
+      keymapController: keymapController,
+      preferencesController: preferencesController,
+      recentModelsController: recentModelsController,
+      cachedCommandsController: cachedCommandsController,
+      tray: tray,
     ),
   );
 }
@@ -442,3 +367,160 @@ class _NoScrollbarBehavior extends MaterialScrollBehavior {
 /// The documented one-line installer for the makit CLI (see issue #13 / README).
 const String makitInstallCommand =
     'curl -fsSL https://raw.githubusercontent.com/leduckhc/makit/main/install.sh | bash';
+
+/// A mutable holder for the active [ProfileRuntime].
+///
+/// The tray and the poll loop are created before the widget tree exists and must
+/// survive a profile switch, so they read the runtime through this rather than
+/// closing over one instance (SPEC-50 D10).
+class _RuntimeHolder {
+  late ProfileRuntime runtime;
+  TrayController? tray;
+  VoidCallback? _trayListener;
+
+  /// (Re)attaches the tray's sync listener to the current runtime's controller.
+  void attachTray() {
+    final t = tray;
+    if (t == null) return;
+    final previous = _trayListener;
+    if (previous != null) {
+      // Best effort: the old controller may already be disposed.
+      try {
+        runtime.controller.removeListener(previous);
+      } on FlutterError {
+        /* already disposed */
+      }
+    }
+    void listener() => unawaited(t.update(runtime.controller.summary));
+    _trayListener = listener;
+    runtime.controller.addListener(listener);
+    unawaited(t.update(runtime.controller.summary));
+  }
+}
+
+/// Hosts the app and swaps the whole per-profile object graph on a switch.
+///
+/// The switch is a **key change on the `ProviderScope`**: Riverpod then disposes
+/// the entire old container deterministically, so there is no hand-written
+/// teardown list to forget an entry as the app grows.
+class _ProfileHost extends StatefulWidget {
+  const _ProfileHost({
+    required this.prefs,
+    required this.registry,
+    required this.keymapController,
+    required this.preferencesController,
+    required this.recentModelsController,
+    required this.cachedCommandsController,
+    required this.tray,
+  });
+
+  final SharedPreferences prefs;
+  final ProfileRegistry registry;
+  final KeymapController keymapController;
+  final PreferencesController preferencesController;
+  final RecentModelsController recentModelsController;
+  final CachedCommandsController cachedCommandsController;
+  final TrayController? tray;
+
+  @override
+  State<_ProfileHost> createState() => _ProfileHostState();
+}
+
+class _ProfileHostState extends State<_ProfileHost> {
+  /// Shared with `runDesktopApp`, which builds the first runtime and the tray
+  /// before any widget exists.
+  static final _RuntimeHolder holder = _RuntimeHolder();
+
+  ProfileRuntime get _runtime => holder.runtime;
+
+  /// Switches to [target], verifying it is reachable BEFORE tearing anything
+  /// down (SPEC-50 D10 step 2).
+  ///
+  /// Returns `null` on success, or a human-readable reason on failure — in which
+  /// case nothing has changed and the caller reports it. The order is the whole
+  /// point: start and confirm the target while the current profile is still
+  /// live, so a target that cannot come up leaves the window exactly as it was.
+  Future<String?> switchTo(ServerProfile target) async {
+    if (target.id == _runtime.profile.id) return null;
+
+    final lifecycle = _runtime.profileLifecycle;
+    if (!await lifecycle.isRunning(target)) {
+      final started = await lifecycle.start(target);
+      if (!started.ok) {
+        return started.message ?? 'could not start ${target.name}';
+      }
+      if (!await lifecycle.isRunning(target)) {
+        return '${target.name} started but is not answering on its socket';
+      }
+    }
+
+    final next = ProfileRuntime.create(
+      profile: target,
+      registry: widget.registry,
+      prefs: widget.prefs,
+    );
+    final previous = _runtime;
+    holder.runtime = next;
+    next.startPolling();
+    holder.attachTray();
+    if (mounted) setState(() {});
+    // Only now is the old graph safe to tear down.
+    await previous.dispose();
+
+    if (widget.registry.setLastActive(target.id)) widget.registry.save();
+    await windowManager.setTitle(target.windowTitle);
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = _runtime.profile;
+    return ProviderScope(
+      // Changing the key rebuilds the container, disposing every provider bound
+      // to the previous profile.
+      key: ValueKey('profile-${profile.id}'),
+      observers: const [SidebarLayoutPrefsObserver()],
+      overrides: [
+        controlClientProvider.overrideWithValue(_runtime.client),
+        desktopControllerProvider.overrideWithValue(_runtime.controller),
+        serverProfileProvider.overrideWithValue(profile),
+        profileRegistryProvider.overrideWithValue(widget.registry),
+        profilesControllerProvider.overrideWithValue(
+          _runtime.profilesController,
+        ),
+        profileLifecycleProvider.overrideWithValue(_runtime.profileLifecycle),
+        profileDeleterProvider.overrideWithValue(_runtime.profileDeleter),
+        profileSwitcherProvider.overrideWithValue(switchTo),
+        switcherProfilesProvider.overrideWithValue(_runtime.profilesController),
+        // Per-profile pairing bearer so two profiles never clobber each other's
+        // stored server (a shared bearer wedged the app into "Reconnecting").
+        secureStorageProvider.overrideWithValue(
+          defaultSecureStore(namespace: profile.secureStoreNamespace),
+        ),
+        serverConfigProvider.overrideWith((ref) => _runtime.configController),
+        groupsControllerProvider.overrideWith(
+          (ref) => _runtime.groupsController,
+        ),
+        keymapProvider.overrideWith((ref) => widget.keymapController),
+        preferencesControllerProvider.overrideWith(
+          (ref) => widget.preferencesController,
+        ),
+        recentModelsControllerProvider.overrideWith(
+          (ref) => widget.recentModelsController,
+        ),
+        cachedCommandsControllerProvider.overrideWith(
+          (ref) => widget.cachedCommandsController,
+        ),
+        // SPEC-34: hand the stored rail on/off + options to the shared
+        // transcript providers (shared `ui/` cannot read `desktop/` prefs).
+        messageNavigatorStyleProvider.overrideWith(
+          (ref) => ref.watch(desktopNavigatorStyleProvider),
+        ),
+        railOptionsProvider.overrideWith(
+          (ref) => ref.watch(desktopRailOptionsProvider),
+        ),
+      ],
+      child: _DesktopApp(tray: widget.tray),
+    );
+  }
+}

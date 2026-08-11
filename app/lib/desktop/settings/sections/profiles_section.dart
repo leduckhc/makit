@@ -263,19 +263,13 @@ class _ProfileMenu extends ConsumerWidget {
         ),
         const PopupMenuItem(value: 'reveal', child: Text('Reveal in Finder')),
         if (!profile.isProtected)
-          if (isActive)
-            const PopupMenuItem<String>(
-              value: 'delete',
-              enabled: false,
-              child: Tooltip(
-                message:
-                    'Switching profiles is not available yet, so the active '
-                    'profile cannot be deleted from here.',
-                child: Text('Switch away & delete…'),
-              ),
-            )
-          else
-            const PopupMenuItem(value: 'delete', child: Text('Delete…')),
+          // The active profile is refused by ProfileDeleter by design (D8), so
+          // deleting it means switching away first. That is now one action
+          // rather than a dead menu item.
+          PopupMenuItem(
+            value: 'delete',
+            child: Text(isActive ? 'Switch away & delete…' : 'Delete…'),
+          ),
       ],
       onSelected: (value) => _onSelected(context, ref, value),
     );
@@ -396,8 +390,8 @@ class _DangerZone extends ConsumerWidget {
         trailing: isActive
             ? Tooltip(
                 message:
-                    'Switching profiles is not available yet, so the active '
-                    'profile cannot be deleted from here.',
+                    'Deleting the active profile switches away from it first, '
+                    'because a profile cannot be deleted from under itself.',
                 child: deleteButton,
               )
             : deleteButton,

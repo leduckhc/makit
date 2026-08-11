@@ -1,0 +1,160 @@
+/// Everything that belongs to ONE profile, behind one disposable object.
+///
+/// Exists so a second one can be built at runtime: switching profiles inside a
+/// running window (SPEC-50 D10) means standing up a whole parallel set of
+/// per-profile objects — control client, daemon controller, scoped preference
+/// controllers, lifecycle and deleter — and tearing the old set down. Leaving
+/// that list inline in `runDesktopApp` made it impossible to have two.
+///
+/// The [overrides] getter returns a list *literal* rather than a typed field on
+/// purpose: Riverpod does not export the `Override` base type, so naming it does
+/// not compile. Inference handles it.
+library;
+
+import 'dart:async';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../control/control_client.dart';
+import '../../control/reconnecting_control_client.dart';
+import '../../store/prefs/profile_scoped_prefs.dart';
+import '../chat/groups/groups_controller.dart';
+import '../desktop_controller.dart';
+import '../settings/server_config.dart';
+import 'daemon_lifecycle.dart';
+import 'profile_deleter.dart';
+import 'profile_lifecycle.dart';
+import 'profile_registry.dart';
+import 'profiles_controller.dart';
+import 'server_profile.dart';
+
+/// The per-profile half of the app's object graph.
+class ProfileRuntime {
+  ProfileRuntime._({
+    required this.profile,
+    required this.registry,
+    required this.client,
+    required this.controller,
+    required this.configController,
+    required this.groupsController,
+    required this.profileLifecycle,
+    required this.profileDeleter,
+    required this.profilesController,
+  });
+
+  /// Builds the runtime for [profile].
+  ///
+  /// Synchronous by design: every dependency is constructed, none is awaited, so
+  /// a switch cannot leave the app half-built while a future settles.
+  factory ProfileRuntime.create({
+    required ServerProfile profile,
+    required ProfileRegistry registry,
+    required SharedPreferences prefs,
+  }) {
+    final socketPath = profile.controlSocketPath;
+    final client = ReconnectingControlClient(
+      create: () => MakitControlClient(socketPath: socketPath),
+      connect: (c) => (c as MakitControlClient).connect(),
+      dispose: (c) => (c as MakitControlClient).dispose(),
+    );
+
+    // Namespace only SERVER-BOUND preferences per profile (SPEC-50 D11): server
+    // config, groups, and the pane layouts groups persist. Appearance,
+    // shortcuts, recent models and cached commands are user-level and stay
+    // SHARED — the old blanket `SharedPreferences.setPrefix` is why a worktree
+    // build opened with a default theme and empty shortcuts. Because the plugin
+    // composes keys by plain concatenation, `prefsKeyPrefix` lands on the
+    // byte-identical key `setPrefix` produced, so there is no migration.
+    final scoped = ProfileScopedPrefs(prefs, profile.prefsKeyPrefix);
+    final configController = ServerConfigController(
+      scoped,
+      ServerConfigController.load(scoped, defaultPort: profile.port),
+      defaultPort: profile.port,
+    );
+
+    final controller = DesktopController(
+      client: client,
+      lifecycle: DaemonLifecycle(
+        resolver: MakitCliResolver(
+          // Read live, so a settings change takes effect without a restart.
+          overridePath: () => configController.current.cliPath,
+        ),
+        // MAKIT_HOME so the spawned daemon writes its socket/pid/db under this
+        // profile's home — matching the control socket the client connects to.
+        environment: profile.environment,
+      ),
+      serveArgs: () => configController.current.serveArgs(),
+    );
+
+    final profileLifecycle = ProfileLifecycle(
+      resolver: MakitCliResolver(
+        overridePath: () => configController.current.cliPath,
+      ),
+    );
+    // All three share ONE registry instance: the deleter removes the entry
+    // directly and the controller repaints from the same list, so two copies
+    // would show a profile that no longer exists.
+    final profileDeleter = ProfileDeleter(
+      registry: registry,
+      lifecycle: profileLifecycle,
+      activeProfileId: profile.id,
+    );
+
+    return ProfileRuntime._(
+      profile: profile,
+      registry: registry,
+      client: client,
+      controller: controller,
+      configController: configController,
+      groupsController: GroupsController.load(scoped),
+      profileLifecycle: profileLifecycle,
+      profileDeleter: profileDeleter,
+      profilesController: ProfilesController(
+        registry: registry,
+        activeProfileId: profile.id,
+        isRunning: profileLifecycle.isRunning,
+        diskUsage: profileDeleter.diskUsage,
+      ),
+    );
+  }
+
+  /// The profile this runtime serves.
+  final ServerProfile profile;
+
+  /// The shared registry (not per-profile; held for convenience).
+  final ProfileRegistry registry;
+
+  /// This profile's control-socket client.
+  final ReconnectingControlClient client;
+
+  /// This profile's daemon controller (owns the poll timer).
+  final DesktopController controller;
+
+  /// Server config, read from this profile's scoped preferences.
+  final ServerConfigController configController;
+
+  /// Groups + pane layouts, from this profile's scoped preferences.
+  final GroupsController groupsController;
+
+  /// Starts/stops any profile's daemon.
+  final ProfileLifecycle profileLifecycle;
+
+  /// Erases a profile across its four stores.
+  final ProfileDeleter profileDeleter;
+
+  /// Observable state for the Profiles list.
+  final ProfilesController profilesController;
+
+  /// Begins polling the daemon so state stays fresh whether it was started by
+  /// the app, the CLI, or died underneath us.
+  void startPolling() => controller.startPolling();
+
+  /// Tears the runtime down.
+  ///
+  /// Order matters: the controller's poll timer is cancelled *before* the client
+  /// closes, because a poll firing against a closed client throws.
+  Future<void> dispose() async {
+    controller.dispose();
+    await client.close();
+  }
+}

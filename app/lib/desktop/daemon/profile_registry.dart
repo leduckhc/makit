@@ -93,12 +93,29 @@ class ProfileRegistry {
   }) {
     final io = fs ?? const FileSystemAdapter();
     final raw = io.readOrNull('$makitRoot/profiles.json');
-    return ProfileRegistry(
+    final reg = ProfileRegistry(
       makitRoot: makitRoot,
       profiles: raw == null ? const [] : _parse(raw),
       probe: probe,
       fs: io,
     );
+    reg._lastActiveId = _parseLastActive(raw);
+    return reg;
+  }
+
+  /// Reads `lastActive`, tolerating every shape the file may take.
+  static String? _parseLastActive(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, Object?>) {
+        final v = decoded['lastActive'];
+        if (v is String && v.isNotEmpty) return v;
+      }
+    } on FormatException {
+      return null;
+    }
+    return null;
   }
 
   /// Parses a `profiles.json` body, dropping entries that cannot be trusted.
@@ -170,6 +187,7 @@ class ProfileRegistry {
 
     final body = const JsonEncoder.withIndent('  ').convert({
       'profiles': [for (final p in _profiles) p.toJson()],
+      if (_lastActiveId != null) 'lastActive': _lastActiveId,
     });
     _fs.writeAtomic(filePath, '$body\n');
   }
@@ -292,6 +310,34 @@ class ProfileRegistry {
     if (i < 0) return false;
     _profiles[i] = _profiles[i].copyWith(origin: repoRoot);
     return true;
+  }
+
+  /// The profile the user last switched to, or `null`.
+  ///
+  /// Read only when the *installed* app launches (see [preferredFor]): a dev
+  /// build must always open its own profile, or building a worktree would
+  /// silently reopen `Work` and look like the build did nothing.
+  String? get lastActiveId => _lastActiveId;
+  String? _lastActiveId;
+
+  /// Records [id] as the last profile the user chose. Returns false for an
+  /// unknown id, so a stale value can never be written.
+  bool setLastActive(String id) {
+    if (byId(id) == null) return false;
+    _lastActiveId = id;
+    return true;
+  }
+
+  /// The profile to open for a [bootstrap] resolution.
+  ///
+  /// Honours [lastActiveId] **only** when the bootstrap profile is the installed
+  /// (legacy) one. A dev build always gets its own profile: its whole purpose is
+  /// to isolate that worktree, and reopening a different one would defeat it.
+  ServerProfile preferredFor(ServerProfile bootstrap) {
+    if (bootstrap.storage != ProfileStorage.legacy) return bootstrap;
+    final last = _lastActiveId;
+    if (last == null || last == bootstrap.id) return bootstrap;
+    return byId(last) ?? bootstrap;
   }
 
   /// The `dev` profiles whose origin folder no longer exists (SPEC-50 D9).
