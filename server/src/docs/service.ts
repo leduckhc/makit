@@ -148,6 +148,19 @@ export class DocsService implements DocsCommandPort {
       if (this.watchers === 0) return; // last watcher left mid-walk → publish nothing
       this.cached = snapshot;
       this.deps.onSnapshot(snapshot);
+    } catch (err) {
+      // Every caller is `void runScan()` (a watcher edge, a debounce firing), so
+      // an escaping rejection would be an unhandled one that kills nothing
+      // visibly and reports nothing. Publish the failure as a scan that ran and
+      // found nothing, which is what `scanOk:false` exists to say.
+      const snapshot = {
+        docs: [],
+        scannedAt: this.deps.now(),
+        scanOk: false,
+        scanError: (err as Error).message,
+      };
+      this.cached = snapshot;
+      if (this.watchers > 0) this.deps.onSnapshot(snapshot);
     } finally {
       this.scanning = false;
     }

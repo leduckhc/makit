@@ -277,3 +277,21 @@ test("a re-index picks up worktrees that only appeared after the first scan", as
   );
 });
 
+
+// Every caller is `void runScan()`, so a throwing scan used to escape as an
+// unhandled rejection: nothing published, nothing reported, the Docs screen
+// simply frozen on its last snapshot. It must degrade to scanOk:false instead.
+test("a throwing scan publishes scanOk:false rather than rejecting unhandled", async () => {
+  const h = makeService({
+    scan: async () => {
+      throw new Error("git exploded");
+    },
+  });
+  h.service.setWatchers(1);
+  await flush();
+  const snap = h.snapshots.at(-1);
+  assert.ok(snap, "a failure must still publish a snapshot");
+  assert.equal(snap?.scanOk, false);
+  assert.match(snap?.scanError ?? "", /git exploded/);
+  assert.deepEqual(snap?.docs, []);
+});
