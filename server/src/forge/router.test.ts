@@ -800,15 +800,20 @@ test("the origin remote is read ONCE per repo, not once per gateway call", async
   // prForBranch, openPrs and mutatePr. The gateway's own cache is consulted AFTER
   // that, so even a cache HIT paid for a subprocess, and N worktrees of one repo
   // spawned N processes per poll tick.
+  // A NON-GitHub remote on purpose. With `github.com` the router picks the gh gateway,
+  // the Forgejo gateway's `resolveRepo` never runs, and one read for three calls is
+  // guaranteed by the routing cache alone -- so the test would pass with the memo
+  // deleted, which is exactly the finding it is meant to cover.
   const execs: string[] = [];
   const gateway = createDefaultForgeGateway({
     exec: async (cmd: string, args: readonly string[], cwd?: string) => {
       execs.push(`${cmd} ${args.join(" ")} @${cwd ?? ""}`);
-      // A GitHub remote, so nothing reaches the network.
-      return { code: 0, stdout: "https://github.com/acme/app.git", stderr: "" };
+      return { code: 0, stdout: "https://git.example.com/acme/app.git", stderr: "" };
     },
     env: {},
   });
+  // Detection and the REST calls both fail closed (no network in a unit test), which is
+  // fine: what is counted is the subprocess, not the outcome.
   await gateway.prForBranch("/r", "a");
   await gateway.prForBranch("/r", "b");
   await gateway.openPrs("/r", 30);
@@ -822,7 +827,7 @@ test("two different repos still get their own read", async () => {
   const gateway = createDefaultForgeGateway({
     exec: async (_cmd: string, _args: readonly string[], cwd?: string) => {
       execs.push(`${cwd ?? ""}`);
-      return { code: 0, stdout: "https://github.com/acme/app.git", stderr: "" };
+      return { code: 0, stdout: "https://git.example.com/acme/app.git", stderr: "" };
     },
     env: {},
   });

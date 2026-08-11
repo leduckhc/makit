@@ -288,6 +288,11 @@ class RepositorySettingsPage extends ConsumerWidget {
       // Not validated here: the server owns the rules (absolute, no `..`, exists, is
       // a git repo, not already open) and re-implementing them in Dart would give two
       // answers that could disagree.
+      //
+      // `ref` is only safe while the widget is alive, and the dialog above was an
+      // asynchronous gap: this pane can be closed while it was open. The hoisted
+      // `status` survives that, but `ref.read` does not.
+      if (!context.mounted) return;
       try {
         await ref
             .read(storeControllerProvider.notifier)

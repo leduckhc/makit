@@ -96,14 +96,16 @@ test("the stored root is used verbatim once validated, symlinks resolved", () =>
   // collide, and the `finally` removes it -- this used to leave a directory behind in
   // the developer's home on every run.
   const real = mkdtempSync(join(homedir(), ".makit-test-trees-real-"));
+  // Created before the `try` so the `finally` always owns it: removing it on the last
+  // line of the body leaked the directory whenever an assertion above it failed.
+  const a = mkdtempSync(join(tmpdir(), "makit-d-"));
   try {
     const checked = validateWorktreeRoot(real);
     assert.equal(checked.ok, true);
-    const a = mkdtempSync(join(tmpdir(), "makit-d-"));
     const m = manager([{ id: "a", path: a, settings: { worktreeRoot: real } }]);
     assert.equal(m.worktreeRootFor(a), (checked as { value: string }).value);
-    rmSync(a, { recursive: true, force: true });
   } finally {
+    rmSync(a, { recursive: true, force: true });
     rmSync(real, { recursive: true, force: true });
   }
 });
@@ -651,7 +653,10 @@ test("a project reached by its canonical path still resolves its own settings", 
   // fell back to the defaults -- the override present on disk and shown in the UI,
   // doing nothing.
   const real = repoWithBranches([]);
-  const link = join(mkdtempSync(join(tmpdir(), "makit-slink-")), "alias");
+  // The parent is retained so it can be removed too: only the symlink inside it was
+  // being cleaned up, leaving one empty temp directory per run.
+  const linkParent = mkdtempSync(join(tmpdir(), "makit-slink-"));
+  const link = join(linkParent, "alias");
   symlinkSync(real, link);
   try {
     const m = manager([{ id: "a", path: link, settings: { provider: "gitea" } }]);
@@ -662,6 +667,7 @@ test("a project reached by its canonical path still resolves its own settings", 
       "and by the canonical one, which is what git hands back",
     );
   } finally {
+    rmSync(linkParent, { recursive: true, force: true });
     rmSync(real, { recursive: true, force: true });
   }
 });
