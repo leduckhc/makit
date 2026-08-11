@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { openClient, resolveBearer, cliCredentialPath, verifiesCert } from "./client.js";
+import { openClient, resolveBearer, cliCredentialPath, verifiesCert, SNAPSHOT_TIMEOUT_MS } from "./client.js";
 import type { ControlResponse } from "../daemon/protocol.js";
 import { startStubWss as startStub } from "../../test/support/stub_wss.js";
 
@@ -255,6 +255,33 @@ test("a cmd field named like an envelope key cannot corrupt the frame", async ()
     assert.notEqual(frame.id, "STOLEN", "the correlation id is ours, not the caller's");
     assert.equal(frame.v, 1, "the protocol version is not caller-settable");
     assert.equal(frame.text, "hi", "ordinary fields still ride along");
+  } finally {
+    client.close();
+    await stub.close();
+  }
+});
+
+test("a server that stays up but never pushes a snapshot does not hang the verb", async () => {
+  // Rejecting on *close* is not enough: a live server that simply never pushes
+  // leaves the socket open and the event loop alive, so the verb emits no output
+  // and no exit code at all. That is the one outcome D8's contract cannot
+  // express, and in CI it appears as a job cancelled minutes later with nothing
+  // naming the cause.
+  const stub = await startStub({ acceptBearer: "good" }); // no `sessions` → never pushes
+  const client = await openClient({ host: "127.0.0.1", port: stub.port, bearer: "good" });
+  try {
+    await client.hello();
+    assert.ok(SNAPSHOT_TIMEOUT_MS >= 10_000, "the bound must be generous enough never to fire in anger");
+    // Proving the bound exists without waiting it out: the promise must be
+    // pending now (the server is healthy, just quiet) and must carry a rejection
+    // path rather than being a promise nobody can ever settle.
+    const pending = client.awaitSnapshot();
+    const raced = await Promise.race([
+      pending.then(() => "settled", () => "rejected"),
+      new Promise((r) => setTimeout(() => r("still-waiting"), 150)),
+    ]);
+    assert.equal(raced, "still-waiting", "a healthy quiet server is waited for, not failed instantly");
+    pending.catch(() => {}); // the timeout will reject it after the test ends
   } finally {
     client.close();
     await stub.close();

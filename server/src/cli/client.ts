@@ -76,9 +76,15 @@ export interface MakitClient {
   hello(): Promise<void>;
   /** Send a `cmd` and resolve the `ack` frame that matches its id; reject on `err`. */
   cmd(kind: string, fields?: Record<string, unknown>): Promise<Record<string, unknown>>;
-  /** Resolve with the cached `sessions.snapshot`, or the next one pushed. */
+  /**
+   * Resolve with the cached `sessions.snapshot`, or the next one pushed — and
+   * reject if none arrives within {@link SNAPSHOT_TIMEOUT_MS}. Bounded because a
+   * verb that never reaches an exit code is the one outcome D8's contract cannot
+   * express: rejecting on close is not enough, since a server that stays up and
+   * simply never pushes would wait forever.
+   */
   awaitSnapshot(): Promise<SessionsSnapshot>;
-  /** Resolve with the cached `projects.snapshot`, or the next one pushed. */
+  /** As {@link awaitSnapshot}, for `projects.snapshot`, and bounded the same way. */
   awaitProjects(): Promise<ProjectDTO[]>;
   /** Send a raw frame (`sub`, `srv.response`, …) with no reply correlation. The
    * optional `onSent` fires once the frame is written to the socket, so a
@@ -119,6 +125,31 @@ export class AuthError extends Error {
 
 type Pending = { resolve: (frame: Record<string, unknown>) => void; reject: (err: Error) => void };
 type Waiter<T> = { resolve: (value: T) => void; reject: (err: Error) => void };
+
+/**
+ * How long a verb waits for a snapshot the server pushes unprompted, before it
+ * gives up and says so.
+ *
+ * The server sends both snapshots immediately after `hello.ack`, so this only
+ * ever fires when something is genuinely wrong. It exists because the failure it
+ * replaces has no upper bound: an unpushed snapshot left the socket open and the
+ * event loop alive, so the verb produced no output and no exit code — which in
+ * CI is a job cancelled minutes later with nothing naming the cause.
+ */
+export const SNAPSHOT_TIMEOUT_MS = 15_000;
+
+/** Reject `waiters` if nothing has settled them within `SNAPSHOT_TIMEOUT_MS`. */
+function armWaiterTimeout<T>(waiters: Waiter<T>[], what: string): void {
+  const waiter = waiters[waiters.length - 1]!;
+  const timer = setTimeout(() => {
+    const i = waiters.indexOf(waiter);
+    if (i === -1) return; // already settled
+    waiters.splice(i, 1);
+    waiter.reject(new Error(`timed out after ${SNAPSHOT_TIMEOUT_MS}ms waiting for ${what}`));
+  }, SNAPSHOT_TIMEOUT_MS);
+  // Unref'd: the timer must never be the reason the process stays alive.
+  timer.unref();
+}
 
 /** Open a WSS client, resolving once the socket is open (rejecting on connect error). */
 export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
@@ -242,6 +273,7 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
           if (closed) return Promise.reject(new Error("client closed"));
           return new Promise((resolve, reject) => {
             snapshotWaiters.push({ resolve, reject });
+            armWaiterTimeout(snapshotWaiters, "sessions.snapshot");
           });
         },
         awaitProjects() {
@@ -249,6 +281,7 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
           if (closed) return Promise.reject(new Error("client closed"));
           return new Promise((resolve, reject) => {
             projectsWaiters.push({ resolve, reject });
+            armWaiterTimeout(projectsWaiters, "projects.snapshot");
           });
         },
         send(frame, onSent) {
