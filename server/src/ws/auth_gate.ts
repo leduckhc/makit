@@ -109,6 +109,17 @@ export class AuthGate {
     // session-scoped principal (caps read/send/spawn, `sessionId` set).
     const agent = this.deps.sessionTokens?.authenticate(bearer) ?? null;
     if (agent) {
+      // Fail closed on an under-specified principal. `isFullAccess` reads a
+      // missing `caps` as FULL access and `isAgentScoped` reads a missing
+      // `sessionId` as "not an agent", so either omission would silently promote
+      // the agent past the capability map and every read gate. The real store sets
+      // both; the interface does not require it, so the invariant is enforced at
+      // the boundary rather than trusted to each implementation.
+      if (!agent.sessionId || !agent.caps) {
+        log.warn("[makit] hello: agent token yielded an incomplete principal (rejected)");
+        this.reject(client, env, "malformed agent credential");
+        return;
+      }
       client.authed = true;
       client.deviceLabel = agent.label;
       client.deviceId = agent.deviceId;

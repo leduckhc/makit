@@ -380,10 +380,10 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       MIN_TRANSCRIPT_LIMIT,
       Math.min(MAX_TRANSCRIPT_LIMIT, Math.floor(rawLimit)),
     );
-    // `slice(-limit)` is the last `limit`, oldest-first, and returns the whole
-    // log when it is shorter than `limit`.
-    const events = manager.readTranscript(sid);
-    ctx.ack({ events: events.slice(-limit) });
+    // Bounded in the store's own query (D5), so a long session never loads its
+    // whole log to return its last few lines. Oldest-first, and the whole log
+    // when it is shorter than `limit`.
+    ctx.ack({ events: manager.readTranscript(sid, limit) });
   });
 
   r.register("session.spawn", async (ctx) => {
@@ -534,6 +534,26 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       );
       return;
     }
+    // The child runs on the SOURCE's harness, always. A native fork is a
+    // continuation of *that* back end's thread, so the thread id is only
+    // meaningful to it — handing a codex thread to pi produced a child that was
+    // created successfully and could never start (`session/load: Invalid params`).
+    // Moving harness is what `handoff` is for (D6), which is why a differing
+    // `--agent` is refused rather than honoured. (The spec's grammar listed
+    // `fork [--agent A]`; that is only coherent as "the same harness", so the
+    // flag survives as a no-op and a mismatch is an error.)
+    //
+    // Checked BEFORE the fork, with the depth guard and for the same reason: a
+    // forked thread whose session is never created is unreachable by any verb.
+    const wantedAgent = ctx.env.agent ? String(ctx.env.agent) : undefined;
+    if (wantedAgent !== undefined && wantedAgent !== live.agent) {
+      ctx.err(
+        WireErrorCode.BadRequest,
+        `cannot fork a ${source.agent} session onto ${wantedAgent}: a native fork continues the same ` +
+          `back end's thread — use \`makit handoff --to ${wantedAgent}\` to change harness`,
+      );
+      return;
+    }
     // A fork IS a spawn (D9): apply the depth/fan-out guard BEFORE forking, so a
     // refused fork never leaves an orphan thread behind on the back end.
     const boundError = manager.checkSpawnBounds(sid);
@@ -565,23 +585,6 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       : principal?.caps?.includes("client")
         ? "cli"
         : "app";
-    // The child runs on the SOURCE's harness, always. A native fork is a
-    // continuation of *that* back end's thread, so the thread id is only
-    // meaningful to it — handing a codex thread to pi produced a child that was
-    // created successfully and could never start (`session/load: Invalid params`).
-    // Moving harness is what `handoff` is for (D6), which is why a differing
-    // `--agent` is refused rather than honoured. (The spec's grammar listed
-    // `fork [--agent A]`; that is only coherent as "the same harness", so the
-    // flag survives as a no-op and a mismatch is an error.)
-    const wantedAgent = ctx.env.agent ? String(ctx.env.agent) : undefined;
-    if (wantedAgent !== undefined && wantedAgent !== live.agent) {
-      ctx.err(
-        WireErrorCode.BadRequest,
-        `cannot fork a ${source.agent} session onto ${wantedAgent}: a native fork continues the same ` +
-          `back end's thread — use \`makit handoff --to ${wantedAgent}\` to change harness`,
-      );
-      return;
-    }
     const agent = live.agent;
     const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
     const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;

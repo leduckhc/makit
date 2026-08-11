@@ -103,13 +103,36 @@ export class SqliteEventStore implements EventStore {
         "SELECT seq, ts, kind, payload FROM events WHERE session_id = ? AND seq > ? ORDER BY seq ASC",
       )
       .all(sessionId, fromSeq) as Array<{ seq: number; ts: number; kind: string; payload: string }>;
-    return rows.map((r) => ({
+    return rows.map((r) => this.hydrate(sessionId, r));
+  }
+
+  /**
+   * SPEC-46 D5: the last `limit` events, bounded by `LIMIT` in the query and
+   * reversed in memory. `read().slice(-limit)` would return the same rows while
+   * loading the entire log to do it — which is the cost D5 exists to remove, on
+   * exactly the long sessions worth carrying context out of.
+   */
+  readTail(sessionId: string, limit: number): SessionEvent[] {
+    if (limit <= 0) return [];
+    const rows = this.db
+      .prepare(
+        "SELECT seq, ts, kind, payload FROM events WHERE session_id = ? ORDER BY seq DESC LIMIT ?",
+      )
+      .all(sessionId, limit) as Array<{ seq: number; ts: number; kind: string; payload: string }>;
+    return rows.reverse().map((r) => this.hydrate(sessionId, r));
+  }
+
+  private hydrate(
+    sessionId: string,
+    r: { seq: number; ts: number; kind: string; payload: string },
+  ): SessionEvent {
+    return {
       seq: Number(r.seq),
       sessionId,
       ts: Number(r.ts),
       kind: r.kind as SessionEvent["kind"],
       payload: JSON.parse(r.payload) as Record<string, unknown>,
-    }));
+    };
   }
 
   saveSession(m: SessionMeta): void {

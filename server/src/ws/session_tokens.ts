@@ -12,8 +12,13 @@
  * persists to disk on every mutation, so a session token written there would
  * survive a crash as a valid credential for a session that no longer exists —
  * and would show up in `makit devices`, which D2 exists to make truthful.
- * In-memory makes D3's "rejected once its session ends" true by construction: a
- * restart has no sessions, so it has no tokens.
+ *
+ * **D3's "rejected once its session ends" is NOT true by construction** — the
+ * restart case is free, but `killSession` and `archiveSession` end a session
+ * within one daemon lifetime. Every session-end path MUST call {@link
+ * SessionTokenStore.drop}; `manager.ts` does so in `killSession`,
+ * `archiveSession` and before each re-attach re-mint. In-memory only bounds the
+ * damage to one process lifetime, it does not remove it.
  *
  * The token is a 256-bit random secret; brute-forcing it is infeasible, so a
  * plain Map lookup (unlike the registry's constant-time bearer scan) is

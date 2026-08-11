@@ -71,7 +71,10 @@ function harness(opts?: {
       ensureLive: async (id: string) => {
         await opts?.ensureLive?.(id);
       },
-      readTranscript: (_id: string) => opts?.transcript ?? [],
+      // Models the store's `readTail` (D5): the bound is applied by the READ, so
+      // these tests prove the handler pushes its clamped limit down rather than
+      // slicing a full log afterwards.
+      readTranscript: (_id: string, limit: number) => (opts?.transcript ?? []).slice(-limit),
     },
     broadcastSnapshots: () => {},
     broadcastReposSnapshot: async () => {},
@@ -527,15 +530,34 @@ test("U4: the fork's child runs on the SOURCE's harness, not the default one", a
 test("U4: --agent naming a DIFFERENT harness is refused, and points at handoff", async () => {
   // Moving harness is what `handoff` is for (D6). A codex thread cannot be resumed
   // by pi, so honouring `--agent pi` here would mint another dead session.
+  //
+  // The refusal must also land BEFORE `forkSession()`. A native fork creates a
+  // thread on the back end, and nothing in makit references a thread whose
+  // session was never created — so refusing afterwards leaks a codex rollout
+  // that no verb can ever reach or clean up. The depth guard above is already
+  // ordered for this reason; this check has the same obligation.
+  let forked = 0;
   const h = harness({
     principal: cli,
-    session: { id: "src", agent: "codex", pending: false, adapter: forkableAdapter() },
+    session: {
+      id: "src",
+      agent: "codex",
+      pending: false,
+      adapter: {
+        capabilities: { fork: true },
+        forkSession: async () => {
+          forked++;
+          return { agentSessionId: "th-forked" };
+        },
+      },
+    },
   });
   await h.cmd({ kind: "session.fork", sessionId: "src", agent: "pi" });
   const err = h.sent.find((f) => f.t === "err");
   assert.ok(err, "must refuse");
   assert.match(String((err as { message?: string }).message), /handoff/);
   assert.equal(h.spawnCalls.length, 0, "and nothing is created");
+  assert.equal(forked, 0, "and no thread is forked on the back end either");
 });
 
 test("U4: --agent naming the SAME harness is accepted (a harmless no-op)", async () => {

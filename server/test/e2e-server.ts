@@ -95,16 +95,29 @@ function makeDeterministicPortsExec(projectPath: string) {
   };
 }
 
-function seedDeviceRegistry(home: string, bearer: string): void {
+function seedDeviceRegistry(home: string, bearer: string, cliBearer: string): void {
   mkdirSync(home, { recursive: true });
-  const device: PairedDevice = {
+  const phone: PairedDevice = {
     id: "e2e-device",
     label: "e2e simulator",
     bearer,
     pairedAt: Date.now(),
     lastSeenAt: Date.now(),
   };
-  writeFileSync(resolve(home, "devices.json"), JSON.stringify([device], null, 2), { mode: 0o600 });
+  // SPEC-46 D2: the CLI is its OWN device, with `caps: ["client"]` — while the
+  // phone above has no `caps` at all, which means full access. Two distinct
+  // bearers is the whole point: sharing one would authenticate the CLI as the
+  // phone, so no test here could ever catch a path that confuses "client" with
+  // full access, which is the invariant most of D2 rests on.
+  const cli: PairedDevice = {
+    id: "e2e-cli",
+    label: "cli@e2e",
+    bearer: cliBearer,
+    caps: ["client"],
+    pairedAt: Date.now(),
+    lastSeenAt: Date.now(),
+  };
+  writeFileSync(resolve(home, "devices.json"), JSON.stringify([phone, cli], null, 2), { mode: 0o600 });
 }
 
 /**
@@ -142,7 +155,12 @@ async function main(): Promise<void> {
   // Losing the WSS race later still tears down the winner's control socket on the
   // way out, which leaves a live server that every CLI verb reports as down.
   await refuseIfControlSocketIsLive(controlSocketPath());
-  seedDeviceRegistry(makitHome, args.bearer);
+  // D2: two devices, two bearers — the phone (full access) and the CLI
+  // (`caps: ["client"]`). Derived from `--bearer` so it is reproducible across
+  // runs, but distinct, so the harness models the two-client reality instead of
+  // hiding it.
+  const cliBearer = `${args.bearer}-cli`;
+  seedDeviceRegistry(makitHome, args.bearer, cliBearer);
 
   const cert = await loadOrCreateCert();
   const registry = new DeviceRegistry();
@@ -225,11 +243,36 @@ async function main(): Promise<void> {
       port: args.port,
       fingerprint: cert.fingerprint,
       advertiseHost: "127.0.0.1",
-      pairedDevices: 1,
+      pairedDevices: 2,
       runningSessions: manager.allSessions().length,
       version: "e2e",
     }),
-    cliGrant: () => ({ deviceId: "e2e-cli", label: "cli@e2e", bearer: args.bearer, created: true }),
+    cliGrant: () => ({ deviceId: "e2e-cli", label: "cli@e2e", bearer: cliBearer, created: false }),
+    // The CLI uses only the two verbs above. The rest throw by name rather than
+    // being absent: an accidental call on a bare `as unknown as` cast surfaces
+    // as `backend.pairMint is not a function`, which says nothing about which
+    // harness is incomplete.
+    pairMint: () => {
+      throw new Error("e2e harness: pair.mint is not implemented");
+    },
+    pairCurrent: () => {
+      throw new Error("e2e harness: pair.current is not implemented");
+    },
+    devicesList: () => {
+      throw new Error("e2e harness: devices.list is not implemented");
+    },
+    devicesRevoke: () => {
+      throw new Error("e2e harness: devices.revoke is not implemented");
+    },
+    sessionsList: () => {
+      throw new Error("e2e harness: sessions.list is not implemented — use `makit ls` (WSS, D1)");
+    },
+    serverStop: () => {
+      throw new Error("e2e harness: server.stop is not implemented — send SIGTERM");
+    },
+    logsTail: () => {
+      throw new Error("e2e harness: logs.tail is not implemented");
+    },
   } as unknown as ControlBackend;
   const control = await createControlServer({ socketPath: controlSocketPath(), backend: controlBackend });
   void control;

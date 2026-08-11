@@ -115,7 +115,18 @@ export class DeviceRegistry {
   grantCli(): { device: PairedDevice; created: boolean } {
     const label = `cli@${hostname()}`;
     for (const d of this.devices.values()) {
-      if (d.label === label) return { device: d, created: false };
+      if (d.label !== label) continue;
+      // Idempotent in SHAPE as well as identity. This device is the subject every
+      // capability gate reads, and an absent `caps` is FULL access by the
+      // protocol's own rule (D2) — so a row that reached devices.json without one
+      // (a hand edit, a pair token crafted with this label) would silently hand
+      // the CLI more authority than D2 ever grants it. Repaired and persisted,
+      // because otherwise the next process reads full access again.
+      if (!d.caps) {
+        d.caps = ["client"];
+        this.persist();
+      }
+      return { device: d, created: false };
     }
     const device: PairedDevice = {
       id: randomUUID(),

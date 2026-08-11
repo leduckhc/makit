@@ -9,7 +9,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { AuthGate, type AuthRegistry } from "./auth_gate.js";
+import { AuthGate, type AuthRegistry, type AuthSessionTokens } from "./auth_gate.js";
+import type { Principal } from "./principal.js";
 import type { WsClient } from "./client.js";
 import type { Envelope } from "../protocol.js";
 import { SessionTokenStore } from "./session_tokens.js";
@@ -97,4 +98,63 @@ test("a session-token bearer authenticates via the store when the registry misse
   assert.equal(client.authed, true);
   assert.equal(client.principal?.sessionId, "sess-A");
   assert.deepEqual(client.principal?.caps, ["read", "send", "spawn"]);
+});
+
+// ---------------------------------------------------------------------------
+// An incomplete agent principal is rejected at the boundary
+//
+// `isFullAccess` reads a missing `caps` as FULL access and `isAgentScoped` reads
+// a missing `sessionId` as "not an agent". So an `AuthSessionTokens`
+// implementation that returned a principal missing either field would not fail
+// closed — it would silently promote the agent to human-level authority, past
+// the command capability map and every read gate. The real store always sets
+// both; the interface it satisfies does not require it, so the invariant belongs
+// here rather than in every future implementer's memory.
+// ---------------------------------------------------------------------------
+
+/** A token store that authenticates but returns an under-specified principal. */
+const partialStore = (principal: Principal): AuthSessionTokens => ({
+  authenticate: () => principal,
+});
+
+test("an agent principal with no sessionId is rejected, not treated as full access", () => {
+  const registry: AuthRegistry = { authenticate: () => null, consumePairToken: () => null };
+  const client = fakeClient();
+
+  new AuthGate({
+    registry,
+    onAuthenticated: () => {},
+    sessionTokens: partialStore({ deviceId: "d", label: "agent:?", caps: ["read"] }),
+  }).handleHello(client, hello("tok"));
+
+  assert.equal(client.authed, false, "an unscoped agent credential must not authenticate");
+  assert.equal(client.principal, undefined);
+});
+
+test("an agent principal with no caps is rejected, not treated as full access", () => {
+  const registry: AuthRegistry = { authenticate: () => null, consumePairToken: () => null };
+  const client = fakeClient();
+
+  new AuthGate({
+    registry,
+    onAuthenticated: () => {},
+    sessionTokens: partialStore({ deviceId: "d", label: "agent:s1", sessionId: "s1" }),
+  }).handleHello(client, hello("tok"));
+
+  assert.equal(client.authed, false, "caps-absent means FULL access, which an agent may never have");
+  assert.equal(client.principal, undefined);
+});
+
+test("a well-formed agent principal still authenticates (the guard is not a wall)", () => {
+  const registry: AuthRegistry = { authenticate: () => null, consumePairToken: () => null };
+  const client = fakeClient();
+
+  new AuthGate({
+    registry,
+    onAuthenticated: () => {},
+    sessionTokens: partialStore({ deviceId: "d", label: "agent:s1", sessionId: "s1", caps: ["read"] }),
+  }).handleHello(client, hello("tok"));
+
+  assert.equal(client.authed, true);
+  assert.equal(client.principal?.sessionId, "s1");
 });

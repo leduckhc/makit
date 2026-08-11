@@ -245,3 +245,35 @@ test("AWAIT_APPROVAL raises a real confirmAction prompt, and answering it ends t
   answer!({ kind: "confirmAction", approved: true } as UIResponse);
   await waitFor(() => coarse.at(-1) === "idle");
 });
+
+// ---------------------------------------------------------------------------
+// A killed stub stops emitting
+//
+// SLOW's timer is stored in `slowTimeout` and cleared by both `cancel()` and
+// `kill()`; FAIL_TURN's was not stored at all, so it kept firing after the
+// adapter was gone and pushed `session.error` at whatever was still listening.
+// This is the harness that the keyless e2e loop and every queue test run on, so
+// a stray terminal event here is a flake with a plausible-looking cause.
+// ---------------------------------------------------------------------------
+
+test("kill() during a pending FAIL_TURN cancels it instead of erroring after the exit", async () => {
+  const stub = new StubAdapter();
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  const errors = collectKinds(stub, "session.error");
+  await stub.send({ text: "FAIL_TURN" });
+  await stub.kill();
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(errors.length, 0, "a killed adapter must not emit a terminal error afterwards");
+});
+
+test("cancel() during a pending FAIL_TURN releases the turn without the error", async () => {
+  const stub = new StubAdapter();
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  const errors = collectKinds(stub, "session.error");
+  const { coarse } = collectStatuses(stub);
+  await stub.send({ text: "FAIL_TURN" });
+  await stub.cancel();
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(errors.length, 0, "a cancelled turn is not a failed one");
+  assert.equal(coarse.at(-1), "idle", "and the session is not left wedged running");
+});

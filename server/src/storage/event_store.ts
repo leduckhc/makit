@@ -72,6 +72,12 @@ export interface EventStore {
   append(sessionId: string, e: NewEvent): SessionEvent;
   /** Events with `seq > fromSeq`, ascending. `fromSeq = 0` returns all. */
   read(sessionId: string, fromSeq?: number): SessionEvent[];
+  /**
+   * The last `limit` events, ascending — bounded in the query, not by slicing a
+   * full read afterwards (SPEC-46 D5). Returns the whole log when it is shorter
+   * than `limit`.
+   */
+  readTail(sessionId: string, limit: number): SessionEvent[];
   /** Insert-or-update session metadata. */
   saveSession(meta: SessionMeta): void;
   /** All persisted session metadata, most-recently-active first. */

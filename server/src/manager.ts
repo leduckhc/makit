@@ -392,12 +392,13 @@ export class SessionManager extends EventEmitter {
   /**
    * SPEC-46 C3: a session's persisted events, read from the event store rather
    * than the session's in-memory cache, so a bounded tail (session.transcript)
-   * never hydrates the whole log just to return its last few lines (D5). Falls
-   * back to the in-memory events when there is no store (M0 / tests).
+   * never hydrates the whole log just to return its last few lines (D5). The
+   * `limit` is pushed all the way down to the SQL; falls back to the in-memory
+   * events when there is no store (M0 / tests).
    */
-  readTranscript(sessionId: string): SessionEvent[] {
-    if (this.store) return this.store.read(sessionId);
-    return this.sessions.get(sessionId)?.events ?? [];
+  readTranscript(sessionId: string, limit: number): SessionEvent[] {
+    if (this.store) return this.store.readTail(sessionId, limit);
+    return (this.sessions.get(sessionId)?.events ?? []).slice(-limit);
   }
 
   /** Set the loopback bridge + askUser wiring so subsequently-spawned
@@ -544,6 +545,16 @@ export class SessionManager extends EventEmitter {
       // adapter's resume path at promotion (see startPendingSession).
       resumeAgentSessionId,
     });
+    // SPEC-46 D9: the bound is re-checked HERE, in the same synchronous step as
+    // the registration below. The command layer checks it too, but that check
+    // happens before the `await listWorktrees` above, so the count it read is
+    // stale — two spawns fired together from one parent both saw a free slot and
+    // both landed. Nothing may await between this check and `sessions.set`, which
+    // is what makes it a reservation rather than a second advisory read.
+    if (lineage?.parentId) {
+      const boundError = spawnBoundError(lineage.parentId, this.lineageNodes());
+      if (boundError) throw new Error(boundError);
+    }
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
     return session;
@@ -1226,6 +1237,11 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
     if (session.archived) return;
+    // SPEC-46 D3: the session is ending, so its agent credential must stop
+    // authenticating now. Dropped BEFORE the kill, which is best-effort here — a
+    // token that outlived a failed kill is the exact case that matters, since the
+    // agent process may still be alive to use it.
+    sessionTokens.drop(id);
     // Best-effort: archiving is the recovery path in the removeWorktree loop
     // (called after git already deleted the tree), so a rejecting kill() must
     // not abort the archive — or the reconciliation of the remaining sessions.
@@ -1267,6 +1283,9 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
 
+    // SPEC-46 D3: revoked when the session ends, and before the kill — an agent
+    // that outlives its kill() signal must not still hold spawn/send/read.
+    sessionTokens.drop(id);
     await session.adapter.kill();
     this.sessions.delete(id);
     // Drop any attach mapping so the underlying pi session can be re-attached.
