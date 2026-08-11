@@ -48,6 +48,18 @@ export interface StubWssOpts {
    */
   mediaStall?: boolean;
   /**
+   * Called once the stub has acked a `sub` (and sent any `srvRequests`), i.e. at
+   * the exact moment the client is subscribed and past end-of-replay.
+   *
+   * This exists so a test can script *live* events without racing the client's
+   * connect. Pushing them on a fixed timer instead is a race: a verb has to open
+   * a unix socket, complete a TLS handshake, `hello`, take a snapshot and only
+   * then `sub`, and on a loaded CI runner that outlasts any delay short enough to
+   * keep the suite quick. The events then land before the subscription, the
+   * transition is never seen, and a verb with no `--timeout` waits forever.
+   */
+  onSub?: (frame: Record<string, unknown>) => void;
+  /**
    * Called for each `cmd` frame; returns the ack payload to merge into the
    * reply. Return `{ __err: "message" }` to answer with an `err` frame instead
    * (e.g. `no_such_session`), which is how a plain command failure is tested.
@@ -148,6 +160,7 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
         for (const req of opts.srvRequests ?? []) {
           ws.send(JSON.stringify({ t: "srv.request", ...req }));
         }
+        opts.onSub?.(m);
         return;
       }
       if (m.t === "srv.response") {

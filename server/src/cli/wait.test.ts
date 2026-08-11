@@ -66,14 +66,16 @@ async function waitWith(
       acceptBearer: "CACHED",
       sessions: [session(status)],
       onCmd: () => ({}),
+      // Pushed the instant the client is subscribed, in order, so the script can
+      // never outrun the connect (see `onSub`). The socket preserves order, so no
+      // delay is needed and none is wanted: a delay is what made this racy.
+      onSub: () => {
+        for (const ev of script) stub!.push(ev);
+      },
     });
     const port = stub.port;
     await withCliHome(async () => {
       captured = await captureCli(async () => {
-        // Scripted events are pushed from timers so the `runWait` promise is
-        // awaited immediately: an unawaited rejection (a `process.exit` throw)
-        // is an unhandled rejection, which fails the whole test file.
-        script.forEach((ev, i) => setTimeout(() => stub!.push(ev), 15 * (i + 1)).unref());
         await runWait([SID, "--port", String(port), ...argv]);
       });
     });

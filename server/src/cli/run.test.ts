@@ -67,11 +67,16 @@ async function runWith(
         if (m.kind === "session.spawn") return { sessionId: "child" };
         return {};
       },
+      // Live events go out the moment the client subscribes, in order — never on
+      // a fixed timer, which races the connect and on a loaded runner lands the
+      // whole script before the subscription exists.
+      onSub: () => {
+        for (const ev of script) stub!.push(ev);
+      },
     });
     const port = stub.port;
     await withCliHome(async () => {
       captured = await captureCli(async () => {
-        script.forEach((ev, i) => setTimeout(() => stub!.push(ev), 40 + 15 * i).unref());
         await runRun([...argv, "--port", String(port)]);
       });
     });
