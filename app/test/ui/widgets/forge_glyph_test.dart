@@ -21,7 +21,10 @@ void main() {
       // Mirrors the server router's isGitHubHost: a suffix test alone would
       // classify an attacker-controlled host as GitHub. It is now unnamed rather
       // than named as some other forge.
-      expect(forgeKindForUrl('https://github.com.evil.test/a/b/pull/1'), isNull);
+      expect(
+        forgeKindForUrl('https://github.com.evil.test/a/b/pull/1'),
+        isNull,
+      );
       expect(forgeKindForUrl('https://notgithub.com/a/b/pull/1'), isNull);
     });
 
@@ -37,25 +40,43 @@ void main() {
       // router while the router also guessed by hostname. The router now probes the
       // instance, so the guess could contradict the provider that served the data --
       // putting Forgejo's name and mark on a self-hosted Gitea or a GitLab remote.
-      expect(forgeKindForUrl('https://codeberg.org/forgejo/forgejo/pulls/1'), isNull);
-      expect(forgeKindForUrl('https://git.example.com:3000/a/b/pulls/1'), isNull);
+      expect(
+        forgeKindForUrl('https://codeberg.org/forgejo/forgejo/pulls/1'),
+        isNull,
+      );
+      expect(
+        forgeKindForUrl('https://git.example.com:3000/a/b/pulls/1'),
+        isNull,
+      );
     });
 
     test("the server's detected software wins over the URL", () {
       // The daemon asks the instance what it runs, which is the only way to know.
       expect(
-        forgeKindForUrl('https://git.example.com/a/b/pulls/1', detected: 'forgejo'),
+        forgeKindForUrl(
+          'https://git.example.com/a/b/pulls/1',
+          detected: 'forgejo',
+        ),
         ForgeKind.forgejo,
       );
       expect(
-        forgeKindForUrl('https://git.example.com/a/b/pulls/1', detected: 'gitea'),
+        forgeKindForUrl(
+          'https://git.example.com/a/b/pulls/1',
+          detected: 'gitea',
+        ),
         ForgeKind.gitea,
       );
     });
 
     test('a forge the app has no mark for stays unnamed', () {
-      expect(forgeKindForUrl('https://gl.example.com/a/b/-/1', detected: 'gitlab'), isNull);
-      expect(forgeKindForUrl('https://x.example.com/a/b/1', detected: 'unknown'), isNull);
+      expect(
+        forgeKindForUrl('https://gl.example.com/a/b/-/1', detected: 'gitlab'),
+        isNull,
+      );
+      expect(
+        forgeKindForUrl('https://x.example.com/a/b/1', detected: 'unknown'),
+        isNull,
+      );
     });
 
     test('returns null when there is no URL to classify', () {

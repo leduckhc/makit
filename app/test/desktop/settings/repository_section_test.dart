@@ -369,7 +369,9 @@ void main() {
   });
 
   group('the default-branch row survives the case it exists for', () {
-    testWidgets('an unresolved default branch still offers the picker', (t) async {
+    testWidgets('an unresolved default branch still offers the picker', (
+      t,
+    ) async {
       // The row was rendered only when `defaultBranch != null`, but that is exactly
       // null when git reported no `origin/HEAD` and no override has been set -- the
       // `--single-branch` clone and the renamed-default case the row was built for.
@@ -383,7 +385,9 @@ void main() {
       expect(find.text('Not detected'), findsOneWidget);
     });
 
-    testWidgets('it is tappable in that state, since branches are known', (t) async {
+    testWidgets('it is tappable in that state, since branches are known', (
+      t,
+    ) async {
       var taps = 0;
       await _pump(t, _view(defaultBranch: null), onBranch: () => taps++);
       await t.tap(find.text('Default branch'));
@@ -391,21 +395,26 @@ void main() {
       expect(taps, 1);
     });
 
-    testWidgets('with neither a branch nor anything to pick, it stays read-only', (t) async {
-      var taps = 0;
-      await _pump(
-        t,
-        _view(defaultBranch: null, branches: const []),
-        onBranch: () => taps++,
-      );
-      await t.tap(find.text('Default branch'));
-      await t.pumpAndSettle();
-      expect(taps, 0);
-    });
+    testWidgets(
+      'with neither a branch nor anything to pick, it stays read-only',
+      (t) async {
+        var taps = 0;
+        await _pump(
+          t,
+          _view(defaultBranch: null, branches: const []),
+          onBranch: () => taps++,
+        );
+        await t.tap(find.text('Default branch'));
+        await t.pumpAndSettle();
+        expect(taps, 0);
+      },
+    );
   });
 
   group('home abbreviation', () {
-    testWidgets('a sibling directory sharing the home prefix is NOT abbreviated', (t) async {
+    testWidgets('a sibling directory sharing the home prefix is NOT abbreviated', (
+      t,
+    ) async {
       // `path.startsWith(home)` matched `/Users/leduck/x` when HOME was `/Users/le`,
       // rendering `~duck/x` -- not a valid path, and the wrong repository.
       final sibling = '${_home}x/Work/Thing';

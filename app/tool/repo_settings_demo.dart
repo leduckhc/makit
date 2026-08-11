@@ -112,7 +112,9 @@ class _ShellState extends State<_Shell> {
   // adding or reordering a scene silently changed the default and contradicted this
   // comment. Falls back to the first scene if the name is ever renamed.
   static const _defaultScene = 'set to None — polling off';
-  String _key = _scenes.containsKey(_defaultScene) ? _defaultScene : _scenes.keys.first;
+  String _key = _scenes.containsKey(_defaultScene)
+      ? _defaultScene
+      : _scenes.keys.first;
   final Map<String, ForgeChoice> _choice = {};
 
   @override

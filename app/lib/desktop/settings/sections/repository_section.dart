@@ -277,7 +277,7 @@ class RepositorySettingsSection extends StatelessWidget {
               action: _Chevron(
                 enabled: view.editable && view.branches.isNotEmpty,
               ),
-              ),
+            ),
           ],
         ),
 
@@ -326,7 +326,9 @@ class RepositorySettingsSection extends StatelessWidget {
   static String _tilde(String path) {
     final home = Platform.environment['HOME'];
     if (home == null || home.isEmpty) return path;
-    final trimmed = home.endsWith('/') ? home.substring(0, home.length - 1) : home;
+    final trimmed = home.endsWith('/')
+        ? home.substring(0, home.length - 1)
+        : home;
     if (path == trimmed) return '~';
     if (!path.startsWith('$trimmed/')) return path;
     return '~/${path.substring(trimmed.length + 1)}';

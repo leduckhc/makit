@@ -72,40 +72,40 @@ class RepositorySettingsPage extends ConsumerWidget {
     final controller = TextEditingController(text: view.worktreeRoot);
     try {
       final value = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Worktree root'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: '/Users/you/.worktrees',
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Worktree root'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: '/Users/you/.worktrees',
+                ),
               ),
+              const SizedBox(height: 10),
+              Text(
+                'Must be an absolute path inside your home directory. '
+                'It does not have to exist yet.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 10),
-            Text(
-              'Must be an absolute path inside your home directory. '
-              'It does not have to exist yet.',
-              style: Theme.of(ctx).textTheme.bodySmall,
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('Set'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Set'),
-          ),
-        ],
-      ),
-    );
+      );
       if (value == null || value.isEmpty) return;
       // Not validated here: the server owns the rules (absolute, no `..`, inside
       // $HOME, canonicalised) and re-implementing them in Dart would give two
@@ -201,69 +201,69 @@ class RepositorySettingsPage extends ConsumerWidget {
     final controller = TextEditingController(text: view.path);
     try {
       final value = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Repository path'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: '/Users/you/Work/project',
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Repository path'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: '/Users/you/Work/project',
+                ),
               ),
+              const SizedBox(height: 10),
+              Text(
+                'Use this when the repository has moved on disk. It keeps this '
+                'project\u2019s settings and session history, which removing and '
+                're-adding it would not.\n\n'
+                'It must be an existing git repository. Sessions already bound to a '
+                'worktree keep the path they were created with.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(height: 10),
-            Text(
-              'Use this when the repository has moved on disk. It keeps this '
-              'project\u2019s settings and session history, which removing and '
-              're-adding it would not.\n\n'
-              'It must be an existing git repository. Sessions already bound to a '
-              'worktree keep the path they were created with.',
-              style: Theme.of(ctx).textTheme.bodySmall,
+            // Disabled until the value is both non-empty and actually different. The
+            // guard below still returns early, but a button that closes the dialog and
+            // does nothing is the failure this feature already refuses elsewhere: a
+            // control that appears to act and does not is worse than one that says it
+            // cannot.
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder: (ctx, field, _) {
+                final next = field.text.trim();
+                return TextButton(
+                  onPressed: next.isEmpty || next == view.path
+                      ? null
+                      : () => Navigator.pop(ctx, next),
+                  child: const Text('Re-point'),
+                );
+              },
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          // Disabled until the value is both non-empty and actually different. The
-          // guard below still returns early, but a button that closes the dialog and
-          // does nothing is the failure this feature already refuses elsewhere: a
-          // control that appears to act and does not is worse than one that says it
-          // cannot.
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: controller,
-            builder: (ctx, field, _) {
-              final next = field.text.trim();
-              return TextButton(
-                onPressed: next.isEmpty || next == view.path
-                    ? null
-                    : () => Navigator.pop(ctx, next),
-                child: const Text('Re-point'),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-    // Kept as a guard even though the button is disabled: dismissing the dialog and
-    // the disabled state are two different mechanisms, and only one of them is
-    // enforced by the widget tree.
-    if (value == null || value.isEmpty || value == view.path) return;
-    // Not validated here: the server owns the rules (absolute, no `..`, exists, is a
-    // git repo, not already open) and re-implementing them in Dart would give two
-    // answers that could disagree.
-    if (!context.mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await ref
-          .read(storeControllerProvider.notifier)
-          .setRepoPath(repoId, value);
+      );
+      // Kept as a guard even though the button is disabled: dismissing the dialog and
+      // the disabled state are two different mechanisms, and only one of them is
+      // enforced by the widget tree.
+      if (value == null || value.isEmpty || value == view.path) return;
+      // Not validated here: the server owns the rules (absolute, no `..`, exists, is a
+      // git repo, not already open) and re-implementing them in Dart would give two
+      // answers that could disagree.
+      if (!context.mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      try {
+        await ref
+            .read(storeControllerProvider.notifier)
+            .setRepoPath(repoId, value);
       } catch (e) {
         messenger.showSnackBar(SnackBar(content: Text(_reasonFrom(e))));
       }
