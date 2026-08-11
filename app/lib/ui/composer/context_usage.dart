@@ -272,9 +272,19 @@ class ContextUsageButton extends ConsumerWidget {
                 ),
               ),
               child: SizedBox(
-                width: math.min(
-                  kUsagePanelWidth,
-                  window.width - 2 * _kUsagePanelMargin,
+                // Floored at zero: `window.width - 2 * margin` goes negative below
+                // 16pt, and a negative SizedBox width is a non-normalized
+                // constraint — the layout asserts instead of rendering a cramped
+                // panel. Reachable for a frame when the window shrinks under an
+                // open popover. The height axis above was already safe, floored by
+                // `_kUsagePanelMinHeight`; this axis had no floor.
+                // (Found via SPEC-52's identity panel, which copied this sizing.)
+                width: math.max(
+                  0,
+                  math.min(
+                    kUsagePanelWidth,
+                    window.width - 2 * _kUsagePanelMargin,
+                  ),
                 ),
                 // Scrolls inside the height cap rather than clipping the cost
                 // line off the bottom. `primary: false` because `MenuAnchor`

@@ -318,5 +318,32 @@ void main() {
       expect(find.text(r'$0.18'), findsOneWidget);
       expect(find.text('Session total'), findsNothing);
     });
+
+    testWidgets('the desktop popover survives the window shrinking under it', (
+      tester,
+    ) async {
+      // Found while fixing the same bug in SPEC-52's identity panel, which copied
+      // this sizing: `window.width - 2 * margin` goes NEGATIVE below 16pt (2 * _kUsagePanelMargin), and a
+      // SizedBox with a negative width is a non-normalized constraint -- the
+      // layout ASSERTS instead of rendering a cramped panel. The height axis was
+      // already safe (floored by _kUsagePanelMinHeight); the width axis was not.
+      //
+      // Shrunk WHILE open, because that is both the realistic path (a resize
+      // animation or an embedded host hands us one degenerate frame) and the only
+      // one that works: at 10x10 the ring is unhittable, so the tap lands on
+      // nothing and the test would assert nothing.
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final c = _container(_codex);
+      addTearDown(c.dispose);
+      await tester.pumpWidget(_wrap(c, desktop: true));
+      await tester.tap(find.byType(ContextUsageRing));
+      await tester.pumpAndSettle();
+      expect(find.byType(ContextUsageDetails), findsOneWidget);
+      tester.view.physicalSize = const Size(10, 10);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
   });
 }

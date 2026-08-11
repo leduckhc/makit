@@ -504,13 +504,22 @@ Future<void> showSessionIdentity({
           clipBehavior: Clip.antiAlias,
           // Sized to the WINDOW, not to a constant: SPEC-37 learned that a fixed
           // panel opened from a narrow split pane hangs off-screen.
+          //
+          // Floored at zero because `window - 2 * margin` goes NEGATIVE below
+          // 24pt, and a BoxConstraints with a negative max is not normalized — the
+          // layout asserts rather than rendering a small panel. Degenerate sizes
+          // are reachable for a frame (a resize animation, an embedded host), and
+          // "the window is absurd" should cost a cramped panel, not a crash.
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: math.min(
-                kIdentityPanelWidth,
-                window.width - 2 * _kIdentityPanelMargin,
+              maxWidth: math.max(
+                0,
+                math.min(
+                  kIdentityPanelWidth,
+                  window.width - 2 * _kIdentityPanelMargin,
+                ),
               ),
-              maxHeight: window.height - 2 * _kIdentityPanelMargin,
+              maxHeight: math.max(0, window.height - 2 * _kIdentityPanelMargin),
             ),
             child: SingleChildScrollView(child: body()),
           ),

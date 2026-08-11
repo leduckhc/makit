@@ -384,6 +384,44 @@ void main() {
       expect(panel.width, lessThanOrEqualTo(300 - 2 * 12));
     });
 
+    testWidgets('a window shrunk below the margins does not throw', (
+      tester,
+    ) async {
+      // `window.width - 2 * margin` goes NEGATIVE below 24pt, and a BoxConstraints
+      // whose maxWidth is negative is not normalized: the layout ASSERTS
+      // ("BoxConstraints has both width and height constraints non-normalized")
+      // instead of rendering a small panel.
+      //
+      // Reproduced by shrinking the window WHILE the panel is open, which is both
+      // the realistic path (a resize animation or an embedded host hands us one
+      // degenerate frame) and the only one that works: opening at 20x20 leaves the
+      // trigger button unhittable, so the tap lands on nothing and the panel never
+      // opens — a test that passes while asserting nothing.
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _host(
+          Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showSessionIdentity(
+                context: context,
+                identity: identity(),
+                desktop: true,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionIdentityDetails), findsOneWidget);
+      tester.view.physicalSize = const Size(20, 20);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets(
       'at 320x360 nothing paints off-screen and Copy all is still reachable',
       (tester) async {
