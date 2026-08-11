@@ -527,6 +527,19 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
     super.dispose();
   }
 
+  /// This row's worktree as a selection payload.
+  ///
+  /// Note there is deliberately **no `onDoubleTap`** on the row: adding one puts
+  /// a double-tap recognizer in the gesture arena, which defers `onTap` until
+  /// the double-tap timer expires — every branch click would gain ~300ms of lag
+  /// for a gesture almost nobody makes. SPEC-51's "keep this branch" promotion
+  /// is timing-free instead: see [selectWorktree].
+  SelectedWorktree _selection() => SelectedWorktree(
+    projectId: widget.repo.id,
+    path: widget.worktree.path,
+    branch: widget.worktree.branch,
+  );
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -564,14 +577,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                 // disclosure: one tap doing both meant peeking at a branch's
                 // children yanked the canvas, and moving the canvas collapsed
                 // the row you were reading. The caret owns disclosure.
-                onTap: () => selectWorktree(
-                  ref,
-                  SelectedWorktree(
-                    projectId: repo.id,
-                    path: worktree.path,
-                    branch: worktree.branch,
-                  ),
-                ),
+                onTap: () => selectWorktree(ref, _selection()),
                 child: Ink(
                   decoration: BoxDecoration(
                     color: worktreeSelected

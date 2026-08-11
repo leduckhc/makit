@@ -178,15 +178,53 @@ void closeActiveSplit(WidgetRef ref) {
 /// worktree's group, minting it when it does not exist yet. An empty scope
 /// seeds the placeholder tab with [worktree] so the pane renders the in-pane
 /// starter (decision 20) rather than the no-worktree placeholder.
-void selectWorktree(WidgetRef ref, SelectedWorktree worktree) {
+///
+/// SPEC-51: with [previewGroupsPreference] on, a plain click mints the group as
+/// the **preview** one — disposable, replaced by the next branch you click, so
+/// browsing twenty worktrees costs one tab.
+///
+/// Promotion (decision 4) is **clicking the branch you are already previewing**:
+/// the second click says "I'm staying here", and the group stops being
+/// replaceable. Timing-free on purpose — an `onDoubleTap` on the sidebar row
+/// would defer every single click to the double-tap timer (see `_selection` in
+/// `desktop_sidebar.dart`), and a wall-clock double-click window in the widget
+/// would make the gesture unreliable on a trackpad and untestable without a
+/// fake clock. A fast double click satisfies this rule; so does a slow one.
+///
+/// [keep] forces promotion for callers that *are* an explicit keep gesture (the
+/// group tab's "Keep this view"). Nothing else promotes: decision 4 rejects
+/// heuristics like "you sent a message here".
+void selectWorktree(
+  WidgetRef ref,
+  SelectedWorktree worktree, {
+  bool keep = false,
+}) {
   final groups = ref.read(groupsControllerProvider.notifier);
-  groups.openWorktreeGroup(
+  final promote = keep || _isPreviewingOnScreen(ref, worktree);
+  final id = groups.openWorktreeGroup(
     projectId: worktree.projectId,
     worktreePath: worktree.path,
     label: worktree.branch ?? worktree.path.split('/').last,
+    preview: !promote && ref.read(previewGroupsEnabledProvider),
   );
+  if (promote) groups.keepGroup(id);
   final active = ref.read(activeGroupProvider);
   if (ref.read(groupMembersProvider(active.id)).isEmpty) {
     ref.read(workspaceControllerProvider.notifier).revealWorktree(worktree);
   }
+}
+
+/// Whether [worktree]'s group is the preview group **and** the one on screen —
+/// i.e. this click is the second one on the branch the user is already looking
+/// at. Requiring *active* is what keeps it a deliberate repeat: clicking a
+/// preview group that sits in the background is still navigation.
+bool _isPreviewingOnScreen(WidgetRef ref, SelectedWorktree worktree) {
+  final state = ref.read(groupsControllerProvider);
+  final preview = state.previewGroup;
+  return preview != null &&
+      preview.id == state.activeGroupId &&
+      preview.isScopedTo(
+        projectId: worktree.projectId,
+        worktreePath: worktree.path,
+      );
 }

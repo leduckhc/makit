@@ -214,6 +214,14 @@ single sentence decides the rest of the behaviour:
 - **Layout is yours.** The `Agents side by side` setting is a *placement policy*
   — it decides whether the next agent opens as a pane or a tab, and never
   re-arranges panes you positioned.
+- **Preview tabs, if you want them** (SPEC-51, off by default). Turn on
+  `Preview tabs for worktrees` and clicking a branch reuses **one** disposable
+  tab, shown in *italic*, instead of adding one per branch you look at —
+  browsing twenty worktrees costs one tab. Keeping it is explicit: click the
+  same branch again, or right-click the tab → **Keep this view**. Nothing else
+  keeps it, so a tab you were working in *can* be displaced — but only its pane
+  arrangement is lost. The agents keep running, and because a worktree group's
+  membership is derived, clicking that branch again brings them right back.
 - The title strip carries the group tabs (scrolling, `⌘1`–`⌘9` for the first
   nine) on the left and the "Open in editor" split button, which always targets
   the **active pane's** worktree, on the right.
