@@ -489,6 +489,39 @@ no token appears in the repos snapshot                    PASS
 The first four are the point: the setting **changes which provider serves the
 repo**, which no unit test can establish. The probe was deleted.
 
+## "New worktree from PR" on both providers
+
+Found by asking the obvious follow-up question: if the provider setting routes, does
+the PR picker follow it? Listing did — `listOpenPrs` goes through the gateway. The
+**checkout** did not: it ran `gh pr checkout` unconditionally, so the flow broke
+exactly halfway. The user saw their Forgejo PRs, picked one, and the worktree never
+appeared.
+
+| Provider | List | Checkout |
+| --- | --- | --- |
+| GitHub | gateway → `gh` | `gh pr checkout` (unchanged) |
+| Forgejo / Gitea | gateway → REST | **`refs/pull/<n>/head`**, plain git |
+
+`gh` is kept for GitHub rather than replaced by the generic path: it already handles
+fork PRs and sets up push tracking, and swapping a working path for a hand-rolled
+equivalent is a regression risk taken for tidiness. `refs/pull/<n>/head` is used for
+Forgejo instead of the head branch name because the forge creates it for **every** PR
+including forks', whose branch is not on `origin` at all.
+
+Upstream tracking is set only for a same-repo PR, so a push updates the PR. For a
+fork it is left unset on purpose: pointing it anywhere would aim a push at a branch
+that is not the PR's.
+
+The strategy resolves from the same two sources, in the same order, that the router
+uses to pick a gateway — override first, then detection — so the checkout cannot
+disagree with the provider that served the list.
+
+Proven end to end over the real commands (`pr.list`, `worktree.createFromPr`) against
+a real bare repo publishing a real `refs/pull/7/head`, **12/12**: listed by the
+Forgejo provider on a host detection could not identify, strategy `pull-ref`, worktree
+at the PR's commit under the repo's own worktree root. The GitHub path, which had no
+test at all before this, is now pinned argv-and-all through a PATH shim.
+
 ## What P2 does not do
 
 - **Lifecycle scripts** remain P3, still gated on D13(a)/(b).
