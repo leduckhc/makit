@@ -18,7 +18,7 @@
 
 ### Fixes from ocr review
 - `serverIsLocal` reset on reconnect (race window between local→remote switch)
-- `markdownError` plumbed through FutureBuilder 
+- `markdownError` plumbed through FutureBuilder
 - Listener bind/close races coalesced
 - Popover crash when available height < 96pt (fixed with Flexible + ConstrainedBox)
 - All three `hello.ack` paths now send `isLocal`
