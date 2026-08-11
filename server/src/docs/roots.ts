@@ -10,7 +10,7 @@
  * break it.
  */
 
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, resolve } from "node:path";
 
 import { isInsideRoot } from "./resolve.js";
@@ -19,6 +19,14 @@ import { isInsideRoot } from "./resolve.js";
 export const DEFAULT_DOC_DIRS: readonly string[] = ["mockups", "docs"];
 
 const CONFIG_REL_PATH = join(".makit", "docs.json");
+
+/**
+ * A config file larger than this is treated as malformed. `.makit/docs.json` is
+ * a small `{roots?, exclude?}` object; a huge one is user-supplied input the
+ * server does not control, and an unbounded read would block the event loop on
+ * every re-index (the same discipline `title.ts` applies to its reads).
+ */
+const MAX_CONFIG_BYTES = 64 * 1024;
 
 /**
  * Which files a worktree's index considers.
@@ -80,7 +88,9 @@ export function resolveDocRoots(worktreeRoot: string): DocRoots {
 function readConfig(worktreeRoot: string): { roots?: unknown; exclude?: unknown } | undefined {
   let text: string;
   try {
-    text = readFileSync(join(worktreeRoot, CONFIG_REL_PATH), "utf8");
+    const abs = join(worktreeRoot, CONFIG_REL_PATH);
+    if (statSync(abs).size > MAX_CONFIG_BYTES) return undefined;
+    text = readFileSync(abs, "utf8");
   } catch {
     return undefined; // absent or unreadable — the common case
   }

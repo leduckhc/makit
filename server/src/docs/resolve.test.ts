@@ -108,6 +108,16 @@ test("rejects any extension outside the allowlist", () => {
   }
 });
 
+test("accepts every allowlisted extension, case-insensitively", () => {
+  const root = fixture();
+  writeFileSync(join(root, "docs", "notes.markdown"), "# Notes\n");
+  writeFileSync(join(root, "docs", "page.HTM"), "<title>Page</title>");
+  const md = resolveDocPath(root, "docs/notes.markdown");
+  assert.equal(md.ok && md.kind, "md");
+  const htm = resolveDocPath(root, "docs/page.HTM");
+  assert.equal(htm.ok && htm.kind, "html");
+});
+
 test("rejects dotfiles and anything inside a dot-directory", () => {
   const root = fixture();
   // .env is not allowlisted by extension either, but .git/config.md would be —

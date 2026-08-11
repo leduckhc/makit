@@ -131,3 +131,27 @@ test("concurrent ensureOrigin calls share one bind, not one each", async () => {
   await l.close();
   assert.equal(l.isListening, false);
 });
+
+// close() clears server/origin before the socket is fully down. A publish that
+// lands mid-close must wait it out, not bind a second port beside the closing one.
+test("close() during an in-flight bind leaves no listener behind", async () => {
+  const { l, opened } = listener("127.0.0.1");
+  const pending = l.ensureOrigin();
+  await l.close();
+  await pending;
+  assert.equal(l.isListening, false, "the bind that landed mid-close must be released");
+  assert.equal(opened.length, 1, "exactly one server object, not one per call");
+  assert.equal(opened[0]!.listening, false, "the socket must not stay bound");
+});
+
+test("a publish arriving mid-close binds a fresh listener, not a second live one", async () => {
+  const { l, opened } = listener("127.0.0.1");
+  await l.ensureOrigin();
+  const closing = l.close();
+  const reopened = l.ensureOrigin(); // arrives before close resolves
+  await Promise.all([closing, reopened]);
+  assert.equal(l.isListening, true, "the later publish must be able to bind again");
+  assert.equal(opened.length, 2, "one closed, one fresh — never two live at once");
+  assert.equal(opened[0]!.listening, false, "the first socket is fully down");
+  await l.close();
+});

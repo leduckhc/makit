@@ -23,11 +23,13 @@ test("returns the text of a markdown document", () => {
 test("errors for an html document (D7 — html is never sent over WSS)", () => {
   const r = readDocText(fixture(), "mockups/board.html");
   assert.equal(r.ok, false);
+  assert.match(r.ok ? "" : r.message, /published, not read/);
 });
 
 test("errors for a document that does not resolve", () => {
   const r = readDocText(fixture(), "../../etc/passwd");
   assert.equal(r.ok, false);
+  assert.match(r.ok ? "" : r.message, /escapes-root|absolute/);
 });
 
 test("errors for a markdown document over the 1 MB cap", () => {

@@ -73,7 +73,7 @@ Three facts make this far cheaper than it looks, and they are the reason the pha
 ## What P1 does not do
 
 - No editing. The preview is read-only; makit has an agent for writing.
-- No in-app HTML rendering (D8). The HTML row's primary action is *Publish & open*.
+- No in-app HTML rendering (D8). A local client (loopback desktop) opens HTML directly in the host's browser via `docs.open` — no publish, no grant, no listener. A remote client (phone on the tailnet) must publish to get a URL (D8 rev 2).
 - No thumbnails (D13), no full-text search inside documents (titles and paths only), no PDF or
   image files in the index, and no cross-worktree deduplication — the worktree group owns the name.
 - No `docs.watch` on mobile background. The watch is released when the screen is popped, exactly

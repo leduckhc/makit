@@ -76,11 +76,20 @@ class _PublishSheetState extends ConsumerState<_PublishSheet> {
   }
 
   Future<void> _publish() async {
+    // Capture the notifier before the await: after the sheet is dismissed,
+    // `ref` is disposed and reading it throws (Riverpod 3.x). We still need it
+    // to revoke a grant that lands too late.
+    final store = ref.read(storeControllerProvider.notifier);
     try {
-      final grant = await ref
-          .read(storeControllerProvider.notifier)
-          .publishDoc(widget.worktreePath, widget.relPath);
-      if (!mounted) return;
+      final grant = await store.publishDoc(widget.worktreePath, widget.relPath);
+      if (!mounted) {
+        // D9/D15 security: the sheet was dismissed before the reply landed, so
+        // nothing in the UI references this grant. Revoke it rather than leave
+        // a document shared the user believes they cancelled. Best-effort —
+        // the grant expires on its own TTL regardless.
+        unawaited(store.unpublishDoc(grant.grantId).catchError((_) {}));
+        return;
+      }
       setState(() {
         _grant = grant;
         _error = null;

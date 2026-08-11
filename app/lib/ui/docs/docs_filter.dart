@@ -21,10 +21,6 @@ bool _matchesFilter(DocInfo d, DocsFilter filter) => switch (filter) {
   DocsFilter.changed => d.changed == true,
 };
 
-/// Docs passing [filter] and (when non-empty) [query]. Search matches the title
-/// OR the path, case-insensitively — titles AND paths, never doc bodies (P1
-/// does not do full-text). A null snapshot yields no docs (the screen shows a
-/// waiting/empty state, never a fabricated list).
 /// Whether [d] matches a free-text [query], over title AND path.
 ///
 /// The one definition: the Docs screen and the desktop popover both search, and
@@ -36,6 +32,10 @@ bool docMatchesQuery(DocInfo d, String query) {
       d.relPath.toLowerCase().contains(q);
 }
 
+/// Docs passing [filter] and (when non-empty) [query]. Search matches the title
+/// OR the path, case-insensitively — titles AND paths, never doc bodies (P1
+/// does not do full-text). A null snapshot yields no docs (the screen shows a
+/// waiting/empty state, never a fabricated list).
 List<DocInfo> filterDocs(
   DocsSnapshot? snapshot,
   DocsFilter filter, {

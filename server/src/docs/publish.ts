@@ -20,6 +20,12 @@ import type { DocGrantDTO } from "../protocol.js";
 export interface DocReach {
   /** e.g. `https://host.ts.net` or `http://192.168.1.9:8123` — no trailing slash. */
   origin: string;
+  /**
+   * How the origin is reachable. Per D15 rev 2 the tailnet is the ONLY reach
+   * `DocListener` ever produces in P1; `"lan"` is retained in the union (and
+   * mintable if a caller injects it) purely so the wire contract and the app's
+   * pills need no change if LAN is ever reinstated behind an explicit opt-in.
+   */
   reach: "tailnet" | "lan";
 }
 
@@ -38,7 +44,7 @@ export interface PublishDeps {
 export type PublishResult = { ok: true; grant: DocGrantDTO } | { ok: false; reason: string };
 
 export async function publishDoc(
-  input: { worktreePath: string; relPath: string },
+  input: { worktreePath: string; relPath: string; ownerDeviceId?: string },
   deps: PublishDeps,
 ): Promise<PublishResult> {
   const resolveDoc = deps.resolveDoc ?? resolveDocPath;
@@ -64,13 +70,18 @@ export async function publishDoc(
         "no reachable address: makit is loopback-only. Start Tailscale and try again.",
     };
   }
+  // Bind the narrowed value to a `const` so the `buildUrl` closure below does not
+  // rely on TS's version-specific narrowing of a `let` captured after its last
+  // assignment.
+  const reached = reach;
 
   const relPath = resolved.relPath;
   const grant = deps.grants.mint({
     worktreePath: input.worktreePath,
     relPath,
-    reach: reach.reach,
-    buildUrl: (grantId) => `${reach.origin}/docs/${grantId}/${encodePath(relPath)}`,
+    reach: reached.reach,
+    ownerDeviceId: input.ownerDeviceId,
+    buildUrl: (grantId) => `${reached.origin}/docs/${grantId}/${encodePath(relPath)}`,
   });
   return { ok: true, grant };
 }

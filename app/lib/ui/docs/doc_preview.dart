@@ -644,6 +644,33 @@ class _DocPreviewSheetState extends ConsumerState<_DocPreviewSheet> {
     }
   }
 
+  /// External link tapped in the preview. The widget is pure of provider reads,
+  /// so the host owns launching AND stating the failure — a link that will not
+  /// open must say so, not silently do nothing (mirrors `_openLocal` and
+  /// `publish_sheet.dart`'s `_open`).
+  Future<void> _openExternal(Uri uri) async {
+    final status = ref.read(statusCenterProvider);
+    try {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        status.failure(
+          'Could not open link',
+          source: 'docs.link',
+          detail: '$uri',
+        );
+      }
+    } catch (e) {
+      status.failure(
+        'Could not open link',
+        source: 'docs.link',
+        detail: '$uri\n$e',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Only a local client gets the direct path; everyone else publishes.
@@ -654,6 +681,7 @@ class _DocPreviewSheetState extends ConsumerState<_DocPreviewSheet> {
         onPublish: _publish,
         onOpenLocal: isLocal ? _openLocal : null,
         onOpenInternal: _openInternal,
+        onExternalLink: _openExternal,
       );
     }
     return FutureBuilder<String>(
@@ -673,6 +701,7 @@ class _DocPreviewSheetState extends ConsumerState<_DocPreviewSheet> {
           onPublish: _publish,
           onOpenLocal: isLocal ? _openLocal : null,
           onOpenInternal: _openInternal,
+          onExternalLink: _openExternal,
         );
       },
     );

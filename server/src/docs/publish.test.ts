@@ -16,6 +16,11 @@ function fixture(): string {
 }
 
 const tailnet = async (): Promise<DocReach> => ({ origin: "https://host.ts.net", reach: "tailnet" });
+// `lan` is an INJECTED-ONLY reach: per D15 rev 2 `DocListener` never emits it in
+// P1 (the tailnet is the only publishable reach). It is retained in the DocReach
+// union so the wire contract needs no change if LAN is ever reinstated behind an
+// explicit opt-in; this fixture just proves `publishDoc` faithfully mints
+// whatever verified reach it is handed.
 const lan = async (): Promise<DocReach> => ({ origin: "http://192.168.1.9:8123", reach: "lan" });
 const none = async (): Promise<DocReach | null> => null;
 
@@ -36,7 +41,7 @@ test("publishes a resolvable doc, minting a tailnet grant with the reachable url
   assert.equal(grants.list().length, 1);
 });
 
-test("falls back to a lan-labelled url when tailscale is unavailable (D15)", async () => {
+test("mints whatever verified reach it is handed, e.g. an injected lan origin (D15)", async () => {
   const root = fixture();
   const grants = new DocGrantStore();
   const result = await publishDoc(

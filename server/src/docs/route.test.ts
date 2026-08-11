@@ -55,8 +55,42 @@ async function harness() {
 
 async function req(port: number, path: string, method = "GET") {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, { method });
-  return { status: res.status, ctype: res.headers.get("content-type"), body: await res.text() };
+  return {
+    status: res.status,
+    ctype: res.headers.get("content-type"),
+    headers: res.headers,
+    body: await res.text(),
+  };
 }
+
+test("a served doc is never cached and never sniffed", async () => {
+  const h = await harness();
+  try {
+    const r = await req(h.port, `/docs/${h.html.grantId}/mockups/board.html`);
+    assert.equal(r.status, 200);
+    // The two stated mitigations: no caching of a live branch artefact, and no
+    // MIME sniffing of user-authored html/markdown.
+    assert.equal(r.headers.get("cache-control"), "no-store");
+    assert.equal(r.headers.get("x-content-type-options"), "nosniff");
+  } finally {
+    h.server.close();
+  }
+});
+
+test("a non-GET/HEAD method is 405 with an Allow header", async () => {
+  const h = await harness();
+  try {
+    const res = await fetch(
+      `http://127.0.0.1:${h.port}/docs/${h.html.grantId}/mockups/board.html`,
+      { method: "POST" },
+    );
+    assert.equal(res.status, 405);
+    assert.equal(res.headers.get("allow"), "GET, HEAD");
+    await res.text();
+  } finally {
+    h.server.close();
+  }
+});
 
 test("serves a published html file with the right Content-Type", async () => {
   const h = await harness();

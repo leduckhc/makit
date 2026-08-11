@@ -285,16 +285,16 @@
 
     <div class="cols">
       <div class="col">
-        <div class="cap">Allowlist, not a file tree</div>
+        <div class="cap">Git-aware, not a fixed allowlist (D1 rev 2)</div>
         <p class="why" style="margin-top:0">
-          A file browser is the wrong primitive — it invites traversal, needs lazy loading, and buries the four
-          directories you actually want behind twelve you don't. makit indexes <b>doc roots</b>, ranked by recency:
+          A file browser is the wrong primitive. makit asks git:
+          <code>git ls-files --cached --others --exclude-standard</code> — tracked <em>and</em> freshly-written
+          untracked docs both appear, and anything in <code>.gitignore</code> (e.g. <code>secrets.md</code>) is
+          excluded for free. D2's dot-directory rule drops <code>.agents/skills/</code> without an opt-in.
         </p>
-        <div class="kv"><b>mockups/</b> · <code>*.html</code> — design boards</div>
-        <div class="kv"><b>docs/</b> · <code>*.md</code> — specs, plans, architecture</div>
-        <div class="kv"><b>*.md</b> at repo root — README, AGENTS, SECURITY</div>
-        <div class="kv"><b>.agents/skills/**/SKILL.md</b> — the skill shelf</div>
-        <div class="kv" style="margin-top:9px;color:var(--muted)">Override per project in <code>.makit/docs.json</code>.</div>
+        <div class="kv" style="color:var(--muted)"><b>Fallback</b> when git cannot answer: walk
+          <code>mockups/</code>, <code>docs/</code>, and root <code>*.md</code>.</div>
+        <div class="kv" style="margin-top:9px;color:var(--muted)">Narrow per project with <code>.makit/docs.json</code> <code>roots</code>.</div>
       </div>
       <div class="col">
         <div class="cap">Hard exclusions — security, not tidiness</div>
@@ -321,7 +321,7 @@
   modifiedAt:  <span class="k">number</span>;
   worktreePath:<span class="k">string</span>;
   sessionId?:  <span class="k">string</span>;   <span class="c">// the session that last wrote it → "made here"</span>
-  git?:        { status: <span class="s">"untracked"</span> | <span class="s">"modified"</span> | <span class="s">"clean"</span> };
+  changed?:    <span class="k">boolean</span>;  <span class="c">// differs from branch merge base (D5) — absent when undetermined</span>
   docStatus?:  <span class="k">string</span>;   <span class="c">// parsed "**Status:** Draft" — free signal, this repo writes it</span>
 }</pre>
 
@@ -335,7 +335,7 @@
       <b>Wire &amp; cadence.</b> <code>docs.watch {on}</code> ref-counted exactly like <code>ports.watch</code>, and
       <b>no polling</b> — <code>worktree_watcher.ts</code> already watches the tree, so a debounced (400 ms) re-index on
       change is enough. Reads: <code>docs.read</code> returns markdown <b>text over WSS</b>;
-      <code>docs.serve</code> mints a short-TTL <b>grant</b> for HTML (SPEC-44's grant model, reused verbatim).
+      <code>docs.publish</code> mints a short-TTL <b>grant</b> for HTML; <code>docs.unpublish</code> / <code>docs.grants</code> manage it.
       No new event kind — snapshots stream on the existing channel.
     </p>
   </div>
@@ -910,8 +910,9 @@
           </div>
         </div>
         <p class="why">
-          <b>Why a hostname, not <code>100.x:8765</code>:</b> <code>tailscale serve</code> gives real HTTPS with a real
-          cert on a stable name, so there is no port to remember, no cert wall, and no self-signed-pinning problem.
+          <b>Why the tailnet address:</b> The doc listener binds lazily to makit's tailnet IP on first publish and
+          releases at zero grants (D10 rev 2) — no <code>tailscale serve</code>, no always-on port. Plain HTTP is
+          fine: WireGuard already encrypts the tailnet, and the URL is never typed — it is tapped, copied, or scanned.
           <b>The QR is the sleeper feature</b> — it puts the board on an iPad or a colleague's laptop in one scan, and
           makit already owns QR rendering from device pairing.
         </p>
@@ -1168,9 +1169,9 @@
       <div class="col">
         <div class="cap">Open questions worth answering before P1</div>
         <p class="why" style="margin-top:0">
-          <b>a ·</b> Does <code>Changed</code> mean <em>dirty in the working tree</em> or <em>differs from the merge
-          base</em>? The second is more useful for review and costs a <code>git diff</code> we already run for the
-          <code>+412/−38</code> badge.
+          <b>a ·</b> <del style="color:var(--muted)">Dirty in the working tree or differs from the merge base?</del>
+          Settled: <code>changed</code> means differs from the <b>merge base</b> (D5). A dirty-tree flag would go
+          green the moment you commit, which is backwards.
         </p>
         <p class="why">
           <b>b ·</b> Should the Docs screen include <b>archived</b> worktrees? Ports says yes-with-an-orphan-badge. A

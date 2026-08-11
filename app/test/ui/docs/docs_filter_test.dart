@@ -88,6 +88,13 @@ void main() {
       expect(r.map((d) => d.relPath), ['docs/plan.md']);
     });
 
+    test('a null snapshot yields no docs, never a fabricated list', () {
+      // _DocsScreenState._body relies on this branch to show a waiting state
+      // rather than an empty-docs claim before the first snapshot lands.
+      expect(filterDocs(null, DocsFilter.all), isEmpty);
+      expect(docsFilterCounts(null)[DocsFilter.all], 0);
+    });
+
     test('search matches title OR path, case-insensitively', () {
       final r = filterDocs(
         _snap([

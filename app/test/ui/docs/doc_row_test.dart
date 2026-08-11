@@ -118,27 +118,24 @@ void main() {
       expect(find.text('/repo/docs/specs/SPEC-46.md'), findsNothing);
     });
 
-    testWidgets(
-      'docFullPath joins worktree and relPath without a double slash',
-      (tester) async {
-        expect(docFullPath(_doc(relPath: 'a/b.md')), '/repo/a/b.md');
-        expect(
-          docFullPath(
-            const DocInfo(
-              key: 'k',
-              relPath: 'NOTES.md',
-              title: 'Notes',
-              kind: DocKind.md,
-              bytes: 1,
-              modifiedAt: 0,
-              worktreePath: '/repo/',
-            ),
+    test('docFullPath joins worktree and relPath without a double slash', () {
+      expect(docFullPath(_doc(relPath: 'a/b.md')), '/repo/a/b.md');
+      expect(
+        docFullPath(
+          const DocInfo(
+            key: 'k',
+            relPath: 'NOTES.md',
+            title: 'Notes',
+            kind: DocKind.md,
+            bytes: 1,
+            modifiedAt: 0,
+            worktreePath: '/repo/',
           ),
-          '/repo/NOTES.md',
-          reason: 'a trailing slash on the worktree must not double up',
-        );
-      },
-    );
+        ),
+        '/repo/NOTES.md',
+        reason: 'a trailing slash on the worktree must not double up',
+      );
+    });
 
     testWidgets('renders the kind chip (HTML / MD)', (tester) async {
       await _pump(tester, _doc(kind: DocKind.html));

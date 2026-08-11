@@ -15,6 +15,15 @@ import type { DocDTO } from "../protocol.js";
  */
 function fixture(): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "makit-scan-")));
+  // These tests exercise the allowlist walk, which is reached only when git
+  // cannot answer for the directory. Fail loudly if the temp dir happens to sit
+  // inside a repository, rather than silently testing the git-index path.
+  try {
+    execFileSync("git", ["-C", root, "rev-parse", "--git-dir"], { stdio: "ignore" });
+    throw new Error("tmpdir is inside a git repository; the walk fallback would not run");
+  } catch (err) {
+    if ((err as Error).message.startsWith("tmpdir is inside")) throw err;
+  }
   mkdirSync(join(root, "mockups"), { recursive: true });
   mkdirSync(join(root, "docs", "specs"), { recursive: true });
   mkdirSync(join(root, "node_modules", "pkg"), { recursive: true });
@@ -135,6 +144,9 @@ function gitFixture(): string {
 
   execFileSync("git", ["init", "-q"], { cwd: root });
   execFileSync("git", ["add", "-A"], { cwd: root });
+  // Written after staging: untracked and not ignored, so only the `--others
+  // --exclude-standard` half of the ls-files call can discover it (D1 rev 2).
+  writeFileSync(join(root, "flutter", "DRAFT.md"), "# Draft\n");
   return root;
 }
 
@@ -144,6 +156,7 @@ test("D1 rev 2: indexes docs anywhere in the worktree, not just the old allowlis
   const rels = docs.map((d) => d.relPath).sort();
   assert.deepEqual(rels, [
     "NOTES.md",
+    "flutter/DRAFT.md",
     "flutter/MISSION.md",
     "flutter/learning-records/0001-prior.md",
     "page.html",

@@ -355,6 +355,23 @@ void main() {
       );
       controller.dispose();
     });
+
+    test('a non-bool isLocal is treated as remote, never as truthy', () async {
+      final (controller, t) = await boot();
+      t.emitFrame(
+        Envelope(
+          v: 1,
+          t: MsgType.helloAck,
+          id: 'h1',
+          // Off the wire, so it may be anything. A truthiness bug on a string
+          // or number must not mark a remote server local (D8 rev 2).
+          body: {'ok': true, 'isLocal': 'true'},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(controller.state.serverIsLocal, isFalse);
+      controller.dispose();
+    });
   });
 
   group('ConnectionController app-lifecycle reconnect (B10)', () {

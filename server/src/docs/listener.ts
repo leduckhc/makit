@@ -47,6 +47,13 @@ export class DocListener {
    * and bind two ports, and the first listener is leaked with no way to close it.
    */
   private binding: Promise<DocReach | null> | undefined;
+  /**
+   * The close in flight, so a publish arriving mid-close waits for the socket to
+   * come fully down before binding a fresh one. Without it, `ensureOrigin` sees
+   * `origin` already cleared and binds a second port while the first is still
+   * shutting down — two live listeners, the opposite of what `close` promises.
+   */
+  private closing: Promise<void> | undefined;
   private readonly deps: DocListenerDeps;
 
   constructor(deps: DocListenerDeps) {
@@ -67,6 +74,9 @@ export class DocListener {
     if (this.origin !== undefined) return this.origin;
     // Join an in-flight bind rather than starting a second one.
     if (this.binding !== undefined) return this.binding;
+    // Serialise against an in-flight close: bind only once the old socket is
+    // fully down, so the two can never both be live.
+    if (this.closing !== undefined) await this.closing;
 
     const host = this.deps.bindHost;
     if (host === null) return null;
@@ -112,8 +122,17 @@ export class DocListener {
    * one listener at a time, always.
    */
   async close(): Promise<void> {
-    const closing = this.binding;
-    if (closing !== undefined) await closing.catch(() => null);
+    // A close already in flight: join it rather than starting a second teardown.
+    if (this.closing !== undefined) return this.closing;
+    this.closing = this.doClose().finally(() => {
+      this.closing = undefined;
+    });
+    return this.closing;
+  }
+
+  private async doClose(): Promise<void> {
+    const binding = this.binding;
+    if (binding !== undefined) await binding.catch(() => null);
 
     const server = this.server;
     this.server = undefined;
@@ -133,6 +152,13 @@ function bind(server: Server, port: number, host: string): Promise<number | null
     };
     const onListening = (): void => {
       server.removeListener("error", onError);
+      // Keep a persistent 'error' handler for the life of the socket. An
+      // unhandled 'error' on an http.Server (e.g. EMFILE/ENFILE under load on a
+      // routable, unauthenticated listener) crashes the whole process, so it
+      // must be logged and swallowed rather than left to propagate.
+      server.on("error", (err: NodeJS.ErrnoException) => {
+        log.warn(`[makit] doc listener error on ${host}:${port}: ${err.message}`);
+      });
       resolve((server.address() as AddressInfo).port);
     };
     server.once("error", onError);

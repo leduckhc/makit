@@ -21,6 +21,15 @@ import { readDocMeta, type DocMeta } from "./title.js";
 import { resolveDocRoots, type DocRoots } from "./roots.js";
 import { docCandidates } from "./tracked.js";
 
+/**
+ * Candidates processed between event-loop yields. Each one does a synchronous
+ * realpath + stat + bounded read (D2/D4), so a repo with hundreds of docs would
+ * otherwise stall the loop in one burst — and this runs on every debounced
+ * re-index while watchers are live. A small chunk keeps the worst-case stall
+ * bounded without paying a yield per file.
+ */
+const SCAN_YIELD_EVERY = 32;
+
 export interface ScanOptions {
   /** Injected for tests; defaults to {@link resolveDocRoots}. */
   resolveRoots?: (worktreeRoot: string) => DocRoots;
@@ -57,10 +66,17 @@ export async function scanWorktree(
     const candidates = await listCandidates(worktreePath, roots);
 
     const docs: DocDTO[] = [];
+    let sinceYield = 0;
     for (const rel of candidates) {
       if (isExcluded(rel, exclude)) continue;
       const doc = toDoc(worktreePath, rel, readMeta);
       if (doc !== undefined) docs.push(doc);
+      // Hand the event loop back between chunks so socket reads and timers are
+      // serviced during a large walk (see SCAN_YIELD_EVERY).
+      if (++sinceYield >= SCAN_YIELD_EVERY) {
+        sinceYield = 0;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
     }
 
     docs.sort((a, b) => b.modifiedAt - a.modifiedAt);

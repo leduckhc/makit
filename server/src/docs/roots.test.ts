@@ -64,3 +64,12 @@ test("an unreadable/absent config file falls back to the default", () => {
   // A worktree that does not even exist on disk must not throw.
   assert.equal(resolveDocRoots("/no/such/worktree/anywhere").kind, "git");
 });
+
+test("an oversize config is treated as malformed, not read into memory", () => {
+  // `.makit/docs.json` is user-supplied and unbounded; a huge file must degrade
+  // to the default rather than block the event loop on every re-index.
+  const big = '{"exclude":["' + "x".repeat(128 * 1024) + '"]}';
+  const roots = resolveDocRoots(withConfig(big));
+  assert.equal(roots.kind, "git");
+  assert.deepEqual(roots.exclude, [], "an over-cap config yields the default, not its contents");
+});

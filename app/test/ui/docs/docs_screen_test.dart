@@ -50,8 +50,8 @@ final _repos = ReposState([
   ),
 ]);
 
-DocsSnapshot _snap(List<DocInfo> docs, {bool scanOk = true}) =>
-    DocsSnapshot(docs: docs, scannedAt: 0, scanOk: scanOk);
+DocsSnapshot _snap(List<DocInfo> docs) =>
+    DocsSnapshot(docs: docs, scannedAt: 0, scanOk: true);
 
 Future<DocsWatch> _pump(WidgetTester tester, DocsSnapshot? snapshot) async {
   final calls = <bool>[];
@@ -140,5 +140,20 @@ void main() {
   testWidgets('shows a spinner before the first snapshot', (tester) async {
     await _pump(tester, null);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  // The global screen aggregates docs across every repo, so it must not build a
+  // DocRow per doc — the popover was made lazy for the same reason. An eager
+  // ListView(children: [...]) builds all N rows; ListView.builder builds only
+  // the ones the viewport shows.
+  testWidgets('builds only the visible rows, not one per doc', (tester) async {
+    final docs = [
+      for (var i = 0; i < 200; i++)
+        _doc('docs/note-$i.md', title: 'Note $i', modifiedAt: 200 - i),
+    ];
+    await _pump(tester, _snap(docs));
+    final built = find.byType(DocRow).evaluate().length;
+    expect(built, lessThan(40), reason: 'the list must be lazy, not 200 rows');
+    expect(built, greaterThan(0));
   });
 }

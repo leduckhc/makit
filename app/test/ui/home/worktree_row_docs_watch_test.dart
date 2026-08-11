@@ -19,7 +19,7 @@ import 'package:makit/ui/home/worktree_row.dart';
 /// The row therefore has to hold the watch itself, exactly as it already holds
 /// `ports.watch` for the ports plug (SPEC-41 §Delivery).
 void main() {
-  testWidgets('mounting a worktree row asks the server to watch docs', (
+  testWidgets('mounting worktree rows collapses to one docs.watch', (
     tester,
   ) async {
     // Record only the on/off edges: a Map literal is never `==` to another Map
@@ -37,11 +37,21 @@ void main() {
       currentBranch: 'main',
       worktrees: [],
     );
-    const worktree = Worktree(
+    const worktreeA = Worktree(
       id: '/tmp/demo',
       path: '/tmp/demo',
       branch: 'main',
       isPrimary: true,
+      insertions: 0,
+      deletions: 0,
+      filesChanged: 0,
+      sessionIds: [],
+    );
+    const worktreeB = Worktree(
+      id: '/tmp/demo-b',
+      path: '/tmp/demo-b',
+      branch: 'feature',
+      isPrimary: false,
       insertions: 0,
       deletions: 0,
       filesChanged: 0,
@@ -52,25 +62,50 @@ void main() {
     // scope is built once and only its child is swapped below.
     Widget host(Widget child) => ProviderScope(
       overrides: [
-        // Capture what the row asks the server for, without a socket.
+        // Capture what the rows ask the server for, without a socket.
         docsWatchProvider.overrideWithValue(DocsWatch(sent.add)),
       ],
       child: MaterialApp(home: Scaffold(body: child)),
     );
 
+    // Two rows mounted at once must collapse to a single `docs.watch {on:true}`
+    // via the ref count — a regression that sent one message per row would
+    // wrongly produce `[true, true]`.
     await tester.pumpWidget(
-      host(const WorktreeRow(repo: repo, worktree: worktree, sessions: [])),
+      host(
+        const Column(
+          children: [
+            WorktreeRow(repo: repo, worktree: worktreeA, sessions: []),
+            WorktreeRow(repo: repo, worktree: worktreeB, sessions: []),
+          ],
+        ),
+      ),
     );
-
     expect(
       sent,
       equals([true]),
       reason:
-          'the row must hold docs.watch, or the docs glyph can never appear and '
-          'the Docs screen is unreachable on mobile',
+          'the rows must share one docs.watch, or the docs glyph can never '
+          'appear and the Docs screen is unreachable on mobile',
     );
 
-    // And it must let go again, so a backgrounded app stops the index walking.
+    // Unmounting one row keeps a live watcher, so nothing new is sent.
+    await tester.pumpWidget(
+      host(
+        const Column(
+          children: [
+            WorktreeRow(repo: repo, worktree: worktreeA, sessions: []),
+          ],
+        ),
+      ),
+    );
+    expect(
+      sent,
+      equals([true]),
+      reason: 'a surviving row must hold the watch open',
+    );
+
+    // The last release must let go, so a backgrounded app stops the index walk.
     await tester.pumpWidget(host(const SizedBox()));
     expect(sent, equals([true, false]), reason: 'the watch must be released');
   });

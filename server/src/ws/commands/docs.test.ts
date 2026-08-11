@@ -42,12 +42,14 @@ interface Recorder {
 function setup(docsOverrides: Partial<DocsCommandPort> = {}): Recorder {
   const revoked: string[] = [];
   const docs = {
+    isIndexedWorktree: (wt: string) => wt === "/wt",
     read: (_wt: string, rel: string) =>
       rel === "spec.md" ? { ok: true as const, text: "# hi" } : { ok: false as const, message: "nope" },
     publish: async (_wt: string, rel: string) =>
       rel === "mockups/board.html"
         ? { ok: true as const, grant: GRANT }
         : { ok: false as const, reason: "no reachable address" },
+    open: async () => ({ ok: false as const, reason: "stub" }),
     unpublish: (grantId: string) => {
       revoked.push(grantId);
       return grantId === "g1";
@@ -212,4 +214,63 @@ test("docs.grants acks the current grant list", async () => {
   const ack = acks(c)[0] as unknown as { grants: DocGrantDTO[] };
   assert.equal(ack.grants.length, 1);
   assert.equal(ack.grants[0]!.grantId, "g1");
+});
+
+// --- scoping of client-supplied identifiers (SPEC-44 owner model) ---
+
+// A worktreePath the index never reported must be refused before it reaches the
+// filesystem — type-checking the value is not the same as trusting it.
+for (const kind of ["docs.read", "docs.publish", "docs.open"]) {
+  test(`${kind} refuses a worktreePath the index never reported`, async () => {
+    const rec = setup();
+    const c = fakeClient({ isLocal: true });
+    await dispatch(rec.router, c, kind, { worktreePath: "/not-indexed", relPath: "spec.md" });
+    assert.equal(acks(c).length, 0, "an unknown worktree must not be served");
+    assert.equal(errs(c).length, 1);
+    assert.match((errs(c)[0] as unknown as { message: string }).message, /indexed worktree/);
+  });
+}
+
+test("docs.publish records the caller's deviceId as the grant owner", async () => {
+  let owner: string | undefined = "unset";
+  const rec = setup({
+    publish: async (_wt: string, _rel: string, ownerDeviceId?: string) => {
+      owner = ownerDeviceId;
+      return { ok: true as const, grant: GRANT };
+    },
+  });
+  const c = fakeClient({ deviceId: "dev-7" });
+  await dispatch(rec.router, c, "docs.publish", { worktreePath: "/wt", relPath: "mockups/board.html" });
+  assert.equal(owner, "dev-7", "publish must be scoped to the minting device");
+});
+
+test("docs.grants is scoped to the caller's deviceId", async () => {
+  let owner: string | undefined = "unset";
+  const rec = setup({
+    grants: (ownerDeviceId?: string) => {
+      owner = ownerDeviceId;
+      return [];
+    },
+  });
+  const c = fakeClient({ deviceId: "dev-9" });
+  await dispatch(rec.router, c, "docs.grants");
+  assert.equal(owner, "dev-9", "a client may only enumerate its own shares");
+});
+
+// The refusal of a foreign grant must be indistinguishable from an unknown id:
+// both pass the caller's deviceId to the store (which no-ops) and both still
+// ack {ok}, so unpublish cannot probe whether another device holds an id.
+test("docs.unpublish scopes to the caller and acks {ok} either way", async () => {
+  let seen: { grantId: string; owner: string | undefined } | null = null;
+  const rec = setup({
+    unpublish: (grantId: string, ownerDeviceId?: string) => {
+      seen = { grantId, owner: ownerDeviceId };
+      return false; // foreign/unknown — nothing removed
+    },
+  });
+  const c = fakeClient({ deviceId: "dev-3" });
+  await dispatch(rec.router, c, "docs.unpublish", { grantId: "someone-elses" });
+  assert.deepEqual(seen, { grantId: "someone-elses", owner: "dev-3" });
+  assert.equal(acks(c).length, 1, "the refusal is silent — it still acks {ok}");
+  assert.equal(errs(c).length, 0, "no err would leak that the id exists");
 });

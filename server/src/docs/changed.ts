@@ -46,7 +46,11 @@ export async function changedPaths(
   // stall the re-index and every watcher behind it.
   const r = await exec(
     "git",
-    ["diff", "--name-only", `${baseBranch}...HEAD`],
+    // core.quotePath=false keeps non-ASCII paths (e.g. `été.md`) as literal UTF-8
+    // rather than git's default C-style octal escapes. The candidate list comes
+    // from `git ls-files -z` (never quoted), so without this the two disagree and
+    // a changed non-ASCII doc would report `changed: false`.
+    ["-c", "core.quotePath=false", "diff", "--name-only", `${baseBranch}...HEAD`],
     worktreePath,
     GIT_DIFF_TIMEOUT_MS,
   );

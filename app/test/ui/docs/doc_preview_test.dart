@@ -39,6 +39,7 @@ Future<void> _pump(
   WidgetTester tester,
   DocInfo doc, {
   String? markdown,
+  String? markdownError,
   VoidCallback? onPublish,
   void Function(String)? onOpenInternal,
   void Function(Uri)? onExternalLink,
@@ -48,6 +49,7 @@ Future<void> _pump(
       body: DocPreview(
         doc: doc,
         markdown: markdown,
+        markdownError: markdownError,
         onPublish: onPublish,
         onOpenInternal: onOpenInternal,
         onExternalLink: onExternalLink,
@@ -71,6 +73,13 @@ void main() {
     });
 
     test('a non-doc relative link is external (fallback, not swallowed)', () {
+      // No scheme and not .md/.html, so resolveDocLink must reach the final
+      // fallback branch rather than returning early on hasScheme.
+      expect(resolveDocLink('assets/diagram.png').kind, DocLinkKind.external);
+      expect(resolveDocLink('CHANGELOG').kind, DocLinkKind.external);
+    });
+
+    test('a scheme-bearing href is external', () {
       expect(resolveDocLink('https://a').kind, DocLinkKind.external);
       expect(resolveDocLink('mailto:x@y.com').kind, DocLinkKind.external);
     });
@@ -128,6 +137,35 @@ void main() {
     testWidgets('shows a spinner while markdown is loading', (tester) async {
       await _pump(tester, _doc(), markdown: null);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('a read failure shows the reason, not a MarkdownBody', (
+      tester,
+    ) async {
+      await _pump(tester, _doc(), markdownError: 'ENOENT: no such file');
+      expect(find.text('Could not read'), findsOneWidget);
+      expect(find.textContaining('ENOENT: no such file'), findsOneWidget);
+      expect(find.byType(MarkdownBody), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('tapping an external link routes to onExternalLink', (
+      tester,
+    ) async {
+      final tapped = <Uri>[];
+      await _pump(
+        tester,
+        _doc(),
+        markdown: 'See [the site](https://example.com/x) for more.',
+        onExternalLink: tapped.add,
+      );
+      await tester.tap(find.textContaining('the site'));
+      await tester.pump();
+      expect(
+        tapped,
+        [Uri.parse('https://example.com/x')],
+        reason: 'the host reports/opens external links; the widget stays pure',
+      );
     });
 
     testWidgets('reader-width toggle is present and toggles', (tester) async {

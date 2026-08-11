@@ -12,6 +12,7 @@ import { CommandRouter } from "../../src/ws/command_router.js";
 import { register } from "../../src/ws/commands/session.js";
 import type { CommandDeps } from "../../src/ws/commands/deps.js";
 import { portsDepsStub } from "./ports_deps_stub.js";
+import { docsDepsStub } from "./docs_deps_stub.js";
 import type { WsClient, OutgoingFrame } from "../../src/ws/client.js";
 import type { Envelope } from "../../src/protocol.js";
 import type { AgentDescriptor } from "../../src/adapters/catalog.js";
@@ -63,15 +64,7 @@ function routerWith(manager: Partial<CommandDeps["manager"]>): { router: Command
       sendMetricsHistory: () => {},
       onPortsWatchersChanged: () => {},
       sendPortsSnapshot: () => {},
-      onDocsWatchersChanged: () => {},
-      sendDocsSnapshot: () => {},
-      docs: {
-        read: () => ({ ok: false as const, message: "" }),
-        publish: async () => ({ ok: false as const, reason: "" }),
-        open: async () => ({ ok: false as const, reason: "stub" }),
-        unpublish: () => false,
-        grants: () => [],
-      },
+      ...docsDepsStub,
       ...portsDepsStub,
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;

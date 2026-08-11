@@ -1,5 +1,8 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/app/theme.dart';
 import 'package:makit/store/docs.dart';
 import 'package:makit/ui/docs/doc_row.dart';
 import 'package:makit/ui/docs/docs_popover.dart';
@@ -33,9 +36,14 @@ Future<void> _pump(
 );
 
 void main() {
-  test('hover-open dwell is 350 ms (below the tooltip dwell)', () {
-    expect(kDocsHoverOpenMs, 350);
-  });
+  test(
+    'hover-open dwell stays below the tooltip dwell, so they never race',
+    () {
+      // Asserting the invariant (dwell < tooltip) rather than the literal 350:
+      // the literal cannot regress without editing this line too.
+      expect(kDocsHoverOpenMs, lessThan(kTooltipDwell.inMilliseconds));
+    },
+  );
 
   testWidgets('a click pins the popover and lists the docs', (tester) async {
     await _pump(tester, [
@@ -147,5 +155,75 @@ void main() {
         expect(find.textContaining('No docs match'), findsOneWidget);
       },
     );
+  });
+
+  // The three documented interaction rules from docs_popover.dart: the dwell
+  // before a hover opens, the Escape binding, and the outside-tap barrier that
+  // exists only while pinned.
+  group('hover, Escape and the outside-tap barrier', () {
+    testWidgets('a hover opens only after the dwell elapses', (tester) async {
+      await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+
+      await gesture.moveTo(
+        tester.getCenter(find.byType(DocsGlyphAnchorTapTarget)),
+      );
+      await tester.pump(); // enter fires; the dwell timer starts.
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(
+        find.byKey(kDocsPopover),
+        findsNothing,
+        reason: 'the ${kDocsHoverOpenMs}ms dwell has not elapsed yet',
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kDocsPopover), findsOneWidget);
+    });
+
+    testWidgets('Escape dismisses a pinned popover', (tester) async {
+      await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);
+      await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kDocsPopover), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(kDocsPopover), findsNothing);
+    });
+
+    testWidgets('an outside tap closes it while pinned', (tester) async {
+      await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);
+      await tester.tap(find.byType(DocsGlyphAnchorTapTarget));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kDocsPopover), findsOneWidget);
+
+      // The pinned barrier fills the overlay; a tap in the far corner hits it.
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kDocsPopover), findsNothing);
+    });
+
+    testWidgets('a hover-opened popover has no outside-tap barrier', (
+      tester,
+    ) async {
+      await _pump(tester, [_doc('docs/s.md', title: 'Spec S')]);
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(
+        tester.getCenter(find.byType(DocsGlyphAnchorTapTarget)),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kDocsPopover), findsOneWidget);
+
+      // Not pinned: no barrier is mounted, so a corner tap must not dismiss it
+      // (the pointer is still over the glyph, so hover-close does not fire).
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pump();
+      expect(find.byKey(kDocsPopover), findsOneWidget);
+    });
   });
 }

@@ -63,8 +63,14 @@ export interface DocsServiceDeps {
 }
 
 export interface DocsCommandPort {
+  /**
+   * True when `worktreePath` is one the index actually reported. The scoping
+   * boundary for client-supplied paths: a client may only name a worktree the
+   * snapshot listed it, never an arbitrary directory on the host.
+   */
+  isIndexedWorktree(worktreePath: string): boolean;
   read(worktreePath: string, relPath: string): DocReadResult;
-  publish(worktreePath: string, relPath: string): Promise<PublishResult>;
+  publish(worktreePath: string, relPath: string, ownerDeviceId?: string): Promise<PublishResult>;
   /**
    * Open the doc on the machine holding it (D8 rev 2). Async and
    * reason-carrying, because the failure has to be *stated*: the opener can be
@@ -75,8 +81,13 @@ export interface DocsCommandPort {
    * place that knows the connection.
    */
   open(worktreePath: string, relPath: string): Promise<OpenResult>;
-  unpublish(grantId: string): boolean;
-  grants(): DocGrantDTO[];
+  /**
+   * Revoke a grant the caller owns. Foreign/unknown ids are a silent no-op so a
+   * caller can neither revoke another device's share nor probe for its id.
+   */
+  unpublish(grantId: string, ownerDeviceId?: string): boolean;
+  /** The caller's own live grants — never another device's. */
+  grants(ownerDeviceId?: string): DocGrantDTO[];
 }
 
 export class DocsService implements DocsCommandPort {
@@ -89,6 +100,8 @@ export class DocsService implements DocsCommandPort {
   private handle: unknown = null;
   /** True while a walk is in flight — a re-index that overlaps one is skipped. */
   private scanning = false;
+  /** A change arrived mid-walk: re-run once, after the current walk finishes. */
+  private rescanQueued = false;
   private cached: DocsSnapshotDTO | undefined;
 
   constructor(deps: DocsServiceDeps) {
@@ -139,9 +152,20 @@ export class DocsService implements DocsCommandPort {
     }
   }
 
-  /** One walk, guarded against overlap. Publishes nothing if the last watcher left mid-walk. */
+  /**
+   * One walk at a time. A change that arrives mid-walk is not dropped: it sets
+   * `rescanQueued` and a single follow-up walk runs once the current one
+   * finishes (nothing else re-arms the timer — there is no polling loop, D11).
+   * Publishes nothing if the last watcher left mid-walk.
+   */
   private async runScan(): Promise<void> {
-    if (this.scanning) return;
+    if (this.scanning) {
+      // A worktree change fired the debounce while a walk was in flight. Record
+      // it and re-run once at the end — without this the change is lost and the
+      // index stays stale until the user happens to touch the tree again.
+      this.rescanQueued = true;
+      return;
+    }
     this.scanning = true;
     try {
       const snapshot = await this.doScan();
@@ -159,10 +183,18 @@ export class DocsService implements DocsCommandPort {
         scanOk: false,
         scanError: (err as Error).message,
       };
+      // Same watcher guard as the success path: a failure after the last watcher
+      // left must not overwrite a good cached snapshot with an error the next
+      // client would then be handed on its 0→1 edge.
+      if (this.watchers === 0) return;
       this.cached = snapshot;
-      if (this.watchers > 0) this.deps.onSnapshot(snapshot);
+      this.deps.onSnapshot(snapshot);
     } finally {
       this.scanning = false;
+      if (this.rescanQueued) {
+        this.rescanQueued = false;
+        if (this.watchers > 0) void this.runScan();
+      }
     }
   }
 
@@ -171,21 +203,37 @@ export class DocsService implements DocsCommandPort {
    * concatenate — grouped by worktree, each group already mtime-descending. A
    * worktree whose walk did not run pulls the whole snapshot's `scanOk` false
    * (the walk-ran discipline), but never fails the others.
+   *
+   * Worktrees are independent, and per worktree the scan and the merge-base diff
+   * are independent, so both fan out concurrently — the walk costs one round
+   * instead of the sum of 2N sequential operations, shrinking the window in
+   * which a mid-walk change has to be queued. The grouped, `listWorktrees`-order
+   * output is preserved by aggregating the settled results in their original
+   * order.
    */
   private async doScan(): Promise<DocsSnapshotDTO> {
+    const worktrees = this.deps.listWorktrees();
+    const results = await Promise.all(
+      worktrees.map(async (wt) => {
+        const [scan, changed] = await Promise.all([
+          this.scan(wt.worktreePath),
+          // `changed` is best-effort: an undetermined result leaves the flag
+          // ABSENT (D14), never false-for-all.
+          this.changedPaths(wt.worktreePath, wt.baseBranch, wt.currentBranch, this.deps.exec),
+        ]);
+        return { scan, changed };
+      }),
+    );
+
     const docs: DocDTO[] = [];
     let scanOk = true;
     let scanError: string | undefined;
 
-    for (const wt of this.deps.listWorktrees()) {
-      const scan = await this.scan(wt.worktreePath);
+    for (const { scan, changed } of results) {
       if (!scan.scanOk) {
         scanOk = false;
         scanError ??= scan.scanError;
       }
-      // `changed` is best-effort: an undetermined result leaves the flag ABSENT
-      // (D14), never false-for-all.
-      const changed = await this.changedPaths(wt.worktreePath, wt.baseBranch, wt.currentBranch, this.deps.exec);
       for (const doc of scan.docs) {
         if (changed !== undefined) doc.changed = changed.has(doc.relPath);
         docs.push(doc);
@@ -199,12 +247,19 @@ export class DocsService implements DocsCommandPort {
 
   // -------- command surface (docs.read / publish / unpublish / grants) --------
 
+  isIndexedWorktree(worktreePath: string): boolean {
+    return this.deps.listWorktrees().some((wt) => wt.worktreePath === worktreePath);
+  }
+
   read(worktreePath: string, relPath: string): DocReadResult {
     return readDocText(worktreePath, relPath);
   }
 
-  publish(worktreePath: string, relPath: string): Promise<PublishResult> {
-    return publishDoc({ worktreePath, relPath }, { grants: this.deps.grants, reach: this.deps.reach });
+  publish(worktreePath: string, relPath: string, ownerDeviceId?: string): Promise<PublishResult> {
+    return publishDoc(
+      { worktreePath, relPath, ownerDeviceId },
+      { grants: this.deps.grants, reach: this.deps.reach },
+    );
   }
 
   open(worktreePath: string, relPath: string): Promise<OpenResult> {
@@ -213,16 +268,16 @@ export class DocsService implements DocsCommandPort {
     return openDocOnHost(worktreePath, relPath);
   }
 
-  unpublish(grantId: string): boolean {
-    const removed = this.deps.grants.revoke(grantId);
+  unpublish(grantId: string, ownerDeviceId?: string): boolean {
+    const removed = this.deps.grants.revoke(grantId, ownerDeviceId);
     this.deps.onGrantsChanged?.();
     return removed;
   }
 
-  grants(): DocGrantDTO[] {
-    // `list()` reaps expired/idle grants on the way through, so this is also the
-    // moment a TTL expiry can leave the set empty.
-    const live = this.deps.grants.list();
+  grants(ownerDeviceId?: string): DocGrantDTO[] {
+    // `listOwnedBy()` reaps expired/idle grants on the way through, so this is
+    // also the moment a TTL expiry can leave the set empty.
+    const live = this.deps.grants.listOwnedBy(ownerDeviceId);
     this.deps.onGrantsChanged?.();
     return live;
   }

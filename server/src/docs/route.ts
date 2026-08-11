@@ -45,7 +45,14 @@ export function attachDocRoute(server: Server, deps: DocRouteDeps): void {
       handle(req, res, deps);
     } catch (err) {
       log.error(`[makit] doc route failed: ${(err as Error).message}`);
-      if (!res.headersSent) notFound(res);
+      if (!res.headersSent) {
+        notFound(res);
+      } else if (!res.writableEnded) {
+        // The reply is already committed, so no status can be corrected. Ending
+        // the socket is the only way to stop it hanging until the headers
+        // timeout — the same socket-exhaustion vector attachDocNotFound closes.
+        res.destroy();
+      }
     }
   });
 }

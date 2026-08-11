@@ -18,8 +18,15 @@ test("returns the set of files that differ from the merge base", async () => {
   const { exec, calls } = fakeExec(0, "docs/a.md\nmockups/b.html\n");
   const changed = await changedPaths("/wt", "main", "feat/x", exec);
   assert.deepEqual([...changed!].sort(), ["docs/a.md", "mockups/b.html"]);
-  // Three-dot syntax IS the merge-base diff the +/- badge already uses (D5).
-  assert.deepEqual(calls[0], ["diff", "--name-only", "main...HEAD"]);
+  // Three-dot syntax IS the merge-base diff the +/- badge already uses (D5), and
+  // core.quotePath=false keeps non-ASCII paths comparable to the -z candidate list.
+  assert.deepEqual(calls[0], [
+    "-c",
+    "core.quotePath=false",
+    "diff",
+    "--name-only",
+    "main...HEAD",
+  ]);
 });
 
 test("on the base branch, nothing differs from the merge base (empty, not absent)", async () => {

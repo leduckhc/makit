@@ -80,6 +80,45 @@ test("revoke drops the grant; a second revoke reports it was already gone", () =
   assert.equal(store.revoke(g.grantId), false);
 });
 
+// SPEC-44 owner model: a grant is scoped to the device that minted it.
+test("revoke by a non-owner is a no-op indistinguishable from an unknown id", () => {
+  const store = new DocGrantStore();
+  const g = store.mint({
+    worktreePath: "/wt",
+    relPath: "a.md",
+    reach: "tailnet",
+    ownerDeviceId: "owner",
+    buildUrl: (id) => `https://host.ts.net/docs/${id}/a.md`,
+  });
+
+  assert.equal(store.revoke(g.grantId, "someone-else"), false, "a foreign device cannot revoke it");
+  assert.equal(store.revoke("never-existed", "someone-else"), false, "same answer as an unknown id");
+  assert.ok(store.resolve(g.grantId), "the grant survives a foreign revoke");
+
+  assert.equal(store.revoke(g.grantId, "owner"), true, "the owner revokes it");
+  assert.equal(store.resolve(g.grantId), undefined);
+});
+
+test("listOwnedBy returns only the caller's grants, never another device's", () => {
+  const store = new DocGrantStore();
+  const mintFor = (owner: string, rel: string) =>
+    store.mint({
+      worktreePath: "/wt",
+      relPath: rel,
+      reach: "tailnet",
+      ownerDeviceId: owner,
+      buildUrl: (id) => `https://host.ts.net/docs/${id}/${rel}`,
+    });
+  mintFor("a", "a1.md");
+  mintFor("a", "a2.md");
+  mintFor("b", "b1.md");
+
+  const forA = store.listOwnedBy("a");
+  assert.deepEqual(forA.map((g) => g.relPath).sort(), ["a1.md", "a2.md"]);
+  assert.deepEqual(store.listOwnedBy("b").map((g) => g.relPath), ["b1.md"]);
+  assert.equal(store.list().length, 3, "the unscoped list still sees every device's grants");
+});
+
 test("list enumerates the live grants as DTOs and omits reaped ones", () => {
   let clock = 0;
   const store = new DocGrantStore({ now: () => clock });

@@ -219,3 +219,29 @@ test("every hello.ack path states isLocal, including the pairing one", () => {
   assert.ok(ack, "pairing must ack");
   assert.equal(ack?.isLocal, true, "the pairing ack must carry isLocal too");
 });
+
+// The two remaining hello.ack paths: the already-trusted (bearer-less loopback)
+// ack, and a REMOTE pairing client which must learn it is NOT local so it
+// publishes rather than trying to open on a host it is not on.
+test("the already-trusted (loopback) hello.ack states isLocal: true", () => {
+  const client = fakeClient(true); // authed, no token, local
+  new AuthGate({ registry: fakeRegistry({}), onAuthenticated: () => {} }).handleHello(
+    client,
+    hello({}),
+  );
+  const ack = client.sent.find((f) => f.t === "hello.ack");
+  assert.ok(ack, "an already-trusted client must ack");
+  assert.equal(ack?.isLocal, true);
+});
+
+test("a remote pairing client's hello.ack states isLocal: false", () => {
+  const registry = fakeRegistry({ pairTokens: { "pair-2": { id: "d2", label: "phone", bearer: "b2" } } });
+  const client = fakeClient(false, false); // unauthed, remote
+  new AuthGate({ registry, onAuthenticated: () => {} }).handleHello(
+    client,
+    hello({ pair: "pair-2", label: "phone" }),
+  );
+  const ack = client.sent.find((f) => f.t === "hello.ack");
+  assert.ok(ack, "pairing must ack");
+  assert.equal(ack?.isLocal, false, "a remote pairing client must learn it is not local");
+});

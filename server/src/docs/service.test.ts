@@ -24,6 +24,7 @@ function makeService(overrides: {
   scan?: (worktreePath: string) => Promise<WorktreeScan>;
   changed?: () => Promise<ReadonlySet<string> | undefined>;
   exec?: Exec;
+  onGrantsChanged?: () => void;
 } = {}) {
   const snapshots: DocsSnapshotDTO[] = [];
   const timers: { fn: () => void; cancelled: boolean }[] = [];
@@ -43,6 +44,7 @@ function makeService(overrides: {
     scan: overrides.scan ?? defaultScan,
     changedPaths: overrides.changed ?? (async () => new Set<string>()),
     onSnapshot: (s) => snapshots.push(s),
+    onGrantsChanged: overrides.onGrantsChanged,
     now: () => 1_700_000_000_000,
     setTimer: (fn) => {
       const h = { fn, cancelled: false };
@@ -68,6 +70,74 @@ function makeService(overrides: {
 }
 
 const flush = () => new Promise((r) => setImmediate(r));
+
+// t29: `runScan` guards against overlap, but a change that arrives mid-walk must
+// not be lost — nothing else re-arms the timer (no polling loop, D11), so the
+// service must remember the overlap and re-run exactly once when the walk ends.
+test("a worktree change during an in-flight walk re-runs once the walk finishes", async () => {
+  const gates: Array<() => void> = [];
+  let scanCalls = 0;
+  const h = makeService({
+    scan: async (worktreePath): Promise<WorktreeScan> => {
+      scanCalls++;
+      await new Promise<void>((r) => gates.push(r));
+      return { docs: [docOf(worktreePath, "spec.md")], scanOk: true };
+    },
+  });
+
+  h.service.setWatchers(1); // 0→1 starts an immediate walk that now blocks
+  await flush();
+  assert.equal(scanCalls, 1, "the first walk started");
+
+  // A change lands mid-walk: arm + fire the debounce so it re-enters runScan.
+  h.service.onWorktreeChange();
+  h.fire();
+  await flush();
+  assert.equal(scanCalls, 1, "the overlapping change must not start a concurrent walk");
+
+  gates.shift()!(); // let the first walk finish
+  await flush();
+  assert.equal(scanCalls, 2, "the queued change must drive exactly one follow-up walk");
+
+  gates.shift()!(); // let the follow-up finish
+  await flush();
+  assert.equal(scanCalls, 2, "no extra walk beyond the single queued re-run");
+  assert.equal(h.snapshots.length, 2, "both walks published");
+});
+
+// t30: the successful path already skips caching when the last watcher left
+// mid-walk; the failure path must apply the same guard, or a walk that fails
+// after everyone left overwrites a good cache with scanOk:false and paints a
+// stale error to the next client that starts watching.
+test("a walk that fails after the last watcher leaves does not overwrite the good cache", async () => {
+  const gates: Array<() => void> = [];
+  let scanCalls = 0;
+  const h = makeService({
+    scan: async (worktreePath): Promise<WorktreeScan> => {
+      scanCalls++;
+      if (scanCalls === 1) return { docs: [docOf(worktreePath, "spec.md")], scanOk: true };
+      await new Promise<void>((r) => gates.push(r));
+      throw new Error("boom");
+    },
+  });
+
+  h.service.setWatchers(1); // first walk succeeds and caches a good snapshot
+  await flush();
+  assert.equal(h.service.cachedSnapshot()?.scanOk, true);
+
+  h.service.onWorktreeChange();
+  h.fire(); // starts the second walk, which blocks then throws
+  await flush();
+  h.service.setWatchers(0); // last watcher leaves mid-walk
+  gates.shift()!();
+  await flush();
+
+  assert.equal(
+    h.service.cachedSnapshot()?.scanOk,
+    true,
+    "a failure with no watchers must keep the last good cache",
+  );
+});
 
 test("no watchers: a worktree change walks nothing (no timer, no scan)", async () => {
   const h = makeService();
@@ -178,7 +248,7 @@ test("the cached snapshot is handed to a freshly-arrived watcher", async () => {
   assert.equal(cached!.docs[0]!.relPath, "spec.md");
 });
 
-test("publish/unpublish/grants delegate to the grant store", async () => {
+test("publish refuses a non-allowlisted extension, minting no grant", async () => {
   const root = process.cwd();
   const h = makeService({ listWorktrees: () => [{ worktreePath: root, baseBranch: "main", currentBranch: "feat" }] });
   const pub = await h.service.publish(root, "package.json"); // resolves? .json is not allowlisted → refusal
@@ -186,23 +256,28 @@ test("publish/unpublish/grants delegate to the grant store", async () => {
   assert.deepEqual(h.service.grants(), []);
 });
 
+// The command layer refuses a worktreePath the index never reported; the service
+// answers that question against its own worktree source (SPEC-44 owner model).
+test("isIndexedWorktree is true only for a worktree the index reported", () => {
+  const h = makeService({
+    listWorktrees: () => [{ worktreePath: "/wt", baseBranch: "main", currentBranch: "feat" }],
+  });
+  assert.equal(h.service.isIndexedWorktree("/wt"), true);
+  assert.equal(h.service.isIndexedWorktree("/somewhere-else"), false);
+});
+
 // D10 rev 2: the lazily-bound doc port must be released when the last grant is
 // gone, and an EXPIRY has no event of its own — it is only discovered when
 // `grants.list()` reaps it. So both unpublish and grants() must signal.
 test("onGrantsChanged fires on unpublish and on a grants() that reaps the last grant", () => {
-  const grants = new DocGrantStore();
   let signals = 0;
-  const svc = new DocsService({
+  const h = makeService({
     listWorktrees: () => [],
-    exec: (async () => ({ code: 0, stdout: "" })) as never,
-    grants,
-    reach: async () => ({ origin: "http://100.1.1.1:1", reach: "tailnet" }),
     onGrantsChanged: () => {
       signals++;
     },
-    emit: () => {},
-    setTimer: (() => null) as never,
-  } as never);
+  });
+  const { service: svc, grants } = h;
 
   const g = grants.mint({
     worktreePath: "/repo",

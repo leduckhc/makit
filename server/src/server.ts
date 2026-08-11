@@ -366,7 +366,12 @@ export function startWsServer(opts: ServerOpts) {
     },
   });
   const docReach = (): Promise<DocReach | null> => docListener.ensureOrigin();
-  /** Free the port as soon as the last grant is revoked or reaped. */
+  // Release the port once no grant remains. There is no expiry reaper of its
+  // own: `onGrantsChanged` fires only from `DocsService.unpublish()` and
+  // `DocsService.grants()`, and expired/idle grants are reaped lazily on the way
+  // through `grants.list()`. So the listener stays bound while live grants
+  // remain, and a grant that merely expired frees the port on the NEXT
+  // grant-list or unpublish request rather than the instant its TTL passes.
   const releaseDocsIfIdle = (): void => {
     void docListener.releaseIfIdle(docGrants.list().length);
   };

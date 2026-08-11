@@ -45,13 +45,17 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
 
   DocsSnapshot? _countsSnapshot;
   Map<DocsFilter, int> _countsCache = const {};
+  String _subtitleCache = '';
 
   /// [docsFilterCounts] walks every doc; the result changes only when the
   /// snapshot does. Recomputing it per rebuild made each keystroke O(docs).
+  /// The subtitle rides the same identity cache: it too walks the whole
+  /// snapshot and depends on nothing the query touches.
   Map<DocsFilter, int> _countsFor(DocsSnapshot? snapshot) {
     if (!identical(snapshot, _countsSnapshot)) {
       _countsSnapshot = snapshot;
       _countsCache = docsFilterCounts(snapshot);
+      _subtitleCache = snapshot == null ? '' : _subtitle(snapshot);
     }
     return _countsCache;
   }
@@ -87,7 +91,7 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
             const Text('Docs'),
             if (snapshot != null)
               Text(
-                _subtitle(snapshot),
+                _subtitleCache,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -135,27 +139,38 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
     if (grouping.isEmpty) return _empty(context);
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
-    return ListView(
+    // Flatten the repo → worktree → doc tree into a single builder list so a
+    // large aggregate (docs across every repo) builds only the visible rows,
+    // the same laziness the popover already enforces.
+    final items = <Widget Function()>[];
+    for (final repo in grouping.repos) {
+      items.add(
+        () => _GroupHeader(
+          title: repo.repoName,
+          count: repo.worktrees.fold(0, (a, w) => a + w.docs.length),
+        ),
+      );
+      for (final wt in repo.worktrees) {
+        items.add(
+          () => _WorktreeHeader(branch: wt.branch, count: wt.docs.length),
+        );
+        for (final doc in wt.docs) {
+          items.add(
+            () => DocRow(
+              key: ValueKey('docs-screen-row-${doc.key}'),
+              doc: doc,
+              nowMs: nowMs,
+              onTap: () => _open(doc),
+              pathStyle: DocPathStyle.absolute,
+            ),
+          );
+        }
+      }
+    }
+    return ListView.builder(
       padding: const EdgeInsets.only(bottom: kSpace24),
-      children: [
-        for (final repo in grouping.repos) ...[
-          _GroupHeader(
-            title: repo.repoName,
-            count: repo.worktrees.fold(0, (a, w) => a + w.docs.length),
-          ),
-          for (final wt in repo.worktrees) ...[
-            _WorktreeHeader(branch: wt.branch, count: wt.docs.length),
-            for (final doc in wt.docs)
-              DocRow(
-                key: ValueKey('docs-screen-row-${doc.key}'),
-                doc: doc,
-                nowMs: nowMs,
-                onTap: () => _open(doc),
-                pathStyle: DocPathStyle.absolute,
-              ),
-          ],
-        ],
-      ],
+      itemCount: items.length,
+      itemBuilder: (context, i) => items[i](),
     );
   }
 
@@ -293,7 +308,9 @@ class _GroupHeader extends StatelessWidget {
 }
 
 /// A worktree sub-header: the branch chip and its doc count, with the coloured
-/// left border (mockup `.wtsub` accent — the active worktree is tinted primary).
+/// left border (mockup `.wtsub` accent). Every worktree header carries the
+/// primary-tinted border — the list groups by worktree without an
+/// active/inactive distinction, so there is no flag to tint one over another.
 class _WorktreeHeader extends StatelessWidget {
   const _WorktreeHeader({required this.branch, required this.count});
   final String branch;

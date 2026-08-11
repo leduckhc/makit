@@ -26,7 +26,7 @@ import { readdirSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 
 import { EXCLUDED_DIRS } from "./resolve.js";
-import type { DocRoots } from "./roots.js";
+import { DEFAULT_DOC_DIRS, type DocRoots } from "./roots.js";
 
 /** Extensions worth handing to the security boundary (D2 re-checks them). */
 const DOC_EXT = /\.(md|markdown|html?)$/i;
@@ -59,7 +59,7 @@ export async function docCandidates(root: string, roots: DocRoots): Promise<stri
 
 /** The rev 1 shape, used as the fallback when git cannot answer. */
 function defaultWalk(): Extract<DocRoots, { kind: "walk" }> {
-  return { kind: "walk", dirs: ["mockups", "docs"], rootMarkdown: true, exclude: [] };
+  return { kind: "walk", dirs: [...DEFAULT_DOC_DIRS], rootMarkdown: true, exclude: [] };
 }
 
 /** `git ls-files` doc paths, or undefined when git cannot answer. */

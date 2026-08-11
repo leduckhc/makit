@@ -27,6 +27,8 @@ export const DOC_GRANT_TTL_MS = 30 * 60_000;
  * published in the last half hour. Shorter than the TTL so the two are distinct
  * reasons a grant can end.
  */
+export const DOC_GRANT_IDLE_MS = 10 * 60_000;
+
 /**
  * Ceiling on simultaneously-published documents. Generous for the human use case
  * ("3 docs are currently shared") and small enough that a runaway publish loop
@@ -34,17 +36,23 @@ export const DOC_GRANT_TTL_MS = 30 * 60_000;
  */
 export const MAX_LIVE_GRANTS = 64;
 
-export const DOC_GRANT_IDLE_MS = 10 * 60_000;
-
 interface DocGrant extends DocGrantDTO {
   createdAt: number;
   lastSeenAt: number;
+  /** Minting device (SPEC-44 owner model). Never projected onto the wire DTO. */
+  ownerDeviceId?: string;
 }
 
 export interface MintInput {
   worktreePath: string;
   relPath: string;
   reach: "tailnet" | "lan";
+  /**
+   * The device that minted the grant, so `revoke`/`listOwnedBy` can scope by
+   * owner (SPEC-44's forward-grant model). Undefined only under `--no-auth`
+   * loopback, where there is a single anonymous owner.
+   */
+  ownerDeviceId?: string;
   /** Builds the URL from the freshly-minted id — the capability lives in the path (D9). */
   buildUrl: (grantId: string) => string;
 }
@@ -94,6 +102,7 @@ export class DocGrantStore {
       expiresAt: now + DOC_GRANT_TTL_MS,
       createdAt: now,
       lastSeenAt: now,
+      ownerDeviceId: input.ownerDeviceId,
     };
     this.grants.set(grantId, grant);
     return toDto(grant);
@@ -116,8 +125,16 @@ export class DocGrantStore {
     return toDto(grant);
   }
 
-  /** Revoke a grant. True when one was actually removed (idempotent otherwise). */
-  revoke(grantId: string): boolean {
+  /**
+   * Revoke a grant the caller owns. Returns true only when a grant was actually
+   * removed. A grant owned by a DIFFERENT device is left untouched and reports
+   * `false` — the SAME answer an unknown id gives, so the result cannot be used
+   * to probe whether some other device's grant id exists.
+   */
+  revoke(grantId: string, ownerDeviceId?: string): boolean {
+    const grant = this.grants.get(grantId);
+    if (grant === undefined) return false;
+    if (grant.ownerDeviceId !== ownerDeviceId) return false;
     return this.grants.delete(grantId);
   }
 
@@ -126,6 +143,19 @@ export class DocGrantStore {
     const now = this.now();
     this.reap(now);
     return [...this.grants.values()].map(toDto);
+  }
+
+  /**
+   * The live grants minted by one device, as DTOs (reaping on the way through).
+   * The command layer uses this so a client only ever sees — and can only revoke
+   * — its own shares, never another device's.
+   */
+  listOwnedBy(ownerDeviceId?: string): DocGrantDTO[] {
+    const now = this.now();
+    this.reap(now);
+    return [...this.grants.values()]
+      .filter((g) => g.ownerDeviceId === ownerDeviceId)
+      .map(toDto);
   }
 
   /** Drop every expired or idle-reaped grant. Shared by `list` and `mint`. */

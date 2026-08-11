@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { titleFromHtml, titleFromMarkdown, statusFromMarkdown, readDocMeta } from "./title.js";
+import { titleFromHtml, titleFromMarkdown, statusFromMarkdown, readDocMeta, TITLE_READ_BYTES } from "./title.js";
 
 /**
  * SPEC-46 D4 (the title is extracted, never the filename) and D14 (docStatus is
@@ -108,9 +108,14 @@ test("readDocMeta reads title and status off a real markdown file", () => {
 test("readDocMeta does not read the whole file to find a title", () => {
   const dir = mkdtempSync(join(tmpdir(), "makit-title-"));
   const p = join(dir, "big.md");
-  // A title at the top, then far more bytes than the read window.
-  writeFileSync(p, "# Top Title\n" + "filler filler filler\n".repeat(200_000));
-  assert.equal(readDocMeta(p, "md").title, "Top Title");
+  // One filler line longer than the read window, then a status line. The status
+  // sits within the header-line cap, so only the *byte* bound can hide it: if
+  // readDocMeta read past TITLE_READ_BYTES it would find the status.
+  const filler = "x".repeat(TITLE_READ_BYTES + 1000);
+  writeFileSync(p, filler + "\n**Status:** Draft\n");
+  const meta = readDocMeta(p, "md");
+  assert.equal(meta.title, "big.md", "the basename fallback must apply");
+  assert.equal(meta.docStatus, undefined, "content past the read window must not be seen");
 });
 
 test("readDocMeta falls back to the basename on an unreadable file", () => {
