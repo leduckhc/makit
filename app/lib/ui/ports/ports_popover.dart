@@ -21,11 +21,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../../store/ports.dart';
+import 'port_kill_confirm.dart';
 import 'port_token_pill.dart';
 import 'ports_glyph.dart';
 import 'ports_vocabulary.dart';
@@ -439,7 +443,7 @@ class _PortsPopoverPanel extends StatelessWidget {
   }
 }
 
-class _PortRow extends StatelessWidget {
+class _PortRow extends ConsumerWidget {
   const _PortRow({required this.port, required this.nowMs});
 
   final PortInfo port;
@@ -448,7 +452,7 @@ class _PortRow extends StatelessWidget {
   Future<void> _open(BuildContext context) async {
     final url = port.openUrl;
     if (url == null) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final status = statusOf(context);
     final uri = Uri.tryParse(url);
     try {
       if (uri == null) throw const FormatException('bad url');
@@ -457,13 +461,19 @@ class _PortRow extends StatelessWidget {
         mode: LaunchMode.externalApplication,
       );
       if (!launched) {
-        messenger?.showSnackBar(
-          const SnackBar(content: Text('Could not open the port')),
+        status.failure(
+          'Could not open the port',
+          detail: url,
+          source: StatusSources.ports,
+          sessionId: port.sessionId,
         );
       }
-    } catch (_) {
-      messenger?.showSnackBar(
-        const SnackBar(content: Text('Could not open the port')),
+    } catch (e) {
+      status.failure(
+        'Could not open the port',
+        error: e,
+        source: StatusSources.ports,
+        sessionId: port.sessionId,
       );
     }
   }
@@ -471,16 +481,25 @@ class _PortRow extends StatelessWidget {
   Future<void> _copy(BuildContext context) async {
     final url = port.openUrl;
     if (url == null) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final status = statusOf(context);
     await Clipboard.setData(ClipboardData(text: url));
-    messenger?.showSnackBar(const SnackBar(content: Text('URL copied')));
+    status.info(
+      'URL copied',
+      detail: url,
+      source: StatusSources.ports,
+      sessionId: port.sessionId,
+    );
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final hasUrl = port.openUrl != null;
+    // SPEC-43 D8: `Kill` is offered for a port whose identity can be verified
+    // (D1) — including one that never answered HTTP, which is exactly the
+    // wedged-dev-server case the feature targets.
+    final killable = portIsKillable(port);
     // Line 1's token and line 2 both truncate, and both are saying the same
     // thing: the full argv. One tooltip, both places (spec §3).
     final commandSentence = portPidCommandLabel(port.pid, port.command);
@@ -562,22 +581,38 @@ class _PortRow extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (hasUrl) ...[
+                if (hasUrl || killable) ...[
                   const SizedBox(height: kSpace6),
-                  Row(
+                  // A Wrap, not a Row: three buttons plus a long port row do not
+                  // always fit 360 pt, and a RenderFlex overflow would clip the
+                  // last one — which is the destructive one.
+                  Wrap(
+                    spacing: kSpace6,
+                    runSpacing: kSpace6,
                     children: [
-                      _ActionButton(
-                        icon: PhosphorIconsLight.arrowSquareOut,
-                        label: 'Open',
-                        primary: true,
-                        onTap: () => _open(context),
-                      ),
-                      const SizedBox(width: kSpace6),
-                      _ActionButton(
-                        icon: PhosphorIconsLight.copy,
-                        label: 'Copy URL',
-                        onTap: () => _copy(context),
-                      ),
+                      if (hasUrl) ...[
+                        _ActionButton(
+                          icon: PhosphorIconsLight.arrowSquareOut,
+                          label: 'Open',
+                          primary: true,
+                          onTap: () => _open(context),
+                        ),
+                        _ActionButton(
+                          icon: PhosphorIconsLight.copy,
+                          label: 'Copy URL',
+                          onTap: () => _copy(context),
+                        ),
+                      ],
+                      // LAST in the group, always (mockup §2a: "the pin makes it
+                      // reachable, not one-click"), and it confirms even here —
+                      // a pinned popover is not a permission.
+                      if (killable)
+                        _ActionButton(
+                          icon: PhosphorIconsLight.stopCircle,
+                          label: portKillLabel,
+                          danger: true,
+                          onTap: () => confirmAndKillPort(context, ref, port),
+                        ),
                     ],
                   ),
                 ],
@@ -598,6 +633,7 @@ class _ActionButton extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.primary = false,
+    this.danger = false,
   });
 
   final IconData icon;
@@ -605,11 +641,23 @@ class _ActionButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool primary;
 
+  /// Destructive: an error-tinted wash, so the one button that signals a process
+  /// never reads like Open or Copy (SPEC-43 D8).
+  final bool danger;
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fg = primary ? cs.onPrimary : cs.onSurfaceVariant;
-    final bg = primary ? cs.primary : cs.surfaceContainerHighest;
+    final fg = danger
+        ? cs.error
+        : primary
+        ? cs.onPrimary
+        : cs.onSurfaceVariant;
+    final bg = danger
+        ? cs.errorContainer
+        : primary
+        ? cs.primary
+        : cs.surfaceContainerHighest;
     return InkWell(
       borderRadius: BorderRadius.circular(kRadius8),
       onTap: onTap,

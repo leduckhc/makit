@@ -77,11 +77,11 @@ void main() {
   group('hasPr is data, not a parsed display string', () {
     test('a branch literally named #42 is still a branch', () {
       // `hasPr` used to be `identity.startsWith('#')`. `#42` is a legal git branch
-      // name, so such a branch was classified as a pull request — which hid
-      // "Create PR" from the one branch that most needed it.
+      // name, so such a branch was classified as a pull request — which hid the
+      // pre-PR offer from the one branch that most needed it.
       final s = _status(pr: null, branch: '#42');
       expect(s.hasPr, isFalse);
-      expect(_prompt(s.cta.remedy), PrPromptAction.createPr);
+      expect(_prompt(s.cta.remedy), PrPromptAction.shipIt);
     });
 
     test('an open PR has one', () {
@@ -612,26 +612,165 @@ void main() {
       expect(_status(pr: _pr(rollup: 'pass')).isQuiet, isFalse);
     });
 
-    test('a clean branch with no PR is quiet, despite offering Create PR', () {
+    test('a clean branch with no PR is quiet, despite offering Ship it', () {
       // The offer is a CTA, not a fact. A chip on every clean branch was pure
       // noise on the repo card — and made it tall enough to push its own
       // "Show less" control off screen.
       final s = _status(pr: null);
-      expect(_prompt(s.cta.remedy), PrPromptAction.createPr);
+      expect(_prompt(s.cta.remedy), PrPromptAction.shipIt);
       expect(s.isQuiet, isTrue);
     });
   });
 
   group('no PR yet', () {
-    test('clean and committed → offer to create the PR', () {
+    test('clean and committed → offer to ship it', () {
       final s = _status(pr: null);
       expect(s.loud.label, 'ready for a PR');
-      expect(_prompt(s.cta.remedy), PrPromptAction.createPr);
+      expect(_prompt(s.cta.remedy), PrPromptAction.shipIt);
     });
 
-    test('uncommitted work comes before creating the PR', () {
+    test('uncommitted work does not change the destination', () {
+      // It used to hand back "Commit & push", which stopped two thirds of the
+      // way to the thing the branch actually needs.
       final s = _status(pr: null, uncommitted: 3);
+      expect(_prompt(s.cta.remedy), PrPromptAction.shipIt);
+    });
+  });
+
+  group('Ship it — one verb for the whole pre-PR phase', () {
+    test('a dirty branch ships rather than merely pushing', () {
+      expect(
+        _prompt(_status(pr: null, uncommitted: 3).cta.remedy),
+        PrPromptAction.shipIt,
+      );
+    });
+
+    test('a committed-but-unpushed branch ships too', () {
+      expect(
+        _prompt(_status(pr: null, ahead: 2).cta.remedy),
+        PrPromptAction.shipIt,
+      );
+    });
+
+    test('so does one with nothing outstanding at all', () {
+      // Here it degenerates to exactly what "Create PR" did. One verb across the
+      // phase beats a button whose label changes as you work.
+      expect(_prompt(_status(pr: null).cta.remedy), PrPromptAction.shipIt);
+    });
+
+    test('it outranks the magic Fix, which would not name the destination', () {
+      // Two prompt-backed facts on a PR-less branch would otherwise compose into
+      // "Fix" — which bundles the steps but stops short of the pull request.
+      final s = _status(pr: null, uncommitted: 1, behind: 2);
+      expect(s.cta.remedy, isNot(isA<MagicRemedy>()));
+      expect(_prompt(s.cta.remedy), PrPromptAction.shipIt);
+    });
+
+    test('the facts keep their own verbs, so the detail list still acts', () {
+      // Ship it is a CTA-level remedy. Had it reached the signals, the detail
+      // list would show two rows both offering "Ship it" — and neither would
+      // clear the row it sits on.
+      final s = _status(pr: null, uncommitted: 3, ahead: 1);
+      expect(_prompt(s.signals[0].remedy), PrPromptAction.commitAndPush);
+      expect(_prompt(s.signals[1].remedy), PrPromptAction.push);
+      expect(
+        s.signals.map((x) => _prompt(x.remedy)),
+        isNot(contains(PrPromptAction.shipIt)),
+      );
+    });
+
+    test('never offered once a pull request exists', () {
+      // The destination is reached; from here committing and pushing keep their
+      // own verbs, which is why those actions survive rather than being absorbed.
+      final s = _status(pr: _pr(), uncommitted: 3);
       expect(_prompt(s.cta.remedy), PrPromptAction.commitAndPush);
+    });
+
+    test('an unrecognised PR state is still a PR, so it does not ship', () {
+      // The same trap "Create PR" fell into: `open` is null for LOCKED, but the
+      // pull request very much exists, so offering to open one is wrong.
+      final s = _status(pr: _pr(state: 'LOCKED'), uncommitted: 2);
+      expect(_prompt(s.cta.remedy), isNot(PrPromptAction.shipIt));
+    });
+
+    test('never offered for the primary checkout', () {
+      final s = prStatus(
+        pr: null,
+        branch: 'main',
+        isPrimary: true,
+        uncommittedFiles: 2,
+      );
+      expect(_prompt(s.cta.remedy), PrPromptAction.commitAndPush);
+    });
+
+    test('not offered for a detached head, which has no branch to ship', () {
+      final s = _status(pr: null, branch: null, uncommitted: 2);
+      expect(_prompt(s.cta.remedy), isNot(PrPromptAction.shipIt));
+    });
+
+    test('a merged PR is tidied up, not shipped again', () {
+      final s = _status(pr: _pr(state: 'MERGED'));
+      expect(_op(s.cta.remedy), PrDirectOp.wrapUp);
+    });
+
+    test('offering it does not make a clean branch worth a chip', () {
+      // Same rule as Create PR before it: an offer is not a fact, and a chip on
+      // every clean branch was pure noise on the repo card.
+      expect(_status(pr: null).isQuiet, isTrue);
+    });
+
+    test('it is amber — a step to take, not good news', () {
+      // Purple is for landing. Shipping is the start of the journey.
+      expect(_status(pr: null).cta.tone, PrTone.attention);
+      expect(_status(pr: null, uncommitted: 3).cta.tone, PrTone.attention);
+    });
+
+    test('its prompt names all three steps and skips the done ones', () {
+      // One static wording has to be correct in all three pre-PR states, which is
+      // what lets this stay an ordinary overridable prompt instead of one composed
+      // from the signals the way the magic Fix is. Lose the "skip" clause and it
+      // tells the agent to commit on a clean tree and push a branch already
+      // pushed — the state where Ship it is really just "Create PR".
+      final p = PrPromptAction.shipIt.defaultPrompt.toLowerCase();
+      expect(p, contains('commit'));
+      expect(p, contains('push'));
+      expect(p, contains('gh pr create'));
+      expect(p, contains('skip any step that is already done'));
+    });
+  });
+
+  group('reachability on a surface that can act', () {
+    // `isQuiet` is a *dense-list* rule and its docstring justifies itself with
+    // "the desktop bar always renders, so it keeps the offer". Mobile has no
+    // always-rendered bar, so gating the session chip on it hid Ship it on
+    // exactly the branch that was ready to ship. `hasSomethingToOffer` is the
+    // rule for surfaces that provide an entry point.
+    test('a clean PR-less branch has an offer even though it is quiet', () {
+      final s = _status(pr: null);
+      expect(s.isQuiet, isTrue, reason: 'still not worth a chip in a list');
+      expect(_prompt(s.cta.remedy), PrPromptAction.shipIt);
+      expect(s.hasSomethingToOffer, isTrue, reason: 'but it is reachable');
+    });
+
+    test('a clean primary checkout offers nothing at all', () {
+      // Nothing to do on main, so no entry point is the right answer here.
+      final s = prStatus(pr: null, branch: 'main', isPrimary: true);
+      expect(s.cta.isIdle, isTrue);
+      expect(s.hasSomethingToOffer, isFalse);
+    });
+
+    test('a detached head with nothing outstanding offers nothing', () {
+      final s = _status(pr: null, branch: null);
+      expect(s.hasSomethingToOffer, isFalse);
+    });
+
+    test('anything outstanding is already offered, quiet or not', () {
+      expect(_status(pr: null, uncommitted: 3).hasSomethingToOffer, isTrue);
+      expect(_status(pr: _pr()).hasSomethingToOffer, isTrue);
+    });
+
+    test('an ended PR still offers its tidy-up', () {
+      expect(_status(pr: _pr(state: 'MERGED')).hasSomethingToOffer, isTrue);
     });
   });
 
@@ -695,7 +834,7 @@ void main() {
         'merged',
         '2 files uncommitted',
         'worktree still here',
-        '1 session to archive',
+        '1 session to close',
         'main is 6 commits behind',
       ]);
       expect(
@@ -1088,7 +1227,7 @@ void main() {
       expect(
         s.signals.map((x) => x.label),
         containsAll(<String>[
-          '2 sessions to archive',
+          '2 sessions to close',
           'main is 6 commits behind',
         ]),
       );

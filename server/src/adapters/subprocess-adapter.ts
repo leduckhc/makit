@@ -52,6 +52,15 @@ export abstract class SubprocessAdapter extends EventEmitter implements AgentAda
   abstract start(opts: SpawnOpts): Promise<void>;
   abstract send(input: UserInput): Promise<void>;
   abstract cancel(): Promise<void>;
+  /**
+   * Graceful agent-side session release before the reap. Defaults to a no-op so
+   * a transport without the primitive degrades to "just kill it"; subclasses
+   * with a real close (ACP `session/close`, codex `thread/unsubscribe`)
+   * override. An override implements the plain request only: it MAY reject and
+   * MAY hang, because `SessionManager.closeSession` bounds it and reaps
+   * regardless — see {@link AgentAdapter.close}.
+   */
+  async close(): Promise<void> {}
   abstract kill(signal?: NodeJS.Signals): Promise<void>;
 
   /**

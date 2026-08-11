@@ -37,6 +37,7 @@ import { sharedMediaStore, type MediaStore } from "../media/store.js";
 import { LocalMediaResolver, rewriteMarkdownImages } from "../media/local.js";
 import { prepareTurnOrFail } from "../media/attach.js";
 import { spawnLineProcess } from "./child_transport.js";
+import { onPath } from "./catalog.js";
 import { mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord } from "./wire.js";
 import type { AskUser } from "../uicall.js";
@@ -48,6 +49,7 @@ import { log } from "../log.js";
  * process hangs before or after `initialize`/`newSession`, it is aborted.
  */
 const ACP_HANDSHAKE_TIMEOUT = 15_000;
+
 
 export interface AcpSpawnSpec {
   /** makit agent label surfaced in the session DTO ("pi", "codex", …). */
@@ -91,6 +93,12 @@ export class AcpAdapter extends SubprocessAdapter {
 
   private readonly spec: AcpSpawnSpec;
   private readonly connectFn: (cwd: string, env: Record<string, string>) => AcpTransport;
+  /**
+   * True when this adapter spawns {@link AcpSpawnSpec.command} for real, so
+   * `start` can preflight that the binary exists. An injected `connect` (tests,
+   * in-process pairs) has no binary to check.
+   */
+  private readonly spawnsRealBinary: boolean;
 
   private transport?: AcpTransport;
   private conn?: ClientSideConnection;
@@ -129,6 +137,7 @@ export class AcpAdapter extends SubprocessAdapter {
     this.spec = opts.spec;
     this.agent = opts.spec.agent;
     this.connectFn = opts.connect ?? defaultConnect(opts.spec);
+    this.spawnsRealBinary = opts.connect === undefined;
     const media = (this.media = opts.media ?? sharedMediaStore());
     this.mapper = new AcpEventMapper({
       emit: (e) => this.emit("event", e),
@@ -179,6 +188,22 @@ export class AcpAdapter extends SubprocessAdapter {
     this.workspaceRoot = cwd;
 
     const env = { ...(this.spec.env ?? {}), ...(opts.env ?? {}) };
+    // Preflight the binary. Without this the spawn faults asynchronously and
+    // the SDK rejects the handshake with "ACP connection closed", which tells
+    // the user nothing about the actual cause (a missing binary / a PATH that
+    // does not contain it).
+    //
+    // Resolve against the child's actual PATH, not the parent's: `spawnLineProcess`
+    // spawns with `{ ...process.env, ...opts.env }`, so an `opts.env.PATH` (or
+    // `spec.env.PATH`) override reaches the child. Passing the merged env here
+    // means a caller that widens PATH for the child is not spuriously rejected,
+    // and one that narrows it is caught before the useless SDK handshake error.
+    const preflightEnv = { ...process.env, ...env };
+    if (this.spawnsRealBinary && !onPath(this.spec.command, preflightEnv)) {
+      throw new Error(
+        `${this.spec.command} was not found on PATH — install it, or start makit from a shell where it resolves`,
+      );
+    }
     this.transport = this.connectFn(cwd, env);
     this.transport.onExit((code) => this.handleExit(code));
 
@@ -474,6 +499,19 @@ export class AcpAdapter extends SubprocessAdapter {
     });
   }
 
+  /**
+   * ACP `session/close`: cancels any in-flight turn agent-side and frees the
+   * session's resources, leaving it listable/resumable. Plain request — a hung
+   * or rejecting agent is `SessionManager.closeSession`'s problem, and it bounds
+   * this call for every back end rather than each adapter re-implementing (and
+   * having to keep in step with) the same deadline.
+   */
+  async close(): Promise<void> {
+    if (!this.conn || !this.acpSessionId) return;
+    if (!this.capabilities.close || !this.conn.closeSession) return;
+    await this.conn.closeSession({ sessionId: this.acpSessionId });
+  }
+
   async kill(): Promise<void> {
     this.transport?.dispose();
     this.handleExit(null);
@@ -726,6 +764,7 @@ export function deriveAcpCapabilities(init: unknown): SessionCapabilities {
     delete: has(sc.delete),
     fork: has(sc.fork),
     archive: has(sc.archive),
+    close: has(sc.close),
   };
 }
 

@@ -1,6 +1,6 @@
 /// SPEC-42 P2a — the global Ports screen ("everything, all repos").
 ///
-/// A new nav destination beside Home / Archived. It renders the
+/// A new nav destination beside Home / Closed. It renders the
 /// `ports.snapshot` the app already receives (no protocol, no scan): an
 /// `AppBar`, a filter row (*All / This repo / Mine / Exposed*), and a
 /// repo → worktree → port grouped list, with the collapsed "other / system"
@@ -21,6 +21,7 @@ import '../../app/theme.dart';
 import '../../store/ports.dart';
 import '../../store/store.dart';
 import 'port_detail_sheet.dart';
+import 'port_kill_confirm.dart';
 import 'port_token_pill.dart';
 import 'ports_filter.dart';
 import 'ports_vocabulary.dart';
@@ -36,6 +37,9 @@ const Key kPortsOrphansSection = ValueKey('ports-orphans-section');
 
 /// The collision banner (D12) — names the rival branch, no suggested port.
 const Key kPortsCollisionBanner = ValueKey('ports-collision-banner');
+
+/// The orphans section's bulk-kill button (SPEC-43 P3b). Keyed for tests.
+const Key kPortsKillAllOrphans = ValueKey('ports-kill-all-orphans');
 
 /// The global Ports screen. [repoId], when set (via `?repo=<id>`), pre-selects
 /// the *This repo* filter for that repo.
@@ -88,6 +92,7 @@ class _PortsScreenState extends ConsumerState<PortsScreen> {
 
     showPortDetailSheet(
       context,
+      ref,
       port: port,
       branchLabel: branchLabel,
       sessionLabel: sessionLabel(port.sessionId),
@@ -354,7 +359,7 @@ class _DegradedBanner extends StatelessWidget {
 }
 
 /// A repo (or "other / system") section header — same shape as
-/// `archived_screen.dart`'s `_GroupHeader`.
+/// `closed_screen.dart`'s `_GroupHeader`.
 class _GroupHeader extends StatelessWidget {
   const _GroupHeader({
     required this.title,
@@ -497,7 +502,7 @@ class _PortRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    portCommandToken(port.command),
+                    portRowToken(port),
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontFamily: kMonoFontFamily,
@@ -522,6 +527,17 @@ class _PortRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: kSpace8),
+            // D13: docker is ownership, so it rides beside the health/reach
+            // pills rather than replacing the reach one — the bind address is
+            // still the security fact, and a published port is often `exposed`.
+            if (port.docker != null) ...[
+              PortTokenPill(
+                label: portDockerWord,
+                sentence: portDockerTooltip(port.docker!),
+                tone: PortTone.idle,
+              ),
+              const SizedBox(width: kSpace6),
+            ],
             // Mockup §9: a collision ships the WORD `clash` on the row itself, not
             // only in the banner — the banner names a branch, but nothing else
             // would say which of the listed ports it is talking about.
@@ -609,9 +625,10 @@ class _CollisionBanner extends StatelessWidget {
 
 /// The orphans group (D10): listeners whose worktree is gone, in their own
 /// section with the `was <branch>, removed Nd ago` provenance line (or cwd-only
-/// when history is thin). There is deliberately NO kill affordance — the
-/// mockup's "Kill all orphans" is P3.
-class _OrphansSection extends StatelessWidget {
+/// when history is thin), closed by the one button that earns the whole feature
+/// — `Kill all orphans (n)` (SPEC-43 P3b, mockup §6). Removing a worktree never
+/// kills its dev server, so these pile up for days.
+class _OrphansSection extends ConsumerWidget {
   const _OrphansSection({
     required this.ports,
     required this.nowMs,
@@ -623,7 +640,7 @@ class _OrphansSection extends StatelessWidget {
   final ValueChanged<PortInfo> onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return Column(
@@ -663,6 +680,31 @@ class _OrphansSection extends StatelessWidget {
             nowMs: nowMs,
             onTap: () => onTap(port),
           ),
+        // One confirm for the batch (D5): the dialog names the ports, the server
+        // re-verifies each one independently, and a partial result is reported
+        // honestly rather than rounded up to "done".
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, kSpace8, 16, kSpace4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: kPortsKillAllOrphans,
+              onPressed: () => confirmAndKillOrphans(context, ref, ports),
+              icon: Icon(
+                PhosphorIconsLight.stopCircle,
+                size: 15,
+                color: cs.error,
+              ),
+              label: Text(
+                portKillOrphansLabel(ports.length),
+                style: theme.textTheme.labelMedium?.copyWith(color: cs.error),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: cs.error.withValues(alpha: 0.5)),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

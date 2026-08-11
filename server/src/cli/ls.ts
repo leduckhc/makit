@@ -22,18 +22,18 @@ export interface LsArgs {
   host: string;
   port: number;
   json: boolean;
-  archived: boolean;
+  closed: boolean;
   projectId?: string;
 }
 
 export function parseLsArgs(argv: string[]): LsArgs {
-  const a: LsArgs = { host: "127.0.0.1", port: 7777, json: false, archived: false };
+  const a: LsArgs = { host: "127.0.0.1", port: 7777, json: false, closed: false };
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]!;
     if (t === "--host") a.host = String(argv[++i]);
     else if (t === "--port") a.port = Number(argv[++i]);
     else if (t === "--json") a.json = true;
-    else if (t === "--archived") a.archived = true;
+    else if (t === "--closed") a.closed = true;
     else if (t === "--project") a.projectId = String(argv[++i]);
   }
   return a;
@@ -44,8 +44,8 @@ export async function runLs(argv: string[]): Promise<void> {
 
   const client = await connectCli(args);
   try {
-    const sessions = args.archived
-      ? ((await client.cmd("session.listArchived")).sessions as SessionDTO[]) ?? []
+    const sessions = args.closed
+      ? ((await client.cmd("session.listClosed")).sessions as SessionDTO[]) ?? []
       : (await client.awaitSnapshot()).sessions;
     const shown = args.projectId ? sessions.filter((s) => s.projectId === args.projectId) : sessions;
     if (args.json) {
@@ -59,7 +59,7 @@ export async function runLs(argv: string[]): Promise<void> {
     for (const s of shown) console.log(renderSessionLine(s));
   } catch (e) {
     if (e instanceof AuthError) return failAuth(e.message);
-    // A plain refusal (`--archived` asks the server a question it can decline) is
+    // A plain refusal (`--closed` asks the server a question it can decline) is
     // a sentence and exit 1, as in every other verb; only a real bug keeps its
     // stack.
     if (e instanceof WireError) return failCommand(e);

@@ -15,7 +15,7 @@
  *   - **D15 inverse** — the child inherits the parent's worktree and branch,
  *     because the manifest's `file:line` references and the uncommitted work
  *     live there. `--worktree` opts into a fresh tree.
- *   - **D16** — the parent is left running. No archive, no warning: two agents
+ *   - **D16** — the parent is left running. No close, no warning: two agents
  *     in one tree is a decision, and `makit ls` shows the sharing.
  *
  * `parentId` **is** sent — and is then checked, not trusted. An agent credential

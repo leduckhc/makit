@@ -132,7 +132,7 @@ List<String?> _tabSessions(WorkspaceState state) {
 }
 
 void main() {
-  test('closes the tab of a session archived from another client', () async {
+  test('closes the tab of a session closed from another client', () async {
     final container = _container();
     addTearDown(container.dispose);
     final ctrl = container.read(workspaceControllerProvider.notifier);
@@ -148,7 +148,7 @@ void main() {
       'b',
     ]);
 
-    // 'b' is archived/quit elsewhere: the next snapshot drops it, so its tab
+    // 'b' is closed/quit elsewhere: the next snapshot drops it, so its tab
     // must go too instead of lingering as an empty pane.
     _push(container, [_session('a')]);
     await Future<void>.delayed(Duration.zero);
@@ -461,7 +461,7 @@ void main() {
       },
     );
 
-    test('bug 2: a board archived-while-closed reopens showing only its '
+    test('bug 2: a board closed-while-closed reopens showing only its '
         'survivors (the ghost is filtered on the way back in)', () async {
       final keep = _wtGroup('keep', '/tmp/wt/keep');
       final board = _boardMembersOnly('b', ['s1', 's2', 's3']);
@@ -473,7 +473,7 @@ void main() {
 
       final ctrl = container.read(groupsControllerProvider.notifier);
       ctrl.closeGroup('b');
-      // s3 was archived while the board was closed — reopen filters it out.
+      // s3 was closed while the board was closed — reopen filters it out.
       ctrl.reopenBoard('b', liveSessionIds: const {'s1', 's2'});
       _push(container, [_session('s1'), _session('s2')]);
       await Future<void>.delayed(Duration.zero);

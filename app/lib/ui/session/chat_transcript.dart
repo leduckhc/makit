@@ -17,15 +17,20 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../../store/store.dart';
+import '../../store/turns.dart';
 import '../widgets/glass.dart';
 import '../widgets/pulse.dart';
 import 'ask_card.dart';
 import 'chat_message.dart';
 import 'chat_metrics.dart';
+import 'elapsed.dart';
+import 'live_now.dart';
 import 'navigator/jump_flash.dart';
 import 'media_view.dart';
 import 'tool_call_card.dart';
 import 'transcript_expansion.dart';
+import 'turn_receipt.dart';
 
 /// Distance (logical px) from the newest message within which an incoming item
 /// re-pins the transcript to the bottom. Beyond it, the user is treated as
@@ -122,12 +127,18 @@ Widget chatItemWidget(
     ),
   ),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
+  // SPEC-47 D9: the dim line that closes a turn. Static text derived from
+  // timestamps, so it renders identically in a closed transcript (D19).
+  TurnReceiptItem() => TurnReceipt(item: item),
   // An image/GIF the agent produced (SPEC-22) — the one thing a terminal
   // client can't show. Rendered inline, tap for fullscreen.
   AgentMediaItem() => AgentMediaView(item: item),
   ThinkingItem() => ThinkingLine(
     text: item.text,
     expansionKey: transcriptRowExpansionKey(sessionId, item),
+    startTs: item.ts,
+    lastTs: item.lastTs,
+    streaming: item.streaming,
   ),
   // An answered askUserQuestion settles into a quiet resolved card (chosen
   // highlighted, rest dimmed) rather than a foldable tool row (SPEC-25 #1).
@@ -223,6 +234,9 @@ class ThinkingLine extends ConsumerWidget {
     super.key,
     required this.text,
     required this.expansionKey,
+    this.startTs,
+    this.lastTs,
+    this.streaming = false,
   });
 
   /// The reasoning text (trimmed for display).
@@ -230,6 +244,17 @@ class ThinkingLine extends ConsumerWidget {
 
   /// This row's identity in [expandedTranscriptRowsProvider].
   final String expansionKey;
+
+  /// When reasoning started (SPEC-47 D7), or null when unknown (previews/tests
+  /// that render a bare line). With [lastTs]/[streaming] it drives the leading
+  /// `Thought for 12s` / `Thinking … 41s` label.
+  final int? startTs;
+
+  /// When reasoning last advanced (the final `agent.thinking` or latest delta).
+  final int? lastTs;
+
+  /// True while reasoning tokens are still streaming in.
+  final bool streaming;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -262,21 +287,39 @@ class ThinkingLine extends ConsumerWidget {
         ? Semantics(
             onTap: toggle,
             onTapHint: 'Collapse thinking',
-            child: _buildRow(context, textWidget, onLeadingTap: toggle),
+            child: _buildRow(
+              context,
+              textWidget,
+              onLeadingTap: toggle,
+              durationLabel: _durationLabel(context, ref),
+              expanded: true,
+            ),
           )
-        : InkWell(onTap: toggle, child: _buildRow(context, textWidget));
+        : InkWell(
+            onTap: toggle,
+            child: _buildRow(
+              context,
+              textWidget,
+              durationLabel: _durationLabel(context, ref),
+            ),
+          );
   }
 
   Widget _buildRow(
     BuildContext context,
     Widget textWidget, {
     VoidCallback? onLeadingTap,
+    Widget? durationLabel,
+    bool expanded = false,
   }) {
     final cs = Theme.of(context).colorScheme;
+    // Size and alpha come from the shared row tokens, not literals: the tool row
+    // was asked to match this glyph exactly, and one constant is the only way
+    // that survives a future tweak to either row.
     Widget leading = Icon(
       PhosphorIconsLight.brain,
-      size: 15,
-      color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+      size: kToolGlyph,
+      color: cs.onSurfaceVariant.withValues(alpha: kToolGlyphAlpha),
     );
     if (onLeadingTap != null) {
       leading = GestureDetector(
@@ -290,9 +333,71 @@ class ThinkingLine extends ConsumerWidget {
       children: [
         leading,
         const SizedBox(width: kSpace6),
-        Expanded(child: textWidget),
+        // Folded, the label and the one-line preview share the row: the
+        // duration leads (D7) and the preview trails it, ellipsised.
+        //
+        // Unfolded, the reasoning is a paragraph, not a trailing fragment.
+        // Keeping it on the label's line would indent every wrapped line around
+        // a word that only belongs to the first one and cost the paragraph the
+        // label's width, so the label takes its own line and the text starts
+        // fresh beneath it — flush left with the label, under the icon's gutter.
+        if (durationLabel != null && expanded)
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                durationLabel,
+                const SizedBox(height: kSpace2),
+                textWidget,
+              ],
+            ),
+          )
+        else ...[
+          if (durationLabel != null) ...[
+            durationLabel,
+            const SizedBox(width: kSpace6),
+          ],
+          Expanded(child: textWidget),
+        ],
       ],
     );
+  }
+
+  /// The leading `Thought for 12s` / `Thinking … 41s` label (SPEC-47 D7). Always
+  /// shown (min `1s`), and — unlike the preview text — in `onSurfaceVariant` at
+  /// FULL opacity, never the pre-existing 0.65 alpha that fails AA (D9b).
+  Widget? _durationLabel(BuildContext context, WidgetRef ref) {
+    final start = startTs;
+    if (start == null) return null;
+    final cs = Theme.of(context).colorScheme;
+    final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: cs.onSurfaceVariant,
+      fontStyle: FontStyle.italic,
+      height: 1.3,
+    );
+
+    if (streaming) {
+      final now = liveNowFor(ref, context);
+      return ValueListenableBuilder<int>(
+        valueListenable: now,
+        builder: (context, nowMs, _) {
+          final label = _spanLabel(start, nowMs);
+          return label == null
+              ? const SizedBox.shrink()
+              : Text('Thinking … $label', style: style);
+        },
+      );
+    }
+    final label = _spanLabel(start, lastTs);
+    return label == null ? null : Text('Thought for $label', style: style);
+  }
+
+  /// The span label from [start] to [end], min `1s` (D7/D14), or null when the
+  /// span is unrepresentable (D10b).
+  String? _spanLabel(int start, int? end) {
+    final ms = elapsedMs(start: start, end: end);
+    if (ms == null) return null;
+    return formatElapsed(ms < 1000 ? 1000 : ms);
   }
 }
 
@@ -336,15 +441,19 @@ class ErrorBanner extends StatelessWidget {
 /// session is running: a shimmering work-flavoured word. Shared by mobile and
 /// desktop so both surfaces show the same treatment. Gutter + spacing come from
 /// the surface ([transcriptRow]).
-class WorkingIndicator extends StatefulWidget {
-  /// Creates the indicator.
-  const WorkingIndicator({super.key});
+class WorkingIndicator extends ConsumerStatefulWidget {
+  /// Creates the indicator. When [sessionId] is set, a live turn counter is
+  /// shown beside the word (SPEC-47 D8).
+  const WorkingIndicator({super.key, this.sessionId});
+
+  /// The running session, so the counter can read its open turn's start.
+  final String? sessionId;
 
   @override
-  State<WorkingIndicator> createState() => _WorkingIndicatorState();
+  ConsumerState<WorkingIndicator> createState() => _WorkingIndicatorState();
 }
 
-class _WorkingIndicatorState extends State<WorkingIndicator> {
+class _WorkingIndicatorState extends ConsumerState<WorkingIndicator> {
   static const _words = [
     'Thinking',
     'Cooking',
@@ -380,7 +489,7 @@ class _WorkingIndicatorState extends State<WorkingIndicator> {
     );
     // The sweep runs on the shared low-rate clock, so the ShaderMask's
     // saveLayer is paid ~20 times a second instead of at every vsync.
-    return PulseBuilder(
+    final shimmer = PulseBuilder(
       period: const Duration(milliseconds: 1400),
       reverse: false,
       builder: (context, t) => ShaderMask(
@@ -392,6 +501,44 @@ class _WorkingIndicatorState extends State<WorkingIndicator> {
         ).createShader(bounds),
         child: word,
       ),
+    );
+
+    final counter = _turnCounter(context, cs);
+    if (counter == null) return shimmer;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        shimmer,
+        const SizedBox(width: kSpace6),
+        counter,
+      ],
+    );
+  }
+
+  /// The live turn counter (SPEC-47 D8): `47s` beside the word, off the shared
+  /// second-cadence ticker (D5). No 60 s escalation — a long turn is normal (D6).
+  /// Null when there is no session or no open turn.
+  Widget? _turnCounter(BuildContext context, ColorScheme cs) {
+    final id = widget.sessionId;
+    if (id == null) return null;
+    final events = ref.watch(eventsProvider).forSession(id);
+    final startTs = openTurnStartMs(events);
+    if (startTs == null) return null;
+    final style = Theme.of(context).textTheme.labelLarge?.copyWith(
+      color: cs.onSurfaceVariant,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+    final now = liveNowFor(ref, context);
+    return ValueListenableBuilder<int>(
+      valueListenable: now,
+      builder: (context, nowMs, _) {
+        final ms = elapsedMs(start: startTs, end: nowMs);
+        if (ms == null) return const SizedBox.shrink();
+        final label = formatElapsed(ms < 1000 ? 1000 : ms);
+        return label == null
+            ? const SizedBox.shrink()
+            : Text(label, style: style);
+      },
     );
   }
 }

@@ -777,6 +777,59 @@ test("acp defaultConnect routes a spawn failure to onExit instead of crashing th
   assert.equal(code, null);
 });
 
+test("acp start fails with the missing binary's name, not a bare connection close", async () => {
+  // A GUI-launched daemon inherits launchd's PATH, so `pi-acp` does not resolve
+  // and the SDK rejects the handshake with the useless "ACP connection closed".
+  // The user needs to be told WHICH binary is missing.
+  const adapter = new AcpAdapter({
+    spec: { agent: "pi", command: "makit-nonexistent-binary-xyz" },
+  });
+  await assert.rejects(
+    () => adapter.start({ cwd: process.cwd(), sessionId: "makit-1" }),
+    (e: Error) => {
+      assert.match(e.message, /makit-nonexistent-binary-xyz/, "names the binary");
+      assert.match(e.message, /not found on PATH/, "says what is wrong");
+      return true;
+    },
+  );
+});
+
+test("acp start preflight honors spec.env.PATH — not just the parent process PATH", async () => {
+  // `spawnLineProcess` runs the child with `{ ...process.env, ...opts.env }`
+  // as its env, so a spec-supplied PATH reaches the child. The preflight must
+  // mirror that: a bin only reachable via spec.env.PATH must not be falsely
+  // rejected as "not found on PATH". Otherwise a caller that intentionally
+  // widens PATH for the child never gets past start().
+  const dir = mkdtempSync(join(tmpdir(), "makit-acp-preflight-"));
+  const bin = join(dir, "makit-preflight-bin");
+  writeFileSync(bin, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const savedPath = process.env.PATH;
+  process.env.PATH = "/usr/bin:/bin:/usr/sbin:/sbin"; // launchd-minimal
+  try {
+    const adapter = new AcpAdapter({
+      spec: { agent: "pi", command: "makit-preflight-bin", env: { PATH: dir } },
+    });
+    // The bin exits immediately so the SDK will fail the handshake with
+    // "ACP connection closed" — which is exactly the failure we want to reach,
+    // proving the preflight passed. Rejecting with "not found on PATH" would
+    // mean the preflight ignored spec.env.PATH.
+    await assert.rejects(
+      () => adapter.start({ cwd: process.cwd(), sessionId: "makit-1" }),
+      (e: Error) => {
+        assert.doesNotMatch(
+          e.message,
+          /not found on PATH/,
+          "preflight must consult spec.env.PATH",
+        );
+        return true;
+      },
+    );
+  } finally {
+    process.env.PATH = savedPath;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---- SPEC-26: ACP session config options ----------------------------------
 
 /** Build an adapter paired with an agent whose newSession returns `res`. */
@@ -1192,15 +1245,95 @@ test("listAcpSessions returns [] when the agent does not advertise list", async 
 test("deriveAcpCapabilities reads loadSession + sessionCapabilities (SPEC-29)", () => {
   assert.deepEqual(
     deriveAcpCapabilities({ agentCapabilities: { loadSession: true, sessionCapabilities: { list: {}, delete: {} } } }),
-    { resume: false, load: true, list: true, delete: true, fork: false, archive: false },
+    { resume: false, load: true, list: true, delete: true, fork: false, archive: false, close: false },
   );
   assert.deepEqual(
     deriveAcpCapabilities({ agentCapabilities: { sessionCapabilities: { resume: {}, fork: {} } } }),
-    { resume: true, load: false, list: false, delete: false, fork: true, archive: false },
+    { resume: true, load: false, list: false, delete: false, fork: true, archive: false, close: false },
+  );
+  // `close` is its own capability (SPEC-29 close/reopen) — `{}` means supported.
+  assert.deepEqual(
+    deriveAcpCapabilities({ agentCapabilities: { sessionCapabilities: { close: {} } } }),
+    { resume: false, load: false, list: false, delete: false, fork: false, archive: false, close: true },
   );
   // Missing / malformed → all false.
-  assert.deepEqual(deriveAcpCapabilities({}), { resume: false, load: false, list: false, delete: false, fork: false, archive: false });
-  assert.deepEqual(deriveAcpCapabilities(null), { resume: false, load: false, list: false, delete: false, fork: false, archive: false });
+  assert.deepEqual(deriveAcpCapabilities({}), { resume: false, load: false, list: false, delete: false, fork: false, archive: false, close: false });
+  assert.deepEqual(deriveAcpCapabilities(null), { resume: false, load: false, list: false, delete: false, fork: false, archive: false, close: false });
+});
+
+/**
+ * `close()` is the graceful half of freeing a session: ACP `session/close`
+ * cancels any in-flight turn and releases the agent's resources, and only then
+ * does the caller tear the transport down. Verifies the call reaches the wire
+ * carrying the live sessionId.
+ */
+test("close() sends session/close when the agent advertises the capability", async () => {
+  const closed: string[] = [];
+  const { transport } = pair((conn) => {
+    const a = new ScriptedAgent(conn, async () => {});
+    (a as unknown as { initialize: () => Promise<unknown> }).initialize = async () => ({
+      protocolVersion: 1 as const,
+      agentCapabilities: { sessionCapabilities: { close: {} } },
+    });
+    (a as unknown as { closeSession: (p: { sessionId: string }) => Promise<unknown> }).closeSession =
+      async (p) => {
+        closed.push(p.sessionId);
+        return {};
+      };
+    return a;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "codex", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: "/tmp" });
+  assert.equal(adapter.capabilities.close, true);
+
+  await adapter.close();
+  assert.deepEqual(closed, ["acp-sess-1"]);
+});
+
+test("close() is a no-op when the agent does not advertise session/close", async () => {
+  const closed: string[] = [];
+  const { transport } = pair((conn) => {
+    const a = new ScriptedAgent(conn, async () => {});
+    (a as unknown as { closeSession: (p: { sessionId: string }) => Promise<unknown> }).closeSession =
+      async (p) => {
+        closed.push(p.sessionId);
+        return {};
+      };
+    return a;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "codex", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: "/tmp" });
+  assert.equal(adapter.capabilities.close, false);
+
+  await adapter.close();
+  assert.deepEqual(closed, [], "must not call an unadvertised method");
+});
+
+/**
+ * The adapter makes the plain request and lets a failure surface;
+ * `SessionManager.closeSession` owns bounding and swallowing it (and reaps
+ * regardless). Asserted so the contract cannot quietly drift back to each
+ * adapter half-handling teardown policy on its own.
+ */
+test("close() propagates a failing session/close for the manager to absorb", async () => {
+  const { transport } = pair((conn) => {
+    const a = new ScriptedAgent(conn, async () => {});
+    (a as unknown as { initialize: () => Promise<unknown> }).initialize = async () => ({
+      protocolVersion: 1 as const,
+      agentCapabilities: { sessionCapabilities: { close: {} } },
+    });
+    (a as unknown as { closeSession: () => Promise<unknown> }).closeSession = async () => {
+      throw new Error("agent is wedged");
+    };
+    return a;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "codex", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: "/tmp" });
+
+  await assert.rejects(() => adapter.close());
 });
 
 test("start({resumeAgentSessionId}) loads and drops the replayed history (silent mode, SPEC-29)", async () => {

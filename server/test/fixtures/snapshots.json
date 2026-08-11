@@ -86,6 +86,19 @@
             "withBranch": "chore/deps",
             "withWorktreePath": "/repo/makit-deps"
           }
+        },
+        {
+          "key": "901:0.0.0.0:5432",
+          "port": 5432,
+          "address": "0.0.0.0",
+          "reach": "exposed",
+          "pid": 901,
+          "command": "com.docker.backend",
+          "startedAt": 800,
+          "docker": {
+            "container": "chat-ui-db-1",
+            "compose": "/repo/chat-ui/compose.yml"
+          }
         }
       ],
       "scannedAt": 3000,

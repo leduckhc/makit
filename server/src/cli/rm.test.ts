@@ -1,8 +1,8 @@
 /**
  * T14 (SPEC-46) — `makit rm`: end a session from the terminal.
  *
- * The one decision here is the default: `rm` **archives** (a soft, recoverable
- * hide — the session stays resumable and `--archived` still lists it), and only
+ * The one decision here is the default: `rm` **closes** (a soft, recoverable
+ * hide — the session stays resumable and `--closed` still lists it), and only
  * `--kill` tears the agent down for good. Defaulting to the destructive verb
  * would be the wrong way round, so the test pins it.
  */
@@ -39,7 +39,7 @@ async function run(argv: string[], opts: { err?: string } = {}): Promise<Run> {
 
 const sent = (cmds: Record<string, unknown>[], kind: string) => cmds.find((c) => c.kind === kind);
 
-test("parseRmArgs: defaults to archive (kill is opt-in), reads the positional id", () => {
+test("parseRmArgs: defaults to close (kill is opt-in), reads the positional id", () => {
   const a = parseRmArgs(["s1"]);
   assert.equal(a.sessionId, "s1");
   assert.equal(a.kill, false);
@@ -53,18 +53,18 @@ test("parseRmArgs: --kill flips to the destructive verb", () => {
   assert.equal(a.port, 9);
 });
 
-test("by default rm archives (recoverable), never kills", async () => {
+test("by default rm closes (recoverable), never kills", async () => {
   const r = await run(["s1"]);
   assert.equal(r.code, 0, r.err);
-  assert.equal(sent(r.cmds, "session.archive")!.sessionId, "s1");
+  assert.equal(sent(r.cmds, "session.close")!.sessionId, "s1");
   assert.equal(sent(r.cmds, "session.kill"), undefined);
 });
 
-test("--kill kills and does not archive", async () => {
+test("--kill kills and does not close", async () => {
   const r = await run(["s1", "--kill"]);
   assert.equal(r.code, 0, r.err);
   assert.equal(sent(r.cmds, "session.kill")!.sessionId, "s1");
-  assert.equal(sent(r.cmds, "session.archive"), undefined);
+  assert.equal(sent(r.cmds, "session.close"), undefined);
 });
 
 test("a missing id is a usage error (exit 2), nothing sent", async () => {

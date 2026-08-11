@@ -1,10 +1,13 @@
-import 'package:flutter/material.dart' hide Tab;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+import 'dart:async';
 
-import '../../app/routes.dart';
+import 'package:flutter/material.dart' hide Tab;
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../desktop_ports_route.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
+import '../../status/status_providers.dart';
 import '../../store/store.dart';
 import 'composer_focus.dart';
 import 'groups/group.dart';
@@ -174,7 +177,8 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.openSettings:
         widget.onOpenSettings();
       case ShortcutAction.openPorts:
-        context.go(kRoutePorts);
+        // The desktop shell has no GoRouter (see desktop_ports_route.dart).
+        unawaited(DesktopPortsRoute.open(Navigator.of(context)));
       case ShortcutAction.newSession:
         showNewWorktreeDialog(context, ref, projectId: _currentProjectId(ref));
       case ShortcutAction.nextSession:
@@ -195,6 +199,11 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _cycleTab(ref, 1);
       case ShortcutAction.prevTab:
         _cycleTab(ref, -1);
+      // SPEC-49 D8: reads the record, not the screen, so it still answers
+      // "what was that?" after the notice has faded. Deliberately placed below
+      // the settings gate above (D9): copy is not exempt from it.
+      case ShortcutAction.copyNewestNotice:
+        _copyNewestNotice(ref);
       // SPEC-30 decision 16: ⌘1…⌘9 activate the 1st–9th group. A tenth group
       // has no binding, so it is only reachable by click or scroll.
       case ShortcutAction.switchGroup1:
@@ -316,6 +325,18 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
 
   /// Cycles the active split's active tab by [delta] (wrapping). No-op when the
   /// active split has a single tab.
+  /// Puts the newest notice on the clipboard (SPEC-49 D8).
+  ///
+  /// Silent when the record is empty: a shortcut that does nothing is better
+  /// than one that clears your clipboard to tell you there was nothing to copy.
+  void _copyNewestNotice(WidgetRef ref) {
+    final events = ref.read(statusCenterProvider).events;
+    if (events.isEmpty) return;
+    unawaited(
+      Clipboard.setData(ClipboardData(text: events.first.toClipboardText())),
+    );
+  }
+
   void _cycleTab(WidgetRef ref, int delta) {
     final state = ref.read(workspaceControllerProvider);
     final split = firstSplitWhere(

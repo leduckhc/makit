@@ -197,7 +197,7 @@ test("a refused fork is a clean message and exit 1, not a wall of node frames", 
 // The child's tree is resolved from the snapshot and sent to the server, which
 // takes `worktreePath` at face value rather than re-deriving it from the source.
 // So a source that is missing from the snapshot but resolvable server-side —
-// an archived session is exactly that — would be forked with NO worktree,
+// an closed session is exactly that — would be forked with NO worktree,
 // silently contradicting the inherit-the-source's-tree rule. `--worktree`
 // already refuses this case; the default path must too.
 // ---------------------------------------------------------------------------

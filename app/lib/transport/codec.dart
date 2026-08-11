@@ -226,6 +226,9 @@ class WireCodec {
           lastActivityAt: j['lastActivityAt'] is num
               ? (j['lastActivityAt'] as num).toInt()
               : 0,
+          createdAt: j['createdAt'] is num
+              ? (j['createdAt'] as num).toInt()
+              : null,
           lastPreview: j['lastPreview'] is String
               ? j['lastPreview'] as String
               : '',
@@ -239,7 +242,7 @@ class WireCodec {
               ? j['worktreePath'] as String
               : null,
           resumable: j['resumable'] == true,
-          archived: j['archived'] == true,
+          closed: j['closed'] == true,
           orphaned: j['orphaned'] == true,
           parentId: j['parentId'] is String ? j['parentId'] as String : null,
           handoffReason: j['handoffReason'] is String

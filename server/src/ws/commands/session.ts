@@ -142,7 +142,12 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // (reconnect resubscribe + a queued message), and no input may be answered
     // with the cold-session error while a resume is still possible. Collapses
     // onto the same in-flight re-attach rather than starting a second agent.
-    await manager.ensureLive(sid);
+    //
+    // ...ForInput, because a message is unambiguous intent to continue: it also
+    // reopens a session the idle sweeper closed (SPEC-29 option D), so an
+    // auto-close is invisible to the user. Plain `sub` deliberately does NOT do
+    // this — reading a closed transcript must not respawn an agent.
+    await manager.ensureLiveForInput(sid);
     // A pending (draft) session materializes its worktree + agent on the
     // first real request, which names the branch. The manager routes any
     // promotion failure through the session's own event pipeline (a real,
@@ -317,12 +322,13 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
-  // Archive (SPEC-29): hide from the active list but keep it resumable. The
-  // fresh snapshot omits archived sessions; unarchive restores it.
-  r.register("session.archive", async (ctx) => {
+  // Close (SPEC-29): release the agent and reclaim its process, keeping the
+  // session resumable. The fresh snapshot omits closed sessions; reopen
+  // restores it.
+  r.register("session.close", async (ctx) => {
     const sid = String(ctx.env.sessionId ?? "");
     try {
-      await manager.archiveSession(sid);
+      await manager.closeSession(sid);
     } catch {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
@@ -332,10 +338,10 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
-  r.register("session.unarchive", async (ctx) => {
+  r.register("session.reopen", async (ctx) => {
     const sid = String(ctx.env.sessionId ?? "");
     try {
-      await manager.unarchiveSession(sid);
+      await manager.reopenSession(sid);
     } catch {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
@@ -345,11 +351,11 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
-  // Return the archived sessions (SPEC-29) for the "Show archived" list. Unlike
+  // Return the closed sessions (SPEC-29) for the "Show closed" list. Unlike
   // the active `sessions.snapshot` (which omits them), this is an explicit
-  // request/ack so archived sessions only load when the user asks.
-  r.register("session.listArchived", async (ctx) => {
-    ctx.ack({ sessions: await manager.listArchivedSessions() });
+  // request/ack so closed sessions only load when the user asks.
+  r.register("session.listClosed", async (ctx) => {
+    ctx.ack({ sessions: await manager.listClosedSessions() });
   });
 
   // SPEC-46 C3 (D5): a BOUNDED transcript slice for `makit handoff --carry`.

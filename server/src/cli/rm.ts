@@ -1,10 +1,10 @@
 /**
  * `makit rm <id> [--kill]` — end a session from the terminal (SPEC-46 T14).
  *
- * The default is deliberately the **recoverable** one: `rm` archives (a soft
- * hide — the session stays resumable and `makit ls --archived` still shows it),
+ * The default is deliberately the **recoverable** one: `rm` closes (a soft
+ * hide — the session stays resumable and `makit ls --closed` still shows it),
  * and only `--kill` tears the agent down for good. Defaulting to the destructive
- * verb would be the wrong way round, so archive is the default and kill opts in.
+ * verb would be the wrong way round, so close is the default and kill opts in.
  */
 import { AuthError } from "./client.js";
 import { connectCli, failAuth } from "./connect.js";
@@ -44,8 +44,8 @@ export async function runRm(argv: string[]): Promise<void> {
       await client.cmd("session.kill", { sessionId: args.sessionId });
       console.log(`[makit] killed ${args.sessionId}`);
     } else {
-      await client.cmd("session.archive", { sessionId: args.sessionId });
-      console.log(`[makit] archived ${args.sessionId}`);
+      await client.cmd("session.close", { sessionId: args.sessionId });
+      console.log(`[makit] closed ${args.sessionId}`);
     }
   } catch (e) {
     if (e instanceof AuthError) return failAuth(e.message);

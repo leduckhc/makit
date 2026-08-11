@@ -40,7 +40,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   /** Resume-capable so keyless e2e can exercise the server-restart resume path
    *  (SPEC-29): the manager persists {@link agentSessionId} and re-attaches by it. */
-  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false };
+  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false, close: true };
   agentSessionId?: string;
 
   private sessionId = "";
@@ -55,6 +55,41 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
    * instead of stranding the tracker in `running` forever.
    */
   private pendingTurn?: { handle: ReturnType<typeof setTimeout>; turnKey?: string };
+  /**
+   * The TOOLS script's pending wait and its abort flag. Same hazard as
+   * the deferred turn above but larger: an uncancelled script keeps emitting six starts,
+   * six ends, a reply and a second `idle` for the rest of its ~5.5 s — after a
+   * `kill()` those land on an adapter that already reported `exit`.
+   */
+  private toolTimeout?: ReturnType<typeof setTimeout>;
+  /**
+   * Identity of the TOOLS script currently allowed to emit, bumped on every
+   * start and every abort. A script captures its own value and stops the moment
+   * it stops matching.
+   *
+   * Deliberately not a boolean: `cancel()` settles the pending wait (which only
+   * *queues* the script's continuation) and then emits `idle` synchronously, and
+   * the session layer starts a queued turn on `idle` — so a shared flag was
+   * reset to false before the cancelled script resumed, and it went on to emit
+   * the rest of its calls interleaved with the new turn.
+   */
+  private toolRun = 0;
+  /**
+   * Resolver for the wait currently in flight. Clearing the timer is not enough:
+   * its callback is the only thing that resolves the wait, so an aborted script
+   * stayed suspended at `await wait(...)` forever, retaining its closure and
+   * call data once per cancellation.
+   */
+  private toolWaitResolve?: () => void;
+  /**
+   * The in-flight TOOLS script. Exposed so a test can assert it actually settles
+   * after a cancel — a suspended async frame emits nothing, so the leak is
+   * invisible from the event stream alone.
+   */
+  toolScript?: Promise<void>;
+  /** Set by {@link close} — lets tests assert the graceful path was taken. */
+  closed = false;
+
 
   /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
   private turnCount = 0;
@@ -255,6 +290,15 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       setTimeout(tick, echoDelayMs);
       return;
     }
+    // "TOOLS" → a turn made of tool calls: the one row type the keyless loop
+    // could not produce, so the risk branches, durations, exit codes, command
+    // summaries and every expanded-body shape (file content, shell output,
+    // diff, facts-only) had to be taken on trust. Scripted with real delays so
+    // the live counter and the finished-duration gate (SPEC-47) both fire.
+    if (input.text.includes("TOOLS")) {
+      this.toolScript = this.runToolScript();
+      return;
+    }
     // "THINK" → emit a reasoning trace (folded thinking card) then a reply.
     if (input.text.includes("THINK")) {
       this.emitEvent({
@@ -288,13 +332,167 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     }, echoDelayMs);
   }
 
+  /**
+   * A representative tool turn: reasoning, a safe read, a multi-command shell
+   * call, a grep, an edit (diff body), a failing shell call, and a destructive
+   * one. Every `tool.call.start` is closed — a dangling start renders as a row
+   * that spins forever.
+   */
+  private async runToolScript(): Promise<void> {
+    this.emit("status", "running");
+    // Release any script still in flight first. The token below would stop it
+    // emitting, but its pending timer is a shared field: left running, that
+    // timer fires later and nulls THIS script's handles, so a subsequent cancel
+    // has nothing to clear and the script cannot be aborted at all.
+    this.abortToolScript();
+    const run = ++this.toolRun;
+    const live = () => this.toolRun === run;
+    // The two long calls exist so the duration token clears SPEC-47's 2 s floor
+    // in the live loop. A unit test only cares about the event shape, so the
+    // scale is overridable rather than the script being duplicated.
+    const scale = Number(process.env.MAKIT_STUB_TOOL_SCALE ?? "1") || 1;
+    const wait = (ms: number) =>
+      new Promise<void>((resolve) => {
+        this.toolWaitResolve = resolve;
+        this.toolTimeout = setTimeout(() => {
+          this.toolTimeout = undefined;
+          this.toolWaitResolve = undefined;
+          resolve();
+        }, ms * scale);
+      });
+
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "agent.thinking",
+      payload: {
+        text:
+          "The risk tint fires on edit/write/bash, so it is on for almost every " +
+          "row; monochrome loses nothing and buys back the amber for something " +
+          "that is actually exceptional.",
+      },
+    });
+    await wait(60);
+
+    type Call = {
+      name: string;
+      args: Record<string, unknown>;
+      risk: "safe" | "risky" | "destructive";
+      /** Milliseconds the call "takes" — drives the duration token. */
+      ms: number;
+      exitCode?: number;
+      summary: string;
+      output?: string;
+    };
+
+    const calls: Call[] = [
+      {
+        name: "read",
+        args: { path: `${this.workspaceRoot}/app/lib/ui/session/tool_call_card.dart` },
+        risk: "safe",
+        ms: 40,
+        summary: "307 lines read",
+        output:
+          "import 'package:flutter/material.dart';\n" +
+          "import 'package:flutter_riverpod/flutter_riverpod.dart';\n\n" +
+          "class ToolCallCard extends ConsumerStatefulWidget {\n" +
+          "  const ToolCallCard({super.key, required this.item});\n",
+      },
+      {
+        name: "bash",
+        args: {
+          command: `cd ${this.workspaceRoot} && grep -rn "risk" server/src/*.ts | head -20`,
+        },
+        risk: "risky",
+        ms: 2600,
+        summary: "3 matches",
+        output:
+          "server/src/pi-sessions.ts:259:function classifyRisk(name: string) {\n" +
+          "server/src/adapters/acp-map.ts:540:function riskFromKind(kind) {\n" +
+          'server/src/adapters/codex-map.ts:29:type Risk = "safe" | "risky";',
+      },
+      {
+        name: "grep",
+        args: { pattern: "kToolRiskyColor", glob: "*.dart" },
+        risk: "safe",
+        ms: 30,
+        summary: "1 match",
+        output: "app/lib/ui/session/chat_metrics.dart:46:const Color kToolRiskyColor",
+      },
+      {
+        name: "edit",
+        args: {
+          path: "app/lib/ui/session/tool_call_card.dart",
+          oldText: "        size: 16,\n        color: riskColor,",
+          newText: "        size: kToolGlyph,\n        color: riskColor,",
+        },
+        risk: "risky",
+        ms: 40,
+        summary: "+1 −1",
+      },
+      {
+        name: "bash",
+        args: { command: "sed -i '' 's/Ran/Run/g' app/lib/ui/session/tool_renderers.dart" },
+        risk: "risky",
+        ms: 300,
+        exitCode: 1,
+        summary: "exit 1",
+        output: 'sed: 1: "s/Ran/Run/g": invalid command code R',
+      },
+      {
+        name: "bash",
+        args: { command: "rm -rf ~/Library/Caches/dev.getmakit.app && rm -rf build" },
+        risk: "destructive",
+        ms: 2200,
+        summary: "removed 2 paths",
+      },
+    ];
+
+    for (const [i, call] of calls.entries()) {
+      if (!live()) return;
+      const callId = `stub-tool-${Date.now()}-${i}`;
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "tool.call.start",
+        payload: { callId, name: call.name, args: call.args, risk: call.risk },
+      });
+      await wait(call.ms);
+      // Closing the call is not optional — a dangling start spins forever — but
+      // an aborted script must not open the next one either, so the guard sits
+      // on both sides of the wait.
+      if (!live()) return;
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "tool.call.end",
+        payload: {
+          callId,
+          exitCode: call.exitCode ?? 0,
+          summary: call.summary,
+          output: call.output ?? "",
+        },
+      });
+      await wait(40);
+    }
+    if (!live()) return;
+
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "agent.message",
+      payload: { text: "Rows are 31px now, one family, and the amber is gone." },
+    });
+    this.emit("status", "idle");
+  }
+
   /** No mid-turn injection (SPEC-35): the session layer queues instead. */
   async steer(_input: UserInput): Promise<boolean> {
     return false;
   }
 
   async cancel(): Promise<void> {
+    // Both kinds of deferred work are cancelled: a SLOW/FAIL_TURN completion and
+    // a TOOLS script mid-flight. Either left running would emit into the turn
+    // that replaces this one.
     const settled = this.clearPendingTurn();
+    this.abortToolScript();
     if (this.releaseGate()) return;
     // A tracked deferral already settled via `leaveTurn`; an untracked one (SLOW
     // drives the status directly) still needs the idle.
@@ -318,9 +516,14 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   /**
    * Release a parked gate (SPEC-46 T15) without emitting the intermediate
    * "running" that `leaveApproval` would otherwise produce: drop the TURN first
-   * so the tracker has nothing to resume to, then the gate, then settle. A cancel
-   * that left the gate counted would wedge the session for good — `settleIdle`
-   * could never fire again, so every later turn would look stuck.
+   * so the tracker has nothing to resume to, then the gate. A cancel that left
+   * the gate counted would wedge the session for good — `settleIdle` could never
+   * fire again, so every later turn would look stuck.
+   *
+   * The settle is `leaveApproval`'s own job as of SPEC-29: it now settles to
+   * `idle` when the last gate closes and no turn remains (it used to only resume
+   * `running`, which pinned a session whose turn ended before its gate). So this
+   * must NOT settle again — doing so emitted `idle` twice for one cancel.
    *
    * Returns whether there was a gate to release. Called both by `cancel` and when
    * the user *answers* the prompt that raised the gate.
@@ -330,8 +533,32 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     this.turns.leaveTurn(this.gatedTurn);
     this.gatedTurn = undefined;
     this.turns.leaveApproval();
-    this.turns.settleIdle();
     return true;
+  }
+
+  /** Stop an in-flight TOOLS script: clear its pending wait, block the rest. */
+  private abortToolScript(): void {
+    // Bumping the token invalidates the in-flight script for good: a later start
+    // takes a new value, so the cancelled one can never be revalidated.
+    this.toolRun++;
+    if (this.toolTimeout !== undefined) {
+      clearTimeout(this.toolTimeout);
+      this.toolTimeout = undefined;
+    }
+    // Settle the wait so the script resumes, sees the flag and returns. Without
+    // this it never runs again and its frame is never released.
+    this.toolWaitResolve?.();
+    this.toolWaitResolve = undefined;
+  }
+
+  /**
+   * Graceful close. The stub has no agent-side state to release, but it records
+   * the call and cancels like the real thing so the keyless e2e loop can prove
+   * the close path runs end-to-end (`test/e2e-server.ts --mode stub`).
+   */
+  async close(): Promise<void> {
+    this.closed = true;
+    await this.cancel();
   }
 
   /**
@@ -444,6 +671,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     // the deferred turn below cannot emit a status for an adapter already gone.
     this.exited = true;
     this.clearPendingTurn();
+    this.abortToolScript();
     this.emit("exit", null);
   }
 

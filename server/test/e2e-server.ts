@@ -75,27 +75,130 @@ function parseArgs(argv: string[]): E2EArgs {
 
 /**
  * A scripted `Exec` for the ports scanner: `lsof` (listeners), `ps` (process
- * table) and `lsof -d cwd` (the working dir), all fixed. The single listener
- * runs in `projectPath`, so attribution maps it to that project's primary
- * worktree and the app paints a glyph on the seeded row.
+ * table), `lsof -d cwd` (the working dir) and `docker ps`, all fixed.
+ *
+ * It stages one of every state the ports UI can render, so the running app can be
+ * driven and screenshotted without waiting for a machine to happen to be in each
+ * of them:
+ *
+ *  - `:5173 vite`      — owned by the project, healthy → killable, watchable, and
+ *                        the one eligible for a browser forward (SPEC-44).
+ *  - `:5175 vite`      — owned but **refused** (a wedged zombie): the case SPEC-43
+ *                        exists for, and NOT forwardable (it never spoke HTTP).
+ *  - `:5432 postgres`  — published by a docker container, bound `0.0.0.0`
+ *                        (SPEC-42 D13: docker is ownership, reach stays exposed).
+ *  - `:5180`, `:5181`  — orphans, running from a worktree that is gone, so the
+ *                        orphans section and `Kill all orphans (2)` appear.
+ *  - `:22 sshd`        — an unowned system listener, which must be refused.
+ *
+ * PIDs are fictional, so `signal` is injected by the caller and NOTHING is ever
+ * signalled for real — a `process.kill(424242)` could land on an unrelated
+ * process. A "killed" pid simply stops appearing in the scan, which is what makes
+ * the kill visibly work in the UI.
  */
-function makeDeterministicPortsExec(projectPath: string) {
-  const PID = 424242;
+const E2E_PIDS = {
+  vite: 424242,
+  zombie: 424244,
+  docker: 424243,
+  orphanA: 424245,
+  orphanB: 424246,
+  sshd: 424247,
+} as const;
+
+/** Where the orphans are running from — a worktree the user has removed. */
+const E2E_GONE_WORKTREE = "/tmp/makit-e2e-removed-wt";
+
+function makeDeterministicPortsExec(projectPath: string, killed: Set<number>) {
+  const alive = (pid: number): boolean => !killed.has(pid);
   return async (cmd: string, cmdArgs: string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
     if (cmd === "lsof" && cmdArgs.includes("-iTCP")) {
-      return { code: 0, stdout: [`p${PID}`, "u501", "f10", "PTCP", "n127.0.0.1:5173"].join("\n"), stderr: "" };
+      const rows: string[] = [];
+      const push = (pid: number, addr: string, uid = "501"): void => {
+        if (!alive(pid)) return;
+        rows.push(`p${pid}`, `u${uid}`, "PTCP", `n${addr}`);
+      };
+      push(E2E_PIDS.vite, "127.0.0.1:5173");
+      push(E2E_PIDS.zombie, "127.0.0.1:5175");
+      push(E2E_PIDS.docker, "0.0.0.0:5432");
+      push(E2E_PIDS.orphanA, "127.0.0.1:5180");
+      push(E2E_PIDS.orphanB, "127.0.0.1:5181");
+      push(E2E_PIDS.sshd, "0.0.0.0:22", "0");
+      return { code: 0, stdout: rows.join("\n"), stderr: "" };
     }
     if (cmd === "ps") {
-      return { code: 0, stdout: `  ${PID} 1 01:23:45 node vite --host 127.0.0.1 --port 5173`, stderr: "" };
+      // `etime` drives `startedAt`, which is the identity field a kill verifies.
+      return {
+        code: 0,
+        stdout: [
+          `  ${E2E_PIDS.vite} 1 01:23:45 node vite --host 127.0.0.1 --port 5173`,
+          `  ${E2E_PIDS.zombie} 1 06:12:00 node vite --host 127.0.0.1 --port 5175`,
+          `  ${E2E_PIDS.docker} 1 02:00:00 com.docker.backend`,
+          `  ${E2E_PIDS.orphanA} 1 48:00:00 node vite --port 5180`,
+          `  ${E2E_PIDS.orphanB} 1 48:00:00 node storybook dev -p 5181`,
+          `  ${E2E_PIDS.sshd} 1 240:00:00 /usr/sbin/sshd`,
+        ].join("\n"),
+        stderr: "",
+      };
+    }
+    if (cmd === "docker") {
+      return {
+        code: 0,
+        stdout: `e2e-db-1\t0.0.0.0:5432->5432/tcp\t${projectPath}/compose.yml`,
+        stderr: "",
+      };
     }
     if (cmd === "lsof") {
-      return { code: 0, stdout: [`p${PID}`, "fcwd", `n${projectPath}`].join("\n"), stderr: "" };
+      return {
+        code: 0,
+        stdout: [
+          `p${E2E_PIDS.vite}`, "fcwd", `n${projectPath}`,
+          `p${E2E_PIDS.zombie}`, "fcwd", `n${projectPath}`,
+          // The orphans' cwd is the REMOVED worktree: that plus the port history
+          // below is what makes them classify as orphans (SPEC-42 D10).
+          `p${E2E_PIDS.orphanA}`, "fcwd", `n${E2E_GONE_WORKTREE}`,
+          `p${E2E_PIDS.orphanB}`, "fcwd", `n${E2E_GONE_WORKTREE}`,
+          `p${E2E_PIDS.sshd}`, "fcwd", "n/",
+        ].join("\n"),
+        stderr: "",
+      };
     }
     return { code: 0, stdout: "", stderr: "" };
   };
 }
 
+/**
+ * Pre-seed the two on-disk stores the ports feature reads, so the app opens with
+ * a populated screen instead of needing several minutes of history to accrue:
+ *  - `port-history.json` remembers a worktree that is GONE (its two ports then
+ *    classify as orphans),
+ *  - `watched-ports.json` marks `:5173` as watched, so the detail sheet's toggle
+ *    renders in its on state.
+ */
+function seedPortStores(home: string, projectPath: string): void {
+  mkdirSync(home, { recursive: true });
+  const now = Date.now();
+  writeFileSync(
+    resolve(home, "port-history.json"),
+    JSON.stringify({
+      entries: [
+        {
+          worktreePath: E2E_GONE_WORKTREE,
+          branch: "feat/desktop-tabs",
+          ports: [5180, 5181],
+          firstSeen: now - 7 * 24 * 60 * 60 * 1000,
+          lastSeen: now - 2 * 24 * 60 * 60 * 1000,
+        },
+      ],
+    }, null, 2),
+  );
+  writeFileSync(
+    resolve(home, "watched-ports.json"),
+    JSON.stringify([{ worktreePath: projectPath, port: 5173 }], null, 2),
+  );
+}
+
 function seedDeviceRegistry(home: string, bearer: string, cliBearer: string): void {
+
   mkdirSync(home, { recursive: true });
   const phone: PairedDevice = {
     id: "e2e-device",
@@ -161,6 +264,10 @@ async function main(): Promise<void> {
   // hiding it.
   const cliBearer = `${args.bearer}-cli`;
   seedDeviceRegistry(makitHome, args.bearer, cliBearer);
+  seedPortStores(makitHome, args.project);
+
+  /** Pids a kill has "terminated" — they stop appearing in the scripted scan. */
+  const killedPids = new Set<number>();
 
   const cert = await loadOrCreateCert();
   const registry = new DeviceRegistry();
@@ -202,7 +309,16 @@ async function main(): Promise<void> {
     // ports.snapshot frame path (attribute + broadcast) rather than an
     // indicator nothing feeds. One listener whose cwd IS the project, so it is
     // attributed to that project's primary worktree.
-    ports: { exec: makeDeterministicPortsExec(args.project) },
+    ports: {
+      exec: makeDeterministicPortsExec(args.project, killedPids),
+      // Fictional pids: never signal for real (see makeDeterministicPortsExec).
+      // A SIGTERM just removes the listener from the next scan, so the kill is
+      // visibly effective in the UI.
+      signal: (pid) => {
+        killedPids.add(pid);
+      },
+      sleep: async () => {},
+    },
   });
 
   // Wire the loopback bridge so agent connectors can do reverse-RPC

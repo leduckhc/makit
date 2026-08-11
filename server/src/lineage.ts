@@ -13,13 +13,13 @@
 export interface LineageNode {
   readonly id: string;
   readonly parentId?: string;
-  /** Archived sessions are not counted as live children (SPEC-29). */
-  readonly archived?: boolean;
+  /** Closed sessions are not counted as live children (SPEC-29). */
+  readonly closed?: boolean;
 }
 
 /** A child may sit at most this deep (a chain of MAX_SPAWN_DEPTH spawns). */
 export const MAX_SPAWN_DEPTH = 3;
-/** A session may have at most this many live (non-archived) children. */
+/** A session may have at most this many live (non-closed) children. */
 export const MAX_LIVE_CHILDREN = 4;
 
 /**
@@ -40,11 +40,11 @@ export function spawnDepth(parentId: string, nodes: ReadonlyMap<string, LineageN
   return depth;
 }
 
-/** Live (non-archived) sessions whose parent is `parentId`. */
+/** Live (non-closed) sessions whose parent is `parentId`. */
 export function liveChildCount(parentId: string, nodes: Iterable<LineageNode>): number {
   let n = 0;
   for (const node of nodes) {
-    if (node.parentId === parentId && !node.archived) n += 1;
+    if (node.parentId === parentId && !node.closed) n += 1;
   }
   return n;
 }

@@ -20,6 +20,7 @@ import { DEFAULT_SESSION_TITLE, type ApprovalPolicy, type ProjectDTO, type RepoD
 import { spawnBoundError, spawnDepth, type LineageNode } from "./lineage.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
+import { withDeadline } from "./adapters/deadline.js";
 import { buildAdapter, piAcpSpec } from "./agent_factory.js";
 import { listAcpSessions } from "./adapters/acp.js";
 import { listCodexThreads } from "./adapters/codex.js";
@@ -129,6 +130,15 @@ export interface ManagerOpts {
    */
   capabilityCache?: CapabilityCache;
   /**
+   * Deadline for the graceful `adapter.close()` inside {@link SessionManager.closeSession}
+   * (default {@link DEFAULT_CLOSE_GRACE_MS}). Enforces the half of the
+   * {@link AgentAdapter.close} contract
+   * an implementation cannot be trusted with: it must not HANG. A hang would
+   * strand teardown before `kill()` — holding the very RSS close exists to free
+   * — and leave an idle sweep permanently in flight.
+   */
+  closeGraceMs?: number;
+  /**
    * The single GitHub gateway (SPEC-32): every `gh` read for PR data routes
    * through it so cost, cache, dedupe, and quota accounting live in one place.
    * Injected so tests can substitute a fake (no subprocesses); omitted in
@@ -159,6 +169,14 @@ function reason(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/**
+ * Backstop deadline for a graceful `adapter.close()` before {@link SessionManager.closeSession}
+ * reaps regardless. Must stay strictly above every adapter's own close deadline
+ * (e.g. `ACP_CLOSE_TIMEOUT`) so the adapter gets to give up first; see the
+ * ordering test in `manager.test.ts`.
+ */
+export const DEFAULT_CLOSE_GRACE_MS = 10_000;
+
 interface ProjectEntry {
   dto: ProjectDTO;
 }
@@ -168,6 +186,12 @@ export class SessionManager extends EventEmitter {
   private readonly sessions = new Map<string, Session>();
   /** pi session uuid → live makit session id, so re-attach reuses the process. */
   private readonly attachedByPi = new Map<string, string>();
+  /**
+   * In-flight closes, keyed by session id. Teardown awaits the agent, during
+   * which the session still reads `closed === false` with its live adapter
+   * installed — so input paths MUST await this rather than racing it.
+   */
+  private readonly closeInFlight = new Map<string, Promise<void>>();
   /** In-flight attaches, so concurrent attach calls collapse onto one process. */
   private readonly attachInFlight = new Map<string, Promise<Session>>();
   /** In-flight draft promotions, keyed by session id, so concurrent first
@@ -184,6 +208,8 @@ export class SessionManager extends EventEmitter {
   private readonly defaultAgentId: string;
   private readonly store?: EventStore;
   private capabilityCache?: CapabilityCache;
+  /** Deadline for a graceful `adapter.close()` before we reap regardless. */
+  private readonly closeGraceMs: number;
   private bridge?: BridgeBinding;
   private readonly _gateway: GithubGateway;
 
@@ -195,6 +221,7 @@ export class SessionManager extends EventEmitter {
     this.defaultAgentId = "pi";
     this.store = opts.store;
     this.capabilityCache = opts.capabilityCache;
+    this.closeGraceMs = opts.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
     // The single GitHub gateway (SPEC-32). A real one over git.ts's `run` unless
     // a fake is injected; `run` resolves `gh` via PATH, so the test PATH-shim
     // keeps working. Constructed here does NOT self-refresh (no subprocess).
@@ -249,7 +276,7 @@ export class SessionManager extends EventEmitter {
         agentSessionId: meta.agentSessionId,
         branch: meta.branch,
         worktreePath: meta.worktreePath,
-        archived: meta.archived,
+        closed: meta.closed,
         hydrateFrom: () => store.read(meta.id),
       });
       this.sessions.set(session.id, session);
@@ -304,24 +331,24 @@ export class SessionManager extends EventEmitter {
   }
 
   listSessions() {
-    // Archived sessions (SPEC-29) are hidden from the ACTIVE list, but kept in
+    // Closed sessions (SPEC-29) are hidden from the ACTIVE list, but kept in
     // the registry (resumable + restorable). `allSessions()` still returns them
     // for fan-out/lookup; only this DTO list excludes them.
-    return [...this.sessions.values()].filter((s) => !s.archived).map((s) => s.toDTO());
+    return [...this.sessions.values()].filter((s) => !s.closed).map((s) => s.toDTO());
   }
 
-  /** The archived sessions (SPEC-29), for the "Show archived" list. Newest first.
+  /** The closed sessions (SPEC-29), for the "Show closed" list. Newest first.
    *  Each is tagged `orphaned` when its recorded worktree is no longer an active
    *  worktree of the project (e.g. the worktree was removed) so the UI can flag
    *  it with a "worktree removed" chip. Restoring such a session runs it at the
-   *  repo root (see {@link unarchiveSession}) — there is no recreate-worktree
+   *  repo root (see {@link reopenSession}) — there is no recreate-worktree
    *  path. Sessions whose project has been removed are omitted entirely —
    *  they're unreachable (no repo/cwd). */
-  async listArchivedSessions(): Promise<SessionDTO[]> {
-    const archived = [...this.sessions.values()].filter((s) => s.archived);
+  async listClosedSessions(): Promise<SessionDTO[]> {
+    const closed = [...this.sessions.values()].filter((s) => s.closed);
     const liveByProject = new Map<string, Set<string>>();
     const out: SessionDTO[] = [];
-    for (const session of archived) {
+    for (const session of closed) {
       const project = this.projects.get(session.projectId);
       if (!project) continue; // project removed → unreachable, hide it
       let live = liveByProject.get(session.projectId);
@@ -347,8 +374,8 @@ export class SessionManager extends EventEmitter {
   /** SPEC-29 "orphaned": the session's recorded worktree is no longer a live
    *  worktree of its project. A repo-root session (no distinct worktree) is
    *  never orphaned; an empty {@link liveWorktreePaths} set is unproven (git
-   *  failure) → not orphaned. This single predicate drives BOTH the archive
-   *  view's "worktree removed" chip and the detach-to-root on unarchive, so the
+   *  failure) → not orphaned. This single predicate drives BOTH the closed
+   *  view's "worktree removed" chip and the detach-to-root on reopen, so the
    *  flag a user sees and the action a restore takes can never diverge. */
   private isOrphaned(worktreePath: string | undefined, projectPath: string, live: Set<string>): boolean {
     if (worktreePath == null) return false;
@@ -364,7 +391,7 @@ export class SessionManager extends EventEmitter {
   /**
    * SPEC-46 D9/T11: the reason a new child of `parentId` may not be spawned, or
    * null when it may. Depth and live-child count are recomputed here from the
-   * persisted `parentId` links of every session (archived ones stay in the map,
+   * persisted `parentId` links of every session (closed ones stay in the map,
    * killed ones are gone) — never from the forgeable `MAKIT_SPAWN_DEPTH`.
    */
   checkSpawnBounds(parentId: string): string | null {
@@ -384,7 +411,7 @@ export class SessionManager extends EventEmitter {
   private lineageNodes(): Map<string, LineageNode> {
     const nodes = new Map<string, LineageNode>();
     for (const s of this.sessions.values()) {
-      nodes.set(s.id, { id: s.id, parentId: s.parentId, archived: s.archived });
+      nodes.set(s.id, { id: s.id, parentId: s.parentId, closed: s.closed });
     }
     return nodes;
   }
@@ -907,20 +934,19 @@ export class SessionManager extends EventEmitter {
     // removal then failed, leaving the worktree on disk without its sessions.
     await removeWorktree(repoPath, worktreePath, true);
     // Reconcile sessions bound to the removed worktree (SPEC-29):
-    //  - archived  → leave as-is (already preserved; it simply becomes orphaned)
-    //  - draft     → kill (no transcript to keep; must not launch in a deleted dir)
-    //  - live      → ARCHIVE, not kill — preserve the transcript + resume handle
-    //               (mirrors close==archive). It survives as an orphaned archived
-    //               session, restorable later.
+    //  - closed  → leave as-is (already preserved; it simply becomes orphaned)
+    //  - draft   → kill (no transcript to keep; must not launch in a deleted dir)
+    //  - live    → CLOSE, not kill — preserve the transcript + resume handle.
+    //              It survives as an orphaned closed session, reopenable later.
     for (const session of this.sessions.values()) {
       if (session.projectId !== projectId) continue;
       const bound = session.boundWorktreePath;
       if (!bound || resolve(bound) !== target) continue;
-      if (session.archived) continue;
+      if (session.closed) continue;
       if (session.pending) {
         await this.killSession(session.id);
       } else {
-        await this.archiveSession(session.id);
+        await this.closeSession(session.id);
       }
     }
   }
@@ -1003,6 +1029,10 @@ export class SessionManager extends EventEmitter {
    */
   async promotePendingSession(session: Session, firstMessage: string): Promise<boolean> {
     if (!session.pending) return true;
+    // Name the harness in any failure. Promotion only STARTS the agent — the
+    // worktree was already created at draft time — so the error must not blame
+    // git for what is almost always a missing/failing agent binary.
+    const agentId = session.lifecycle.phase === "draft" ? session.lifecycle.agent : session.agent;
     // Collapse concurrent first-message promotions onto one in-flight promise:
     // two callers both seeing phase "draft" must NOT each create a worktree +
     // adapter. The second caller awaits the same result the first produces.
@@ -1014,7 +1044,7 @@ export class SessionManager extends EventEmitter {
         await this.startPendingSession(session.id, firstMessage);
         return true;
       } catch (e) {
-        session.recordError(`could not create worktree: ${(e as Error).message}`);
+        session.recordError(`could not start ${agentId}: ${(e as Error).message}`);
         return false;
       }
     })();
@@ -1224,48 +1254,99 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Archive a session (SPEC-29): a soft, recoverable hide. Sets the persisted
-   * `archived` flag — so it drops from the active session list and survives a
-   * restart — and stops the live agent process (archived sessions shouldn't
-   * hold one), swapping in the detached placeholder. The event log + resume
-   * handle are KEPT, so `unarchive` + a later subscribe resume it exactly like
-   * any cold session. Deliberately makit-side only: we do NOT call the back
-   * end's native archive, so the underlying session/thread stays directly
-   * resumable (no archived-thread-resume edge case). Idempotent.
+   * Close a session (SPEC-29): release the agent, keep the session. Sets the
+   * persisted `closed` flag — so it drops from the active session list and
+   * survives a restart — and frees the live agent, swapping in the detached
+   * placeholder.
+   *
+   * Freeing happens in two steps, both required:
+   *  1. `adapter.close()` — the agent's own release primitive (ACP
+   *     `session/close`, codex `thread/unsubscribe`), which cancels any in-flight
+   *     turn and lets the agent flush and drop the session cleanly.
+   *  2. `adapter.kill()` — reaps the process. Since makit runs ONE agent process
+   *     per session, step 1 alone reclaims no memory; the RSS only comes back
+   *     when the child dies (see `child_transport`'s SIGTERM→SIGKILL escalation).
+   *
+   * The event log + resume handle are KEPT, so `reopenSession` + a later
+   * subscribe resume it exactly like any cold session. Deliberately does NOT use
+   * the back end's native archive/delete, so the underlying session/thread stays
+   * directly resumable and listable. Idempotent.
    */
-  async archiveSession(id: string): Promise<void> {
+  async closeSession(id: string): Promise<void> {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
-    if (session.archived) return;
+    if (session.closed) return;
+    // Collapse concurrent closes (a user tap racing an idle sweep) onto one
+    // teardown, and publish it so input paths can wait instead of prompting an
+    // agent that is being reaped.
+    const already = this.closeInFlight.get(id);
+    if (already) return already;
+    const run = this.runClose(id, session);
+    this.closeInFlight.set(id, run);
+    try {
+      await run;
+    } finally {
+      this.closeInFlight.delete(id);
+    }
+  }
+
+  /** The teardown itself; {@link closeSession} owns de-duplication. */
+  private async runClose(id: string, session: Session): Promise<void> {
     // SPEC-46 D3: the session is ending, so its agent credential must stop
-    // authenticating now. Dropped BEFORE the kill, which is best-effort here — a
-    // token that outlived a failed kill is the exact case that matters, since the
-    // agent process may still be alive to use it.
+    // authenticating now — and before the teardown below, every step of which is
+    // deliberately best-effort. A token that outlives a close whose kill() gave
+    // up is the exact case that matters, because that agent process may still be
+    // alive to use it.
     sessionTokens.drop(id);
-    // Best-effort: archiving is the recovery path in the removeWorktree loop
-    // (called after git already deleted the tree), so a rejecting kill() must
-    // not abort the archive — or the reconciliation of the remaining sessions.
+    // Stop means stop (SPEC-35), as with `cancel`: drop pending mid-turn input
+    // before the agent is asked to close. Otherwise the `idle` an adapter emits
+    // while cancelling its turn triggers `flushNext()` and a queued message is
+    // prompted into the process we are about to reap.
+    session.clearQueue();
+    // Best-effort, in order: closing is also the recovery path in the
+    // removeWorktree loop (called after git already deleted the tree), so
+    // neither a rejecting close() nor a rejecting kill() may abort the close —
+    // or the reconciliation of the remaining sessions. A wedged agent must
+    // never be able to keep its memory.
+    // Bounded and swallowed, in one place for every back end: `close()` talks to
+    // the agent, and a wedged agent is exactly the one that needs reaping. An
+    // unbounded or throwing await would strand teardown here — `kill()` would
+    // never run, so the RSS stays held and an idle sweep never finishes.
+    try {
+      await withDeadline(session.adapter.close(), this.closeGraceMs, "agent close");
+    } catch (e) {
+      log.warn(`[makit] closeSession(${id.slice(0, 8)}): agent close gave up: ${reason(e)}`);
+    }
     try {
       await session.adapter.kill();
     } catch (e) {
-      log.warn(`[makit] archiveSession(${id}): kill failed: ${(e as Error).message}`);
+      log.warn(`[makit] closeSession(${id.slice(0, 8)}): kill failed: ${reason(e)}`);
     }
     session.replaceAdapter(new DetachedAdapter(session.agent));
-    session.setArchived(true);
+    session.setClosed(true);
   }
 
   /**
-   * Restore an archived session (SPEC-29): clear the flag so it returns to the
+   * Reopen a closed session (SPEC-29): clear the flag so it returns to the
    * active list. It stays cold until the next subscribe re-attaches it (resume
    * by its kept native id). Idempotent.
    */
-  async unarchiveSession(id: string): Promise<void> {
+  async reopenSession(id: string): Promise<void> {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
-    // If the worktree was deleted while archived, restoring must detach the
+    // Teardown sets `closed = true` only after awaiting the agent, so clearing
+    // the flag now would be overwritten moments later and the session would stay
+    // closed although the user asked for it back. Wait the close out first.
+    const closing = this.closeInFlight.get(id);
+    if (closing) await closing.catch(() => {});
+    // Idempotent, as documented: on an already-open session the work below is not
+    // just wasted (a `git worktree list` shell-out) but harmful — `detachToRoot()`
+    // would clear a LIVE session's worktree binding.
+    if (!session.closed) return;
+    // If the worktree was deleted while closed, restoring must detach the
     // session to the repo root (SPEC-29) — otherwise its stale path matches no
     // live worktree and it renders in no view. Uses the same orphaned predicate
-    // as the archive-list chip, so the flag and the action never diverge;
+    // as the closed-list chip, so the flag and the action never diverge;
     // reattachSession already falls back to the repo root for a missing
     // worktree, so resume is unaffected.
     const project = session.worktreePath ? this.projects.get(session.projectId) : undefined;
@@ -1275,7 +1356,31 @@ export class SessionManager extends EventEmitter {
         session.detachToRoot();
       }
     }
-    session.setArchived(false);
+    session.setClosed(false);
+  }
+
+  /**
+   * Make a session live for INPUT: reopen it first when it is closed, then
+   * re-attach as usual. Sending a message is unambiguous intent to continue, so
+   * an auto-closed session comes back invisibly — the user just sees their agent
+   * pick up where it left off.
+   *
+   * Deliberately NOT what `sub` uses: opening a closed session to read its
+   * transcript must never respawn an agent (that would undo the sweep every time
+   * someone browsed the Closed list). {@link ensureLive} keeps refusing closed
+   * sessions for exactly that reason.
+   */
+  async ensureLiveForInput(sessionId: string): Promise<void> {
+    // A close in flight still reads `closed === false` with the live adapter
+    // installed, so acting now would prompt an agent mid-reap. Let teardown
+    // finish, then bring the session back deliberately.
+    const closing = this.closeInFlight.get(sessionId);
+    if (closing) await closing.catch(() => {});
+    const session = this.sessions.get(sessionId);
+    if (session?.closed) {
+      await this.reopenSession(sessionId);
+    }
+    await this.ensureLive(sessionId);
   }
 
   /** Kill a session's agent process and drop it from the registry. */
@@ -1412,7 +1517,7 @@ export class SessionManager extends EventEmitter {
    * possibly stale snapshot.
    *
    * Deliberately silent on failure: a re-attach that cannot happen (unknown id,
-   * history-only, archived, a draft awaiting promotion, or an agent that won't
+   * history-only, closed, a draft awaiting promotion, or an agent that won't
    * start) must still let the caller proceed — `sub` then replays the transcript
    * read-only, and a send falls through to the cold-session `session.error`.
    */
@@ -1432,13 +1537,13 @@ export class SessionManager extends EventEmitter {
     // Only a cold session needs this. `DetachedAdapter` is the honest signal: a
     // live agent that merely exited keeps its real adapter, and status alone
     // cannot tell the two apart.
-    if (!session || !(session.adapter instanceof DetachedAdapter)) return;
+    if (!session || !session.cold) return;
     // A draft also holds a DetachedAdapter, but its path forward is promotion
     // (which names the branch), never re-attach.
     if (session.pending) return;
-    // Archiving deliberately stopped the process (SPEC-29); only unarchive
+    // Closing deliberately released the process (SPEC-29); only reopen
     // may bring it back.
-    if (session.archived) return;
+    if (session.closed) return;
     if (!session.resumable) return;
     try {
       await this.reattachSession(sessionId);

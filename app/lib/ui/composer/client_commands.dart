@@ -16,6 +16,8 @@ import '../../store/connection.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../widgets/sheet_header.dart';
 import '../widgets/searchable_list_sheet.dart';
 import '../../app/routes.dart';
@@ -69,22 +71,22 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
     name: 'new',
     description: 'Start a fresh agent in this worktree',
     handler: (context, ref, {required sessionId, required arg}) async {
+      // Resolved before the first await: `ref` throws once its widget is
+      // unmounted, and the record must survive the thing that reported to it.
+      final status = ref.status;
       final session = ref.read(sessionsProvider).byId(sessionId);
       if (session == null) return;
-      final messenger = ScaffoldMessenger.of(context);
       // SPEC-30 decision 18: the new agent runs in THIS pane's worktree, so no
       // dialog is needed. A session with no worktree on disk yet cannot answer
       // "where does it run?" — spawning bare would silently land the agent in
       // the repo's primary checkout, so refuse and say why.
       final worktreePath = session.worktreePath;
       if (worktreePath == null) {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'This session has no worktree yet — send a message '
-              'first, or start one from the sidebar.',
-            ),
-          ),
+        status.warning(
+          'This session has no worktree yet — send a message '
+          'first, or start one from the sidebar.',
+          source: StatusSources.session,
+          sessionId: sessionId,
         );
         return;
       }
@@ -99,8 +101,11 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
         if (!context.mounted) return;
         context.go(routeForSession(newId));
       } catch (e) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('Could not spawn session: $e')),
+        status.failure(
+          'Could not spawn session',
+          error: e,
+          source: StatusSources.session,
+          sessionId: sessionId,
         );
       }
     },
@@ -182,42 +187,56 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
     handler: (context, ref, {required sessionId, required arg}) async {
       final meta = ref.read(sessionMetaProvider(sessionId));
       if (meta == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Not available for this session')),
+        ref.status.warning(
+          'Not available for this session',
+          source: StatusSources.agent,
+          sessionId: sessionId,
         );
         return;
       }
       ref
           .read(storeControllerProvider.notifier)
           .sendSessionAction(sessionId, 'compact');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Compact requested')));
+      ref.status.info(
+        'Compact requested',
+        source: StatusSources.agent,
+        sessionId: sessionId,
+      );
     },
   ),
   ClientCommand(
     name: 'thinking',
     description: 'Set the agent thinking level',
     handler: (context, ref, {required sessionId, required arg}) async {
+      // Resolved before the first await: `ref` throws once its widget is
+      // unmounted, and the record must survive the thing that reported to it.
+      final status = ref.status;
       final level = await _pickThinkingLevel(context);
       if (level == null || !context.mounted) return;
       ref
           .read(storeControllerProvider.notifier)
           .sendSessionAction(sessionId, 'thinking', args: {'level': level});
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Thinking level: $level')));
+      status.info(
+        'Thinking level: $level',
+        source: StatusSources.agent,
+        sessionId: sessionId,
+      );
     },
   ),
   ClientCommand(
     name: 'model',
     description: 'Switch the agent model',
     handler: (context, ref, {required sessionId, required arg}) async {
+      // Resolved before the first await: `ref` throws once its widget is
+      // unmounted, and the record must survive the thing that reported to it.
+      final status = ref.status;
       final meta = ref.read(sessionMetaProvider(sessionId));
       final models = meta?.models ?? const [];
       if (models.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No models available for this session')),
+        status.warning(
+          'No models available for this session',
+          source: StatusSources.agent,
+          sessionId: sessionId,
         );
         return;
       }
@@ -238,15 +257,20 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
             'model',
             args: {'provider': picked.provider, 'id': picked.id},
           );
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Switching to ${picked.name}…')));
+      status.progress(
+        'Switching to ${picked.name}…',
+        source: StatusSources.agent,
+        sessionId: sessionId,
+      );
     },
   ),
   ClientCommand(
     name: 'name',
     description: 'Rename this session (shown in the session list)',
     handler: (context, ref, {required sessionId, required arg}) async {
+      // Resolved before the first await: `ref` throws once its widget is
+      // unmounted, and the record must survive the thing that reported to it.
+      final status = ref.status;
       final current = ref.read(sessionsProvider).byId(sessionId)?.title ?? '';
       final title = arg.isNotEmpty
           ? arg
@@ -255,9 +279,11 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       ref
           .read(storeControllerProvider.notifier)
           .sendSessionAction(sessionId, 'name', args: {'name': title});
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Renamed to “$title”')));
+      status.success(
+        'Renamed to “$title”',
+        source: StatusSources.session,
+        sessionId: sessionId,
+      );
     },
   ),
 ];

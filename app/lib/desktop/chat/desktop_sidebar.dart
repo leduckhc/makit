@@ -1,9 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import '../../app/routes.dart';
 import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../store/models.dart';
@@ -15,8 +15,11 @@ import '../../ui/ports/session_ports_glyph.dart';
 import '../../ui/widgets/pr_state_style.dart';
 import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
+import '../desktop_ports_route.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../metrics/metrics_button.dart';
-import 'archived_sidebar_view.dart';
+import 'closed_sidebar_view.dart';
 import 'connection_endpoint.dart';
 import 'github_budget_button.dart';
 import 'groups/group.dart';
@@ -46,7 +49,7 @@ class DesktopSidebar extends ConsumerWidget {
     final repos = ref.watch(reposProvider).repos;
     final sessions = ref.watch(sessionsProvider);
     final selected = ref.watch(selectedSessionProvider);
-    final archived = ref.watch(sidebarArchivedProvider);
+    final closed = ref.watch(sidebarClosedProvider);
     final cs = Theme.of(context).colorScheme;
 
     return Material(
@@ -55,8 +58,8 @@ class DesktopSidebar extends ConsumerWidget {
         children: [
           const _Header(),
           Expanded(
-            child: archived
-                ? const ArchivedSidebarView()
+            child: closed
+                ? const ClosedSidebarView()
                 : repos.isEmpty
                 ? const _EmptySidebar()
                 : ListView(
@@ -88,9 +91,11 @@ class _Header extends ConsumerWidget {
     // The OS titlebar is hidden (TitleBarStyle.hidden), so this strip is the
     // window's drag handle. Its height clears the macOS traffic-light buttons
     // that overlay the top-left corner. The fold button sits just to the right
-    // of the traffic lights and hides the sidebar entirely.
+    // of the traffic lights and hides the sidebar entirely; Activity sits next
+    // to it, so the app's own voice lives in the chrome rather than at the far
+    // end of the footer's telemetry row.
     return const TitleBarStrip(
-      leading: SidebarToggleButton(collapse: true),
+      leading: SidebarToggleControls(collapse: true),
       trailing: Padding(
         padding: EdgeInsets.only(right: 8),
         child: ServerProfileBadge(),
@@ -144,7 +149,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
     // truly dead ones. A cold, RESUMABLE session (e.g. every session right
     // after a server restart, before re-attach) stays visible so it remains
     // discoverable and can be reopened (it auto-attaches on subscribe).
-    // Archived sessions live in the Archived view. Drafts + live sessions stay.
+    // Closed sessions live in the Closed view. Drafts + live sessions stay.
     final sessions = widget.sessions
         .where((s) => s.status != SessionStatus.exited || s.resumable)
         .toList();
@@ -420,7 +425,7 @@ class _RepoMenuButton extends ConsumerWidget {
       onSelected: (value) {
         switch (value) {
           case 'hide':
-            _hideRepo(context, ref);
+            _hideRepo(ref);
         }
       },
       itemBuilder: (context) => [
@@ -440,15 +445,18 @@ class _RepoMenuButton extends ConsumerWidget {
 
   /// Untrack the repo, surfacing failures the way rename/delete do rather than
   /// dropping the rejected command as an unhandled async error.
-  Future<void> _hideRepo(BuildContext context, WidgetRef ref) async {
+  Future<void> _hideRepo(WidgetRef ref) async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     try {
       await ref.read(storeControllerProvider.notifier).removeProject(repo.id);
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Hide failed: $e')));
-      }
+      status.failure(
+        'Could not hide the repo',
+        error: e,
+        source: StatusSources.repo,
+      );
     }
   }
 }
@@ -628,9 +636,14 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                       // D8: explicit navigation to the global
                                       // Ports screen pre-filtered to this repo —
                                       // never a lift of the popover's private
-                                      // open/pinned controller.
-                                      context.go(
-                                        '$kRoutePorts?repo=${repo.id}',
+                                      // open/pinned controller. Pushed on this
+                                      // shell's Navigator: the desktop window is
+                                      // not a router app (desktop_ports_route.dart).
+                                      unawaited(
+                                        DesktopPortsRoute.open(
+                                          Navigator.of(context),
+                                          repoId: repo.id,
+                                        ),
                                       );
                                   }
                                 },
@@ -727,6 +740,9 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   }
 
   Future<void> _renameBranch() async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final repo = widget.repo;
     final worktree = widget.worktree;
     final newName = await showDialog<String>(
@@ -741,15 +757,18 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
           .read(storeControllerProvider.notifier)
           .renameBranch(repo.id, worktree.path, newName);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Rename failed: $e')));
-      }
+      status.failure(
+        'Could not rename the branch',
+        error: e,
+        source: StatusSources.worktree,
+      );
     }
   }
 
   Future<void> _deleteWorktree() async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final repo = widget.repo;
     final worktree = widget.worktree;
     final confirmed = await showDialog<bool>(
@@ -779,11 +798,11 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
           .read(storeControllerProvider.notifier)
           .removeWorktree(repo.id, worktree.path);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
-      }
+      status.failure(
+        'Could not delete the worktree',
+        error: e,
+        source: StatusSources.worktree,
+      );
     }
   }
 }
@@ -1173,8 +1192,7 @@ class _Footer extends ConsumerWidget {
     final server = ref.watch(connectionProvider).server;
     final endpoint = formatEndpoint(server?.host, server?.port);
     final theme = Theme.of(context);
-    final archived = ref.watch(sidebarArchivedProvider) as bool?;
-    final showArchived = archived ?? false;
+    final showClosed = ref.watch(sidebarClosedProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(
@@ -1212,20 +1230,20 @@ class _Footer extends ConsumerWidget {
             onPressed: () => showFolderBrowser(context),
           ),
           IconButton(
-            tooltip: showArchived
+            tooltip: showClosed
                 ? 'Show active sessions'
-                : 'Show archived sessions',
+                : 'Show closed sessions',
             icon: Icon(
-              showArchived
+              showClosed
                   ? PhosphorIconsLight.stackSimple
-                  : PhosphorIconsLight.archiveBox,
+                  : PhosphorIconsLight.moon,
               size: 18,
             ),
-            color: showArchived ? theme.colorScheme.primary : null,
+            color: showClosed ? theme.colorScheme.primary : null,
             visualDensity: VisualDensity.compact,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: () => ref.read(sidebarArchivedProvider.notifier).state =
-                !showArchived,
+            onPressed: () =>
+                ref.read(sidebarClosedProvider.notifier).state = !showClosed,
           ),
           if (onOpenSettings != null)
             IconButton(

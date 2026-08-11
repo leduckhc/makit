@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/pr_bar.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/prefs/preference_entries.dart';
 import 'package:makit/store/prefs/preferences_controller.dart';
@@ -54,6 +56,7 @@ Widget _host(
   String? worktreePath = '/wt/feat-x',
   required void Function(String) onInsert,
   List<PrDirectOp>? ran,
+  StatusCenter? status,
 }) => ProviderScope(
   overrides: [
     preferencesControllerProvider.overrideWith((ref) => controller),
@@ -64,6 +67,7 @@ Widget _host(
         ran.add(op);
         return const PrOpOutcome('done');
       }),
+    if (status != null) statusCenterProvider.overrideWithValue(status),
   ],
   child: MaterialApp(
     home: Scaffold(
@@ -213,10 +217,14 @@ void main() {
 
   group('the call to action', () {
     testWidgets('runs the loudest fact\'s remedy', (tester) async {
+      // With a PR, so the loud fact's own remedy is the CTA — on a PR-less branch
+      // the button is "Ship it", which is deliberately *not* the loud fact's
+      // remedy (it is the whole pre-PR phase; see pr_signals_test.dart).
       String? inserted;
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'pass'),
           uncommittedFiles: 3,
           onInsert: (p) => inserted = p,
         ),
@@ -234,23 +242,45 @@ void main() {
       await controller.set(prCommitPushPromptPreference, 'MY commit prompt');
       String? inserted;
       await tester.pumpWidget(
-        _host(controller, uncommittedFiles: 1, onInsert: (p) => inserted = p),
+        _host(
+          controller,
+          pr: _pr(rollup: 'pass'),
+          uncommittedFiles: 1,
+          onInsert: (p) => inserted = p,
+        ),
       );
       await tester.tap(find.text('Commit & push'));
       await tester.pumpAndSettle();
       expect(inserted, 'MY commit prompt');
     });
 
-    testWidgets('offers to create a PR when the branch has none', (
-      tester,
-    ) async {
+    testWidgets('offers to ship a branch that has no PR yet', (tester) async {
+      // One verb for the whole pre-PR phase, whether or not there is anything
+      // left to commit — the prompt skips the steps already done.
       String? inserted;
       await tester.pumpWidget(
         _host(PreferencesController.ephemeral(), onInsert: (p) => inserted = p),
       );
-      await tester.tap(find.text('Create PR'));
+      await tester.tap(find.text('Ship it'));
       await tester.pumpAndSettle();
-      expect(inserted, PrPromptAction.createPr.defaultPrompt);
+      expect(inserted, PrPromptAction.shipIt.defaultPrompt);
+    });
+
+    testWidgets('a dirty branch with no PR still ships, rather than pushing', (
+      tester,
+    ) async {
+      String? inserted;
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          uncommittedFiles: 3,
+          onInsert: (p) => inserted = p,
+        ),
+      );
+      expect(find.text('Commit & push'), findsNothing);
+      await tester.tap(find.text('Ship it'));
+      await tester.pumpAndSettle();
+      expect(inserted, PrPromptAction.shipIt.defaultPrompt);
     });
 
     testWidgets('rests when nothing is pressing, and inserts nothing', (
@@ -323,6 +353,29 @@ void main() {
       expect(find.textContaining('no commits to open a PR with'), findsNothing);
     });
 
+    testWidgets('a detached head is told the truth, not the primary reason', (
+      tester,
+    ) async {
+      // `canShipIt` is false for three different reasons — a PR exists, the primary
+      // checkout, or no branch at all. The menu only *removes* the entry for the
+      // first, so a detached head reached the disabled row and was told "the
+      // primary checkout is not a branch you ship from", which is simply false.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          branch: null,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.byTooltip('PR actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('this worktree is not on a branch'), findsOneWidget);
+      expect(
+        find.textContaining('primary checkout is not a branch you ship'),
+        findsNothing,
+      );
+    });
+
     testWidgets('a PR-less branch says so, rather than reporting a green build', (
       tester,
     ) async {
@@ -378,7 +431,11 @@ void main() {
       );
     });
 
-    testWidgets('drops "Create PR" once a PR exists', (tester) async {
+    testWidgets('drops "Create PR" and "Ship it" once a PR exists', (
+      tester,
+    ) async {
+      // Both aim at raising the pull request, so both are permanently
+      // meaningless here — removed rather than greyed with a reason.
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
@@ -389,6 +446,7 @@ void main() {
       await tester.tap(find.byTooltip('PR actions'));
       await tester.pumpAndSettle();
       expect(find.text('Create PR'), findsNothing);
+      expect(find.text('Ship it'), findsNothing);
     });
   });
 
@@ -564,10 +622,8 @@ void main() {
       expect(find.textContaining('Delete the local branch'), findsNothing);
     });
 
-    testWidgets('says sessions are archived, after the removal', (
-      tester,
-    ) async {
-      // The server removes the worktree first and *archives* live sessions
+    testWidgets('says sessions are closed, after the removal', (tester) async {
+      // The server removes the worktree first and *closes* live sessions
       // (SPEC-29) rather than stopping them; the dialog claimed the reverse order
       // and the wrong verb.
       await tester.pumpWidget(
@@ -584,7 +640,7 @@ void main() {
       // of the other three drift.
       final ys = [
         tester.getTopLeft(find.textContaining('Remove the worktree')).dy,
-        tester.getTopLeft(find.textContaining('Archive the sessions')).dy,
+        tester.getTopLeft(find.textContaining('Close the sessions')).dy,
         tester.getTopLeft(find.textContaining('Delete the local branch')).dy,
         tester.getTopLeft(find.textContaining('Fast-forward')).dy,
       ];
@@ -781,6 +837,8 @@ void main() {
       // travels with the command, so the guard that stops the wrong branch going
       // is switched off precisely when the app is least sure. Refuse instead.
       final ran = <PrDirectOp>[];
+      final center = StatusCenter();
+      addTearDown(center.dispose);
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
@@ -788,12 +846,13 @@ void main() {
           branch: null,
           onInsert: (_) {},
           ran: ran,
+          status: center,
         ),
       );
       await tester.tap(find.text('Wrap up'));
       await tester.pumpAndSettle();
       expect(ran, isEmpty, reason: 'nothing may be dispatched');
-      expect(find.textContaining('which branch'), findsOneWidget);
+      expect(center.events.single.title, contains('which branch'));
     });
 
     testWidgets('cancelling runs nothing', (tester) async {

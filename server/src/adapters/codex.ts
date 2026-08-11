@@ -21,6 +21,7 @@ import { join, resolve } from "node:path";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { CodexEventMapper } from "./codex-map.js";
 import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js";
+import { RequestTimeoutError, withDeadline } from "./deadline.js";
 import { confirmViaUser, mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord, parseJsonLine } from "./wire.js";
 import { sharedMediaStore, type MediaStore } from "../media/store.js";
@@ -39,26 +40,6 @@ export type CodexTransport = ChildLineTransport;
  * ACP adapter's `ACP_HANDSHAKE_TIMEOUT`.
  */
 const CODEX_HANDSHAKE_TIMEOUT = 15_000;
-
-/** Thrown when a JSON-RPC request times out waiting for a response. */
-class RequestTimeoutError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "RequestTimeoutError";
-  }
-}
-
-/** Rejects with a labelled error when [p] doesn't settle within [ms]. */
-function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const deadline = new Promise<T>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new RequestTimeoutError(`${label} timed out after ${ms}ms`)),
-      ms,
-    );
-  });
-  return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
-}
 
 /**
  * Fallback reasoning-effort levels for the `thought_level` config option when a
@@ -127,7 +108,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    * `load` is false: codex resume does not replay history (nor does makit need
    * it to; the event log is authoritative).
    */
-  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: true, archive: true };
+  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: true, archive: true, close: true };
 
   /**
    * codex's `turn/start` `input[]` is typed `{type:"text", text, text_elements}`;
@@ -407,6 +388,19 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     } else if (id === "thought_level") this.activeEffort = value;
     else return;
     this.emitConfigOptions();
+  }
+
+  /**
+   * codex's counterpart to ACP `session/close`: `thread/unsubscribe` unloads the
+   * thread server-side while leaving it in `thread/list` and resumable through
+   * `thread/resume`. Best-effort — a rejection must not stop {@link kill} from
+   * reclaiming the process, which is what actually returns the memory.
+   */
+  async close(): Promise<void> {
+    if (!this.transport || !this.threadId) return;
+    // Plain request: `request()` already carries its own per-call timeout, and
+    // `SessionManager.closeSession` owns the bound-and-swallow policy.
+    await this.request("thread/unsubscribe", { threadId: this.threadId });
   }
 
   async kill(): Promise<void> {

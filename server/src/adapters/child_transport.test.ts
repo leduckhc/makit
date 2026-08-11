@@ -32,8 +32,15 @@ function fakeSpawn(): {
     });
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
-    child.kill = () => {
+    child.signals = [] as string[];
+    // Mirrors Node: true when the signal was delivered, false when it was not
+    // (already-exited child). `killDelivers` lets a test take the false path.
+    child.killDelivers = true;
+    child.kill = (signal?: string) => {
+      child.signals.push(signal ?? "SIGTERM");
+      if (!child.killDelivers) return false;
       child.killed = true;
+      return true;
     };
     children.push(child);
     return child as unknown as ChildProcess;
@@ -183,6 +190,45 @@ test("dispose kills the child", () => {
   assert.equal(children[0]!.killed, true);
 });
 
+/**
+ * The RSS leak this guards: `dispose()` used to send ONE SIGTERM and hope. An
+ * agent that ignores or is too slow to honour it stayed resident forever —
+ * observed in the wild as `pi` children of a makit daemon still alive after
+ * five days, ~1 GB RSS across 19 processes. A close is not done until the OS
+ * has actually reclaimed the process, so SIGTERM must escalate to SIGKILL.
+ */
+test("dispose escalates to SIGKILL when the child ignores SIGTERM", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+  t.dispose();
+  assert.deepEqual(children[0]!.signals, ["SIGTERM"], "SIGTERM first — give it a chance to flush");
+
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(children[0]!.signals, ["SIGTERM", "SIGKILL"]);
+});
+
+test("dispose does not SIGKILL a child that exits within the grace period", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+  t.dispose();
+  children[0]!.emit("exit", 0, "SIGTERM");
+
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(children[0]!.signals, ["SIGTERM"], "a graceful exit must not be followed by SIGKILL");
+});
+
+test("repeated dispose escalates only once", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+  t.dispose();
+  t.dispose();
+  t.dispose();
+
+  await new Promise((r) => setTimeout(r, 25));
+  const kills = children[0]!.signals.filter((s: string) => s === "SIGKILL");
+  assert.equal(kills.length, 1, `expected exactly one SIGKILL, got ${children[0]!.signals.join(",")}`);
+});
+
 test("an oversized unterminated frame is dropped instead of growing buf unbounded", () => {
   const { spawn, children } = fakeSpawn();
   const t = spawnLineProcess({
@@ -303,4 +349,44 @@ test("pid is undefined when the spawn faults (no child pid)", () => {
   const { spawn } = fakeSpawn(); // fake child never sets .pid
   const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
   assert.equal(t.pid, undefined);
+});
+
+/**
+ * `kill()` returning false means the signal was not delivered — the child is
+ * already gone. Escalating anyway would fire a SIGKILL at a pid the OS may have
+ * recycled, hitting an unrelated process.
+ */
+test("dispose does not escalate when the SIGTERM was not delivered", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+  children[0]!.killDelivers = false;
+
+  t.dispose();
+  assert.deepEqual(children[0]!.signals, ["SIGTERM"], "the attempt is still made");
+
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(children[0]!.signals, ["SIGTERM"], "but no SIGKILL follows an undelivered signal");
+});
+
+/**
+ * `dispose()` is documented as safe to call repeatedly. Once the escalation has
+ * fired, the timer handle is cleared — so a later call before the child settles
+ * used to send a second SIGTERM and schedule a second SIGKILL at a process that
+ * is already being force-killed.
+ */
+test("dispose after the SIGKILL, before exit, does not signal again", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+
+  t.dispose();
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(children[0]!.signals, ["SIGTERM", "SIGKILL"], "escalated once");
+
+  t.dispose(); // the child has not emitted `exit` yet
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(
+    children[0]!.signals,
+    ["SIGTERM", "SIGKILL"],
+    "no second SIGTERM and exactly one SIGKILL",
+  );
 });

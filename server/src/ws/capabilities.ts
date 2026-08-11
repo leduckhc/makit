@@ -13,7 +13,7 @@
  *  - `send`  → `send.message`, `session.action`.
  *  - `spawn` → `session.spawn`, `worktree.create`.
  *
- * Everything else — `session.kill`, `session.archive`, `session.setAgent`,
+ * Everything else — `session.kill`, `session.close`, `session.setAgent`,
  * `ports.*`, `pr.*`, `worktree.wrapUp`/`discard`, `devices.*` — is refused for
  * an agent token. Completeness is enforced by a test over `router.kinds()`, so
  * a command added later without a map entry fails the build rather than
@@ -57,19 +57,29 @@ export const COMMAND_CAPABILITIES: Record<string, readonly DeviceCap[]> = {
   "queue.reorder": [],
   "queue.update": [],
   "repo.refresh": [],
-  "session.archive": [],
+  // SPEC-42/44 ports (arrived on main after this map was written). Every one of
+  // them either kills a process or opens a network path, so none is
+  // agent-reachable: `[]` means a client / full-access principal only, exactly
+  // like session.kill. An agent that could kill a port could reap the user's dev
+  // server, and one that could forward would be publishing a local service.
+  "ports.kill": [],
+  "ports.killOrphans": [],
+  "ports.forward": [],
+  "ports.forward.stop": [],
+  "ports.watchPort": [],
+  "session.close": [],
   "session.attach": [],
   // A fork names its source on the argv and is a human/CLI verb (no
   // MAKIT_SESSION_ID). Unlike session.spawn, whose agent parentId is forced to
   // the caller's own session, session.fork trusts the named source — so it is
   // NOT agent-reachable (least privilege); a client / full-access principal
-  // only, exactly like session.kill/archive.
+  // only, exactly like session.kill/close.
   "session.fork": [],
   "session.kill": [],
   "session.list": [],
-  "session.listArchived": [],
+  "session.listClosed": [],
   "session.setAgent": [],
-  "session.unarchive": [],
+  "session.reopen": [],
   "worktree.createFromPr": [],
   "worktree.discard": [],
   "worktree.remove": [],

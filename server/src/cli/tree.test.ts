@@ -30,7 +30,7 @@ const s = (over: Partial<SessionDTO> & { id: string }): SessionDTO =>
     queued: [],
     pending: false,
     resumable: false,
-    archived: false,
+    closed: false,
     ...over,
   }) as SessionDTO;
 
@@ -68,7 +68,7 @@ test("a session born on the phone says nothing about its origin", () => {
 });
 
 test("an orphan renders at the root rather than vanishing", () => {
-  // The parent may be archived, or killed, or simply not in this snapshot. A
+  // The parent may be closed, or killed, or simply not in this snapshot. A
   // session that silently disappears from `tree` is worse than one shown flat.
   const out = renderTree([s({ id: "orphan", parentId: "long-gone", handoffReason: "why" })]);
   assert.match(out, /orphan/);

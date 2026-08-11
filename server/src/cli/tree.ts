@@ -6,7 +6,7 @@
  * so the hostile shapes below are unit-testable without a server.
  *
  * Two rules come from lineage being *persisted* data rather than a live graph:
- * an **orphan** (a `parentId` whose session is archived, killed, or simply not in
+ * an **orphan** (a `parentId` whose session is closed, killed, or simply not in
  * this snapshot) renders at the root naming the parent it lost, and a **cycle**
  * terminates. A session that silently vanished from this view, or a renderer that
  * recursed forever on a forged loop, would both be worse than a flat list.
@@ -58,7 +58,7 @@ export function renderTree(sessions: readonly SessionDTO[]): string {
 
   for (const session of sessions) {
     const parentId = session.parentId;
-    // A parent that is not here (archived/killed/uncached) makes this a root
+    // A parent that is not here (closed/killed/uncached) makes this a root
     // that still says which parent it lost. Self-parenthood is a root too.
     if (!parentId || parentId === session.id || !byId.has(parentId)) {
       roots.push({ session, lostParent: parentId && parentId !== session.id ? parentId : undefined });

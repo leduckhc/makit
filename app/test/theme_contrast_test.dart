@@ -7,8 +7,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/app/theme.dart';
+import 'package:makit/status/status_event.dart';
+import 'package:makit/status/status_tone.dart';
 import 'package:makit/ui/ports/port_token_pill.dart';
 import 'package:makit/ui/ports/ports_vocabulary.dart';
+import 'package:makit/ui/session/chat_metrics.dart';
 import 'package:makit/ui/widgets/pr_signals.dart';
 import 'package:makit/ui/widgets/pr_tone.dart';
 
@@ -38,6 +41,41 @@ void main() {
               '$name on ${theme.brightness.name} surface must clear WCAG AA',
         );
       });
+    }
+  });
+
+  // SPEC-48: the unread count is printed ON the severity's own fill, and the
+  // scheme's obvious pairing is not good enough — `cs.surface` on the warning
+  // amber is ~2.1:1 in light mode — so the pill measures its ink with `inkOn`.
+  test('the unread count clears WCAG AA on every severity fill', () {
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      for (final severity in StatusSeverity.values) {
+        final fill = statusColor(cs, severity);
+        expect(
+          _contrast(inkOn(cs, fill), fill),
+          greaterThanOrEqualTo(4.5),
+          reason:
+              'the count on a ${severity.name} pill (${theme.brightness.name}) '
+              'must clear WCAG AA',
+        );
+      }
+    }
+  });
+
+  // The glyph and the 3px stripe are UI components, not text: 3:1 is the floor.
+  test('status severity glyph colors clear the 3:1 UI floor', () {
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      for (final severity in StatusSeverity.values) {
+        expect(
+          _contrast(statusColor(cs, severity), cs.surface),
+          greaterThanOrEqualTo(3.0),
+          reason:
+              '${severity.name} glyph on the ${theme.brightness.name} surface '
+              'must clear 3:1',
+        );
+      }
     }
   });
 
@@ -228,6 +266,29 @@ void main() {
           );
         }
       }
+    }
+  });
+
+  // A transcript row's leading glyph (tool terminal/pencil/book, thinking brain)
+  // is a graphical object, so WCAG 1.4.11 asks for 3:1 — not the 4.5:1 above.
+  // Measured from the real app: at the original 0.55 alpha it composited to
+  // #616161 on dark (2.91:1) and #A7A7A7 on light (2.31:1) — both short.
+  test('a transcript row glyph clears WCAG AA for non-text (3:1)', () {
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      expect(
+        _contrast(
+          Color.alphaBlend(
+            cs.onSurfaceVariant.withValues(alpha: kToolGlyphAlpha),
+            cs.surface,
+          ),
+          cs.surface,
+        ),
+        greaterThanOrEqualTo(3.0),
+        reason:
+            'row glyph at alpha $kToolGlyphAlpha on the '
+            '${theme.brightness.name} surface',
+      );
     }
   });
 }

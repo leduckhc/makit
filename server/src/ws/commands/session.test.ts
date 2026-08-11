@@ -5,7 +5,7 @@
  * The handler tests drive a fake manager (the queue.test.ts pattern): the
  * lineage a spawn actually records, and the refusals, are observable at the
  * `cmd`/`ack`/`err` seam without a live agent. The hostile-data walk (a forged
- * `parentId` cycle, a missing/archived ancestor) is unit-tested against the
+ * `parentId` cycle, a missing/closed ancestor) is unit-tested against the
  * pure functions in `lineage.ts` directly, so it exercises the real code rather
  * than a stub.
  */
@@ -226,18 +226,18 @@ test("T11 walk: a missing (killed) ancestor ends the walk without throwing", () 
   assert.equal(spawnDepth("b", m), 2, "b + the dangling link, then it stops");
 });
 
-test("T11 walk: an archived ancestor is walked through, not a crash", () => {
+test("T11 walk: an closed ancestor is walked through, not a crash", () => {
   const m = nodes([
-    { id: "a", archived: true },
+    { id: "a", closed: true },
     { id: "b", parentId: "a" },
   ]);
   assert.equal(spawnDepth("b", m), 2);
 });
 
-test("T11 walk: liveChildCount excludes archived children", () => {
+test("T11 walk: liveChildCount excludes closed children", () => {
   const list: LineageNode[] = [
     { id: "x1", parentId: "P" },
-    { id: "x2", parentId: "P", archived: true },
+    { id: "x2", parentId: "P", closed: true },
     { id: "x3", parentId: "P" },
     { id: "y", parentId: "Q" },
   ];

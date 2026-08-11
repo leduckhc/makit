@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../store/turns.dart';
+import '../session/elapsed.dart';
 
 // ─── formatting (pure, unit-tested) ──────────────────────────────────────────
 
@@ -233,7 +235,7 @@ class ContextUsageButton extends ConsumerWidget {
           // hidden the cost line, which is the row people open this for.
           builder: (_) => SafeArea(
             child: SingleChildScrollView(
-              child: ContextUsageDetails(usage: usage),
+              child: ContextUsageDetails(usage: usage, sessionId: sessionId),
             ),
           ),
         ),
@@ -280,7 +282,10 @@ class ContextUsageButton extends ConsumerWidget {
                 // PrimaryScrollController; two claims on it is an error.
                 child: SingleChildScrollView(
                   primary: false,
-                  child: ContextUsageDetails(usage: usage),
+                  child: ContextUsageDetails(
+                    usage: usage,
+                    sessionId: sessionId,
+                  ),
                 ),
               ),
             );
@@ -347,15 +352,21 @@ class ContextUsageButton extends ConsumerWidget {
 /// things: the context reading is what the model currently sees, while the
 /// session total is everything billed across every turn (codex's total hit 39k
 /// after two turns while the context held 19.5k).
-class ContextUsageDetails extends StatelessWidget {
+class ContextUsageDetails extends ConsumerWidget {
   /// Creates the panel for [usage].
-  const ContextUsageDetails({super.key, required this.usage});
+  ///
+  /// [sessionId] is optional: without it the panel is exactly the SPEC-37 one.
+  /// With it, the SPEC-47 D11 session-effort rollup is appended.
+  const ContextUsageDetails({super.key, required this.usage, this.sessionId});
 
   /// The snapshot to describe.
   final SessionUsage usage;
 
+  /// The session whose effort rollup to append, when there is one.
+  final String? sessionId;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final totals = usage.totals;
@@ -382,6 +393,16 @@ class ContextUsageDetails extends StatelessWidget {
             children: [
               _Row(label: 'Cost', value: formatCost(cost), strong: true),
             ],
+          ),
+        if (sessionId case final id?)
+          SessionEffortSection(
+            rollup: ref.watch(sessionRollupProvider(id)),
+            createdAt: ref.watch(
+              sessionsProvider.select((s) => s.byId(id)?.createdAt),
+            ),
+            // Server time, never the device clock (D15).
+            nowMs: ref.read(storeControllerProvider.notifier).serverNowMs(),
+            historyLoaded: ref.watch(sessionHistoryLoadedProvider(id)),
           ),
         _Footnote(usage: usage),
       ],
@@ -526,6 +547,62 @@ class _Footnote extends StatelessWidget {
           height: 1.35,
         ),
       ),
+    );
+  }
+}
+
+/// The session-effort rollup (SPEC-47 D11): how old this session is and how
+/// much agent time is actually in it.
+///
+/// Lives in this panel because it is already the "facts about this session"
+/// surface and these numbers are checked once an hour — they do not deserve
+/// permanent chrome. Two time numbers rather than one because either alone
+/// lies: a session opened three days ago holding four minutes of agent time is
+/// described honestly only by both.
+class SessionEffortSection extends StatelessWidget {
+  /// Creates the rollup section.
+  const SessionEffortSection({
+    super.key,
+    required this.rollup,
+    required this.createdAt,
+    required this.nowMs,
+    required this.historyLoaded,
+  });
+
+  /// Totals derived from this session's completed turns.
+  final TurnRollup rollup;
+
+  /// Epoch ms the session was created, or null on a pre-SPEC-47 server (D12).
+  final int? createdAt;
+
+  /// Server-now, for the age (D15 — never the device clock).
+  final int nowMs;
+
+  /// Whether this client holds the whole event log (D16). False → render
+  /// nothing: a tail-only session would report "3 turns" for a session of 40.
+  final bool historyLoaded;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!historyLoaded) return const SizedBox.shrink();
+
+    final age = createdAt == null ? null : formatElapsed(nowMs - createdAt!);
+    final agent = formatElapsed(rollup.agentMs);
+    final median = rollup.medianWallMs == null
+        ? null
+        : formatElapsed(rollup.medianWallMs!);
+
+    return _Section(
+      children: [
+        if (age != null) _Row(label: 'Age', value: age),
+        if (agent != null) _Row(label: 'Agent time', value: agent),
+        _Row(
+          // D20: hard-coded English with an explicit singular.
+          label: rollup.turnCount == 1 ? 'Turn' : 'Turns',
+          value: '${rollup.turnCount}',
+        ),
+        if (median != null) _Row(label: 'Median turn', value: median),
+      ],
     );
   }
 }

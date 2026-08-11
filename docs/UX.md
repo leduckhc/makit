@@ -98,6 +98,88 @@ Nothing is scanned unless somebody is looking: the scan is watch-gated, so no
 read-only — **Open** and **Copy URL**, both hidden when nothing answered HTTP
 and there is therefore no honest URL to offer.
 
+**Everything, all repos (SPEC-42).** Beside Home and Archived sits a **Ports**
+screen (`⌘⇧P`, or the worktree menu's `Ports…`, which pre-selects *This repo*),
+grouping every listener repo ▸ worktree ▸ port, with system listeners folded
+away because they are noise, not work. Its filters are the two questions worth
+asking — *Exposed* (what is reachable off this machine, makit's own listener
+included) and *Orphans* (a dev server whose worktree is gone, which nothing but
+you will ever reclaim) — plus *Mine* and *This repo*. A port two active
+worktrees both claim carries the word `clash` and a banner naming the rival
+branch; it never suggests a free port, and the screen never kills anything —
+both are later phases. A port a container published names the **container**
+instead of `com.docker.backend` and carries a `docker` token, while its reach
+pill keeps reporting the real bind, because a published port on `0.0.0.0` is
+exposed no matter who published it. On the desktop the same cached snapshot
+feeds a `Ports (n)` menubar submenu with an `Open Ports…` item; the menubar
+reads the cache and never arms the scanner, so a count only appears once some
+surface has actually looked.
+
+**Killing one (SPEC-43).** This is the first thing makit signals that it did not
+spawn, so the whole design is about proving the process it kills is the one you
+saw. The row you confirmed carries its own identity — address, port, pid **and**
+start time — and the server ignores its cache, rescans, and re-matches all four
+before sending anything; a pid that was reused or a server that restarted in the
+meantime is refused, not killed. Only a listener a live worktree owns (or a known
+orphan) is eligible: never a system listener, never pid 1, never makit itself or
+its parents, never an agent session's own process — stop the session instead.
+SIGTERM first; if it is ignored, makit waits, **re-verifies the identity again**,
+and only then escalates to SIGKILL, so churn inside that window cannot redirect
+the kill onto whatever took the port. The answer is specific — released,
+force-killed, or *survived*, which means open a terminal rather than pretending it
+worked. Desktop puts `Kill` last in the port row, red, and it still asks even
+when the popover is pinned; the phone puts `Kill this process…` last in the
+detail sheet, past a divider, a whole sheet away from the first tap. The confirm
+names the command, pid, port and branch, because "Are you sure?" is not a
+mitigation. A port whose start time makit could not read offers no Kill at all —
+its identity is unverifiable. Every attempt is logged to stderr (device, endpoint,
+signals, outcome) and never into a session's transcript. `Kill all orphans (n)`
+in the orphans section is the same discipline N times over, behind one confirm
+that names the ports, with an honest per-port result.
+
+**Watching one (SPEC-44 P4a).** Port notifications are **opt-in per port**, from a
+`Watch this port` switch in the detail sheet — an always-on version would fire
+every time a build restarts a dev server, and would be muted within a day. A
+watch is remembered by `(worktree, port)`, not by pid, so it survives exactly the
+restart it is about, and it is persisted in `$MAKIT_HOME/watched-ports.json` by a
+store that degrades to empty rather than failing startup. The alert fires only
+after the port has been continuously gone — or bound-but-refusing — for twenty
+seconds (about five scans); a recovery inside that window cancels it and re-arms,
+so a rebuild is silent and a real outage is not. Exactly one notification per
+outage. It carries the port number and nothing else, because a branch name on a
+lock screen is the kind of content makit's push payloads deliberately cannot
+contain. Only an owned port can be watched — an unowned listener has no stable
+identity to watch by.
+
+**Forwarding one to your phone (SPEC-44 P4b).** A loopback-only dev server is
+invisible from your phone, and makit already holds a cert-pinned,
+device-authenticated channel to the machine it runs on — so it can carry that port
+over the connection it already has, without opening anything new on the host. On a
+phone, a loopback port's `Open` is replaced by **Open in browser**: one tap mints
+a grant and hands the URL to your own browser. The grant is bound to one port,
+dies after 30 minutes whatever happens, and is reaped within a minute of the
+preview going quiet; only a worktree-owned, loopback, HTTP-answering port is
+eligible, and databases, shells and makit's own listener are refused outright.
+
+Two costs the confirm states before you tap, because both are real. **The link is
+the credential** — a browser cannot send makit's bearer, so the unguessable grant
+id in the URL is what authorises it; every proxied response therefore carries
+`Referrer-Policy: no-referrer`, so the previewed page cannot hand its own URL to a
+site it links to. And **your browser will warn about the certificate**, because
+makit signs its own and no browser can be taught to pin it; the alternative was a
+second listener on the host, which is the thing makit promises not to do. Live
+reload does **not** work and says so: the HMR socket is refused rather than
+half-proxied, because a preview that silently stops updating is worse than one
+that admits it is a snapshot.
+
+The in-app WebView this originally specified is **not** what shipped. A WebView
+uses the OS network stack, so it can neither pin the certificate nor attach the
+bearer — which is why the design called for an HTTP proxy running inside the app,
+and why that could not work: on iOS the app is suspended seconds after
+backgrounding, which is exactly when a browser takes over. Handing the URL to the
+system browser deletes the WebView, the in-app proxy and a native dependency, and
+leaves the security work where it can be reviewed — on the server.
+
 ---
 
 ### Desktop canvas: groups (SPEC-30)
@@ -240,6 +322,45 @@ Approval prompts include: tool name, target (file/command), short preview, and
 
 Delivery: APNs / FCM via server → relay → device. Per-session and per-type
 mute controls.
+
+### Activity — the record behind the notice (SPEC-48)
+
+An OS notification vanishes, and a `SnackBar` vanished faster: four seconds, no
+selection, one line of room for an error the user then could not quote. Both are
+now *views* of one in-memory record.
+
+| | Toast | Activity |
+|---|---|---|
+| What it is | the transient notice, top-anchored, severity-striped, max 3 | the durable list: newest first, filterable, copyable |
+| Where | above the Navigator on both shells, clear of the top bar and **never** over the composer | phone: Settings › Activity · desktop: the sidebar bell → a top-right panel |
+| Carries | the short human line + the first line of the detail, unfolding to the whole detail while hovered or focused | the whole record, with the exception in a selectable monospace block |
+| Lifetime | 3–8 s by severity, paused while you are reading it, nothing sticky | until cleared, or 200 events |
+
+Every event splits the **human sentence** from the **machine detail**: the toast
+says `Could not create worktree`, and the `FileSystemException` behind it is one
+tap from the clipboard (per row, or copy-all as one chronological block, the same
+shape `Diagnostics` uses). Repeats inside 8 s coalesce into `… ×3` rather than
+queueing three unskippable notices.
+
+**Taking the notice with you (SPEC-49).** The whole toast is the copy target —
+not a 13 px glyph, and no longer only for events that carry a detail: a bare
+`Paired!` still has a head line worth pasting. Point at it (or focus it with the
+keyboard) and two things happen: the dwell **stops**, because a clock that
+expires while you are reading is the original complaint, and the detail unfolds
+in full as selectable monospace. Look away and the *whole* dwell starts over.
+`Enter` / `Space` copy the focused notice, assistive tech is offered a named
+`Copy` action, and `⌘⇧C` copies the newest notice from the **record** — so the
+answer to “what was that?” survives the notice itself. Copying confirms in the
+card and posts nothing: a notice about a notice is a hall of mirrors.
+
+The unread signal is a **bell with a count** tinted by the loudest unread
+severity — on desktop in the sidebar footer, on the phone a dot on the Settings
+button, because four glass circles and the connection chip already fill a 320 pt
+bar and a phone has no screen to spend on permanent chrome.
+
+Session transitions (finished a turn, needs you, errored) land here too, but
+**silently** — no toast, no badge: a session you are watching already shows its
+own status dot, and what was missing was the history.
 
 ---
 

@@ -28,6 +28,28 @@ enum PrPromptAction {
         'title and a description that summarizes what changed, why, and how it '
         'was tested. Reply with the PR URL when done.',
   ),
+
+  /// One verb for the whole pre-PR phase: commit, push, open the pull request.
+  ///
+  /// Deliberately **not** composed from the signals the way the magic "Fix" is.
+  /// Fix has to enumerate its problems because a static prompt cannot know which
+  /// checks failed or how many threads are open; here the three steps are fixed
+  /// and already named below, and the agent has to run `git status` to carry any
+  /// of them out anyway. "Skip any step that is already done" is what keeps the
+  /// single wording honest on a branch that only needs the last one — which is
+  /// also what lets this stay an ordinary overridable prompt instead of a second
+  /// [MagicRemedy]-style remedy with its own dispatch case.
+  shipIt(
+    'Ship it',
+    IconGlyph.font(PhosphorIconsLight.rocketLaunch),
+    prShipItPromptPreference,
+    'Get this branch shipped as a pull request. Commit anything still '
+        'uncommitted with a clear, conventional commit message; push to the '
+        'remote, setting the upstream if the branch has none; then open a pull '
+        'request with `gh pr create`, giving it a clear title and a description '
+        'that covers what changed, why, and how it was tested. Skip any step '
+        'that is already done. Reply with the PR URL when done.',
+  ),
   fixPr(
     'Fix PR',
     IconGlyph.font(PhosphorIconsLight.wrench),

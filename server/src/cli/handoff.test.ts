@@ -13,7 +13,7 @@
  *     the uncommitted work live in the parent's tree, so a fresh tree off the
  *     default branch would strand exactly what is being handed over. `--worktree`
  *     opts into a fresh one.
- *   - **D16** — the parent is left alone: not archived, not stopped, not warned
+ *   - **D16** — the parent is left alone: not closed, not stopped, not warned
  *     about. Parallel agents in one tree is a decision, not an accident.
  *
  * And D9: the child's `parentId` is **never sent** — the server derives it from
@@ -331,9 +331,9 @@ test("without --carry no transcript is read at all", async () => {
 // D16 — the parent keeps running
 // ---------------------------------------------------------------------------
 
-test("the parent is neither archived nor killed", async () => {
+test("the parent is neither closed nor killed", async () => {
   const r = await run(["--goal", "x"]);
-  assert.equal(sent(r.cmds, "session.archive"), undefined);
+  assert.equal(sent(r.cmds, "session.close"), undefined);
   assert.equal(sent(r.cmds, "session.kill"), undefined);
 });
 

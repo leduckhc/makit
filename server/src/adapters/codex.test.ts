@@ -9,7 +9,13 @@ import type { UICall, UIResponse } from "../uicall.js";
  * A controllable fake `codex app-server`: auto-replies to the adapter's
  * requests and lets the test push notifications / server-requests in.
  */
-function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown }; fork?: () => { result?: unknown; error?: unknown } } = {}) {
+function fakeAppServer(
+  opts: {
+    steer?: () => { result?: unknown; error?: unknown };
+    fork?: () => { result?: unknown; error?: unknown };
+    unsubscribe?: () => { result?: unknown; error?: unknown };
+  } = {},
+) {
   let lineCb: (l: string) => void = () => {};
   const sent: any[] = [];
   const feed = (obj: unknown) => lineCb(JSON.stringify(obj));
@@ -34,6 +40,13 @@ function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown
         // (SPEC-46 U4 §Evidence).
         if (msg.method === "thread/fork" && opts.fork) {
           const scripted = opts.fork();
+          queueMicrotask(() => feed({ id: msg.id, ...scripted }));
+          return;
+        }
+        // `thread/unsubscribe` is scripted per-test so a rejecting close can be
+        // proven not to block teardown.
+        if (msg.method === "thread/unsubscribe" && opts.unsubscribe) {
+          const scripted = opts.unsubscribe();
           queueMicrotask(() => feed({ id: msg.id, ...scripted }));
           return;
         }
@@ -64,6 +77,8 @@ function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown
         return { turn: { id: `t${++turnSeq}` } };
       case "turn/interrupt":
         return {};
+      case "thread/unsubscribe":
+        return { status: "unsubscribed" };
       case "model/list":
         return {
           data: [
@@ -603,7 +618,7 @@ test("start({resumeAgentSessionId}) resumes via thread/resume, not thread/start 
 
 test("codex advertises the full session lifecycle capability set (SPEC-29)", () => {
   const adapter = new CodexAppServerAdapter();
-  assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true });
+  assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true, close: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -883,4 +898,43 @@ test("steer(): a TIMED-OUT steer still echoes, so the message is not lost silent
   );
   assert.equal((echoes.at(-1)!.payload as { steered?: boolean }).steered, true);
   await adapter.kill();
+});
+
+/**
+ * codex's equivalent of ACP `session/close` is `thread/unsubscribe`: it unloads
+ * the thread server-side while leaving it in `thread/list` and resumable via
+ * `thread/resume`. Sent before the process is reaped so codex can flush and
+ * release rather than being SIGTERMed mid-write.
+ */
+test("close() unsubscribes the thread so it stays listable and resumable", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/tmp" });
+  assert.equal(adapter.capabilities.close, true);
+
+  await adapter.close();
+  assert.deepEqual(
+    fake.sent.filter((m) => m.method === "thread/unsubscribe").map((m) => m.params.threadId),
+    ["th1"],
+  );
+});
+
+test("close() before start is a no-op (no thread to unsubscribe)", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+
+  await adapter.close(); // must not throw
+  assert.deepEqual(fake.sent.filter((m) => m.method === "thread/unsubscribe"), []);
+});
+
+/**
+ * As with ACP: the adapter just issues `thread/unsubscribe`. Bounding and
+ * swallowing belong to `SessionManager.closeSession`, which reaps either way.
+ */
+test("close() propagates a failing thread/unsubscribe for the manager to absorb", async () => {
+  const fake = fakeAppServer({ unsubscribe: () => ({ error: { code: -32603, message: "boom" } }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/tmp" });
+
+  await assert.rejects(() => adapter.close());
 });

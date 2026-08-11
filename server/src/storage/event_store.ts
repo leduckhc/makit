@@ -45,10 +45,10 @@ export interface SessionMeta {
   branch?: string;
   worktreePath?: string;
   /**
-   * Archived (SPEC-29): hidden from the active session list but kept + resumable
-   * and restorable via `session.unarchive`. Persisted so it survives a restart.
+   * Closed (SPEC-29): hidden from the active session list but kept + resumable
+   * and restorable via `session.reopen`. Persisted so it survives a restart.
    */
-  archived?: boolean;
+  closed?: boolean;
   /**
    * SPEC-46 lineage (D10), persisted so the app can draw the handoff chain and
    * so D9's depth/fan-out guard has something to count. Added by an in-place

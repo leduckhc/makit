@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { CommandRouter } from "../../src/ws/command_router.js";
 import { register } from "../../src/ws/commands/session.js";
 import type { CommandDeps } from "../../src/ws/commands/deps.js";
+import { portsDepsStub } from "./ports_deps_stub.js";
 import type { WsClient, OutgoingFrame } from "../../src/ws/client.js";
 import type { Envelope } from "../../src/protocol.js";
 import { WireErrorCode } from "../../src/protocol/codec.js";
@@ -69,6 +70,9 @@ function harness() {
     manager: {
       getSession: (sid: string) => (sid === "s1" ? session : undefined),
       ensureLive: async () => {},
+      // send.message routes through ...ForInput so an idle-auto-closed session is
+      // reopened before the turn (SPEC-29 option D).
+      ensureLiveForInput: async () => {},
     } as unknown as CommandDeps["manager"],
     gateway: {} as CommandDeps["gateway"],
     budgetWatch: {} as CommandDeps["budgetWatch"],
@@ -80,6 +84,7 @@ function harness() {
       sendMetricsHistory: () => {},
       onPortsWatchersChanged: () => {},
       sendPortsSnapshot: () => {},
+      ...portsDepsStub,
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
   register(router, deps);
@@ -214,6 +219,9 @@ test("a pending session promoted by an image-only turn gets a usable label", asy
     manager: {
       getSession: () => session,
       ensureLive: async () => {},
+      // send.message routes through ...ForInput so an idle-auto-closed session is
+      // reopened before the turn (SPEC-29 option D).
+      ensureLiveForInput: async () => {},
       promotePendingSession: async (_s: unknown, label: string) => {
         labels.push(label);
         return true;
@@ -229,6 +237,7 @@ test("a pending session promoted by an image-only turn gets a usable label", asy
       sendMetricsHistory: () => {},
       onPortsWatchersChanged: () => {},
       sendPortsSnapshot: () => {},
+      ...portsDepsStub,
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps);
 

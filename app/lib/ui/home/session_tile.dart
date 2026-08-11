@@ -9,6 +9,8 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../widgets/session_status_dot.dart';
 import '../ports/session_ports_glyph.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'repo_chips.dart';
 import '../../app/routes.dart';
 
@@ -191,7 +193,7 @@ class SessionTile extends ConsumerWidget {
   /// SPEC-46 D10: a session with lineage was handed off from another session,
   /// so the row explains itself rather than appearing as a mystery title. The
   /// caption renders whenever [Session.parentId] is set and never depends on
-  /// resolving the parent — which may be archived or simply not cached — and
+  /// resolving the parent — which may be closed or simply not cached — and
   /// carries the outgoing agent's reason when one was written.
   static String? _handoffCaption(Session session) {
     if (session.parentId == null) return null;
@@ -206,21 +208,26 @@ class SessionTile extends ConsumerWidget {
         : 'Handed off — $reason';
   }
 
-  /// Confirms the archive, then requests it and only reports the row as
+  /// Confirms the close, then requests it and only reports the row as
   /// dismissed once the server acknowledges. Returning false on failure keeps
   /// the row in place (the session is still in [sessionsProvider]), so a failed
-  /// archive never desyncs the list from server state.
+  /// close never desyncs the list from server state.
   Future<bool> _confirmAndQuit(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final confirmed = await _confirmQuit(context);
     if (!confirmed) return false;
     try {
-      await ref
-          .read(storeControllerProvider.notifier)
-          .archiveSession(session.id);
+      await ref.read(storeControllerProvider.notifier).closeSession(session.id);
       return true;
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+      status.failure(
+        'Could not quit session',
+        error: e,
+        source: StatusSources.session,
+        sessionId: session.id,
+      );
       return false;
     }
   }

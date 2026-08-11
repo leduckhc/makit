@@ -90,6 +90,34 @@ class FakeServer {
       status: 'running',
       branch: 'fix-tab-drag-and-drop',
     )..events.addAll(_scriptClaude('s-claude-1'));
+
+    // Cold-start content for the Closed view (SPEC-29). These live in
+    // [_sessions] like every other session: as separate literals they could be
+    // listed but never reopened, and never appeared in any snapshot.
+    _sessions['s-closed-1'] = _FakeSession(
+      id: 's-closed-1',
+      projectId: p1,
+      projectName: 'makit',
+      projectPath: '/Users/le/Work/Vibe/makit',
+      agent: 'pi',
+      title: 'draft release notes',
+      preview: 'Wrote CHANGELOG.md for 0.4.0.',
+      status: 'exited',
+      branch: 'draft-release-notes',
+    )..closed = true;
+    // No worktree for this one in [_pushRepos], which is what makes it render
+    // the "worktree removed" chip.
+    _sessions['s-closed-2'] = _FakeSession(
+      id: 's-closed-2',
+      projectId: p2,
+      projectName: 'cmux',
+      projectPath: '/Users/le/Work/Vibe/cmux',
+      agent: 'claude',
+      title: 'investigate tab flicker',
+      preview: 'Traced it to the snapshot boundary.',
+      status: 'exited',
+      branch: 'investigate-tab-flicker',
+    )..closed = true;
   }
 
   void _pushInitialState() {
@@ -144,7 +172,7 @@ class FakeServer {
   /// ages.
   void _pushRepos() {
     final byProject = <String, List<_FakeSession>>{};
-    for (final s in _sessions.values) {
+    for (final s in _sessions.values.where((s) => !s.closed)) {
       byProject.putIfAbsent(s.projectId, () => []).add(s);
     }
     for (final entry in _addedProjects.entries) {
@@ -298,37 +326,6 @@ class FakeServer {
     ];
   }
 
-  /// Sessions the demo reports as archived (SPEC-29). Fixed ids so restoring one
-  /// twice in a demo behaves consistently; `orphaned` on the last one exercises
-  /// the "worktree removed" chip.
-  List<Map<String, dynamic>> _archivedSessions() => [
-    {
-      'id': 's-archived-1',
-      'projectId': 'proj-makit',
-      'agent': 'pi',
-      'title': 'draft release notes',
-      'status': 'exited',
-      'policy': 'ask-on-risky',
-      'lastActivityAt': _agoMs(const Duration(days: 1)),
-      'lastPreview': 'Wrote CHANGELOG.md for 0.4.0.',
-      'branch': 'draft-release-notes',
-      'archived': true,
-    },
-    {
-      'id': 's-archived-2',
-      'projectId': 'proj-cmux',
-      'agent': 'claude',
-      'title': 'investigate tab flicker',
-      'status': 'exited',
-      'policy': 'ask-on-risky',
-      'lastActivityAt': _agoMs(const Duration(days: 6)),
-      'lastPreview': 'Traced it to the snapshot boundary.',
-      'branch': 'investigate-tab-flicker',
-      'archived': true,
-      'orphaned': true,
-    },
-  ];
-
   void _pushSessions() {
     _emit(
       Envelope(
@@ -337,6 +334,7 @@ class FakeServer {
         body: {
           'kind': 'sessions.snapshot',
           'sessions': _sessions.values
+              .where((s) => !s.closed)
               .map(
                 (s) => {
                   'id': s.id,
@@ -499,10 +497,26 @@ class FakeServer {
     };
   }
 
-  /// Emit one plausible `ports.snapshot` (SPEC-41): a healthy dev server owned
-  /// by the first feature-branch worktree (so a glyph lights on that row), a
-  /// wildcard-bound `exposed` port with no probe, and a `refused` zombie so the
-  /// attention state is exercised on the fake path.
+  /// Ports the demo has "killed" — they stop appearing in the snapshot, so the
+  /// kill visibly works in demo mode.
+  final Set<int> _killedPorts = {};
+
+  /// Ports the demo user has asked to be told about (SPEC-44 D7).
+  final Set<int> _watchedPorts = {5173};
+
+  /// Emit one plausible `ports.snapshot`, covering every state the ports UI can
+  /// render so demo mode exercises the whole surface (SPEC-41 → SPEC-44):
+  ///
+  ///  * `:5173 vite`   — healthy, owned by the first feature-branch worktree, so
+  ///                     a glyph lights on that row. Watched by default, and the
+  ///                     one port a browser forward is offered for.
+  ///  * `:5175 vite`   — owned but **refused**: the wedged zombie SPEC-43's kill
+  ///                     exists for. No `openUrl`, so no forward is offered.
+  ///  * `:9787 serve`  — wildcard-bound, `exposed`, 404 — the security read.
+  ///  * `:5432 postgres` — published by a docker container (SPEC-42 D13): the row
+  ///                     names the CONTAINER, and `reach` still says `exposed`.
+  ///  * `:5180`/`:5181` — orphans whose worktree is gone, which is what makes the
+  ///                     orphans section and `Kill all orphans (2)` appear.
   void _pushPorts() {
     final feature = _sessions.values.firstWhere(
       (s) => s.branch != null,
@@ -512,6 +526,116 @@ class FakeServer {
         ? feature.projectPath
         : '${feature.projectPath}/.wt/${feature.branch}';
     final now = DateTime.now().millisecondsSinceEpoch;
+
+    Map<String, dynamic> port({
+      required int number,
+      required String key,
+      required String command,
+      String address = '127.0.0.1',
+      String reach = 'loopback',
+      required int pid,
+      required int upMs,
+      String? worktreePath,
+      String? sessionId,
+      Map<String, dynamic>? health,
+      String? openUrl,
+      Map<String, dynamic>? orphan,
+      Map<String, dynamic>? docker,
+    }) => {
+      'key': key,
+      'port': number,
+      'address': address,
+      'reach': reach,
+      'pid': pid,
+      'command': command,
+      'startedAt': now - upMs,
+      // Absent, never null: the app's decoder treats absence as "not known",
+      // which is the whole point of these fields (SPEC-41).
+      'worktreePath': ?worktreePath,
+      'sessionId': ?sessionId,
+      'health': ?health,
+      'openUrl': ?openUrl,
+      'orphan': ?orphan,
+      'docker': ?docker,
+      if (_watchedPorts.contains(number)) 'watched': true,
+    };
+
+    final all = <Map<String, dynamic>>[
+      port(
+        number: 5173,
+        key: '48211:127.0.0.1:5173',
+        command: 'node vite --port 5173',
+        pid: 48211,
+        upMs: 41 * 60 * 1000,
+        worktreePath: wtPath,
+        sessionId: feature.id,
+        health: {'kind': 'ok', 'status': 200, 'probedAt': now - 4000},
+        openUrl: 'http://127.0.0.1:5173',
+      ),
+      port(
+        number: 5175,
+        key: '51330:127.0.0.1:5175',
+        command: 'node vite --port 5175',
+        pid: 51330,
+        upMs: 6 * 60 * 60 * 1000,
+        worktreePath: wtPath,
+        health: {'kind': 'refused', 'probedAt': now - 3000},
+      ),
+      port(
+        number: 9787,
+        key: '47120:0.0.0.0:9787',
+        command: 'node dist/serve.js',
+        address: '0.0.0.0',
+        reach: 'exposed',
+        pid: 47120,
+        upMs: 2 * 60 * 60 * 1000,
+        worktreePath: wtPath,
+        sessionId: feature.id,
+        health: {'kind': 'http-error', 'status': 404, 'probedAt': now - 9000},
+        openUrl: 'http://127.0.0.1:9787',
+      ),
+      port(
+        number: 5432,
+        key: '901:0.0.0.0:5432',
+        command: '/Applications/Docker.app/Contents/MacOS/com.docker.backend',
+        address: '0.0.0.0',
+        reach: 'exposed',
+        pid: 901,
+        upMs: 3 * 60 * 60 * 1000,
+        docker: {
+          'container': 'chat-ui-db-1',
+          'compose': '${feature.projectPath}/compose.yml',
+        },
+      ),
+      port(
+        number: 5180,
+        key: '51002:127.0.0.1:5180',
+        command: 'node vite --port 5180',
+        pid: 51002,
+        upMs: 48 * 60 * 60 * 1000,
+        health: {'kind': 'ok', 'status': 200, 'probedAt': now - 5000},
+        openUrl: 'http://127.0.0.1:5180',
+        orphan: {
+          'formerBranch': 'feat/desktop-tabs',
+          'formerWorktreePath': '${feature.projectPath}/.wt/feat/desktop-tabs',
+          'removedAt': now - 2 * 24 * 60 * 60 * 1000,
+        },
+      ),
+      port(
+        number: 5181,
+        key: '51044:127.0.0.1:5181',
+        command: 'node storybook dev -p 5181',
+        pid: 51044,
+        upMs: 48 * 60 * 60 * 1000,
+        health: {'kind': 'ok', 'status': 200, 'probedAt': now - 5000},
+        openUrl: 'http://127.0.0.1:5181',
+        orphan: {
+          'formerBranch': 'feat/desktop-tabs',
+          'formerWorktreePath': '${feature.projectPath}/.wt/feat/desktop-tabs',
+        },
+      ),
+    ];
+
     _emit(
       Envelope(
         t: MsgType.event,
@@ -520,36 +644,8 @@ class FakeServer {
           'kind': 'ports.snapshot',
           'snapshot': {
             'ports': [
-              {
-                'key': '48211:127.0.0.1:5173',
-                'port': 5173,
-                'address': '127.0.0.1',
-                'reach': 'loopback',
-                'pid': 48211,
-                'command': 'node vite --port 5173',
-                'startedAt': now - 41 * 60 * 1000,
-                'worktreePath': wtPath,
-                'sessionId': feature.id,
-                'health': {'kind': 'ok', 'status': 200, 'probedAt': now - 4000},
-                'openUrl': 'http://127.0.0.1:5173',
-              },
-              {
-                'key': '47120:0.0.0.0:9787',
-                'port': 9787,
-                'address': '0.0.0.0',
-                'reach': 'exposed',
-                'pid': 47120,
-                'command': 'node dist/serve.js',
-                'startedAt': now - 2 * 60 * 60 * 1000,
-                'worktreePath': wtPath,
-                'sessionId': feature.id,
-                'health': {
-                  'kind': 'http-error',
-                  'status': 404,
-                  'probedAt': now - 9000,
-                },
-                'openUrl': 'http://127.0.0.1:9787',
-              },
+              for (final p in all)
+                if (!_killedPorts.contains(p['port'] as int)) p,
             ],
             'scannedAt': now,
             'scanOk': true,
@@ -605,12 +701,122 @@ class FakeServer {
         // immediately (SPEC-41). A no-op on watch-off — no ambient polling.
         if (env.body['on'] == true) _pushPorts();
         return;
-      case 'session.listArchived':
+      // SPEC-43/44: the demo answers the destructive and capability commands so
+      // the confirms lead somewhere. Deliberately shallow — it reports the happy
+      // outcome and re-pushes the snapshot; the refusal table is the real
+      // server's job and is covered by its own tests.
+      case 'ports.kill':
+        final killedPort = env.body['port'];
+        if (killedPort is int) _killedPorts.add(killedPort);
         _emit(
           Envelope(
             t: MsgType.ack,
             id: env.id,
-            body: {'sessions': _archivedSessions()},
+            body: {
+              'outcome': 'released',
+              'address': env.body['address'],
+              'port': killedPort,
+            },
+          ),
+        );
+        _pushPorts();
+        return;
+      case 'ports.killOrphans':
+        // The two seeded orphans (see `_pushPorts`).
+        const orphanPorts = [5180, 5181];
+        _killedPorts.addAll(orphanPorts);
+        _emit(
+          Envelope(
+            t: MsgType.ack,
+            id: env.id,
+            body: {
+              'results': [
+                for (final p in orphanPorts)
+                  {'outcome': 'released', 'address': '127.0.0.1', 'port': p},
+              ],
+            },
+          ),
+        );
+        _pushPorts();
+        return;
+      case 'ports.watchPort':
+        final watchedPort = env.body['port'];
+        if (watchedPort is int) {
+          if (env.body['on'] == true) {
+            _watchedPorts.add(watchedPort);
+          } else {
+            _watchedPorts.remove(watchedPort);
+          }
+        }
+        _emit(Envelope(t: MsgType.ack, id: env.id));
+        _pushPorts();
+        return;
+      case 'ports.forward':
+        final forwarded = env.body['port'];
+        // One id, used in both fields: the real route addresses a grant BY its
+        // id, so a fixed `path` would contradict the `grantId` beside it.
+        final grantId = 'demo-grant-${Ulid()}';
+        _emit(
+          Envelope(
+            t: MsgType.ack,
+            id: env.id,
+            body: {
+              'grant': {
+                'grantId': grantId,
+                'port': forwarded,
+                'path': '/forward/$grantId/',
+                'createdAt': DateTime.now().millisecondsSinceEpoch,
+                'expiresAt':
+                    DateTime.now().millisecondsSinceEpoch + 30 * 60 * 1000,
+                'browser': env.body['browser'] == true,
+              },
+            },
+          ),
+        );
+        return;
+      case 'ports.forward.stop':
+        _emit(Envelope(t: MsgType.ack, id: env.id));
+        return;
+      case 'session.close':
+      case 'session.reopen':
+        {
+          // Mirror the real server: flip the flag, then re-broadcast, so the
+          // sidebar/board drop or restore the row exactly as they would live.
+          final id = env.body['sessionId'] as String?;
+          final target = id == null ? null : _sessions[id];
+          if (target != null) target.closed = kind == 'session.close';
+          _emit(Envelope(t: MsgType.ack, id: env.id));
+          _pushSessions();
+          _pushRepos();
+          return;
+        }
+      case 'session.listClosed':
+        _emit(
+          Envelope(
+            t: MsgType.ack,
+            id: env.id,
+            body: {
+              'sessions': [
+                // Sessions closed during this run, plus the static fixtures that
+                // give the demo something to look at on a cold start.
+                for (final c in _sessions.values.where((c) => c.closed))
+                  {
+                    'id': c.id,
+                    'projectId': c.projectId,
+                    'agent': c.agent,
+                    'title': c.title,
+                    'status': 'exited',
+                    'policy': 'ask-on-risky',
+                    'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
+                    'lastPreview': c.preview,
+                    if (c.branch != null) 'branch': c.branch,
+                    'closed': true,
+                    // The demo's repo list carries no worktree for this one, so
+                    // the "worktree removed" chip has something to render.
+                    if (c.id == 's-closed-2') 'orphaned': true,
+                  },
+              ],
+            },
           ),
         );
         return;
@@ -903,6 +1109,11 @@ class _FakeSession {
   /// Feature-branch worktree this session runs in; null = primary checkout.
   String? branch;
   bool pending;
+
+  /// Closed (SPEC-29): the agent was released. Excluded from the active
+  /// snapshot, reported by `session.listClosed`, restored by `session.reopen`.
+  /// Always starts live — the demo's cold-start closed rows are static fixtures.
+  bool closed = false;
   final List<SessionEvent> events = [];
 }
 

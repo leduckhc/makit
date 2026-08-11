@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 import { Session, type SessionLifecycle } from "./session.js";
+import { TurnStatusTracker } from "./adapters/turn-status.js";
 import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
 import type { SessionEvent } from "./protocol.js";
 
@@ -341,6 +342,42 @@ test("SPEC-35: a non-empty queue takes priority even if the adapter looks idle",
   assert.deepEqual(f.steered, [], "no steering while a queue exists");
 });
 
+test("SPEC-35: a queue built behind an approval gate drains when the gate closes", async () => {
+  // The wedge, end to end. pi's `ask_user` opens the gate, then the ACP prompt
+  // resolves BEFORE the answer arrives, so the gate closes with no turn to
+  // resume. Nothing else emits `idle` for this session, so unless the closing
+  // gate settles it the session is "busy" forever: every message queues (pi
+  // cannot steer) and the queue never flushes.
+  const a = fakeAdapter();
+  const sent: string[] = [];
+  (a as any).send = async (input: { text: string }) => {
+    sent.push(input.text);
+  };
+  (a as any).steer = async () => false;
+  const tracker = new TurnStatusTracker({
+    emitStatus: (s) => a.emit("status", s),
+    emitSessionStatus: (status) =>
+      a.emit("event", { ts: Date.now(), kind: "session.status", payload: { status } }),
+    isExited: () => false,
+  });
+  const session = new Session({ projectId: "p", agent: "pi", adapter: a });
+
+  const turn = tracker.enterTurn();
+  tracker.enterApproval("awaiting-approval");
+  tracker.leaveTurn(turn);
+  assert.equal(session.status, "awaiting-approval", "still blocked on the question");
+
+  await session.sendUserMessage("and now this");
+  assert.equal(session.queuedMessages.length, 1, "busy → queued");
+
+  tracker.leaveApproval();
+  await settle();
+
+  assert.equal(session.status, "idle");
+  assert.deepEqual(sent, ["and now this"], "the queue drained");
+  assert.equal(session.queuedMessages.length, 0);
+});
+
 test("SPEC-35: cancelQueued removes one message; clearQueue empties it", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
@@ -649,4 +686,18 @@ test("toDTO omits lineage for a session with no parent (pre-SPEC-46 / app-spawne
   assert.equal(dto.parentId, undefined);
   assert.equal(dto.handoffReason, undefined);
   assert.equal(dto.origin, undefined);
+});
+
+test("SPEC-47 D12: toDTO exposes createdAt so the app can show session age", () => {
+  // `createdAt` was already assigned and persisted through toMeta(), but omitted
+  // from the DTO — so no client could render a session's age. Rehydration passes
+  // it explicitly, which is what makes the value survive a restart.
+  const born = 1_700_000_000_000;
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter(), createdAt: born });
+  assert.equal(session.toDTO().createdAt, born);
+
+  // A session with no explicit createdAt still reports one (the constructor
+  // defaults to now), so the field is never absent on a live session.
+  const fresh = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+  assert.ok((fresh.toDTO().createdAt ?? 0) > 0);
 });

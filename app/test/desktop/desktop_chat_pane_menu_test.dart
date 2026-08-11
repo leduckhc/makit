@@ -35,7 +35,7 @@ class _ControllableConnection extends ConnectionController {
     MsgType type,
     Map<String, dynamic> body,
   ) {
-    if (body['kind'] == 'session.archive') return killCompleted.future;
+    if (body['kind'] == 'session.close') return killCompleted.future;
     return Future.value(const {});
   }
 }
@@ -90,29 +90,29 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Rename session'), findsOneWidget);
-      expect(find.text('Archive session'), findsOneWidget);
+      expect(find.text('Close session'), findsOneWidget);
       // Model + thinking-effort now live inline in the composer footer.
       expect(find.text('Model'), findsNothing);
       expect(find.text('Thinking'), findsNothing);
     },
   );
 
-  testWidgets('Archive prompts for confirmation before archiving the session', (
+  testWidgets('Close prompts for confirmation before closing the session', (
     tester,
   ) async {
     await _pumpPane(tester, sessionId: 's1');
 
     await tester.tap(find.byTooltip('Session actions'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Archive session'));
+    await tester.tap(find.text('Close session'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Archive session?'), findsOneWidget);
+    expect(find.text('Close session?'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Cancel'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Archive'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Close'), findsOneWidget);
   });
 
-  testWidgets('Archive completion preserves a newer session selection', (
+  testWidgets('Close completion preserves a newer session selection', (
     tester,
   ) async {
     final connection = _ControllableConnection();
@@ -128,9 +128,9 @@ void main() {
 
     await tester.tap(find.byTooltip('Session actions'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Archive session'));
+    await tester.tap(find.text('Close session'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Archive'));
+    await tester.tap(find.widgetWithText(FilledButton, 'Close'));
     await tester.pump();
 
     // The user moves on to a newer session while the kill is still in flight.

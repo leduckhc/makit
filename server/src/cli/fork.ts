@@ -67,10 +67,10 @@ export async function runFork(argv: string[]): Promise<void> {
     // A source we cannot read is refused outright. The server takes
     // `worktreePath` at face value rather than re-deriving it from the source,
     // so proceeding with `undefined` would fork a session that *is* resolvable
-    // server-side (an archived one, say) into a child with no tree at all —
+    // server-side (an closed one, say) into a child with no tree at all —
     // silently the opposite of the rule below.
     if (!source) {
-      return failUsage(`cannot find session ${args.sessionId} in the snapshot — is it archived?`);
+      return failUsage(`cannot find session ${args.sessionId} in the snapshot — is it closed?`);
     }
 
     // D15 inverse: inherit the source's tree, or take a fresh one on request.

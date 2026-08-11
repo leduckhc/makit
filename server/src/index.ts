@@ -187,7 +187,7 @@ async function main() {
     await runResume(process.argv.slice(3));
     return;
   }
-  // `rm` ends a session: archive by default (recoverable), kill only with --kill.
+  // `rm` ends a session: close by default (recoverable), kill only with --kill.
   if (cmd === "rm") {
     const { runRm } = await import("./cli/rm.js");
     await runRm(process.argv.slice(3));

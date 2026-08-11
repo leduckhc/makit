@@ -20,12 +20,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../status/activity_badge.dart';
+import '../status/status_toast.dart';
 import '../app/theme.dart';
 import '../control/control_client.dart';
 import '../control/reconnecting_control_client.dart';
 import '../shortcuts/keymap_controller.dart';
 import '../store/cached_commands.dart';
 import '../store/connection.dart';
+import '../store/ports.dart';
 import '../store/recent_models.dart';
 import '../store/secure_store.dart';
 import '../store/store.dart';
@@ -41,6 +44,7 @@ import 'chat/sidebar_layout.dart';
 import 'daemon/daemon_lifecycle.dart';
 import 'daemon/server_profile.dart';
 import 'desktop_controller.dart';
+import 'desktop_ports_route.dart';
 import 'screens/providers.dart';
 import '../store/prefs/navigator_preference_bridge.dart';
 import '../store/prefs/preference_entries.dart';
@@ -50,6 +54,7 @@ import '../ui/session/navigator/navigator_style.dart';
 import 'settings/server_config.dart';
 import 'settings/settings_window.dart';
 import 'tray/tray_controller.dart';
+import 'tray/tray_ports.dart';
 
 /// Exposes the [DesktopController] to the dashboard widgets.
 final desktopControllerProvider = Provider<DesktopController>(
@@ -124,6 +129,13 @@ Future<void> runDesktopApp() async {
     onStop: () => controller.stop(),
     onOpenDashboard: _showWindow,
     onOpenQr: _showWindow,
+    // SPEC-42 D15: the menubar's one ports action. The desktop shell is not a
+    // router app, so this pushes on its own Navigator — the same helper the
+    // ⌘⇧P shortcut and the worktree menu use, guard included.
+    onOpenPorts: () async {
+      await _showWindow();
+      await DesktopPortsRoute.open(_desktopNavKey.currentState);
+    },
     // Real quit: cancel the poll timer, then terminate the process — which also
     // removes the tray icon. (windowManager.destroy alone left it running.)
     onQuit: () {
@@ -192,7 +204,7 @@ Future<void> runDesktopApp() async {
           (ref) => ref.watch(desktopRailOptionsProvider),
         ),
       ],
-      child: const _DesktopApp(),
+      child: _DesktopApp(tray: tray),
     ),
   );
 }
@@ -203,7 +215,11 @@ Future<void> _showWindow() async {
 }
 
 class _DesktopApp extends ConsumerStatefulWidget {
-  const _DesktopApp();
+  const _DesktopApp({this.tray});
+
+  /// The macOS tray, when there is one — fed the app's cached ports snapshot
+  /// (D15: the menubar renders the cache and never arms the scanner).
+  final TrayController? tray;
 
   @override
   ConsumerState<_DesktopApp> createState() => _DesktopAppState();
@@ -211,6 +227,7 @@ class _DesktopApp extends ConsumerStatefulWidget {
 
 class _DesktopAppState extends ConsumerState<_DesktopApp>
     with WidgetsBindingObserver {
+  ProviderSubscription<PortsSnapshot?>? _portsSub;
   @override
   void initState() {
     super.initState();
@@ -218,6 +235,16 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
     // frame stream before the WS connects and starts pushing snapshots
     // (mirrors the mobile bootstrap in `main.dart`).
     ref.read(storeControllerProvider);
+    // SPEC-42 D15: mirror each ports snapshot the app already receives into the
+    // menubar. A LISTENER, not a watch: the tray must never be the reason the
+    // host runs `lsof`, so an idle window with no ports surface open simply
+    // leaves the submenu showing the last snapshot it saw.
+    final tray = widget.tray;
+    if (tray != null) {
+      _portsSub = ref.listenManual(portsProvider, (_, next) {
+        unawaited(tray.setPorts(trayPortLabels(next, ref.read(reposProvider))));
+      });
+    }
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_bootstrapConnection());
@@ -226,6 +253,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
 
   @override
   void dispose() {
+    _portsSub?.close();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -292,7 +320,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
 
   @override
   Widget build(BuildContext context) {
-    // Close tabs whose session no longer exists server-side (archived or quit
+    // Close tabs whose session no longer exists server-side (closed or quit
     // from another client, or a restored layout pointing at dead sessions)
     // BEFORE auto-select, so it sees the pruned workspace.
     ref.watch(desktopSessionPruneProvider);
@@ -316,12 +344,21 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
       themeMode: ref.preference(themeModePreference),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        child: SrvRequestHandler(
-          navigatorKey: _desktopNavKey,
-          // Desktop is the control surface: always show the in-app dialog, and
-          // only fall back to a system notification if it goes unanswered.
-          reminderDelay: reminderDelay,
-          child: child ?? const SizedBox(),
+        // SPEC-48: the same toast layer as mobile. Tapping one opens Activity in
+        // its dialog; the sidebar bell is the other way in.
+        child: StatusToastLayer(
+          topInset: kToastInsetDesktop,
+          onOpen: (event) {
+            final context = _desktopNavKey.currentContext;
+            if (context != null) unawaited(showActivityDialog(context));
+          },
+          child: SrvRequestHandler(
+            navigatorKey: _desktopNavKey,
+            // Desktop is the control surface: always show the in-app dialog, and
+            // only fall back to a system notification if it goes unanswered.
+            reminderDelay: reminderDelay,
+            child: child ?? const SizedBox(),
+          ),
         ),
       ),
       home: DesktopKeymapScope(

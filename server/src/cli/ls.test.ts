@@ -112,15 +112,15 @@ test("parseLsArgs: defaults to loopback:7777, human output, active sessions", ()
   assert.equal(a.host, "127.0.0.1");
   assert.equal(a.port, 7777);
   assert.equal(a.json, false);
-  assert.equal(a.archived, false);
+  assert.equal(a.closed, false);
   assert.equal(a.projectId, undefined);
 });
 
-test("parseLsArgs: --json --archived --project P --host H --port N", () => {
-  const a = parseLsArgs(["--json", "--archived", "--project", "p1", "--host", "1.2.3.4", "--port", "9"]);
+test("parseLsArgs: --json --closed --project P --host H --port N", () => {
+  const a = parseLsArgs(["--json", "--closed", "--project", "p1", "--host", "1.2.3.4", "--port", "9"]);
   assert.deepEqual(
-    { host: a.host, port: a.port, json: a.json, archived: a.archived, projectId: a.projectId },
-    { host: "1.2.3.4", port: 9, json: true, archived: true, projectId: "p1" },
+    { host: a.host, port: a.port, json: a.json, closed: a.closed, projectId: a.projectId },
+    { host: "1.2.3.4", port: 9, json: true, closed: true, projectId: "p1" },
   );
 });
 
@@ -191,23 +191,23 @@ test("human output prints one line per session, and 'no sessions' when empty", a
   }
 });
 
-test("--archived reads session.listArchived instead of the pushed snapshot", async () => {
-  const archived = [{ id: "a1", projectId: "p1", agent: "pi", title: "old", status: "idle", lastActivityAt: 3 }];
+test("--closed reads session.listClosed instead of the pushed snapshot", async () => {
+  const closed = [{ id: "a1", projectId: "p1", agent: "pi", title: "old", status: "idle", lastActivityAt: 3 }];
   let asked = "";
   const stub = await startStubWss({
     acceptBearer: "CACHED",
     sessions: SESSIONS,
     onCmd: (m) => {
       asked = String(m.kind);
-      return { sessions: archived };
+      return { sessions: closed };
     },
   });
   try {
     await withHome(
       async () => {
-        const { out } = await capture(["--json", "--archived", "--port", String(stub.port)]);
-        assert.equal(asked, "session.listArchived");
-        assert.equal(out, JSON.stringify(archived) + "\n");
+        const { out } = await capture(["--json", "--closed", "--port", String(stub.port)]);
+        assert.equal(asked, "session.listClosed");
+        assert.equal(out, JSON.stringify(closed) + "\n");
       },
       { control: true, bearer: "CACHED" },
     );
@@ -257,19 +257,19 @@ test("no server listening on the WSS port → exit 4", async () => {
   );
 });
 
-test("a refused session.listArchived is a sentence and exit 1, not an unhandled rejection", async () => {
+test("a refused session.listClosed is a sentence and exit 1, not an unhandled rejection", async () => {
   // `ls` catches AuthError only, so a plain server refusal on this path escaped
   // as a rejected promise: a node stack trace instead of the one-line refusal
   // every other verb prints, and an exit code nothing chose.
   const stub = await startStubWss({
     acceptBearer: "CACHED",
     sessions: SESSIONS,
-    onCmd: () => ({ __err: "archived sessions are unavailable while the store is compacting" }),
+    onCmd: () => ({ __err: "closed sessions are unavailable while the store is compacting" }),
   });
   try {
     await withHome(
       async () => {
-        const { err, code, out } = await capture(["--archived", "--port", String(stub.port)]);
+        const { err, code, out } = await capture(["--closed", "--port", String(stub.port)]);
         assert.equal(code, 1);
         assert.match(err, /while the store is compacting/);
         assert.doesNotMatch(err, /at .*\.ts:|node:internal/, "no stack trace");

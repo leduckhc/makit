@@ -124,6 +124,32 @@ class PortCollision {
   );
 }
 
+/// SPEC-42 D13. The container that published this port, so a listener held by
+/// `com.docker.backend` stops reading as unowned system noise. Ownership only:
+/// [PortInfo.reach] still reports the real bind, because "docker" would be the
+/// reassuring reading of a `0.0.0.0` publish.
+class PortDocker {
+  const PortDocker({required this.container, this.compose});
+
+  /// Container name as `docker ps` reports it.
+  final String container;
+
+  /// Compose file that defines the container, when its labels carry one.
+  final String? compose;
+
+  /// Tolerant decode. Unlike [PortOrphan]/[PortCollision] this CAN return null:
+  /// [container] is the whole content of the annotation, so an object without a
+  /// usable name says nothing and is dropped — the port survives.
+  static PortDocker? fromJson(Map<String, dynamic> j) {
+    final container = _asStringOrNull(j['container']);
+    if (container == null || container.isEmpty) return null;
+    return PortDocker(
+      container: container,
+      compose: _asStringOrNull(j['compose']),
+    );
+  }
+}
+
 /// One listening TCP port attributed (best-effort) to a worktree.
 class PortInfo {
   const PortInfo({
@@ -140,6 +166,8 @@ class PortInfo {
     this.openUrl,
     this.orphan,
     this.collision,
+    this.docker,
+    this.watched = false,
   });
 
   /// Snapshot key, NOT an identity: `<pid>:<address>:<port>` (D6).
@@ -173,6 +201,17 @@ class PortInfo {
   /// a collision was derived.
   final PortCollision? collision;
 
+  /// SPEC-42 D13: the container that published this port; absent when this is
+  /// not a container port, or when no docker daemon could be read at all.
+  final PortDocker? docker;
+
+  /// SPEC-44 D7: the user asked to be told if this endpoint stops listening.
+  ///
+  /// A plain bool, not a nullable one: unlike every OTHER optional field here,
+  /// "absent" and "false" mean the same thing for a watch (nobody asked), so
+  /// there is no unknown state to protect.
+  final bool watched;
+
   /// Tolerant decode: returns null when a required scalar is unrecoverable
   /// (so the codec can drop just this entry). Absent optionals stay absent.
   static PortInfo? fromJson(Map<String, dynamic> j) {
@@ -203,6 +242,10 @@ class PortInfo {
     final collision = rawCollision is Map
         ? PortCollision.fromJson(Map<String, dynamic>.from(rawCollision))
         : null;
+    final rawDocker = j['docker'];
+    final docker = rawDocker is Map
+        ? PortDocker.fromJson(Map<String, dynamic>.from(rawDocker))
+        : null;
     return PortInfo(
       key: key,
       port: (j['port'] as num).toInt(),
@@ -219,6 +262,8 @@ class PortInfo {
       openUrl: j['openUrl'] is String ? j['openUrl'] as String : null,
       orphan: orphan,
       collision: collision,
+      docker: docker,
+      watched: j['watched'] == true,
     );
   }
 }
@@ -327,6 +372,296 @@ final portsGlyphStateProvider = Provider.family<PortsGlyphState, String>(
 
 /// Ref-counted `ports.watch` gate, mirroring [MetricsWatchController].
 ///
+/// The endpoint a kill names, captured from the row the user was looking at
+/// (SPEC-43 D1/D8): the confirm dialog names this tuple and the command carries
+/// exactly it, so the server can re-verify that the process it signals is the
+/// one the user saw.
+class PortKillTarget {
+  const PortKillTarget({
+    required this.address,
+    required this.port,
+    required this.pid,
+    required this.startedAt,
+  });
+
+  final String address;
+  final int port;
+  final int pid;
+
+  /// Epoch ms the process started — required, unlike [PortInfo.startedAt].
+  final int startedAt;
+
+  /// The target for [port], or **null** when its start time is unknown.
+  ///
+  /// Null is a refusal, not a fallback: without a start time the server cannot
+  /// tell this process from a later one that reused its pid (D1), so the UI must
+  /// not offer to kill it at all.
+  static PortKillTarget? of(PortInfo port) {
+    final startedAt = port.startedAt;
+    if (startedAt == null) return null;
+    return PortKillTarget(
+      address: port.address,
+      port: port.port,
+      pid: port.pid,
+      startedAt: startedAt,
+    );
+  }
+
+  Map<String, dynamic> toCommand() => {
+    'kind': 'ports.kill',
+    'address': address,
+    'port': port,
+    'pid': pid,
+    'startedAt': startedAt,
+  };
+}
+
+/// What became of a kill (SPEC-43 D2/D3). Mirrors the server's `PortKillOutcome`
+/// plus [failed], which the server never sends — see [parsePortKillOutcome].
+enum PortKillOutcome {
+  released,
+  forceKilled,
+  survived,
+  notFound,
+  identityMismatch,
+  notOwned,
+  refusedProtected,
+  refusedSelf,
+  refusedSession,
+  scanUnavailable,
+
+  /// The request failed, or answered with something this build does not know.
+  /// Local only: it exists so an unrecognised answer can never be mistaken for
+  /// a success.
+  failed;
+
+  /// Whether the endpoint is actually free now. Only these two mean "gone".
+  bool get releasedThePort =>
+      this == PortKillOutcome.released || this == PortKillOutcome.forceKilled;
+}
+
+/// Tolerant decode of the ack's `outcome`. Anything unrecognised (a newer
+/// server, a truncated frame, a null) becomes [PortKillOutcome.failed]: the one
+/// rule that must never bend is that an answer we cannot read is not a success.
+PortKillOutcome parsePortKillOutcome(Object? v) => switch (v) {
+  'released' => PortKillOutcome.released,
+  'force-killed' => PortKillOutcome.forceKilled,
+  'survived' => PortKillOutcome.survived,
+  'not_found' => PortKillOutcome.notFound,
+  'identity_mismatch' => PortKillOutcome.identityMismatch,
+  'not_owned' => PortKillOutcome.notOwned,
+  'refused_protected' => PortKillOutcome.refusedProtected,
+  'refused_self' => PortKillOutcome.refusedSelf,
+  'refused_session' => PortKillOutcome.refusedSession,
+  'scan_unavailable' => PortKillOutcome.scanUnavailable,
+  _ => PortKillOutcome.failed,
+};
+
+/// Sends `ports.kill` and reports what happened.
+///
+/// Uses the socket's **request** path, unlike [PortsWatch]'s fire-and-forget
+/// `send`: the whole point of a kill is the outcome, and every refusal is an ack
+/// the user must be shown. A transport failure degrades to
+/// [PortKillOutcome.failed] rather than throwing into a button handler.
+class PortsKiller {
+  PortsKiller(this._request);
+
+  final Future<Map<String, dynamic>> Function(Map<String, dynamic> body)
+  _request;
+
+  Future<PortKillOutcome> kill(PortKillTarget target) async {
+    try {
+      final reply = await _request(target.toCommand());
+      return parsePortKillOutcome(reply['outcome']);
+    } catch (_) {
+      return PortKillOutcome.failed;
+    }
+  }
+
+  /// SPEC-43 P3b: kill every orphan the SERVER currently sees, and report one
+  /// outcome per endpoint.
+  ///
+  /// The endpoints are deliberately not named by the client: the orphan set is
+  /// derived from the server's fresh scan (D5), which is also what stops this
+  /// from becoming "kill this arbitrary list". An unreadable answer degrades to a
+  /// single [PortKillOutcome.failed], never to an empty (= "nothing to do") list.
+  Future<List<PortKillOutcome>> killOrphans() async {
+    try {
+      final reply = await _request({'kind': 'ports.killOrphans'});
+      final results = reply['results'];
+      if (results is! List) return const [PortKillOutcome.failed];
+      return [
+        for (final r in results)
+          parsePortKillOutcome(r is Map ? r['outcome'] : null),
+      ];
+    } catch (_) {
+      return const [PortKillOutcome.failed];
+    }
+  }
+}
+
+/// A minted forward: what to open, and when it dies (SPEC-44 P4b).
+class ForwardGrant {
+  const ForwardGrant({
+    required this.grantId,
+    required this.port,
+    required this.path,
+    required this.expiresAt,
+    required this.browser,
+  });
+
+  final String grantId;
+  final int port;
+
+  /// Path on the makit listener, e.g. `/forward/<grantId>/`. The client joins it
+  /// to the origin it is already connected to — only the client knows which of
+  /// the host's addresses it can actually reach.
+  final String path;
+
+  /// Epoch ms the grant dies regardless of activity.
+  final int expiresAt;
+
+  /// True when the id alone authorises, because the consumer is the system
+  /// browser and cannot send an `Authorization` header.
+  final bool browser;
+
+  /// Tolerant decode; null when the ack is missing anything the client must have.
+  static ForwardGrant? fromJson(Map<String, dynamic> j) {
+    final grantId = _asStringOrNull(j['grantId']);
+    final path = _asStringOrNull(j['path']);
+    final port = _asIntOrNull(j['port']);
+    final expiresAt = _asIntOrNull(j['expiresAt']);
+    if (grantId == null || path == null || port == null || expiresAt == null) {
+      return null;
+    }
+    return ForwardGrant(
+      grantId: grantId,
+      port: port,
+      path: path,
+      expiresAt: expiresAt,
+      browser: j['browser'] == true,
+    );
+  }
+}
+
+/// The result of asking for a forward: a grant, or the server's reason.
+class ForwardResult {
+  const ForwardResult({this.grant, this.refusal});
+
+  final ForwardGrant? grant;
+
+  /// The server's one-line reason, shown verbatim — it names the actual rule
+  /// ("database and shell ports are never forwarded"), which a generic failure
+  /// could not.
+  final String? refusal;
+}
+
+/// Mints and revokes forwards (SPEC-44 P4b).
+class PortsForwarder {
+  PortsForwarder(this._request);
+
+  final Future<Map<String, dynamic>> Function(Map<String, dynamic> body)
+  _request;
+
+  /// Ask for a forward of [port] owned by [worktreePath].
+  ///
+  /// [browser] declares that the URL is going to the user's own browser, which
+  /// cannot send a bearer — so the grant id becomes the capability. Passed
+  /// explicitly rather than assumed, because it is the weaker mode.
+  Future<ForwardResult> forward({
+    required String worktreePath,
+    required int port,
+    bool browser = false,
+  }) async {
+    try {
+      final reply = await _request({
+        'kind': 'ports.forward',
+        'worktreePath': worktreePath,
+        'port': port,
+        'browser': browser,
+      });
+      final raw = reply['grant'];
+      final grant = raw is Map
+          ? ForwardGrant.fromJson(Map<String, dynamic>.from(raw))
+          : null;
+      if (grant == null) {
+        return const ForwardResult(
+          refusal: 'the server did not mint a forward',
+        );
+      }
+      return ForwardResult(grant: grant);
+    } catch (e) {
+      // The server errs with the REASON for a refusal (unlike a kill, where every
+      // refusal is an ack), so the message is the useful part.
+      return ForwardResult(refusal: _reasonFrom(e));
+    }
+  }
+
+  /// Revoke a forward. Best-effort: an already-dead grant is a success.
+  Future<void> stop(String grantId) async {
+    try {
+      await _request({'kind': 'ports.forward.stop', 'grantId': grantId});
+    } catch (_) {
+      // The grant expires on its own within 30 min and is idle-reaped in 60 s, so
+      // a lost `stop` is not a leak worth surfacing.
+    }
+  }
+
+  static String _reasonFrom(Object error) {
+    final message = error is StateError ? error.message : error.toString();
+    return message.isEmpty ? 'could not forward that port' : message;
+  }
+}
+
+/// Wires [PortsForwarder] to the socket's request path.
+final portsForwarderProvider = Provider<PortsForwarder>((ref) {
+  final conn = ref.read(connectionControllerProvider.notifier);
+  return PortsForwarder((body) => conn.request(MsgType.cmd, body));
+});
+
+/// Toggles the persisted "tell me if this stops listening" flag (SPEC-44 D7).
+///
+/// Identified by `(worktreePath, port)`, never the snapshot key: the point of a
+/// watch is to survive the dev-server restart that changes the pid.
+class PortsWatchPort {
+  PortsWatchPort(this._request);
+
+  final Future<Map<String, dynamic>> Function(Map<String, dynamic> body)
+  _request;
+
+  /// Returns true when the server acked the write. False on any failure, so the
+  /// UI can revert its toggle instead of showing a watch that does not exist.
+  Future<bool> set({
+    required String worktreePath,
+    required int port,
+    required bool on,
+  }) async {
+    try {
+      await _request({
+        'kind': 'ports.watchPort',
+        'worktreePath': worktreePath,
+        'port': port,
+        'on': on,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+/// Wires [PortsWatchPort] to the socket's request path.
+final portsWatchPortProvider = Provider<PortsWatchPort>((ref) {
+  final conn = ref.read(connectionControllerProvider.notifier);
+  return PortsWatchPort((body) => conn.request(MsgType.cmd, body));
+});
+
+/// Wires [PortsKiller] to the socket's request path.
+final portsKillerProvider = Provider<PortsKiller>((ref) {
+  final conn = ref.read(connectionControllerProvider.notifier);
+  return PortsKiller((body) => conn.request(MsgType.cmd, body));
+});
+
 /// The home screen (mobile) and the sidebar (desktop) can both hold the watch
 /// at once, and a single sidebar can mount many rows. The server must receive
 /// exactly one `ports.watch {on:true}` for the set and `{on:false}` only when

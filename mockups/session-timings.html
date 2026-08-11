@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — How long did it take? (tool / thinking / turn / session)</title>
+<style>
+  :root{
+    /* dark tokens, straight from app/lib/app/theme.dart */
+    --bg:#171717;--lowest:#121212;--low:#1E1E1E;--container:#242424;
+    --high:#2E2E2E;--highest:#383838;
+    --text:#F5F5F5;--muted:#9E9E9E;            /* == colorScheme.onSurfaceVariant (dark) */--hairline:#333333;--on-variant:#C9C9C9;
+    --accent:#4ADE80;          /* kMakitAccent */
+    --warning:#E0A72E;         /* kStatusWarning */
+    --caution:#E07B39;         /* kStatusCaution */
+    --risky:#E8A33D;           /* kToolRiskyColor */
+    --destructive:#E5544B;     /* kToolDestructiveColor */
+    --error:#FFB4AB;           /* M3 dark error */
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 96px}
+  h1{font-size:28px;font-weight:600;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 8px;max-width:620px}
+  code{font-family:var(--mono);background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+  .note{max-width:620px;margin:14px 0 12px;padding:12px 14px;border-radius:8px;font-size:13px}
+  .note.gap{border:1px solid #6b5d2a;background:#241f10;color:#e8d9a8}
+  .note.decide{border:1px solid #2f4f5c;background:#102024;color:#bcd9e2}
+  .note strong{color:#fff}
+  .note ul{margin:8px 0 0;padding-left:20px}
+  .note summary{cursor:pointer;list-style:none}
+  .note summary::-webkit-details-marker{display:none}
+  .note summary::after{content:" ▾";opacity:.6;font-size:11px}
+  .note:not([open]) summary::after{content:" ▸"}
+  .note li{margin:3px 0}
+
+  h2.sec{font-size:20px;margin:40px 0 4px;padding-top:20px;border-top:1px solid #202020}
+  h2.sec .n{color:var(--muted);font-weight:400;margin-right:8px}
+  p.secsub{color:var(--muted);font-size:13px;margin:0 0 16px;max-width:620px}
+
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr))}
+  .card,.transcript,.row,.receipt{min-width:0}
+  .card{border:1px solid var(--hairline);border-radius:12px;background:#141414;overflow:hidden;display:flex;flex-direction:column}
+  .card > header{padding:12px 16px;border-bottom:1px solid var(--hairline);display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .card h3{font-size:16px;margin:0;font-weight:600}
+  .badge{font-size:9.5px;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:.03em;text-transform:uppercase}
+  .badge.rec{color:#0e0e0e;background:var(--accent)}
+  .badge.no{color:#0e0e0e;background:#8a8a8a}
+  .card .why{margin:8px 14px 0;color:var(--muted);font-size:12px}
+  .card .cost{margin:6px 14px 12px;color:#c98f8f;font-size:12px}
+  .card .cost b,.card .why b{color:var(--on-variant);font-weight:600}
+
+  /* ── transcript surface: mimics transcriptRow (kChatGutter 20, gap 10) ── */
+  .transcript{background:var(--bg);padding:8px 20px;margin:12px 0 0;flex:1}
+  .row{padding:4px 0;display:flex;align-items:center;gap:8px}
+  .row .glyph{width:16px;height:16px;flex:none;display:inline-flex;align-items:center;justify-content:center}
+  .row .line{flex:1;min-width:0;font-family:var(--mono);font-size:13px;color:var(--on-variant);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .trail{flex:none;display:inline-flex;align-items:center;gap:8px}
+  .dur{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .dur.warn{color:var(--warning)}
+  .dur.strong{color:var(--on-variant)}
+  .dur.ghost{color:var(--muted)}
+  .caret{color:var(--muted);font-size:11px;opacity:.8}
+
+  /* status glyphs */
+  .ok{color:var(--accent)}
+  .fail{color:var(--error)}
+  .spin{width:10px;height:10px;border-radius:50%;background:var(--accent);display:inline-block}
+  .spin.pulse{animation:pulse 1.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+
+  /* thinking line */
+  .think{padding:4px 0;display:flex;gap:8px;align-items:baseline}
+  .think .txt{color:var(--muted);font-size:13px;font-style:italic;flex:1;min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .think .lead{color:var(--on-variant);font-size:12.5px;font-style:normal;flex:none}
+
+  /* agent / user bubbles, just enough to give the rows context */
+  .bubble{max-width:80%;padding:8px 12px;border-radius:16px;font-size:13.5px;margin:5px 0}
+  .bubble.agent{background:var(--low);color:var(--text)}
+  .bubble.user{background:var(--high);color:var(--text);margin-left:auto;border-radius:16px 16px 4px 16px}
+
+  /* working indicator shimmer, like WorkingIndicator's ShaderMask */
+  .working{display:inline-flex;align-items:baseline;gap:8px;padding:6px 0;font-size:13.5px}
+  .working .word{font-style:italic;font-weight:500;
+    background:linear-gradient(90deg,var(--muted) 35%,var(--text) 50%,var(--muted) 65%);
+    background-size:260% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:sweep 1.4s linear infinite}
+  @keyframes sweep{from{background-position:130% 0}to{background-position:-130% 0}}
+
+  /* turn receipt row */
+  .receipt{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:11px;color:var(--muted);
+    font-variant-numeric:tabular-nums}
+  .receipt .hair{flex:1;height:1px;background:#262626}
+  .receipt .gate{color:var(--caution)}
+  .receipt.boxed{background:var(--lowest);border:1px solid #202020;border-radius:8px;padding:7px 10px;margin:6px 0}
+
+  /* composer footer chip */
+  .composer{background:var(--container);border:1px solid #2b2b2b;border-radius:16px;padding:10px 12px;margin:12px 20px}
+  .composer .ph{color:var(--muted);font-size:13.5px}
+  .composer .footer{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--high);border-radius:12px;
+    padding:3px 9px;font-size:11.5px;color:var(--on-variant);font-variant-numeric:tabular-nums}
+  .chip .ring{width:11px;height:11px;border-radius:50%;flex:none;
+    background:conic-gradient(var(--accent) 0 22%, #454545 22% 100%);
+    mask:radial-gradient(circle, transparent 44%, #000 46%);
+    -webkit-mask:radial-gradient(circle, transparent 44%, #000 46%)}
+  .chip.push{margin-left:auto}
+  .send{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#0b2a17;
+    display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+
+  /* usage popover mock */
+  .pop{background:var(--container);border:1px solid #2f2f2f;border-radius:12px;padding:14px;margin:12px;
+    box-shadow:0 18px 40px rgba(0,0,0,.5);max-width:340px}
+  .pop h4{margin:0 0 4px;font-size:14px;font-weight:600}
+  .pop .cap{margin:0 0 12px;color:var(--muted);font-size:11.5px}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font-size:12.5px;border-bottom:1px solid #2b2b2b}
+  .kv:last-of-type{border-bottom:0}
+  .kv .k{color:var(--muted)}
+  .kv .v{font-family:var(--mono);color:var(--text);font-variant-numeric:tabular-nums}
+  .kv.new{background:rgba(74,222,128,.06);margin:0 -6px;padding:4px 8px;border-radius:4px}
+  .kv.new .k::after{content:" new";color:var(--accent);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;font-family:inherit}
+  .split{height:1px;background:#2f2f2f;margin:10px 0}
+
+  /* sidebar row mock */
+  .side{background:var(--low);border-radius:8px;padding:8px 12px;margin:12px 20px;display:flex;align-items:center;gap:8px}
+  .side .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+  .side .nm{font-size:13px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .side .meta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+
+  /* tooltip demo */
+  .tip{position:relative}
+  .tip .bub{position:absolute;bottom:calc(100% + 6px);right:0;background:#000;border:1px solid #3a3a3a;
+    border-radius:8px;padding:5px 8px;font-size:11.5px;color:var(--on-variant);white-space:nowrap;
+    opacity:0;pointer-events:none;transition:opacity .12s;font-family:var(--mono)}
+  .tip:hover .bub{opacity:1}
+  .hoverhint{color:var(--muted);font-size:11px;margin:0 14px 10px}
+
+  /* expanded tool body */
+  .body{background:var(--lowest);border:1px solid #232323;border-radius:8px;margin:2px 0 6px;overflow:hidden}
+  .body .facts{display:flex;flex-wrap:wrap;gap:16px;padding:8px 10px;border-bottom:1px solid #232323;
+    font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .body .facts b{color:var(--on-variant);font-weight:600;font-family:var(--mono)}
+  .body pre{margin:0;padding:9px 10px;font-family:var(--mono);font-size:11.5px;color:#b8b8b8;
+    white-space:pre-wrap;max-height:96px;overflow:auto}
+
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid #232323;font-size:12.5px}
+  th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text)}
+  td .yes{color:var(--accent)}
+  td .nope{color:#8a8a8a}
+
+  .full{max-width:520px;margin:0 auto}
+  .toolbar{display:flex;gap:10px;align-items:center;margin:20px 0 4px;flex-wrap:wrap}
+  button.t{background:var(--high);color:var(--text);border:1px solid var(--hairline);border-radius:8px;
+    padding:8px 12px;min-height:44px;font-size:12px;cursor:pointer;font-family:inherit}
+  button.t[aria-pressed="true"]{background:rgba(74,222,128,.12);color:var(--accent);
+    border-color:var(--accent);font-weight:600}
+
+  /* MOTI-a1808c — no animation under reduced motion; the shimmer resolves to a
+     legible solid word, and the pulse to a steady dot. Both still read as "live"
+     because neither relied on movement for its meaning, only for its emphasis. */
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;
+      transition-duration:.001ms !important}
+    .spin.pulse{animation:none;opacity:1}
+    .working .word{animation:none;background:none;-webkit-background-clip:initial;
+      background-clip:initial;color:var(--text)}
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>How long did that take?</h1>
+<p class="sub">Four scopes, four different questions. <strong>Tool call</strong> and <strong>thinking</strong> are
+attribution ("what ate the two minutes"). <strong>Turn</strong> while running is a stuckness question ("is it alive").
+<strong>Session</strong> is a cost/effort question. The same number rendered the same way in all four places would answer
+none of them well, so each section below is judged on its own.</p>
+
+<p class="sub" style="font-size:12px"><b>Reading this board:</b> emoji stand in for the app's Phosphor
+  icons, so icon weight and optical alignment cannot be judged here — only placement, size and text. Greys are
+  the real <code>theme.dart</code> tokens, so contrast <em>can</em>.</p>
+
+<details class="note gap" open>
+  <summary><strong>⚠ Three data facts to hold onto.</strong></summary>
+  <ul>
+    <li>Every event already carries <code>ts</code> (<code>server/src/protocol.ts:387</code>) and every
+      <code>ChatItem</code> keeps it (<code>chat_items.dart:31</code>) — so durations are <em>derivations</em>, not new
+      telemetry.</li>
+    <li>But the <em>end</em> timestamps are dropped on the floor today: <code>ToolCallItem.copyWith</code> and
+      <code>ThinkingItem.copyWith</code> both re-use the start <code>ts</code>. Tool + thinking durations need one field
+      each (<code>endedTs</code> / <code>lastTs</code>). No wire change.</li>
+    <li><code>session.status</code> <em>is</em> a logged event (<code>session.ts:437</code>), so
+      <code>running → idle</code> turn edges are already in the transcript stream. Only <strong>session age</strong>
+      needs the wire touched: <code>Session.createdAt</code> exists and is persisted
+      (<code>session.ts:147</code>) but is missing from <code>SessionDTO</code>.</li>
+  </ul>
+</details>
+
+<details class="note decide" open>
+  <summary><strong>Two semantics decisions the pictures can't make for you.</strong></summary>
+  <ul>
+    <li><b>Turn = wall clock, or agent work?</b> <code>awaiting-approval</code> / <code>awaiting-input</code> emit
+      status events <em>inside</em> a turn. So "you kept it waiting 4m" is separable from "it worked 2m" — and a naive
+      "running until not-running" would end the turn at the approval gate and report nonsense. Variants §4B/§4C show
+      both readings.</li>
+    <li><b>Session = age, or work?</b> A session opened 3 days ago with 4 minutes of agent time is described honestly
+      by two numbers and lied about by either alone. §5 shows one-number vs two-number.</li>
+  </ul>
+</details>
+
+<!-- ══════════════════════════ 1. COMPLETED TOOL ROWS ══════════════════════════ -->
+<h2 class="sec"><span class="n">1</span>Completed tool rows — where does the duration live?</h2>
+<p class="secsub">Today's collapsed row is <code>icon · summary · status · caret</code> and the summary already
+ellipsizes. Anything added here is taken from the summary's width, so the question is whether a duration earns that
+width on <em>every</em> row or only on some.</p>
+
+<div class="grid">
+
+  <div class="card">
+    <header><h3>A — always-on trailing duration</h3></header>
+    <p class="why">One duration column, right of the status glyph. Perfectly scannable; a vertical column of
+      tabular numbers is easy to skim for outliers.</p>
+    <p class="cost"><b>Cost:</b> most tool calls are fast, so this is mostly a column of <code>0.2s</code> — ink spent to
+      say "nothing happened here", on the one line that already truncates.</p>
+    <div class="transcript">
+      <div class="row"><span class="glyph">📄</span><span class="line">read app/lib/store/chat_items.dart</span><span class="trail"><span class="dur">0.2s</span><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph">🔍</span><span class="line">grep "copyWith" app/lib</span><span class="trail"><span class="dur">0.4s</span><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph">✎</span><span class="line">edit chat_items.dart · +14 −3</span><span class="trail"><span class="dur">0.3s</span><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter test test/store</span><span class="trail"><span class="dur">48s</span><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph">📄</span><span class="line">read app/lib/ui/session/tool_call_card.dart</span><span class="trail"><span class="dur">0.2s</span><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter analyze --no-pub</span><span class="trail"><span class="dur warn">2m 41s</span><span class="fail">⚠</span><span class="caret">›</span></span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>B — threshold-gated (only past ~2s)</h3><span class="badge rec">suggested</span></header>
+    <p class="why">Identical rendering, but the label is absent when it would be noise. A duration then <em>means</em>
+      something by appearing at all — the same "absent stays absent" rule that makes <code>portUptimeLabel</code>
+      return <code>''</code> and <code>ContextUsageRing</code> refuse to draw without a window.</p>
+    <p class="cost"><b>Cost:</b> ragged right edge, and you cannot tell "fast" from "not measured" at a glance
+      (mitigated by §1D: the exact ms is always in the expanded body).</p>
+    <div class="transcript">
+      <div class="row"><span class="glyph">📄</span><span class="line">read app/lib/store/chat_items.dart</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph">🔍</span><span class="line">grep "copyWith" app/lib</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph">✎</span><span class="line">edit chat_items.dart · +14 −3</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter test test/store</span><span class="trail"><span class="dur strong">48s</span><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph">📄</span><span class="line">read app/lib/ui/session/tool_call_card.dart</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter analyze --no-pub</span><span class="trail"><span class="dur warn">2m 41s</span><span class="fail">⚠</span><span class="caret">›</span></span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>C — inside the summary line</h3></header>
+    <p class="why">Duration joins the existing <code>·</code>-separated summary grammar
+      (<code>edit foo.ts · +12 −3</code>), so no new column and no new alignment rule.</p>
+    <p class="cost"><b>Cost:</b> it's inside the ellipsis. On a phone, the one thing that gets truncated first is the
+      thing you just added — and the numbers no longer line up, killing scannability.</p>
+    <div class="transcript">
+      <div class="row"><span class="glyph">✎</span><span class="line">edit chat_items.dart · +14 −3 · 0.3s</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter test test/store · 42 passed · 48s</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter analyze --no-pub · 3 issues · 2m 41s</span><span class="trail"><span class="fail">⚠</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph">📄</span><span class="line">read app/lib/ui/session/chat_transcript.dart lines 200-460 · 0.2s</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>D — hover tooltip + expanded body</h3><span class="badge rec">pair with B</span></header>
+    <p class="why">Zero permanent ink, and the only place with room for the <em>full</em> truth: started-at, exact ms,
+      exit code. As a standalone answer it's undiscoverable — as B's overflow it's exactly right.</p>
+    <p class="hoverhint">↓ hover the row</p>
+    <div class="transcript">
+      <div class="row tip"><span class="glyph">✎</span><span class="line">edit chat_items.dart · +14 −3</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span><span class="bub">ran 0.31s · started 14:02:11</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter analyze --no-pub</span><span class="trail"><span class="dur warn">2m 41s</span><span class="fail">⚠</span><span class="caret" style="opacity:1;transform:rotate(90deg);display:inline-block">›</span></span></div>
+      <div class="body">
+        <div class="facts"><span>ran <b>2m 41.4s</b></span><span>started <b>14:02:14</b></span><span>exit <b>1</b></span></div>
+        <pre>info • Unused import: '../store/models.dart' • lib/ui/session/x.dart:4
+   3 issues found. (ran in 161.2s)</pre>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════ 2. RUNNING TOOL ══════════════════════════ -->
+<h2 class="sec"><span class="n">2</span>The tool that's still running — the stuckness question</h2>
+<p class="secsub">The <code>PulseSpinner</code> already owns this slot (<code>tool_call_card.dart:141</code>) and it says
+exactly one thing: "not finished". It cannot distinguish 2 seconds from 20 minutes, which is the difference between
+"working" and "hung". These tick live — watch them.</p>
+
+<div class="grid">
+
+  <div class="card">
+    <header><h3>A — today: spinner only</h3><span class="badge no">baseline</span></header>
+    <p class="why">The whole reason this exploration exists. Both rows below are in the identical visual state.</p>
+    <div class="transcript">
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">pnpm test</span><span class="trail"><span class="spin pulse"></span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">gh pr checks --watch</span><span class="trail"><span class="spin pulse"></span><span class="caret">›</span></span></div>
+    </div>
+    <p class="cost" style="margin-top:auto"><b>Cost:</b> the second one has been stuck for 18 minutes and looks
+      identical to the one that started 3 seconds ago.</p>
+  </div>
+
+  <div class="card">
+    <header><h3>B — spinner + live counter, escalating</h3><span class="badge rec">suggested</span></header>
+    <p class="why">Strictly more informative than the spinner it sits next to, at the cost of one label. Past
+      <b>60s</b> the number takes <code>kStatusWarning</code> — the <em>one</em> place a duration justifies colour,
+      because "unusually long" is a status, and colour is never the only signal (the number itself is).</p>
+    <p class="cost"><b>Cost:</b> ticking text in a lazy list. Must ride the shared <code>PulseClock</code> at 1 Hz, and
+      <em>only the tail row may tick</em> — a per-row ticker would cost more than the cards.</p>
+    <div class="transcript">
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">pnpm test</span><span class="trail"><span class="dur" data-tick="3" data-escalate>3s</span><span class="spin pulse"></span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">gh pr checks --watch</span><span class="trail"><span class="dur warn" data-tick="1084">18m 04s</span><span class="spin pulse"></span><span class="caret">›</span></span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>C — counter replaces the spinner</h3></header>
+    <p class="why">Same information, one glyph less, and a number that changes every second is <em>itself</em> proof of
+      life — arguably the honest minimal design.</p>
+    <p class="cost"><b>Cost:</b> loses the shared "running" vocabulary. That green pulse is the same dot as
+      <code>SessionStatusDot</code> and <code>_GroupLiveDot</code>; dropping it here makes tool rows the one surface
+      that spells "running" differently. Also drops the spinner's <code>semanticsLabel: 'running'</code>.</p>
+    <div class="transcript">
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">pnpm test</span><span class="trail"><span class="dur strong" data-tick="3" data-escalate>3s</span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">gh pr checks --watch</span><span class="trail"><span class="dur warn" data-tick="1084">18m 04s</span><span class="caret">›</span></span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>D — silence, then escalate at 60s</h3></header>
+    <p class="why">The absolute cheapest: nothing at all until a call is <em>anomalous</em>, then a warning-toned
+      counter. Pure signal, zero routine ink.</p>
+    <p class="cost"><b>Cost:</b> during a normal 20s build you're back to §2A, staring at a spinner with no idea how
+      long it's been. Fails the common case to optimise the rare one.</p>
+    <div class="transcript">
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">pnpm test</span><span class="trail"><span class="spin pulse"></span><span class="caret">›</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">gh pr checks --watch</span><span class="trail"><span class="dur warn" data-tick="1084">18m 04s</span><span class="spin pulse"></span><span class="caret">›</span></span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════ 3. THINKING ══════════════════════════ -->
+<h2 class="sec"><span class="n">3</span>Thinking — the highest value-per-pixel of the four</h2>
+<p class="secsub">A collapsed thinking line has <em>no</em> summary — it's a truncated first sentence of the reasoning
+itself. So the duration isn't decoration here, it's the only structured fact the row can offer. This is also the one
+convention users already read elsewhere ("Thought for 12s").</p>
+
+<div class="grid">
+
+  <div class="card">
+    <header><h3>A — leading "Thought for 12s"</h3><span class="badge rec">suggested</span></header>
+    <p class="why">Reads as a sentence, is instantly familiar, and pushes the truncated reasoning text into the role of
+      subtitle — which is what it actually is. While streaming, the same slot counts up.</p>
+    <p class="cost"><b>Cost:</b> eats leading width, so less reasoning preview on a phone.</p>
+    <div class="transcript">
+      <div class="think"><span class="lead">Thought for <b style="font-family:var(--mono);font-weight:600">2s</b></span><span class="txt">— the fold already keeps ts, so I only need the last delta's…</span></div>
+      <div class="think"><span class="lead" style="color:var(--muted)">Thinking</span><span class="txt" style="color:var(--muted)">counting up while the deltas stream…</span><span class="dur strong" data-tick="41">41s</span></div>
+      <div class="think"><span class="lead">Thought for <b style="font-family:var(--mono);font-weight:600">1m 12s</b></span><span class="txt">— checking whether awaiting-approval sits inside the turn…</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>B — trailing dim duration</h3></header>
+    <p class="why">Consistent with §1B: durations always live on the right edge, in one column, for tool
+      <em>and</em> thinking rows. Preserves maximum reasoning preview.</p>
+    <p class="cost"><b>Cost:</b> loses the "Thought for…" affordance that tells a first-time user this row <em>is</em>
+      reasoning and not agent prose. Weaker as a label; better as a table.</p>
+    <div class="transcript">
+      <div class="think"><span class="txt">the fold already keeps ts, so I only need the last delta's timestamp…</span><span class="dur">2s</span></div>
+      <div class="think"><span class="txt" style="color:var(--muted)">counting up while the deltas stream…</span><span class="dur strong" data-tick="41">41s</span></div>
+      <div class="think"><span class="txt">checking whether awaiting-approval sits inside the turn or ends it…</span><span class="dur">1m 12s</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════ 4. TURN ══════════════════════════ -->
+<h2 class="sec"><span class="n">4</span>Turn — live, then as a receipt</h2>
+<p class="secsub">Two distinct moments. <em>While</em> it runs, the only question is "is it alive and how long have I
+been waiting". <em>After</em>, it's "what did that turn cost me" — which is already a story this app tells
+(<code>session.usage</code>, SPEC-37), so the duration should join it rather than start a second one.</p>
+
+<div class="grid">
+
+  <div class="card">
+    <header><h3>A — live: the WorkingIndicator counts</h3><span class="badge rec">suggested</span></header>
+    <p class="why">The shimmering word already sits at the tail of the transcript
+      (<code>chat_transcript.dart:339</code>) and is already on the shared clock. Adding a counter beside it is the
+      single cheapest change in this whole document, and it answers the question users actually ask.</p>
+    <p class="cost"><b>Cost:</b> the playful random word now carries a hard number; the tone shifts slightly from
+      "cute" to "instrument". (Arguably an improvement at 18 minutes.)</p>
+    <div class="transcript">
+      <div class="bubble user">add durations to the tool rows</div>
+      <div class="row"><span class="glyph">📄</span><span class="line">read tool_call_card.dart</span><span class="trail"><span class="ok">✓</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter test --no-pub</span><span class="trail"><span class="dur" data-tick="12" data-escalate>12s</span><span class="spin pulse"></span></span></div>
+      <div class="working"><span class="word">Percolating</span><span class="dur strong" data-tick="47">47s</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>B — after: one dim receipt row</h3><span class="badge rec">suggested</span></header>
+    <p class="why">A hairline rule closing the turn, carrying duration + tool count + cost together. Gives the
+      transcript the turn boundaries it currently lacks, and makes "which turn was expensive" answerable by scrolling.
+      The <span class="gate">gate</span> line appears <em>only</em> when an approval actually blocked — otherwise there
+      is nothing to explain.</p>
+    <p class="cost"><b>Cost:</b> a new row type in the fold, and one more thing between turns on a small screen.</p>
+    <div class="transcript">
+      <div class="bubble user">add durations to the tool rows</div>
+      <div class="row"><span class="glyph">✎</span><span class="line">edit chat_items.dart · +14 −3</span><span class="trail"><span class="ok">✓</span></span></div>
+      <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter test --no-pub</span><span class="trail"><span class="dur strong">48s</span><span class="ok">✓</span></span></div>
+      <div class="bubble agent">Done — durations are threshold-gated at 2s.</div>
+      <div class="receipt"><span class="hair"></span><span>2m 13s · 14 tools</span></div>
+      <div style="height:10px"></div>
+      <div class="bubble user">now do the same for thinking</div>
+      <div class="row"><span class="glyph" style="color:var(--destructive)">⌘</span><span class="line">git push --force-with-lease</span><span class="trail"><span class="ok">✓</span></span></div>
+      <div class="bubble agent">Pushed.</div>
+      <div class="receipt"><span class="hair"></span><span>6m 40s · <span class="gate">4m 12s waiting on you</span> · 3 tools</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>C — boxed receipt, both readings explicit</h3></header>
+    <p class="why">Same content, but the wall-clock/agent-work split is spelled out rather than implied. Removes all
+      ambiguity about what the headline number counts.</p>
+    <p class="cost"><b>Cost:</b> a card between every pair of turns is heavy chrome for a fact most turns don't need
+      — and it re-raises "which number is the real one?" on every single turn.</p>
+    <div class="transcript">
+      <div class="bubble agent">Pushed.</div>
+      <div class="receipt boxed">
+        <span>turn <b style="color:var(--on-variant);font-family:var(--mono)">6m 40s</b></span>
+        <span>· agent <b style="color:var(--on-variant);font-family:var(--mono)">2m 28s</b></span>
+        <span>· <span class="gate">you 4m 12s</span></span>
+        <span class="hair"></span><span>3 tools</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>D — live timer in the composer footer</h3></header>
+    <p class="why">Always visible without scrolling to the tail — genuinely better when you've scrolled back to re-read
+      something while the agent works. Sits next to the context ring, so all "state of this turn" facts are together.</p>
+    <p class="cost"><b>Cost:</b> permanent chrome in the space SPEC-40 just reclaimed, and it duplicates §4A whenever
+      you <em>are</em> at the tail. Pick one, not both.</p>
+    <div style="padding:8px 0 4px">
+      <div class="composer">
+        <div class="ph">Message the agent…</div>
+        <div class="footer">
+          <span class="chip"><span class="ring"></span>22%</span>
+          <span class="chip">gpt-5.1 · high</span>
+          <span class="chip push"><span class="spin pulse"></span><span data-tick="47">47s</span></span>
+          <span class="send">■</span>
+        </div>
+      </div>
+    </div>
+    <p class="hoverhint">…and the sidebar variant of the same idea — elapsed replaces "last activity" only while running:</p>
+    <div class="side"><span class="dot"></span><span class="nm">codex · fix-token-usage</span><span class="meta">running 47s</span></div>
+    <div class="side" style="margin-top:-4px"><span class="dot" style="background:var(--muted)"></span><span class="nm">pi · feat-tab-ui</span><span class="meta">2 hours ago</span></div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════ 5. SESSION ══════════════════════════ -->
+<h2 class="sec"><span class="n">5</span>Session — a rollup, not new chrome</h2>
+<p class="secsub">This number is checked maybe once an hour. It does not deserve a permanent pixel, and there is already
+a panel whose entire job is "facts about this session": the context-usage popover
+(<code>app/lib/ui/composer/context_usage.dart</code>). <b>Note:</b> this is the only section needing a wire change —
+<code>SessionDTO.createdAt</code>.</p>
+
+<div class="grid">
+
+  <div class="card">
+    <header><h3>A — one number (age)</h3></header>
+    <p class="why">Cheapest possible: <code>createdAt</code> on the DTO and one row.</p>
+    <p class="cost"><b>Cost:</b> "3 days" describes wall-clock idling, not effort. For a session you opened Monday and
+      poked twice, it's technically true and practically misleading.</p>
+    <div class="pop">
+      <h4>Context &amp; cost</h4><p class="cap">gpt-5.1 · 22% of 400k</p>
+      <div class="kv"><span class="k">Used</span><span class="v">88.2k</span></div>
+      <div class="kv"><span class="k">Headroom</span><span class="v">312k</span></div>
+      <div class="kv"><span class="k">Cost</span><span class="v">$1.84</span></div>
+      <div class="split"></div>
+      <div class="kv new"><span class="k">Age</span><span class="v">3d 4h</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <header><h3>B — age + agent time + per-turn stats</h3><span class="badge rec">suggested</span></header>
+    <p class="why">Two honest numbers instead of one misleading one, plus the two that actually inform behaviour:
+      turn count and typical turn length ("is this agent getting slower?"). Median, not mean — one 40-minute
+      <code>--watch</code> would wreck a mean.</p>
+    <p class="cost"><b>Cost:</b> agent time must be summed over the turn edges, so §4's turn-boundary derivation is a
+      prerequisite. This section can't ship first.</p>
+    <div class="pop">
+      <h4>Context &amp; cost</h4><p class="cap">gpt-5.1 · 22% of 400k</p>
+      <div class="kv"><span class="k">Used</span><span class="v">88.2k</span></div>
+      <div class="kv"><span class="k">Headroom</span><span class="v">312k</span></div>
+      <div class="kv"><span class="k">Cost</span><span class="v">$1.84</span></div>
+      <div class="split"></div>
+      <div class="kv new"><span class="k">Age</span><span class="v">3d 4h</span></div>
+      <div class="kv new"><span class="k">Agent time</span><span class="v">41m 08s</span></div>
+      <div class="kv new"><span class="k">Turns</span><span class="v">18</span></div>
+      <div class="kv new"><span class="k">Median turn</span><span class="v">1m 22s</span></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════ 6. FORMAT LADDER ══════════════════════════ -->
+<h2 class="sec"><span class="n">6</span>The format ladder (and the formatter we already have twice)</h2>
+<p class="secsub"><code>formatDuration</code> (<code>metrics_button.dart:1217</code>) and
+<code>portUptimeLabel</code> (<code>ports_vocabulary.dart:192</code>) both exist and are both too coarse for tool calls
+— <code>formatDuration</code> renders every sub-second call as <code>0s</code> and collapses <code>2m 41s</code> to
+<code>2m</code>. A third formatter needs justifying, so here is the exact proposal, and what the existing one does with
+the same input.</p>
+
+<div class="card" style="max-width:820px">
+  <table>
+    <tr><th>elapsed</th><th>proposed</th><th><code>formatDuration</code> today</th><th>why</th></tr>
+    <tr><td class="n">380 ms</td><td class="n"><span class="nope">— (hidden)</span></td><td class="n">0s</td><td>below the §1B threshold; exact ms lives in the expanded body</td></tr>
+    <tr><td class="n">1.9 s</td><td class="n"><span class="nope">— (hidden)</span></td><td class="n">1s</td><td>still below threshold</td></tr>
+    <tr><td class="n">2.4 s</td><td class="n"><span class="yes">2.4s</span></td><td class="n">2s</td><td>one decimal only in the 2–10s band, where it's the difference</td></tr>
+    <tr><td class="n">12.6 s</td><td class="n"><span class="yes">13s</span></td><td class="n">12s</td><td>past 10s a decimal is false precision; rounds, doesn't truncate</td></tr>
+    <tr><td class="n">48 s</td><td class="n"><span class="yes">48s</span></td><td class="n">48s</td><td>agrees</td></tr>
+    <tr style="background:rgba(224,167,46,.07)"><td class="n">59.5 s</td><td class="n"><span class="yes">1m 00s</span></td><td class="n">59s</td><td><b style="color:var(--warning)">carry case</b> — rounding inside the tier gives <code>60s</code>; round once at the top instead</td></tr>
+    <tr style="background:rgba(224,167,46,.07)"><td class="n">119.7 s</td><td class="n"><span class="yes">2m 00s</span></td><td class="n">1m</td><td><b style="color:var(--warning)">carry case</b> — a per-tier remainder gives <code>1m 60s</code></td></tr>
+    <tr style="background:rgba(224,167,46,.07)"><td class="n">3599.7 s</td><td class="n"><span class="yes">1h 00m</span></td><td class="n">59m</td><td><b style="color:var(--warning)">carry cascades a whole tier</b> — gives <code>59m 60s</code>. This is why the rule is round-once, not guard-at-60</td></tr>
+    <tr><td class="n">161 s</td><td class="n"><span class="yes">2m 41s</span></td><td class="n">2m</td><td>seconds must survive: <code>2m</code> vs <code>2m 41s</code> matters at turn scale</td></tr>
+    <tr><td class="n">1084 s</td><td class="n"><span class="yes">18m 04s</span></td><td class="n">18m</td><td>zero-padded so the column stays a column</td></tr>
+    <tr><td class="n">4.2 h</td><td class="n"><span class="yes">4h 12m</span></td><td class="n">4h 12m</td><td>agrees — reuse this branch verbatim</td></tr>
+    <tr><td class="n">3.2 d</td><td class="n"><span class="yes">3d 4h</span></td><td class="n">76h 48m</td><td>session age needs a day tier (<code>portUptimeLabel</code> has one, coarser)</td></tr>
+    <tr style="background:rgba(229,84,75,.07)"><td class="n">negative · non-finite</td><td class="n"><span class="yes">null → nothing rendered</span></td><td class="n">-3s · NaNd NaNh</td><td>a span that cannot be computed is not rendered (SPEC-47 D10b); non-finite falls through every comparison to the day tier</td></tr>
+  </table>
+  <p class="why" style="margin-bottom:14px">The four highlighted rows were found by <code>ocr review</code> on this file's own
+    <code>fmt()</code> (since fixed) and are <b>mandatory test cases</b>, not illustrations: every unhighlighted row
+    above passes under the buggy per-tier rounding, so testing exactly the documented ladder ships the bug.
+    See SPEC-47 D13a.</p>
+  <p class="why" style="margin-bottom:14px">Recommendation: <b>one</b> new pure function with the tiers above, and
+    <code>formatDuration</code>'s hour branch folded into it, rather than a third parallel ladder. Everything here is
+    trivially unit-testable and should be TDD'd before any widget is touched.</p>
+</div>
+
+<!-- ══════════════════════════ 7. THE COMBINATION ══════════════════════════ -->
+<h2 class="sec"><span class="n">7</span>All of it together — judge it as one screen</h2>
+<p class="secsub">Individual variants always look affordable. This is <b>§1B + §1D + §2B + §3A + §4A/B + §5B</b> in one
+transcript, which is the only fair test of whether the transcript still feels calm. Toggle the layers off to compare.</p>
+
+<div class="toolbar">
+  <button class="t" aria-pressed="true" data-layer="tool">tool durations (1B)</button>
+  <button class="t" aria-pressed="true" data-layer="think">thinking (3A)</button>
+  <button class="t" aria-pressed="true" data-layer="live">live turn timer (4A)</button>
+  <button class="t" aria-pressed="true" data-layer="receipt">turn receipts (4B)</button>
+</div>
+
+<div class="card full">
+  <div class="transcript" id="combined" style="padding-bottom:14px">
+    <div class="bubble user">the tool durations are missing, add them</div>
+
+    <div class="think" data-l="think"><span class="lead">Thought for <b style="font-family:var(--mono);font-weight:600">4s</b></span><span class="txt">— the end ts is dropped by copyWith, so…</span></div>
+
+    <div class="row"><span class="glyph">📄</span><span class="line">read app/lib/store/chat_items.dart</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+    <div class="row"><span class="glyph">🔍</span><span class="line">grep "copyWith" app/lib/store</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+    <div class="row"><span class="glyph">✎</span><span class="line">edit chat_items.dart · +14 −3</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+    <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter test test/store --no-pub</span><span class="trail"><span class="dur strong" data-l="tool">48s</span><span class="ok">✓</span><span class="caret">›</span></span></div>
+
+    <div class="bubble agent">Duration lands on <code>ToolCallItem.endedTs</code>; the collapsed row shows it past 2s.</div>
+    <div class="receipt" data-l="receipt"><span class="hair"></span><span>2m 13s · 14 tools</span></div>
+
+    <div class="bubble user">now the same for thinking, and check analyze passes</div>
+
+    <div class="think" data-l="think"><span class="lead">Thought for <b style="font-family:var(--mono);font-weight:600">1m 12s</b></span><span class="txt">— ThinkingItem needs lastTs; the streaming case updates it per delta…</span></div>
+    <div class="row"><span class="glyph">✎</span><span class="line">edit chat_items.dart · +9 −2</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+    <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter analyze --no-pub</span><span class="trail"><span class="dur warn" data-l="tool">2m 41s</span><span class="fail">⚠</span><span class="caret">›</span></span></div>
+    <div class="row"><span class="glyph">✎</span><span class="line">edit chat_transcript.dart · +6 −1</span><span class="trail"><span class="ok">✓</span><span class="caret">›</span></span></div>
+    <div class="row"><span class="glyph" style="color:var(--risky)">⌘</span><span class="line">flutter analyze --no-pub</span><span class="trail"><span class="dur" data-tick="9" data-l="tool" data-escalate>9s</span><span class="spin pulse"></span><span class="caret">›</span></span></div>
+
+    <div class="working" data-l="live"><span class="word">Untangling</span><span class="dur strong" data-tick="47">47s</span></div>
+  </div>
+
+  <div class="composer">
+    <div class="ph">Message the agent…</div>
+    <div class="footer">
+      <span class="chip"><span class="ring"></span>22%</span>
+      <span class="chip">gpt-5.1 · high</span>
+      <span class="send" style="margin-left:auto">■</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════ 8. REJECTED ══════════════════════════ -->
+<h2 class="sec"><span class="n">8</span>Considered and rejected</h2>
+<p class="secsub">Recorded so nobody re-proposes them in review.</p>
+
+<div class="card" style="max-width:940px">
+  <table>
+    <tr><th>idea</th><th>why not</th></tr>
+    <tr><td class="n">Absolute clock per row (<code>14:02:11</code>)</td><td>answers "when", not "how long". A permanent column for a fact you almost never need — and it's already in §1D's tooltip.</td></tr>
+    <tr><td class="n">Progress bar / ETA on a running tool</td><td>no denominator exists. Same argument that makes <code>ContextUsageRing</code> refuse to render without a known window: a bar means "share of a whole", and there is no whole.</td></tr>
+    <tr><td class="n">Colour-coding every duration by speed</td><td>the palette is one hue plus tuned status semantics (DESIGN.md). A green/amber/red gradient across every row spends the entire colour budget on a secondary fact. Only §2B's "past 60s" escalation is a genuine <em>status</em>.</td></tr>
+    <tr><td class="n">Sparkline of turn durations in the transcript</td><td>trend belongs in the §5B rollup (median turn), not repeated inline. The perf dashboard is the place for graphs.</td></tr>
+    <tr><td class="n">Per-row <code>Timer.periodic</code></td><td>measured: animated widgets must be inside the viewport and one shared clock beats N tickers. Use <code>PulseClock</code> at 1 Hz; only the tail row ticks.</td></tr>
+    <tr><td class="n">Announcing the live counter to screen readers</td><td>a per-second live region is unusable. Duration belongs in the row's semantics label <em>on completion</em> ("ran for 48 seconds, succeeded").</td></tr>
+  </table>
+</div>
+
+</main>
+<script>
+// One shared 1 Hz clock for every ticking label — deliberately mirroring the
+// PulseClock constraint the real implementation is bound by (one ticker, not N).
+// Each label loops back to its seeded value after a minute of real time, so the
+// board keeps demonstrating the fast-vs-stuck contrast however long it is left
+// open (otherwise every counter eventually drifts past the 60s escalation and
+// the whole page goes amber).
+const ticks = [...document.querySelectorAll('[data-tick]')].map(el => {
+  const base = parseInt(el.dataset.tick, 10);
+  return { el, base, secs: base };
+});
+
+// The proposed ladder from §6, implemented once so the mockup's numbers are
+// generated by the same rules the spec would encode.
+function fmt(totalSeconds){
+  // Absent stays absent: a span that cannot be computed is not rendered (SPEC-47 D10b).
+  if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return null;
+  // One decimal only in the 2-10s band. The bound is 9.95, not 10, so a value
+  // that rounds to 10.0 leaves this branch instead of printing "10.0s".
+  if (totalSeconds < 9.95) return totalSeconds.toFixed(1).replace(/\.0$/, '') + 's';
+  // Round ONCE here, then integer arithmetic only. Rounding inside each tier
+  // lets a carry escape it: 59.5 -> "60s", 119.7 -> "1m 60s", and 3599.7 ->
+  // "59m 60s" (the carry cascades a whole tier). Found by ocr review; see D13.
+  const t = Math.round(totalSeconds);
+  if (t < 60) return t + 's';
+  const m = Math.floor(t / 60), s = t % 60;
+  if (m < 60) return m + 'm ' + String(s).padStart(2, '0') + 's';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+  return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+}
+
+setInterval(() => {
+  for (const t of ticks) {
+    t.secs = t.secs - t.base >= 60 ? t.base : t.secs + 1;
+    t.el.textContent = fmt(t.secs) ?? '';
+    // §2B escalation: past 60s the number itself takes the warning tone.
+    // Only rows that opt in escalate; a long *turn* or a long *thought* is
+    // normal, so those keep the tone they were authored with.
+    if ('escalate' in t.el.dataset) t.el.classList.toggle('warn', t.secs >= 60);
+  }
+}, 1000);
+
+// HIER-8d379a — the two advisory boxes exceed a phone viewport on their own, so
+// they start collapsed under 440px. Desktop keeps them open (they are context for
+// every section below).
+if (window.innerWidth < 440) {
+  for (const d of document.querySelectorAll('details.note')) d.removeAttribute('open');
+}
+
+// Layer toggles for §7.
+for (const btn of document.querySelectorAll('button.t')) {
+  btn.addEventListener('click', () => {
+    const on = btn.getAttribute('aria-pressed') !== 'true';
+    btn.setAttribute('aria-pressed', String(on));
+    for (const el of document.querySelectorAll(`#combined [data-l="${btn.dataset.layer}"]`)) {
+      el.style.display = on ? '' : 'none';
+    }
+  });
+}
+</script>
+</body>
+</html>

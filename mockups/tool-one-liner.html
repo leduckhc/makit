@@ -1,0 +1,1130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — the collapsed tool one-liner: what it says, and how it looks</title>
+<style>
+  :root{
+    /* dark tokens, straight from app/lib/app/theme.dart */
+    --bg:#171717;--lowest:#121212;--low:#1E1E1E;--container:#242424;
+    --high:#2E2E2E;--highest:#383838;
+    --text:#F5F5F5;            /* onSurface */
+    --muted:#9E9E9E;           /* onSurfaceVariant (dark) */
+    --hairline:#333333;
+    --a55:#616161;             /* muted @ .55 over #171717 — the brain glyph */
+    --a65:#6F6F6F;             /* muted @ .65 over #171717 — thinking preview  */
+    --accent:#4ADE80;          /* kMakitAccent / primary */
+    --warning:#E0A72E;         /* kStatusWarning */
+    --risky:#E8A33D;           /* kToolRiskyColor */
+    --destructive:#E5544B;     /* kToolDestructiveColor */
+    --error:#FFB4AB;           /* M3 dark error */
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);font-family:var(--sans);
+    font-size:14px;line-height:1.5;padding:32px 24px 120px}
+  main{max-width:1180px;margin:0 auto}
+  h1{font-size:28px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin:0 0 10px;max-width:660px}
+  code{font-family:var(--mono);background:#000;padding:1px 5px;border-radius:4px;font-size:12px;color:#cfcfcf}
+  b,strong{color:var(--text);font-weight:600}
+
+  h2.sec{font-size:20px;margin:44px 0 4px;padding-top:20px;border-top:1px solid #202020;font-weight:600}
+  h2.sec .n{color:var(--muted);font-weight:400;margin-right:8px}
+  p.secsub{color:var(--muted);font-size:13px;margin:0 0 16px;max-width:680px}
+
+  .note{max-width:680px;margin:14px 0 12px;padding:12px 14px;border-radius:8px;font-size:13px}
+  .note.gap{border:1px solid #6b5d2a;background:#241f10;color:#e8d9a8}
+  .note.decide{border:1px solid #2f4f5c;background:#102024;color:#bcd9e2}
+  .note.win{border:1px solid #2c5136;background:#101e15;color:#bfe3c9}
+  .note ul{margin:8px 0 0;padding-left:20px}
+  .note li{margin:4px 0}
+  .note strong{color:#fff}
+
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(430px,100%),1fr))}
+  .grid.three{grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr))}
+  .card,.transcript,.row{min-width:0}
+  .card{border:1px solid var(--hairline);border-radius:12px;background:#141414;overflow:hidden;
+    display:flex;flex-direction:column}
+  .card > header{padding:11px 14px;border-bottom:1px solid var(--hairline);display:flex;
+    align-items:baseline;gap:8px;flex-wrap:wrap}
+  .card h3{font-size:15px;margin:0;font-weight:600}
+  .card .why{margin:10px 14px 0;color:var(--muted);font-size:12px}
+  .card .cost{margin:6px 14px 12px;color:#c98f8f;font-size:12px}
+  .card .why b,.card .cost b{color:#d4d4d4}
+  .badge{font-size:9.5px;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:.04em;
+    text-transform:uppercase;flex:none}
+  .badge.rec{color:#0e0e0e;background:var(--accent)}
+  .badge.no{color:#0e0e0e;background:#8a8a8a}
+  .badge.now{color:#0e0e0e;background:#7f9cc0}
+  .badge.ask{color:#0e0e0e;background:var(--warning)}
+
+  /* ───────── transcript surface: mirrors transcriptRow (gutter 20, gap 10) ───────── */
+  .transcript{background:var(--bg);padding:6px 20px 10px;flex:1}
+  .transcript .bubble{max-width:82%;padding:8px 12px;border-radius:16px;font-size:13.5px;margin:5px 0}
+  .transcript .bubble.user{background:var(--high);margin-left:auto;border-radius:16px 16px 4px 16px}
+  .transcript .bubble.agent{background:var(--low)}
+
+  /* a transcript row = 5px half-gap (surface) + the card's own padding */
+  .r{padding:5px 0}
+  .row{display:flex;align-items:center;gap:8px;padding:6px 0}          /* AS BUILT */
+  .row .ic{width:16px;height:16px;flex:none;color:var(--muted)}         /* AS BUILT: safe */
+  .row[data-risk="risky"] .ic{color:var(--risky)}                       /* AS BUILT: risk tint */
+  .row .line{flex:1;min-width:0;font-family:var(--mono);font-size:13px;color:var(--muted);
+    line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .verb{font-weight:400}
+  .row .trail{flex:none;display:inline-flex;align-items:center;gap:8px}
+  .row .dur{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;font-family:var(--sans)}
+  .row .st{width:14px;height:14px;color:var(--accent)}
+  .row .st.bad{color:var(--error)}
+  .row .ct{width:13px;height:13px;color:var(--muted);opacity:.7}
+  .row .spin{width:10px;height:10px;border-radius:50%;background:var(--accent);
+    animation:pulse 1.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+
+  /* ───────── PROPOSED row: monochrome glyph, sans line, weighted verb, tighter ───────── */
+  .p .row{gap:6px;padding:2px 0}
+  .p .row .ic,.p .row[data-risk="risky"] .ic{width:15px;height:15px;color:var(--a55)}
+  .p .row .line{font-family:var(--sans);font-size:13px;color:var(--muted)}
+  .p .row .verb{font-weight:500;color:var(--muted)}
+  .p .row .st{width:13px;height:13px;color:var(--a55)}
+  .p .row .st.bad{color:var(--error)}
+  .p .row .trail{gap:6px}
+
+  /* opt-in variant layers, toggled from the toolbar */
+  .payload-mono .row .line .names,.payload-mono .row .line .arg{font-family:var(--mono);font-size:12px}
+  .italic .row .line{font-style:italic}
+  .tint-risk .row[data-risk="risky"] .ic{color:var(--risky)}
+  .tint-risk .row .ic{width:16px;height:16px}
+  .tint-ok .row .st{color:var(--accent);width:14px;height:14px}
+  .loose .row{padding:6px 0;gap:8px}
+
+  /* thinking line — the reference we are matching (chat_transcript.dart:305) */
+  .think{display:flex;gap:6px;align-items:baseline;padding:0}
+  .think .ic{width:15px;height:15px;flex:none;color:var(--a55);align-self:center}
+  .think .lead{flex:none;font-size:13px;font-style:italic;color:var(--muted)}
+  .think .lead b{font-weight:600;color:var(--muted)}
+  .think .txt{flex:1;min-width:0;font-size:13px;font-style:italic;color:var(--a65);line-height:1.3;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* expanded tool body stub */
+  .body{background:var(--lowest);border:1px solid #232323;border-radius:8px;margin:2px 0 4px;overflow:hidden}
+  .body .cap{padding:6px 10px 0;font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+  .body pre{margin:0;padding:6px 10px 9px;font-family:var(--mono);font-size:11.5px;color:#b8b8b8;
+    white-space:pre-wrap;word-break:break-all;max-height:120px;overflow:auto}
+
+  /* tooltip (hover the proposed row to see the compacted command) */
+  .r.tip{position:relative}
+  .bub{position:absolute;left:21px;top:calc(100% - 3px);z-index:5;background:#000;
+    border:1px solid #3a3a3a;border-radius:8px;padding:6px 9px;font-size:11.5px;color:#cfcfcf;
+    font-family:var(--mono);max-width:92%;opacity:0;pointer-events:none;transition:opacity .12s}
+  .r.tip:hover .bub{opacity:1}
+  .r.show .bub{position:static;opacity:1;display:block;margin:3px 0 2px 21px;max-width:none}
+
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:7px 12px;border-bottom:1px solid #232323;font-size:12.5px;vertical-align:top}
+  th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.mono,td .mono{font-family:var(--mono);font-size:11.5px;color:#c9c9c9}
+  td.was{color:#8a8a8a;font-family:var(--mono);font-size:11.5px}
+  td.now{color:var(--text)}
+  td.now .verb{font-weight:500;color:var(--muted)}
+  td.now .names{color:var(--muted)}
+  .tbl{border:1px solid var(--hairline);border-radius:12px;overflow:hidden;background:#141414}
+  .tbl tr:last-child td{border-bottom:0}
+  .tbl caption{caption-side:top;text-align:left;padding:11px 14px;border-bottom:1px solid var(--hairline);
+    font-size:15px;font-weight:600}
+  .yes{color:var(--accent)}.nope{color:#8a8a8a}
+
+  .toolbar{display:flex;gap:8px;align-items:center;margin:18px 0 6px;flex-wrap:wrap}
+  button.t{background:var(--high);color:var(--text);border:1px solid var(--hairline);border-radius:8px;
+    padding:8px 12px;min-height:38px;font-size:12px;cursor:pointer;font-family:inherit}
+  button.t[aria-pressed="true"]{background:rgba(74,222,128,.12);color:var(--accent);
+    border-color:var(--accent);font-weight:600}
+  .toolbar .lbl{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+    margin-right:2px}
+
+  input.play{width:100%;background:#000;border:1px solid var(--hairline);border-radius:8px;color:#e6e6e6;
+    font-family:var(--mono);font-size:12.5px;padding:10px 12px}
+  .out{margin-top:10px;background:var(--bg);border-radius:8px;padding:8px 12px}
+
+  .stack{display:flex;gap:26px;flex-wrap:wrap;padding:14px}
+  .pitch{width:152px}
+  .pitch h4{margin:0 0 8px;font-size:12.5px;font-weight:600}
+  .pitch .bars{border-left:1px solid #3a3a3a;padding-left:6px}
+  .pitch .band{border-radius:2px;margin-bottom:1px;background:#242424}
+  .pitch .band.pad{background:rgba(224,167,46,.45)}
+  .pitch .band.txt{background:rgba(74,222,128,.30)}
+  .pitch .sum{margin-top:9px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .pitch .sum .pad{color:var(--warning)}
+  .pitch .sum .txt{color:var(--accent)}
+  .pitch .tot{margin-top:4px;font-size:12px;color:var(--muted)}
+  .pitch .tot b{color:var(--text);font-variant-numeric:tabular-nums}
+  .pitch .lg{margin-top:6px;font-size:10.5px;color:#7a7a7a;line-height:1.5}
+
+  ol.rules{max-width:820px;padding-left:0;list-style:none;counter-reset:r}
+  ol.rules li{counter-increment:r;position:relative;padding:10px 0 10px 46px;border-bottom:1px solid #1d1d1d;
+    font-size:13px}
+  ol.rules li::before{content:"T" counter(r);position:absolute;left:0;top:10px;font-family:var(--mono);
+    font-size:11px;color:var(--accent);border:1px solid #2c5136;border-radius:5px;padding:2px 6px}
+  ol.rules li .ex{display:block;margin-top:5px;font-family:var(--mono);font-size:11.5px;color:#8f8f8f}
+  ol.rules li .ex i{color:var(--accent);font-style:normal}
+
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;
+      transition-duration:.001ms !important}
+    .row .spin{animation:none;opacity:1}
+  }
+</style>
+</head>
+<body>
+<main>
+
+<!-- ═══════════════════ Phosphor-Light-ish glyph defs ═══════════════════ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <style>.i{fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+      .dot{fill:currentColor;stroke:none}</style>
+    <symbol id="g-brain" viewBox="0 0 24 24">
+      <path class="i" d="M12 5.2v13.6"/>
+      <path class="i" d="M12 5.2a2.6 2.6 0 0 0-4.6-1 2.4 2.4 0 0 0-3 2.3 2.6 2.6 0 0 0-1.2 4 2.6 2.6 0 0 0 .8 3.9 2.5 2.5 0 0 0 2.7 2.5 2.7 2.7 0 0 0 5.3-.5"/>
+      <path class="i" d="M12 5.2a2.6 2.6 0 0 1 4.6-1 2.4 2.4 0 0 1 3 2.3 2.6 2.6 0 0 1 1.2 4 2.6 2.6 0 0 1-.8 3.9 2.5 2.5 0 0 1-2.7 2.5 2.7 2.7 0 0 1-5.3-.5"/>
+      <path class="i" d="M8.4 9.2a2 2 0 0 0 3.6.6M15.6 9.2a2 2 0 0 1-3.6.6M9.2 14.4a2 2 0 0 1 2.8-.4M14.8 14.4a2 2 0 0 0-2.8-.4"/>
+    </symbol>
+    <symbol id="g-terminal" viewBox="0 0 24 24">
+      <rect class="i" x="3" y="4" width="18" height="16" rx="2.5"/>
+      <path class="i" d="M7.5 10.5 10 13l-2.5 2.5M13 15.5h4"/>
+    </symbol>
+    <symbol id="g-book" viewBox="0 0 24 24">
+      <path class="i" d="M12 7.2v12.4"/>
+      <path class="i" d="M12 7.2C10.4 5.6 7.9 5 3 5v12.2c4.9 0 7.4.6 9 2.2 1.6-1.6 4.1-2.2 9-2.2V5c-4.9 0-7.4.6-9 2.2Z"/>
+    </symbol>
+    <symbol id="g-pencil" viewBox="0 0 24 24">
+      <path class="i" d="M4.5 19.5h4L20 8a2.83 2.83 0 0 0-4-4L4.5 15.5v4Z"/>
+      <path class="i" d="M14.5 5.5 18.5 9.5"/>
+    </symbol>
+    <symbol id="g-notepencil" viewBox="0 0 24 24">
+      <path class="i" d="M20 10.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4.5"/>
+      <path class="i" d="M13 20h3l4.5-4.5a2 2 0 0 0-3-3L13 17v3Z"/>
+      <path class="i" d="M8 8.5h7M8 12h4"/>
+    </symbol>
+    <symbol id="g-glass" viewBox="0 0 24 24">
+      <circle class="i" cx="10.5" cy="10.5" r="6.2"/><path class="i" d="M15.2 15.2 20 20"/>
+    </symbol>
+    <symbol id="g-check" viewBox="0 0 24 24">
+      <circle class="i" cx="12" cy="12" r="8.8"/><path class="i" d="m8 12.3 2.9 2.9L16.2 9.6"/>
+    </symbol>
+    <symbol id="g-warn" viewBox="0 0 24 24">
+      <circle class="i" cx="12" cy="12" r="8.8"/><path class="i" d="M12 7.4v6"/><circle class="dot" cx="12" cy="16.6" r="1.05"/>
+    </symbol>
+    <symbol id="g-caret" viewBox="0 0 24 24"><path class="i" d="m9.5 5 7 7-7 7"/></symbol>
+    <symbol id="g-cap" viewBox="0 0 24 24">
+      <path class="i" d="M2.5 8.7 12 4.5l9.5 4.2L12 12.9 2.5 8.7Z"/>
+      <path class="i" d="M6.3 10.4v4.9c0 1.6 2.6 2.9 5.7 2.9s5.7-1.3 5.7-2.9v-4.9"/>
+    </symbol>
+    <symbol id="g-question" viewBox="0 0 24 24">
+      <circle class="i" cx="12" cy="12" r="8.8"/>
+      <path class="i" d="M9.6 9.6a2.5 2.5 0 1 1 4 2c-.95.7-1.6 1.2-1.6 2.5"/>
+      <circle class="dot" cx="12" cy="17" r="1.05"/>
+    </symbol>
+  </defs>
+</svg>
+
+<h1>The collapsed tool one-liner</h1>
+<p class="sub">Two independent changes, judged separately because they can ship separately.
+  <b>§2–§4 — what the line <em>says</em></b>: a shell row lists the <em>commands</em> the agent ran, not their
+  arguments. <b>§5–§8 — how the line <em>looks</em></b>: a tool row is currently the loudest and tallest row in the
+  transcript; it should be as quiet and as tight as the thinking row right above it.</p>
+<p class="sub">The <em>expanded</em> body of the same row is a separate board:
+  <code>mockups/tool-expanded-body.html</code>.</p>
+<p class="sub" style="font-size:12px">Reading this board: every grey is a real <code>theme.dart</code> token,
+  every glyph is drawn to the Phosphor-Light metrics the app uses (<code>stroke 1.5</code> on a 24 box), and every
+  <em>proposed</em> label in §2/§3 is <b>computed live by the JavaScript at the bottom of this file</b> from the real
+  command text — it is the reference implementation for the Dart port, not a hand-typed illustration.</p>
+
+<div class="note gap">
+  <strong>⚠ One conflict in the brief — now settled.</strong> The example line reads
+  <code>Ran grep, gh pr, …</code> (past tense) but the typography note asks for <b>present tense</b>
+  (“Run, Edit, Write”). Confirmed with the author: <b style="color:var(--accent)">present tense wins</b>, which is
+  what this board renders (§8 has the full verb table).
+</div>
+
+<!-- ══════════════════════════ 1. TODAY vs PROPOSED ══════════════════════════ -->
+<h2 class="sec"><span class="n">1</span>The same eight rows, before and after</h2>
+<p class="secsub">Real commands from working on this repo. Both panes are 430&nbsp;px wide — the narrow (iPhone /
+  split-pane) case where the one-liner actually has to earn its width.</p>
+
+<div class="grid">
+  <div class="card">
+    <header><h3>As built</h3><span class="badge now">today</span></header>
+    <div class="transcript" id="t-today"></div>
+    <p class="cost"><b>Reads as:</b> seven amber terminal glyphs and seven monospace rows whose first 20 characters go
+      on a verb plus the wreckage of a <code>cd</code> prologue — so the informative token, <em>which</em> command ran,
+      is almost always past the ellipsis.</p>
+  </div>
+  <div class="card">
+    <header><h3>Proposed</h3><span class="badge rec">recommended</span></header>
+    <div class="transcript p" id="t-proposed"></div>
+    <p class="why"><b>Reads as:</b> a scannable verb column (<b>Run / Read / Edit</b>) and, for shells, the list of
+      tools the agent reached for. Hover any row for the whole command; tap to expand as before.</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════ 2. THE RULE LADDER ══════════════════════════ -->
+<h2 class="sec"><span class="n">2</span>What “the commands it runs” means, precisely</h2>
+<p class="secsub">A shell command is not one command. It is a pipeline of segments, wrappers, substitutions and loop
+  bodies. Seven rules, in order — each one exists because a real command in the corpus below breaks without it.</p>
+
+<ol class="rules">
+  <li><b>Split into segments</b> at top level: <code>|</code>, <code>&amp;&amp;</code>, <code>||</code>,
+    <code>;</code>, <code>&amp;</code> and newlines — quote-aware, so <code>-m "a &amp;&amp; b"</code> stays whole.
+    Pipelines <em>do</em> split now (today they don't): <code>grep … | head</code> is two tools, and the brief's example
+    line lists both.
+    <span class="ex">grep -rn x src | head -20 → <i>grep, head</i></span></li>
+
+  <li><b>Recurse into command substitutions</b> <code>$( … )</code> and backticks, appended after their host segment —
+    that is where <code>lsof</code> usually hides.
+    <span class="ex">kill $(lsof -t -i:9787) → <i>kill, lsof</i></span>
+    <span class="ex">A redirection is neither a separator nor a command:
+      pnpm typecheck &gt; log 2&gt;&amp;1 → <i>pnpm typecheck</i> (not <i>pnpm typecheck, 1</i>)</span></li>
+
+  <li><b>Drop prologue &amp; shell keywords.</b> <code>cd</code>, <code>export</code>, <code>source</code>,
+    <code>set -e</code>, bare <code>FOO=bar</code> and the <code>for/while/if/case</code> loop headers carry nothing.
+    The loop <em>body</em> is a later segment, so it still contributes. The old <code>+env</code> marker is dropped —
+    in a list of names it is pure noise.
+    <span class="ex">for f in *.dart; do wc -l "$f"; done | sort → <i>wc, sort</i></span></li>
+
+  <li><b>Unwrap wrappers, then take the basename.</b> <code>sudo env time nice nohup xargs timeout stdbuf</code> are
+    skipped, as are leading flags; <code>~/flutter/bin/flutter</code> → <code>flutter</code>,
+    <code>./scripts/deploy.sh</code> → <code>deploy.sh</code>. Versioned interpreters normalise
+    (<code>python3</code>, <code>python3.12</code> → <code>python</code>; <code>pip3</code> → <code>pip</code>) —
+    the brief's example says <code>python</code>.
+    <span class="ex">time ~/flutter/bin/flutter test --no-pub → <i>flutter test</i></span></li>
+
+  <li><b>Keep the subcommand for multiplexers only</b> (§3 table). For everything else the second token is discarded —
+    <code>grep rg sed awk head lsof python curl jq ssh rsync</code> tell you what happened by their name alone.
+    A heredoc body is never scanned.
+    <span class="ex">gh pr view 154 --json title → <i>gh pr</i>&nbsp;&nbsp;·&nbsp;&nbsp;sed -i '' 's/a/b/' x.ts → <i>sed</i></span></li>
+
+  <li><b>Skip filler subcommands</b> <code>run</code>, <code>exec</code>, <code>dlx</code>, <code>--</code> and take
+    the next word: the script name is the information, not the runner's plumbing.
+    <span class="ex">pnpm run build → <i>pnpm build</i>&nbsp;&nbsp;·&nbsp;&nbsp;pnpm exec tsx test/e2e-server.ts → <i>pnpm tsx</i></span></li>
+
+  <li><b>De-duplicate, keep first-seen order, cap the list.</b> Eight names, then <code>+N</code> — a safety valve for
+    a 30-segment script, not a width control (the row already ellipsises). Repeats collapse (a three-grep sweep is one
+    <code>grep</code>); the <code>×3</code> multiplier is available as a toggle below but off by default.
+    <span class="ex">grep a && grep b && grep c && wc -l → <i>grep, wc</i></span></li>
+</ol>
+
+<div class="toolbar">
+  <span class="lbl">rules</span>
+  <button class="t" data-opt="noun" aria-pressed="false">depth-3 for nouns → <code>gh pr view</code></button>
+  <button class="t" data-opt="count" aria-pressed="false">show repeat counts → <code>grep ×3</code></button>
+  <button class="t" data-opt="cap4" aria-pressed="false">cap at 4 names (from 8)</button>
+</div>
+
+<div class="tbl" style="margin-top:8px">
+  <table>
+    <caption>The corpus — 18 real commands, today's label vs the proposed one</caption>
+    <thead><tr><th style="width:46%">command as the agent sent it</th><th style="width:27%">today</th>
+      <th style="width:27%">proposed</th></tr></thead>
+    <tbody id="corpus"></tbody>
+  </table>
+</div>
+
+<div class="card" style="max-width:820px;margin-top:16px">
+  <header><h3>Try it</h3><span class="badge rec">live</span></header>
+  <div style="padding:14px">
+    <input class="play" id="play" spellcheck="false"
+      aria-label="Shell command to summarise"
+      value="cd /repo && grep -rn &quot;serve&quot; server/src && gh pr view 154 --json title && sed -i '' 's/7800/7810/' server/src/ports.ts && makit serve --port 7810 & python3 tool/wait.py | head -3 ; lsof -nP -i:7810" />
+    <div class="out p" id="playout"></div>
+  </div>
+  <p class="why" style="margin-bottom:14px">That default is the brief's example line, reconstructed as a command
+    that would actually produce it.</p>
+</div>
+
+<!-- ══════════════════════════ 3. MULTIPLEXERS ══════════════════════════ -->
+<h2 class="sec"><span class="n">3</span>Which binaries keep their second word</h2>
+<p class="secsub">This is <b>data, not logic</b> — one <code>const Set</code> plus one <code>const Map</code>. The test
+  for membership: does the bare name leave you asking “doing what?” <code>git</code> alone is meaningless;
+  <code>lsof</code> alone is complete.</p>
+
+<div class="grid three">
+  <div class="card">
+    <header><h3>Subcommand kept</h3><span class="badge rec" id="n-sub">—</span></header>
+    <p class="why" id="list-sub" style="font-family:var(--mono);font-size:11.5px;line-height:1.9;
+      color:#c9c9c9;margin-bottom:14px"></p>
+  </div>
+  <div class="card">
+    <header><h3>Nouns (optional depth-3)</h3><span class="badge ask">decide</span></header>
+    <p class="why" id="list-noun" style="font-family:var(--mono);font-size:11.5px;line-height:1.9;
+      color:#c9c9c9;white-space:pre-line;overflow-wrap:anywhere"></p>
+    <p class="cost"><b>The case for depth-3:</b> <code>gh pr</code> hides the difference between
+      <em>reading</em> a PR and <em>creating</em> one — the widest possible gap in consequence.
+      <code>gh pr view</code> costs 5 characters. Toggle it in §2 and judge the width.</p>
+  </div>
+  <div class="card">
+    <header><h3>Name only</h3><span class="badge no">no subcommand</span></header>
+    <p class="why" id="list-plain" style="font-family:var(--mono);font-size:11.5px;line-height:1.9;
+      color:#c9c9c9;margin-bottom:14px"></p>
+  </div>
+</div>
+
+<div class="note decide">
+  <strong>Unknown binaries default to name-only.</strong> A tool the table has never seen (<code>dbvr</code>,
+  <code>shoot-ports.sh</code>, some repo script) renders as its bare name. That fails <em>quietly</em> and is never wrong, whereas
+  defaulting to “keep the second word” would print <code>rm -rf</code> as <code>rm -rf</code>… and
+  <code>curl https</code>, <code>ssh le@host</code>, <code>jq .items</code> as noise. Add names to the set when a real
+  transcript proves the need.
+</div>
+
+<!-- ══════════════════════════ 4. WHAT'S LOST ══════════════════════════ -->
+<h2 class="sec"><span class="n">4</span>What this throws away, and the two things that catch it</h2>
+<p class="secsub">Be honest: <code>Run grep</code> tells you less than <code>grep "copyWith" app/lib/store</code>.
+  The argument is gone from the collapsed row. Three answers, in order of cost.</p>
+
+<div class="grid three">
+  <div class="card">
+    <header><h3>A — hover shows the command</h3><span class="badge rec">recommended</span></header>
+    <div class="transcript p" id="t-hover"></div>
+    <p class="why"><b>Cost:</b> one <code>Tooltip</code> around the existing <code>Text</code> carrying
+      <code>compactCommand()</code> — the whole command with only the <code>cd</code>/<code>export</code> prologue
+      stripped, segments joined with <code>›</code>, which is what the rows below show — at a
+      500&nbsp;ms dwell (<code>kTooltipDwell</code>, already app-wide). Pointer-only — which is fine, because on
+      touch the whole row is already a tap-to-expand target. <em>(Third row shown pinned open; the others react to
+      a real hover.)</em></p>
+  </div>
+  <div class="card">
+    <header><h3>B — expand is unchanged</h3><span class="badge rec">free</span></header>
+    <div class="transcript p" id="t-expand"></div>
+    <p class="why"><b>Cost:</b> zero. <code>_BashRenderer.body</code> already shows the full command in a
+      syntax-highlighted block plus the output. The collapsed row was never the place to read a command.</p>
+  </div>
+  <div class="card">
+    <header><h3>C — keep args when there is one command</h3><span class="badge no">rejected</span></header>
+    <div class="transcript p" id="t-hybrid"></div>
+    <p class="cost"><b>Why not:</b> two layouts for one row. The single-command case is the majority, so the
+      “calm list of names” you asked for would be the <em>rare</em> rendering, and the row would still be a monospace
+      path dump most of the time. Consistency is the whole point.</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════ 5. TYPOGRAPHY ══════════════════════════ -->
+<h2 class="sec"><span class="n">5</span>Type: one family, one size, weight carries the verb</h2>
+<p class="secsub">The reference is <code>ThinkingLine</code> (<code>chat_transcript.dart:305</code>): 15&nbsp;px brain
+  glyph at <code>onSurfaceVariant&nbsp;@&nbsp;.55</code>, <code>bodyMedium</code> (13&nbsp;px) sans, and a
+  full-opacity <b>lead</b> against a dimmer preview. A tool row today shares none of that.</p>
+
+<div class="tbl" style="max-width:940px">
+  <table>
+    <caption>Token deltas — <code>tool_call_card.dart</code></caption>
+    <thead><tr><th style="width:22%">element</th><th style="width:26%">as built</th><th style="width:26%">thinking row</th>
+      <th style="width:26%">proposed</th></tr></thead>
+    <tbody>
+      <tr><td>leading glyph size</td><td class="was">16</td><td class="was">15</td><td class="now">15</td></tr>
+      <tr><td>leading glyph colour</td><td class="was">risk tint (amber on ~every row)</td>
+        <td class="was">onSurfaceVariant @ .55<br><span style="font-size:11px">(moved to 0.70 too — one token)</span></td>
+        <td class="now">onSurfaceVariant @ <code>kToolGlyphAlpha</code> (0.70)<br><span style="color:var(--muted);font-size:11px">was .55 — see the shipped note</span></td></tr>
+      <tr><td>line family</td><td class="was">monospace</td><td class="was">SF Pro Text</td>
+        <td class="now">SF Pro Text</td></tr>
+      <tr><td>line size</td><td class="was">13 (bodyMedium.mono)</td><td class="was">13 (bodyMedium)</td>
+        <td class="now">13 (bodyMedium)</td></tr>
+      <tr><td>line colour</td><td class="was">onSurfaceVariant</td><td class="was">@ .65 preview / full lead</td>
+        <td class="now">onSurfaceVariant (full — see note)</td></tr>
+      <tr><td>verb weight</td><td class="was">w400, same as payload</td><td class="was">lead reads as a label</td>
+        <td class="now">w500 verb + w400 payload<br><span style="color:var(--muted);font-size:11px">was w600 — see
+        the shipped note</span></td></tr>
+      <tr><td>glyph → text gap</td><td class="was">kSpace8</td><td class="was">kSpace6</td><td class="now">kSpace6</td></tr>
+      <tr><td>row inner padding</td><td class="was">vertical kSpace6</td><td class="was">none</td>
+        <td class="now">vertical kSpace2 (§6)</td></tr>
+      <tr><td>status glyph</td><td class="was">14, primary green</td><td class="was">—</td>
+        <td class="now">13, onSurfaceVariant @ <code>kToolGlyphAlpha</code> (fail stays
+          <span style="color:var(--error)">error</span>)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="note gap" style="max-width:940px">
+  <strong>⚠ One deliberate divergence from the thinking row: do NOT copy the .65 alpha onto the payload.</strong>
+  <code>onSurfaceVariant&nbsp;@&nbsp;.65</code> resolves to <code>#6F6F6F</code> on <code>#171717</code> — about
+  <b>2.9:1</b>, below WCAG AA, which SPEC-47 D9b already records as a known wart on the thinking preview. A thinking
+  preview may whisper; a command name is the row's only content. Both verb and payload stay at full
+  <code>onSurfaceVariant</code> (<code>#9E9E9E</code>, <b>4.6:1</b>) and differ by <b>weight</b> only — which is exactly
+  the “more weight on the Run” you asked for.
+</div>
+
+<div class="grid" style="margin-top:16px">
+  <div class="card">
+    <header><h3>A — as built</h3><span class="badge now">today</span></header>
+    <div class="transcript" id="t-typ-a"></div>
+    <p class="cost"><b>Problem:</b> mono + 16&nbsp;px amber glyph makes a shell row the visually heaviest thing in the
+      transcript, louder than the agent's own prose. Nothing about running <code>grep</code> deserves that.</p>
+  </div>
+  <div class="card">
+    <header><h3>B — sans, weighted verb, monochrome</h3><span class="badge rec">recommended</span></header>
+    <div class="transcript p" id="t-typ-b"></div>
+    <p class="why"><b>Bonus:</b> sans at 13&nbsp;px is ~12% narrower than mono at 13&nbsp;px, so every row fits
+      <em>more</em> label before the ellipsis — compactness in the horizontal axis too.</p>
+  </div>
+  <div class="card">
+    <header><h3>C — sans verb, mono payload</h3><span class="badge ask">decide</span></header>
+    <div class="transcript p payload-mono" id="t-typ-c"></div>
+    <p class="why"><b>The real argument for it:</b> <code>read</code>/<code>edit</code>/<code>write</code> rows carry
+      <em>paths</em>, and paths are what monospace is for. <b>Against:</b> two families per line, and the mix reads
+      busier than either pure option at this size. Your call.</p>
+  </div>
+  <div class="card">
+    <header><h3>D — italic, fully matching thinking</h3><span class="badge no">rejected</span></header>
+    <div class="transcript p italic" id="t-typ-d"></div>
+    <p class="cost"><b>Why not:</b> italic is doing semantic work in this transcript — it marks the agent's inner
+      voice (thinking, the working indicator's shimmer word). Tool rows are facts, not musings. Sharing the family and
+      size is consistency; sharing the slant erases a distinction.</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════ 6. DENSITY ══════════════════════════ -->
+<h2 class="sec"><span class="n">6</span>Compactness: a tool row is 44% taller than a thinking row, for no reason</h2>
+<p class="secsub">Both rows sit inside <code>transcriptRow</code> (<code>kChatRowGap/2 = 5</code> above and below).
+  <code>ThinkingLine</code> adds nothing. <code>ToolCallCard</code> wraps its row in an <code>InkWell</code> with
+  <code>vertical: kSpace6</code> — 12&nbsp;px of padding that exists only because the row is tappable.</p>
+
+<div class="card" style="max-width:820px">
+  <header><h3>Row pitch, measured</h3></header>
+  <div class="stack">
+    <div class="pitch">
+      <h4>Tool row — as built</h4>
+      <div class="bars">
+        <div class="band" style="height:15px"></div>
+        <div class="band pad" style="height:18px"></div>
+        <div class="band txt" style="height:51px"></div>
+        <div class="band pad" style="height:18px"></div>
+        <div class="band" style="height:15px"></div>
+      </div>
+      <div class="sum">5 + <span class="pad">6</span> + <span class="txt">17</span> + <span class="pad">6</span> + 5</div>
+      <div class="tot">pitch <b>39 px</b></div>
+    </div>
+    <div class="pitch">
+      <h4>Thinking row — as built</h4>
+      <div class="bars">
+        <div class="band" style="height:15px"></div>
+        <div class="band txt" style="height:51px"></div>
+        <div class="band" style="height:15px"></div>
+      </div>
+      <div class="sum">5 + <span class="txt">17</span> + 5</div>
+      <div class="tot">pitch <b>27 px</b></div>
+    </div>
+    <div class="pitch">
+      <h4>Tool row — proposed</h4>
+      <div class="bars">
+        <div class="band" style="height:15px"></div>
+        <div class="band pad" style="height:6px"></div>
+        <div class="band txt" style="height:51px"></div>
+        <div class="band pad" style="height:6px"></div>
+        <div class="band" style="height:15px"></div>
+      </div>
+      <div class="sum">5 + <span class="pad">2</span> + <span class="txt">17</span> + <span class="pad">2</span> + 5</div>
+      <div class="tot">pitch <b>31 px</b> · −8 px/row</div>
+    </div>
+    <div class="pitch" style="width:158px">
+      <h4>Legend</h4>
+      <div class="lg"><span style="color:#9E9E9E">▉</span> surface half-gap<br>
+        <span style="color:var(--warning)">▉</span> the row's own padding<br>
+        <span style="color:var(--accent)">▉</span> 13 px line × 1.3<br>
+        bars drawn at <b>3×</b>; the numbers under each are the real px</div>
+    </div>
+  </div>
+  <p class="why" style="margin-bottom:14px">On a 900&nbsp;px-tall transcript with 14 tool rows that is
+    <b>112&nbsp;px</b> — three more rows of history per screen. The gap also shrinks sideways: glyph→text
+    <code>kSpace8&nbsp;→&nbsp;kSpace6</code> and the trailing cluster's two <code>kSpace8</code> gaps → <code>kSpace6</code>.</p>
+</div>
+
+<div class="note gap" style="max-width:820px">
+  <strong>⚠ The one thing to weigh before taking all 8 px: touch targets.</strong> At 39&nbsp;px the row is already
+  under Apple's 44&nbsp;pt (<code>kTouchRow</code>) and Material's 48; at 31&nbsp;px it is further under. It is
+  full-width, so the miss rate is low, and nothing destructive is one tap away (expanding is free and reversible).
+  Options: <b>(a)</b> take it everywhere — recommended, the transcript is a reading surface;
+  <b>(b)</b> <code>kSpace2</code> on pointer, <code>kSpace6</code> on touch — a real conditional in a widget that has
+  none today; <b>(c)</b> <code>kSpace4</code> everywhere for a 35&nbsp;px compromise.
+</div>
+
+<!-- ══════════════════════════ 7. MONOCHROME ══════════════════════════ -->
+<h2 class="sec"><span class="n">7</span>Monochrome glyphs: the risk tint is already meaningless</h2>
+<p class="secsub">Not a taste argument — a signal-to-noise measurement from the two servers that emit
+  <code>risk</code>.</p>
+
+<div class="note win" style="max-width:820px">
+  <strong>Evidence.</strong>
+  <ul>
+    <li><code>server/src/pi-sessions.ts:259</code> — <code>classifyRisk</code> returns <b>risky</b> for
+      <code>edit</code>, <code>write</code> <em>and</em> <code>bash</code>; everything else is safe.
+      <b>destructive is never emitted at all.</b></li>
+    <li><code>server/src/adapters/acp-map.ts:540</code> — <b>risky</b> for <code>edit</code>, <code>move</code>,
+      <code>execute</code>; destructive only for the <code>delete</code> kind.</li>
+    <li>So on a normal turn — read, grep, edit, edit, bash, bash, bash — the amber glyph fires on
+      <b>every row that is not a read</b>. A warning that is always on is decoration, and the app spends its
+      only two extra hues (<code>kToolRiskyColor</code>, <code>kToolDestructiveColor</code>) on it.</li>
+  </ul>
+</div>
+
+<div class="grid three">
+  <div class="card">
+    <header><h3>Amber on everything but reads</h3><span class="badge now">today</span></header>
+    <div class="transcript tint-risk tint-ok p" id="t-mono-a"></div>
+  </div>
+  <div class="card">
+    <header><h3>Monochrome, exceptions only</h3><span class="badge rec">recommended</span></header>
+    <div class="transcript p" id="t-mono-b"></div>
+    <p class="why">Colour is spent only where it is <em>exceptional</em>: a <span style="color:var(--error)">failed</span>
+      call keeps <code>colorScheme.error</code>, and the running pulse keeps <code>primary</code> (at most one or two
+      rows, and it is the only “alive” signal). The resolved tick drops to
+      <code>onSurfaceVariant&nbsp;@&nbsp;.55</code> — same as the glyph.</p>
+  </div>
+  <div class="card">
+    <header><h3>Destructive still tints</h3><span class="badge ask">keep in reserve</span></header>
+    <div class="transcript p" id="t-mono-c"></div>
+    <p class="why">If <code>ToolRisk.destructive</code> ever starts arriving (ACP <code>delete</code>), a single
+      red glyph on an otherwise grey column is <em>enormously</em> visible — which is exactly the point of keeping
+      it unspent. Recommend: keep the <code>destructive</code> branch, delete the <code>risky</code> one.</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════ 8. VERBS ══════════════════════════ -->
+<h2 class="sec"><span class="n">8</span>Present tense, and the same word in both states</h2>
+<p class="secsub">The verb is also the expanded row's header (<code>ToolRenderer.label</code>). Today those two are
+  already the same string; keep it that way, just present tense — a row that is still running says
+  <code>Ran</code> today, which is a small lie.</p>
+
+<div class="tbl" style="max-width:700px">
+  <table>
+    <thead><tr><th>renderer</th><th>today</th><th>proposed</th><th>payload</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">_ReadRenderer</td><td class="was">Read</td><td class="now"><span class="verb">Read</span></td><td class="mono">path (compacted)</td></tr>
+      <tr><td class="mono">_WriteRenderer</td><td class="was">Wrote</td><td class="now"><span class="verb">Write</span></td><td class="mono">path</td></tr>
+      <tr><td class="mono">_EditRenderer</td><td class="was">Edited</td><td class="now"><span class="verb">Edit</span></td><td class="mono">path</td></tr>
+      <tr><td class="mono">_ApplyPatchRenderer</td><td class="was">Edited</td><td class="now"><span class="verb">Edit</span></td><td class="mono">path · or “3 files”</td></tr>
+      <tr><td class="mono">_BashRenderer</td><td class="was">Ran</td><td class="now"><span class="verb">Run</span></td><td class="mono">command names (§2)</td></tr>
+      <tr><td class="mono">_GrepRenderer</td><td class="was">Grep</td><td class="now"><span class="verb">Grep</span></td><td class="mono">pattern</td></tr>
+      <tr><td class="mono">_MemoryRenderer</td><td class="was">Memory</td><td class="now"><span class="verb">Memory</span></td><td class="mono">action</td></tr>
+      <tr><td class="mono">_SkillRenderer</td><td class="was">Skill</td><td class="now"><span class="verb">Skill</span></td><td class="mono">name</td></tr>
+      <tr><td class="mono">_AskUserQuestionRenderer</td><td class="was">Ask the user</td><td class="now"><span class="verb">Ask</span> the user</td><td class="nope">—</td></tr>
+      <tr><td class="mono">unregistered tool</td><td class="was">raw tool name</td><td class="now"><span class="verb">tool name</span></td><td class="mono">unchanged</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ══════════════════════════ 9. ALL OF IT ══════════════════════════ -->
+<h2 class="sec"><span class="n">9</span>All of it in one transcript — the only fair test</h2>
+<p class="secsub">Every variant looks affordable alone. Toggle the four layers off to see exactly which one you are
+  buying, and whether the transcript still reads as a conversation rather than a log file.</p>
+
+<div class="toolbar">
+  <span class="lbl">layers</span>
+  <button class="t" data-layer="names" aria-pressed="true">command names (§2)</button>
+  <button class="t" data-layer="sans" aria-pressed="true">sans + weighted verb (§5)</button>
+  <button class="t" data-layer="mono-icon" aria-pressed="true">monochrome glyphs (§7)</button>
+  <button class="t" data-layer="tight" aria-pressed="true">tight rows (§6)</button>
+</div>
+
+<div class="card" style="max-width:560px;margin:0 auto">
+  <div class="transcript p" id="t-all"></div>
+</div>
+
+<!-- ══════════════════════════ 10. DELTAS ══════════════════════════ -->
+<h2 class="sec"><span class="n">10</span>Deltas — ordered by value per line changed</h2>
+
+<div class="tbl">
+  <table>
+    <thead><tr><th style="width:4%">#</th><th style="width:30%">file</th><th style="width:12%">size</th>
+      <th style="width:54%">change &amp; why</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">1</td><td class="mono">app/lib/ui/session/tool_call_card.dart</td><td class="mono">~14 lines</td>
+        <td>Glyph 16→15 and monochrome (drop the <code>risky</code> branch, keep <code>destructive</code>); line
+          <code>.mono</code>→sans with a <code>TextSpan</code> verb at <code>kToolVerbWeight</code>; gaps
+          <code>kSpace8</code>→<code>kSpace6</code>; <code>InkWell</code> padding
+          <code>kSpace6</code>→<code>kSpace2</code>; resolved tick 14→13 and grey. <b>Every visual ask in one file.</b>
+          <em>As built: also the §4A tooltip — the two were one edit.</em></td></tr>
+      <tr><td class="mono">2</td><td class="mono">app/lib/ui/session/tool_summary.dart</td><td class="mono">~110 lines</td>
+        <td>New pure <code>commandNames(String)</code> — the T1–T7 ladder, no Flutter imports, so it is unit-testable
+          in isolation like <code>compactCommand</code> beside it. Two <code>const</code> tables (multiplexers, nouns).
+          <b>TDD this first</b>: the corpus in §2 is the test table, verbatim.</td></tr>
+      <tr><td class="mono">3</td><td class="mono">app/lib/ui/session/tool_renderers.dart</td><td class="mono">~12 lines</td>
+        <td><code>_BashRenderer.summaryLine</code> → <code>commandNames</code>; nine verbs to present tense; a
+          <code>verb</code> getter so the card can weight the verb without re-parsing the summary string.</td></tr>
+      <tr><td class="mono">4</td><td class="mono">app/lib/ui/session/tool_call_card.dart</td><td class="mono">~6 lines</td>
+        <td>Wrap the collapsed line in a <code>Tooltip</code> carrying <code>compactCommand()</code> (§4A). Reuses the app-wide
+          <code>kTooltipDwell</code>. Skip if you would rather ship §1–§3 alone.</td></tr>
+      <tr><td class="mono">5</td><td class="mono">app/test/ui/session/tool_summary_test.dart</td><td class="mono">~120 lines</td>
+        <td>The §2 corpus as a table-driven test + the pitfalls (heredoc, <code>$()</code>, loop body, quoted
+          <code>&amp;&amp;</code>, unknown binary, empty command).</td></tr>
+      <tr><td class="mono">6</td><td class="mono">app/test/ui/session/tool_call_card_test.dart</td><td class="mono">~40 lines</td>
+        <td>Golden-ish assertions for the things a human will not re-check: glyph colour is not
+          <code>kToolRiskyColor</code>, verb span is <code>kToolVerbWeight</code>, line style is not mono.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="note decide" style="margin-top:18px">
+  <strong>Not touched.</strong> The wire protocol (no new events, no <code>risk</code> change server-side — the
+  classification stays, the UI simply stops tinting on it), the expanded body of every renderer, the duration slot and
+  its <code>kToolDurationFloor</code>/width-reservation behaviour (SPEC-47 D6b), <code>compactPath</code> /
+  <code>compactPathsIn</code> (still used by read/write/edit rows), and <code>compactCommand</code> — kept, because it
+  is what the §4A tooltip should show.
+</div>
+
+<div class="note win">
+  <strong>✓ Shipped — and three things this board got wrong, found by QA on the real apps.</strong>
+  Verified on macOS (1120×760, dark + light) and the iPhone 17 simulator, both running
+  <code>app/tool/tool_row_demo.dart</code>.
+  <ul>
+    <li><b>Glyph alpha is 0.70, not 0.55.</b> §5 copied the thinking row's 0.55 verbatim. Composited on the real
+      surfaces that is <code>#616161</code> — <b>2.91:1</b> on dark and <code>#A7A7A7</code> — <b>2.31:1</b> on light,
+      under the <b>3:1</b> WCAG 1.4.11 asks of a graphical object. 0.70 gives 3.92:1 / 3.05:1 and is still visibly
+      quieter than the text. The <em>brain glyph moved with it</em>, since “identical to the brain” was the actual
+      requirement — both now read from one <code>kToolGlyphAlpha</code>.</li>
+    <li><b>A destructive row keeps its arguments.</b> On screen, <code>rm -rf ~/Library/Caches/… && rm -rf build</code>
+      collapsed to <code>Run rm</code> — hiding the one thing that row exists to show. Destructive calls now render the
+      full compacted command, matching their tinted glyph: the exception the scheme reserves its signal for.</li>
+    <li><b>The verb is <code>w500</code>, not <code>w600</code>.</b> §5 asked for “more weight on the Run” and this
+      board took two steps up. On the real apps the Semibold verbs read as headings and pulled the eye off the payload,
+      which is the content. One step — Medium against the payload's Regular — still gives a scannable verb column.
+      Now a named token (<code>kToolVerbWeight</code>) so it cannot drift back.</li>
+    <li><b>An unfolded thinking row breaks the line after its duration.</b> Folded, <code>Thought for 4s</code> leads
+      the one-liner (SPEC-47 D7) and the preview trails it. Unfolded, the reasoning is a paragraph: keeping it on the
+      label's line indented every wrapped line around a word that belongs only to the first, so the label now takes its
+      own line and the text starts beneath it, flush left and at full column width.
+      <code>chat_transcript.dart</code>, folded layout untouched.</li>
+    <li><b>Row pitch is 31 px — confirmed, not predicted.</b> §6's arithmetic was read back off the running app's
+      accessibility tree: every tool row measures <b>31.0</b>, every thinking row <b>27.0</b> (was 39). The 44 pt touch
+      question below is therefore real and still open.</li>
+  </ul>
+</div>
+
+<div class="note gap">
+  <strong>Decisions.</strong>
+  <ul>
+    <li><b>Tense</b> — <span style="color:var(--accent)">SETTLED: present tense</span> (<code>Run</code>,
+      <code>Edit</code>, <code>Write</code>), confirmed by the author. §8 is the verb table to implement.</li>
+    <li><b>Depth</b> — shipped at depth 2 (<code>gh pr</code>), the brief's sketch. <code>gh pr view</code> is a
+      one-line change in <code>_multiplexers</code>' companion map if you want it.</li>
+    <li><b>Payload family</b> — shipped all-sans (§5B). Judge it on the real captures before revisiting §5C.</li>
+    <li><b>Touch target</b> — still open (§6): 31 px everywhere as shipped, or <code>kSpace6</code> on touch only.</li>
+  </ul>
+</div>
+
+</main>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   The proposed summariser. This is the reference implementation for the Dart
+   port in tool_summary.dart — keep the two in step.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const WRAPPERS = new Set(['sudo','doas','env','time','nice','nohup','exec','command','builtin','stdbuf',
+  'xargs','timeout','caffeinate','script','strace','ltrace','dtruss','watch']);
+
+const KEYWORDS = new Set(['if','then','else','elif','fi','while','until','do','done','case','esac','in',
+  'select','function','{','}','[[',']]','!','(',')','&&','||','&','coproc']);
+
+/* Loop/conditional headers: the whole segment is plumbing; the body is a later segment. */
+const HEADERS = new Set(['for','while','until','case','if','elif','select']);
+
+/* Prologue: entering the tree / mutating the env / shell options. */
+const PROLOGUE = new Set(['cd','export','source','.','set','shopt','umask','ulimit','unset','alias','eval']);
+
+/* Filler subcommands — drop and take the next word. */
+const FILLER = new Set(['run','exec','dlx','--']);
+
+/* Multiplexers: the bare name leaves you asking "doing what?" */
+const SUBCMD = new Set([
+  'git','jj','hg','svn','gh','glab',
+  'docker','podman','kubectl','helm','terraform','ansible','vagrant',
+  'npm','pnpm','yarn','bun','npx','deno','pip','uv','poetry','pipx','cargo','go','rustup','dotnet','composer',
+  'dart','flutter','xcrun','swift','pod','fastlane','gradle',
+  'brew','apt','apt-get','dnf','pacman','nix','mise','asdf','pyenv','nvm',
+  'systemctl','launchctl','journalctl','defaults','security','scutil','networksetup','pmset','tailscale',
+  'aws','gcloud','az','fly','vercel','wrangler','supabase','heroku',
+  'make','just','task','rake','mvn','tmux','screen','code','pi','codex','claude','makit','ocr','openssl','systemd-run',
+]);
+
+/* Second words that are themselves nouns, not verbs. With depth-3 on, the verb after them is kept. */
+const NOUNS = {
+  gh:['pr','issue','run','repo','release','workflow','gist','secret','cache','codespace','ruleset'],
+  glab:['mr','issue','ci','repo'],
+  git:['remote','stash','submodule','worktree','bisect','config','notes','reflog'],
+  docker:['compose','buildx','image','container','volume','network','system','context'],
+  podman:['compose','image','container'],
+  flutter:['pub'],
+  dart:['pub'],
+  xcrun:['simctl','notarytool','altool'],
+  aws:['s3','ec2','logs','iam','lambda','ecs','ssm','sts'],
+  gcloud:['compute','run','storage','iam','sql'],
+  az:['vm','storage','webapp','group'],
+  kubectl:[],
+  npm:[],pnpm:[],yarn:[],bun:[],
+};
+
+/* Versioned interpreters normalise to their family name. */
+const VERSIONED = new Set(['python','pip','php','ruby','perl','node','clang','gcc','g++','llvm-config']);
+/* The version separator sits OUTSIDE the capture, and the capture allows
+   internal hyphens: with `-` in a flat character class the capture kept it
+   (`clang-`), and without the `(?:-word)*` group `llvm-config-15` could not
+   match at all, making that entry dead. */
+
+/* Tokens that can be a subcommand: a bare lowercase word (no slash, no dot, not a flag). */
+const SUBWORD = /^[a-z][a-z0-9:_+-]*$/;
+const ASSIGN  = /^[A-Za-z_][A-Za-z0-9_]*=/;
+/* A redirection, with or without its target attached: `>`, `>>`, `2>`, `<`,
+   `&>`, `>&2`, `>out.txt`. Neither the operator nor its target is a command —
+   before this, `pnpm typecheck > log 2>&1` summarised as `pnpm typecheck, 1`. */
+const REDIR      = /^(?:[0-9]*(?:>>?|<)|&>>?)/;
+/* Only an operator that still needs the NEXT token as its target. A descriptor
+   duplication (`2>&1`, `>&2`) carries its own, and treating those as bare made
+   `2>&1 grep foo` name `foo` — the trailing digit tells them apart. */
+const BARE_REDIR = /^(?:[0-9]*(?:>>?|<)&?|&>>?)$/;
+
+/* ─── T3: strip heredoc bodies (never scanned for commands) ─────────────── */
+function stripHeredocs(cmd){
+  const open = /<<-?\s*['"]?(\w+)['"]?/;
+  let out = '', rest = cmd;
+  for(;;){
+    const m = open.exec(rest);
+    if(!m) return out + rest;
+    const tag = m[1];
+    const lines = rest.slice(m.index + m[0].length).split('\n').slice(1);
+    const end = lines.findIndex(l => l.trim() === tag);
+    out += rest.slice(0, m.index) + ' «heredoc» ';
+    if(end < 0) return out;
+    rest = '\n' + lines.slice(end + 1).join('\n');
+  }
+}
+
+/* ─── T1 + T2: quote-aware split, with $( ) / `` bodies pulled out ──────── */
+function splitSegments(cmd){
+  const segs = [], nested = [];
+  let buf = '', quote = null, i = 0;
+  const flush = () => { const s = buf.trim(); if(s) segs.push(s); buf = ''; };
+  while(i < cmd.length){
+    const c = cmd[i];
+    if(c === '\\' && quote !== "'" && i + 1 < cmd.length){ buf += c + cmd[i+1]; i += 2; continue; }
+    if(quote){ buf += c; if(c === quote) quote = null; i++; continue; }
+    if(c === "'" || c === '"'){ quote = c; buf += c; i++; continue; }
+    /* command substitution: capture the body, recurse later */
+    if((c === '$' && cmd[i+1] === '(') || c === '`'){
+      const openLen = c === '`' ? 1 : 2;
+      const closeCh = c === '`' ? '`' : ')';
+      /* Quote-aware: counting parens alone let a `)` inside a quoted argument
+         close the substitution early, and the stray quote then swallowed the
+         rest — `echo $(grep ')' file) && rm -rf build` lost the `rm`. */
+      let depth = 1, j = i + openLen, body = '', bq = null;
+      while(j < cmd.length && depth > 0){
+        const d = cmd[j];
+        if(d === '\\' && bq !== "'" && j + 1 < cmd.length){ body += d + cmd[j+1]; j += 2; continue; }
+        if(bq){ if(d === bq) bq = null; body += d; j++; continue; }
+        if(d === "'" || d === '"'){ bq = d; body += d; j++; continue; }
+        if(d === '(' && closeCh === ')') depth++;
+        else if(d === closeCh){ depth--; if(!depth) break; }
+        body += d; j++;
+      }
+      nested.push(body);
+      buf += ' ';                       /* the substitution is not a token here */
+      i = j + 1; continue;
+    }
+    const two = cmd.slice(i, i + 2);
+    if(two === '&&' || two === '||'){ flush(); i += 2; continue; }
+    /* `&` separates a background job, but the `&` in `2>&1`/`>&2`/`&>` belongs
+       to the redirection and must stay in the token. */
+    const prev = buf.slice(-1), next = cmd[i + 1] || '';
+    const redirecting = c === '&' && (prev === '>' || prev === '<' || next === '>');
+    if(!redirecting && (c === ';' || c === '\n' || c === '|' || c === '&')){ flush(); i++; continue; }
+    buf += c; i++;
+  }
+  flush();
+  for(const n of nested) segs.push(...splitSegments(n));
+  return segs;
+}
+
+function tokenize(seg){
+  const out = []; let buf = '', quote = null;
+  for(let i = 0; i < seg.length; i++){
+    const c = seg[i];
+    if(c === '\\' && quote !== "'" && i + 1 < seg.length){ buf += seg[i+1]; i++; continue; }
+    if(quote){ if(c === quote){ quote = null; } else buf += c; continue; }
+    if(c === "'" || c === '"'){ quote = c; continue; }
+    if(/\s/.test(c)){ if(buf){ out.push(buf); buf = ''; } continue; }
+    buf += c;
+  }
+  if(buf) out.push(buf);
+  return out;
+}
+
+const basename = t => { const p = t.replace(/\/+$/,'').split('/'); return p[p.length-1] || t; };
+
+function normalise(name){
+  const m = /^([A-Za-z_+]+(?:-[A-Za-z_+]+)*)-?[0-9]+(?:\.[0-9]+)*$/.exec(name);
+  if(m && VERSIONED.has(m[1])) return m[1];
+  return name;
+}
+
+/* ─── T4–T6: one segment → one label, or null ───────────────────────────── */
+function segmentName(seg, opts){
+  const toks = tokenize(seg);
+  if(!toks.length) return null;
+  if(HEADERS.has(toks[0])) return null;                      /* loop header */
+  let i = 0;
+  while(i < toks.length){
+    const t = toks[i], b = normalise(basename(t));
+    /* a bare operator swallows the token after it, so `> out.txt grep foo`
+       still finds `grep` rather than naming the redirect's target */
+    if(REDIR.test(t)){ i += BARE_REDIR.test(t) ? 2 : 1; continue; }
+    if(ASSIGN.test(t) || KEYWORDS.has(t) || WRAPPERS.has(b) || t.startsWith('-') || t === '«heredoc»'){ i++; continue; }
+    if(PROLOGUE.has(b)) return null;                         /* cd / export / set … */
+    break;
+  }
+  if(i >= toks.length) return null;
+  const name = normalise(basename(toks[i]));
+  if(!SUBCMD.has(name)) return name;
+
+  /* collect subcommand words: first bare lowercase token wins */
+  const parts = [name];
+  const nouns = NOUNS[name] || [];
+  let want = 1;
+  for(let j = i + 1; j < toks.length && want > 0; j++){
+    const t = toks[j];
+    if(!SUBWORD.test(t)) continue;                           /* flag, path, value */
+    if(FILLER.has(t)){ continue; }                           /* pnpm run build → pnpm build */
+    parts.push(t); want--;
+    if(nouns.includes(t) && opts.noun) want = 1;             /* gh pr → gh pr view */
+  }
+  return parts.join(' ');
+}
+
+/* ─── T7: dedupe, order, cap ────────────────────────────────────────────── */
+function commandNames(command, opts){
+  opts = Object.assign({noun:false, count:false, cap:8}, opts || {});
+  const segs = splitSegments(stripHeredocs(command || ''));
+  const order = [], seen = new Map();
+  for(const s of segs){
+    const n = segmentName(s, opts);
+    if(!n) continue;
+    if(seen.has(n)){ seen.set(n, seen.get(n) + 1); continue; }
+    seen.set(n, 1); order.push(n);
+  }
+  if(!order.length) return '';
+  const shown = order.slice(0, opts.cap).map(n => {
+    const c = seen.get(n);
+    return opts.count && c > 1 ? n + ' ×' + c : n;
+  });
+  const extra = order.length - shown.length;
+  return shown.join(', ') + (extra > 0 ? ' +' + extra : '');
+}
+
+/* ══════════════ today's label: a JS port of compactCommand() ══════════════ */
+function compactCommandToday(command){
+  const full = (command || '').trim().replace(/\s+/g,' ');
+  if(!full) return '';
+  const cmd = stripHeredocs(command);
+  /* today's splitter keeps pipes inside a segment and ignores $( ) */
+  const segs = [], out = [];
+  let buf = '', quote = null;
+  for(let i = 0; i < cmd.length; i++){
+    const c = cmd[i];
+    if(c === '\\' && quote !== "'" && i + 1 < cmd.length){ buf += c + cmd[i+1]; i++; continue; }
+    if(quote){ buf += c; if(c === quote) quote = null; continue; }
+    if(c === "'" || c === '"'){ quote = c; buf += c; continue; }
+    const two = cmd.slice(i, i + 2);
+    if(two === '&&' || two === '||'){ segs.push(buf); buf = ''; i++; continue; }
+    if(c === ';' || c === '\n'){ segs.push(buf); buf = ''; continue; }
+    buf += c;
+  }
+  segs.push(buf);
+  let env = false;
+  for(const raw of segs.map(s => s.trim().replace(/\s+/g,' ')).filter(Boolean)){
+    const isPro = /^(cd\s|export\s|source\s|\.\s|set\s+[-+])/.test(raw) || /^[A-Za-z_][A-Za-z0-9_]*=\S*$/.test(raw);
+    if(isPro){ if(!raw.startsWith('cd ')) env = true; continue; }
+    out.push(raw);
+  }
+  if(!out.length) return full;
+  return out.join(' › ') + (env ? ' +env' : '');
+}
+
+/* ══════════════════════════ row rendering ══════════════════════════ */
+const G = {read:'g-book', write:'g-notepencil', edit:'g-pencil', bash:'g-terminal', grep:'g-glass',
+  skill:'g-cap', ask:'g-question', memory:'g-brain'};
+const VERB = {read:'Read', write:'Write', edit:'Edit', bash:'Run', grep:'Grep', skill:'Skill',
+  ask:'Ask the user', memory:'Memory'};
+const PAST = {read:'Read', write:'Wrote', edit:'Edited', bash:'Ran', grep:'Grep', skill:'Skill',
+  ask:'Ask the user', memory:'Memory'};
+
+/* `'` is escaped too: the playground feeds arbitrary user text through here into
+   innerHTML, and it is one refactor away from landing in a single-quoted
+   attribute. */
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* row spec: {tool, cmd|arg, dur, st:'ok'|'fail'|'run', past, names, tip, body} */
+function rowHtml(r, o){
+  o = Object.assign({past:false, names:true, tip:false}, o || {});
+  const verb = (o.past ? PAST : VERB)[r.tool] || r.tool;
+  let payload;
+  if(r.tool === 'bash'){
+    payload = o.names ? commandNames(r.cmd, o) : compactCommandToday(r.cmd);
+  } else payload = r.arg || '';
+  const st = r.st === 'run'
+    ? '<span class="spin" role="img" aria-label="running"></span>'
+    : `<svg class="st ${r.st === 'fail' ? 'bad' : ''}" aria-hidden="true"><use href="#${r.st === 'fail' ? 'g-warn' : 'g-check'}"/></svg>`;
+  const dur = r.dur ? `<span class="dur">${esc(r.dur)}</span>` : '';
+  const tip = o.tip && r.cmd ? `<span class="bub">${esc(compactCommandToday(r.cmd))}</span>` : '';
+  const cls = r.risk === 'destructive' ? ' style="color:var(--destructive)"' : '';
+  /* as-built risk, exactly as the servers classify it (pi-sessions.ts:259) */
+  const risk = r.risk || (['bash','edit','write'].includes(r.tool) ? 'risky' : 'safe');
+  const wrap = 'r' + (o.tip && r.cmd ? ' tip' : '') + (r.show ? ' show' : '');
+  return `<div class="${wrap}"><div class="row" data-risk="${risk}">
+    <svg class="ic"${cls} aria-hidden="true"><use href="#${G[r.tool]}"/></svg>
+    <span class="line"><span class="verb">${esc(verb)}</span> <span class="names">${esc(payload)}</span></span>
+    <span class="trail">${dur}${st}<svg class="ct" aria-hidden="true"><use href="#g-caret"/></svg></span>
+    </div>${tip}${r.body ? r.body : ''}</div>`;
+}
+
+function paint(sel, rows, o){
+  const el = document.querySelector(sel);
+  if(el) el.innerHTML = rows.map(r => r.raw ? r.raw : rowHtml(r, o)).join('');
+}
+
+/* ══════════════════════════ the corpus ══════════════════════════ */
+const CORPUS = [
+  'cd /Users/le/.worktrees/makit/feat-chat-content && grep -rn "risk" server/src/*.ts | head -20',
+  'cd /Users/le/.worktrees/makit/feat-chat-content/app && ~/flutter/bin/flutter test --no-pub test/ui/session/tool_call_card_test.dart',
+  'gh pr view 154 --json body,comments | python3 -c \'import sys,json;print(json.load(sys.stdin)["body"])\'',
+  'cd server && pnpm exec tsx test/e2e-server.ts --mode stub --project /tmp/probe',
+  'lsof -nP -iTCP:7800-7899 -sTCP:LISTEN | head -20',
+  'git add -A && git commit -m "fix: keep the tool row calm && quiet" && git push',
+  'defaults write dev.getmakit.app flutter.default.desktop_server_port -int 7810',
+  'kill $(lsof -t -i:9787) ; sleep 1 ; lsof -t -i:9787',
+  'for f in app/lib/ui/session/*.dart; do wc -l "$f"; done | sort -n | tail -5',
+  'set -euo pipefail; source .env; cd server && pnpm typecheck',
+  'sed -i \'\' \'s/Ran/Run/g\' app/lib/ui/session/tool_renderers.dart && grep -n "Run " app/lib/ui/session/tool_renderers.dart',
+  'NODE_ENV=production pnpm run build',
+  'docker compose up -d && docker compose logs -f api | tail -40',
+  'python3 - <<\'EOF\'\nimport json,glob\nfor p in glob.glob("mockups/*.html"): print(p)\nEOF',
+  'time make build && ./scripts/deploy.sh --dry-run',
+  'xcrun simctl list devices booted && xcrun simctl io booted screenshot /tmp/s.png',
+  'grep -rn a app && grep -rn b app && grep -rn c app && wc -l app/lib/**/*.dart',
+  'cd server && pnpm typecheck > /tmp/tc.log 2>&1 && grep -c error /tmp/tc.log',
+  'env >&2 pnpm typecheck && 2>&1 grep -rn TODO app/lib',
+  "echo $(grep ')' server/src/protocol.ts) && rm -rf build",
+  'clang-15 -c a.c && ocr review --audience agent',
+  'cd /Users/le/.worktrees/makit/feat-chat-content && grep -rn "serve" server/src && gh pr view 154 --json title && sed -i \'\' \'s/7800/7810/\' server/src/ports.ts && makit serve --port 7810 & python3 tool/wait.py | head -3 ; lsof -nP -i:7810',
+];
+
+/* ══════════════════════════ transcript scenes ══════════════════════════ */
+const SCENE = [
+  {tool:'read', arg:'app/lib/ui/session/tool_call_card.dart', dur:'', st:'ok'},
+  {tool:'bash', cmd:CORPUS[0], dur:'3s', st:'ok'},
+  {tool:'grep', arg:'"kToolRiskyColor"', dur:'', st:'ok'},
+  {tool:'edit', arg:'app/lib/ui/session/tool_call_card.dart', dur:'', st:'ok'},
+  {tool:'bash', cmd:CORPUS[1], dur:'48s', st:'ok'},
+  {tool:'bash', cmd:CORPUS[10], dur:'2s', st:'fail'},
+  {tool:'bash', cmd:CORPUS[7], dur:'', st:'ok'},
+  {tool:'bash', cmd:CORPUS[17], dur:'11s', st:'run'},
+];
+
+const TYP = [
+  {tool:'read', arg:'app/lib/ui/session/tool_summary.dart', st:'ok'},
+  {tool:'bash', cmd:CORPUS[0], dur:'3s', st:'ok'},
+  {tool:'edit', arg:'app/lib/ui/session/tool_renderers.dart', st:'ok'},
+  {tool:'bash', cmd:CORPUS[1], dur:'48s', st:'ok'},
+];
+
+const opts = {noun:false, count:false, cap:8};
+
+function renderAll(){
+  paint('#t-today', SCENE, {past:true, names:false});
+  paint('#t-proposed', SCENE, Object.assign({}, opts));
+  paint('#t-typ-a', TYP, {past:true, names:false});
+  paint('#t-typ-b', TYP, opts);
+  paint('#t-typ-c', TYP, opts);
+  paint('#t-typ-d', TYP, opts);
+  paint('#t-hover', [TYP[0], TYP[2],
+    {tool:'bash', cmd:CORPUS[0], dur:'3s', st:'ok', show:true},
+    {tool:'bash', cmd:CORPUS[1], dur:'48s', st:'ok'}],
+    Object.assign({tip:true}, opts));
+  paint('#t-mono-a', TYP, opts);
+  paint('#t-mono-b', TYP.concat([{tool:'bash', cmd:CORPUS[10], dur:'2s', st:'fail'}]), opts);
+  paint('#t-mono-c', TYP.slice(0,2).concat([
+    {tool:'bash', cmd:'rm -rf ~/Library/Caches/dev.getmakit.app && rm -rf build', dur:'4s', st:'ok', risk:'destructive'},
+  ]), opts);
+
+  /* B — expand is unchanged */
+  const bodyStub = `<div class="body"><div class="cap">command</div><pre>cd /Users/le/.worktrees/makit/feat-chat-content && grep -rn "risk" server/src/*.ts | head -20</pre><div class="cap">output</div><pre>server/src/pi-sessions.ts:259:function classifyRisk(name: string)…</pre></div>`;
+  paint('#t-expand', TYP.slice(0,2).map((r,i) => i === 1 ? Object.assign({}, r, {body:bodyStub}) : r), opts);
+
+  /* C — hybrid, hand-written to show the inconsistency honestly */
+  document.querySelector('#t-hybrid').innerHTML =
+    rowHtml(TYP[0], opts) +
+    rowHtml({tool:'bash', cmd:CORPUS[4], dur:'2s', st:'ok'}, opts).replace(
+      '<span class="names">lsof, head</span>',
+      '<span class="names arg">lsof -nP -iTCP:7800-7899 -sTCP:LISTEN | head</span>') +
+    rowHtml({tool:'bash', cmd:CORPUS[17], dur:'11s', st:'run'}, opts);
+
+  /* the combined transcript */
+  const all = [
+    {raw:'<div class="bubble user">the tool rows are shouting — calm them down</div>'},
+    {raw:`<div class="r"><div class="think"><svg class="ic" aria-hidden="true"><use href="#g-brain"/></svg><span class="lead">Thought for <b>4s</b></span><span class="txt">— the risk tint fires on edit/write/bash, so it is on for almost every row…</span></div></div>`},
+  ].concat(SCENE.slice(0,4)).concat([
+    {raw:`<div class="r"><div class="think"><svg class="ic" aria-hidden="true"><use href="#g-brain"/></svg><span class="lead">Thought for <b>1m 12s</b></span><span class="txt">— sans is ~12% narrower than mono at 13px, so more label survives the ellipsis…</span></div></div>`},
+  ]).concat(SCENE.slice(4)).concat([
+    {raw:'<div class="bubble agent">Rows are 31px now, one family, and the amber is gone.</div>'},
+  ]);
+  const el = document.querySelector('#t-all');
+  el.innerHTML = all.map(r => r.raw ? r.raw : rowHtml(r, Object.assign({past:!L.names, names:L.names}, opts))).join('');
+  el.classList.toggle('p', true);
+  el.classList.toggle('payload-mono', false);
+  el.classList.toggle('loose', !L.tight);
+  el.classList.toggle('tint-risk', !L['mono-icon']);
+  el.classList.toggle('tint-ok', !L['mono-icon']);
+  if(!L.sans){
+    el.querySelectorAll('.row .line').forEach(n => { n.style.fontFamily = 'var(--mono)'; });
+    el.querySelectorAll('.row .verb').forEach(n => { n.style.fontWeight = '400'; });
+  }
+
+  /* corpus table */
+  document.querySelector('#corpus').innerHTML = CORPUS.map(c => `<tr>
+    <td class="mono">${esc(c.replace(/\n/g,' ⏎ '))}</td>
+    <td class="was">${esc(compactCommandToday(c))}</td>
+    <td class="now"><span class="verb">Run</span> <span class="names">${esc(commandNames(c, opts))}</span></td></tr>`).join('');
+
+  /* playground */
+  const pv = document.querySelector('#play').value;
+  document.querySelector('#playout').innerHTML = rowHtml({tool:'bash', cmd:pv, dur:'7s', st:'ok'}, opts);
+
+  /* the three name lists */
+  document.querySelector('#list-sub').textContent = [...SUBCMD].join(' · ');
+  document.querySelector('#n-sub').textContent = SUBCMD.size + ' names';
+  document.querySelector('#list-noun').textContent =
+    Object.entries(NOUNS).filter(([,v]) => v.length).map(([k,v]) => k + ' ' + v.join('|')).join('\n');
+  document.querySelector('#list-plain').textContent =
+    'grep · rg · sed · awk · head · tail · cat · wc · sort · uniq · cut · tr · find · ls · cp · mv · rm · mkdir · touch · chmod · kill · lsof · ps · curl · wget · jq · yq · ssh · scp · rsync · diff · patch · open · say · sleep · echo · printf · python · node · ruby · perl · tsc · eslint · prettier · ffmpeg · plus every binary not in the table';
+}
+
+/* ══════════════════════════ toggles ══════════════════════════ */
+const L = {names:true, sans:true, 'mono-icon':true, tight:true};
+
+document.querySelectorAll('button.t[data-layer]').forEach(b => b.addEventListener('click', () => {
+  const k = b.dataset.layer, on = b.getAttribute('aria-pressed') !== 'true';
+  b.setAttribute('aria-pressed', String(on)); L[k] = on; renderAll();
+}));
+document.querySelectorAll('button.t[data-opt]').forEach(b => b.addEventListener('click', () => {
+  const k = b.dataset.opt, on = b.getAttribute('aria-pressed') !== 'true';
+  b.setAttribute('aria-pressed', String(on));
+  if(k === 'noun') opts.noun = on;
+  if(k === 'count') opts.count = on;
+  if(k === 'cap4') opts.cap = on ? 4 : 8;
+  renderAll();
+}));
+document.querySelector('#play').addEventListener('input', renderAll);
+
+renderAll();
+</script>
+</body>
+</html>

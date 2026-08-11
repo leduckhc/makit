@@ -12,6 +12,7 @@ import 'connection.dart';
 import 'metrics.dart';
 import 'models.dart';
 import 'ports.dart';
+import 'turns.dart';
 
 class ProjectsState {
   ProjectsState(this.projects);
@@ -61,7 +62,7 @@ class SessionsState {
   final List<Session> sessions;
 
   List<Session> forProject(String projectId) =>
-      sessions.where((s) => s.projectId == projectId && !s.archived).toList()
+      sessions.where((s) => s.projectId == projectId && !s.closed).toList()
         ..sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
 
   Session? byId(String id) => sessions.firstWhereOrNull((s) => s.id == id);
@@ -93,6 +94,7 @@ class StoreState {
     this.metrics = const [],
     this.ports,
     this.sessionsLoaded = false,
+    this.historyLoaded = const {},
   });
 
   factory StoreState.empty() => StoreState(
@@ -147,6 +149,12 @@ class StoreState {
   /// empty [sessions] list alone cannot.
   final bool sessionsLoaded;
 
+  /// Session ids whose full history this client holds (a `fromSeq = 0` replay
+  /// completed) — the visible mirror of the controller's private
+  /// `_historyLoaded` (SPEC-47 D16). The session rollup is gated on this: a
+  /// tail-only session would report "3 turns" for one that had forty.
+  final Set<String> historyLoaded;
+
   StoreState copyWith({
     List<Project>? projects,
     List<RepoInfo>? repos,
@@ -161,6 +169,7 @@ class StoreState {
     List<MetricsSample>? metrics,
     PortsSnapshot? ports,
     bool? sessionsLoaded,
+    Set<String>? historyLoaded,
   }) => StoreState(
     projects: projects ?? this.projects,
     repos: repos ?? this.repos,
@@ -175,6 +184,7 @@ class StoreState {
     metrics: metrics ?? this.metrics,
     ports: ports ?? this.ports,
     sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
+    historyLoaded: historyLoaded ?? this.historyLoaded,
   );
 }
 
@@ -299,7 +309,9 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
 }
 
 class StoreController extends StateNotifier<StoreState> {
-  StoreController(this._ref) : super(StoreState.empty()) {
+  StoreController(this._ref, {int Function()? nowMs})
+    : _nowMs = nowMs ?? _deviceNowMs,
+      super(StoreState.empty()) {
     _sub = _ref
         .read(connectionControllerProvider.notifier)
         .incoming
@@ -330,6 +342,9 @@ class StoreController extends StateNotifier<StoreState> {
         _subscribed.clear();
         _awaitingReplay.clear();
         _replayBuffer.clear();
+        _historyLoaded.clear();
+        _fullReplay.clear();
+        _serverClockOffset = 0;
         _watchingGithubBudget = false;
         state = StoreState.empty();
         // SPEC-45 D9: the per-(agent, project) command cache belonged to the old
@@ -386,6 +401,26 @@ class StoreController extends StateNotifier<StoreState> {
   final Ref _ref;
   StreamSubscription<Envelope>? _sub;
 
+  /// The device wall clock in epoch ms. Injected so tests can pin "now" while
+  /// asserting the server-clock offset (SPEC-47 D15).
+  final int Function() _nowMs;
+
+  static int _deviceNowMs() => DateTime.now().millisecondsSinceEpoch;
+
+  /// Server-minus-device clock skew in ms (SPEC-47 D15). Updated ONLY from a
+  /// live event's `ts` (see [_onFrame]), never from replayed history — a
+  /// replayed `ts` is arbitrarily old and would make a fresh live counter read
+  /// minutes. Zero until the first live event, which is harmless: nothing is
+  /// counting while idle, and a running turn streams a delta every second.
+  int _serverClockOffset = 0;
+
+  /// The current skew (SPEC-47 D15), for callers computing spans in server time.
+  int get serverClockOffset => _serverClockOffset;
+
+  /// "Server now" in epoch ms: the device clock corrected by [serverClockOffset]
+  /// (SPEC-47 D15). Live counters compute `serverNowMs() - startTs`.
+  int serverNowMs() => _nowMs() + _serverClockOffset;
+
   /// Sessions whose initial `sub` replay is still streaming in (between the
   /// `sub` send and its matching `ack`). Their events are buffered in
   /// [_replayBuffer] and applied as a single batch on the ack, so the reversed
@@ -394,6 +429,24 @@ class StoreController extends StateNotifier<StoreState> {
   final Set<String> _awaitingReplay = <String>{};
   final Map<String, List<SessionEvent>> _replayBuffer =
       <String, List<SessionEvent>>{};
+
+  /// Sessions whose full history this client holds (a `fromSeq = 0` replay
+  /// completed). Only those may `sub` incrementally from their cursor.
+  ///
+  /// The cursor alone cannot decide that: the server auto-mirrors every
+  /// session's events to every authed client, subscribed or not (see
+  /// `SubscriptionHub.fanout`), and [reduceEvent] advances the cursor for each
+  /// one. So a session streaming in the background drags this client's cursor to
+  /// its head while the store holds nothing but the tail — and subbing from that
+  /// cursor replayed *zero* events, losing the history and, with it, the
+  /// one-shot `session.meta` / `session.commands` the agent emits at spawn: no
+  /// model selector, no slash commands, transcript starting mid-conversation.
+  final Set<String> _historyLoaded = <String>{};
+
+  /// Sessions whose in-flight `sub` asked for the whole history, so the flush
+  /// replaces their tail-only slice instead of folding into it (the cursor would
+  /// otherwise reject every replayed event as already-seen).
+  final Set<String> _fullReplay = <String>{};
 
   /// Decode the frame through [WireCodec], then fold it via the pure [reduce].
   /// Unrecognized / malformed frames decode to null (WireCodec logs a warning)
@@ -419,7 +472,12 @@ class StoreController extends StateNotifier<StoreState> {
       return;
     }
     state = reduce(state, decoded);
-    if (decoded is SessionEventFrame) _cacheCommands(decoded.event);
+    if (decoded is SessionEventFrame) {
+      // Live branch only (a buffered replay returned above): correct the clock
+      // from this event's server `ts` (D15).
+      _serverClockOffset = decoded.event.ts - _nowMs();
+      _cacheCommands(decoded.event);
+    }
   }
 
   /// SPEC-45 D4: mirror a session's advertised commands into the per-(agent,
@@ -460,13 +518,29 @@ class StoreController extends StateNotifier<StoreState> {
   void _flushReplay(String sessionId) {
     _awaitingReplay.remove(sessionId);
     final buffered = _replayBuffer.remove(sessionId);
-    if (buffered == null || buffered.isEmpty) return;
+    final full = _fullReplay.remove(sessionId);
+    if (!full && (buffered == null || buffered.isEmpty)) return;
     var next = state;
-    for (final e in buffered) {
+    if (full) {
+      _historyLoaded.add(sessionId);
+      // Start this session from an empty slice: the replay is its whole log, and
+      // whatever the auto-mirror left here sits at seqs the cursor would now use
+      // to reject the replay. Dropping it first closes the hole without
+      // duplicating the tail (the replay carries those events too).
+      next = next.copyWith(
+        events: Map<String, List<SessionEvent>>.from(next.events)
+          ..remove(sessionId),
+        cursors: Map<String, int>.from(next.cursors)..remove(sessionId),
+        // Expose "we now hold this session's full history" (SPEC-47 D16).
+        historyLoaded: {...next.historyLoaded, sessionId},
+      );
+    }
+    final events = buffered ?? const <SessionEvent>[];
+    for (final e in events) {
       next = reduceEvent(next, e);
     }
     state = next;
-    for (final e in buffered) {
+    for (final e in events) {
       _cacheCommands(e);
     }
   }
@@ -507,9 +581,12 @@ class StoreController extends StateNotifier<StoreState> {
 
   void _sendSub(String sessionId) {
     // Include the last-seen seq so the server replays only newer events on
-    // reconnect instead of the whole history. `reduceEvent` still dedups, so
-    // fromSeq=0 (fresh sub) stays correct.
-    final fromSeq = state.cursors[sessionId] ?? 0;
+    // reconnect instead of the whole history — but only once we hold that
+    // history contiguously, or the cursor an auto-mirrored session advanced for
+    // us would suppress the replay entirely (see [_historyLoaded]).
+    final loaded = _historyLoaded.contains(sessionId);
+    final fromSeq = loaded ? (state.cursors[sessionId] ?? 0) : 0;
+    if (!loaded) _fullReplay.add(sessionId);
     // Arm replay buffering so the events the server is about to stream back are
     // applied as one batch on the ack (see [_onFrame]). Re-arming resets any
     // in-flight buffer; the server re-replays from `fromSeq` so nothing is lost.
@@ -774,30 +851,30 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
-  /// Archive a session (SPEC-29): a soft, recoverable hide. The server drops it
+  /// Close a session (SPEC-29): release the agent, keep the session. The server drops it
   /// from the active `sessions.snapshot` (it stays resumable + restorable) and
   /// broadcasts a fresh snapshot so the list updates.
-  Future<void> archiveSession(String sessionId) async {
+  Future<void> closeSession(String sessionId) async {
     await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.archive', 'sessionId': sessionId},
+      {'kind': 'session.close', 'sessionId': sessionId},
     );
   }
 
-  /// Restore an archived session to the active list (SPEC-29).
-  Future<void> unarchiveSession(String sessionId) async {
+  /// Reopen a closed session: it returns to the active list and resumes on next open (SPEC-29).
+  Future<void> reopenSession(String sessionId) async {
     await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.unarchive', 'sessionId': sessionId},
+      {'kind': 'session.reopen', 'sessionId': sessionId},
     );
   }
 
-  /// Fetch the archived sessions (SPEC-29). Not part of the active snapshot;
-  /// loaded on demand for the "Show archived sessions" list.
-  Future<List<Session>> listArchivedSessions() async {
+  /// Fetch the closed sessions (SPEC-29). Not part of the active snapshot;
+  /// loaded on demand for the "Show closed sessions" list.
+  Future<List<Session>> listClosedSessions() async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.listArchived'},
+      {'kind': 'session.listClosed'},
     );
     return WireCodec.decodeSessions(ack['sessions']) ?? const [];
   }
@@ -1181,7 +1258,10 @@ final chatItemsProvider = Provider.family<List<ChatItem>, String>((
   sessionId,
 ) {
   final events = ref.watch(eventsProvider).forSession(sessionId);
-  return foldEvents(events);
+  // SPEC-47 D18: turn spans come from a SEPARATE pure pass over the same
+  // events, then the receipt rows are projected into the fold's output. The
+  // fold stays a row builder; turn correctness never depends on row order.
+  return withTurnReceipts(foldEvents(events), deriveTurns(events));
 });
 
 /// Slash commands advertised by the agent for a given session.
@@ -1235,4 +1315,31 @@ final sessionActionErrorProvider = Provider.family<ActionError?, String>((
 ) {
   final s = ref.watch(storeControllerProvider);
   return s.actionErrors[sessionId];
+});
+
+/// Completed turns for a session (SPEC-47 D18), derived as a pure pass over the
+/// event stream — independent of the chat-item fold.
+final sessionTurnsProvider = Provider.family<List<TurnSpan>, String>((
+  ref,
+  sessionId,
+) {
+  final events = ref.watch(eventsProvider).forSession(sessionId);
+  return deriveTurns(events);
+});
+
+/// The session-effort rollup (SPEC-47 D11): turn count, agent time, median.
+final sessionRollupProvider = Provider.family<TurnRollup, String>((
+  ref,
+  sessionId,
+) {
+  return turnRollup(ref.watch(sessionTurnsProvider(sessionId)));
+});
+
+/// Whether this client holds the session's full history (SPEC-47 D16). The
+/// rollup is only shown when true — a tail-only session would undercount turns.
+final sessionHistoryLoadedProvider = Provider.family<bool, String>((
+  ref,
+  sessionId,
+) {
+  return ref.watch(storeControllerProvider).historyLoaded.contains(sessionId);
 });

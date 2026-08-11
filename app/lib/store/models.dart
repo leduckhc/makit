@@ -1114,6 +1114,7 @@ class Session {
     required this.status,
     required this.policy,
     this.lastActivityAt = 0,
+    this.createdAt,
     this.lastPreview = '',
     this.pane,
     this.pending = false,
@@ -1121,7 +1122,7 @@ class Session {
     this.branch,
     this.worktreePath,
     this.resumable = false,
-    this.archived = false,
+    this.closed = false,
     this.orphaned = false,
     this.parentId,
     this.handoffReason,
@@ -1136,6 +1137,12 @@ class Session {
   final SessionStatus status;
   final ApprovalPolicy policy;
   final int lastActivityAt;
+
+  /// When this session was created, in epoch ms (SPEC-47 D12), or null when the
+  /// server did not report one (an older server, or a session that predates the
+  /// field). **Nullable rather than `0`-as-unknown** like [lastActivityAt]: an
+  /// absent age is not rendered rather than fabricated as "56 years".
+  final int? createdAt;
   final String lastPreview;
 
   /// Set when this session runs in a multiplexer pane (SPEC-05).
@@ -1157,13 +1164,13 @@ class Session {
   /// after a server restart (SPEC-29). Drives auto-attach on subscribe.
   final bool resumable;
 
-  /// Archived (SPEC-29): hidden from the active list. Present for surfaces that
-  /// explicitly list archived sessions; the active snapshot omits these.
-  final bool archived;
+  /// Closed (SPEC-29): hidden from the active list. Present for surfaces that
+  /// explicitly list closed sessions; the active snapshot omits these.
+  final bool closed;
 
-  /// Orphaned (SPEC-29): an archived session whose worktree was removed. Only
-  /// set on the `session.listArchived` result; drives the "worktree removed"
-  /// chip in the archive view. Restoring an orphaned session runs it at the
+  /// Orphaned (SPEC-29): a closed session whose worktree was removed. Only
+  /// set on the `session.listClosed` result; drives the "worktree removed"
+  /// chip in the closed view. Restoring an orphaned session runs it at the
   /// repo root (no recreate-worktree path).
   final bool orphaned;
 
@@ -1197,7 +1204,7 @@ class Session {
     String? branch,
     String? worktreePath,
     bool? resumable,
-    bool? archived,
+    bool? closed,
     bool? orphaned,
     String? parentId,
     String? handoffReason,
@@ -1211,6 +1218,7 @@ class Session {
     status: status ?? this.status,
     policy: policy ?? this.policy,
     lastActivityAt: lastActivityAt ?? this.lastActivityAt,
+    createdAt: createdAt,
     lastPreview: lastPreview ?? this.lastPreview,
     pane: clearPane ? null : (pane ?? this.pane),
     pending: pending ?? this.pending,
@@ -1218,7 +1226,7 @@ class Session {
     branch: branch ?? this.branch,
     worktreePath: worktreePath ?? this.worktreePath,
     resumable: resumable ?? this.resumable,
-    archived: archived ?? this.archived,
+    closed: closed ?? this.closed,
     orphaned: orphaned ?? this.orphaned,
     parentId: parentId ?? this.parentId,
     handoffReason: handoffReason ?? this.handoffReason,
