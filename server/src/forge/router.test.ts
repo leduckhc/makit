@@ -571,3 +571,49 @@ test("close() forgets the remote facts along with the decisions", async () => {
   router.close();
   assert.equal(router.hasRemoteFor("/r"), undefined);
 });
+
+test("a transient lookup failure does NOT discard an explicit override", async () => {
+  // Found while reviewing the override work. The router falls back to GitHub when
+  // routing throws, which was right when nothing could contradict it. With an
+  // override it is wrong twice over: it ignores an explicit instruction, and `gh`
+  // cannot talk to the host anyway — so every call fails.
+  //
+  // Worse, the fallback is CACHED against the choice that produced it, so one
+  // transient error pins the repo to the wrong provider until the setting changes
+  // or the daemon restarts.
+  const calls: string[] = [];
+  const choices = new Map<string, ProviderChoice>([["/fj", "forgejo"]]);
+  const router = createForgeRouter({
+    github: githubFake(calls),
+    forgejo: fake("forgejo", calls),
+    unsupported: fake("unsupported", calls),
+    none: fake("none", calls),
+    providerFor: (p) => choices.get(p) ?? "auto",
+    resolveInstance: async () => {
+      throw new Error("git remote read exploded");
+    },
+    detect: async () => "forgejo",
+  });
+  await router.prForBranch("/fj", "b");
+  assert.deepEqual(calls, ["forgejo.prForBranch(/fj,b)"]);
+  // And it is not pinned to a wrong answer by that one failure.
+  await router.openPrs("/fj", 10);
+  assert.deepEqual(calls, ["forgejo.prForBranch(/fj,b)", "forgejo.openPrs(/fj)"]);
+});
+
+test("Auto still falls back to GitHub when routing throws", async () => {
+  // The status quo for a repo with no opinion attached, unchanged.
+  const calls: string[] = [];
+  const router = createForgeRouter({
+    github: githubFake(calls),
+    forgejo: fake("forgejo", calls),
+    unsupported: fake("unsupported", calls),
+    none: fake("none", calls),
+    resolveInstance: async () => {
+      throw new Error("boom");
+    },
+    detect: async () => "forgejo",
+  });
+  await router.prForBranch("/x", "b");
+  assert.deepEqual(calls, ["github.prForBranch(/x,b)"]);
+});

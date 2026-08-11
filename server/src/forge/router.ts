@@ -328,6 +328,23 @@ export function createForgeRouter(
       }
       return deps.unsupported;
     })().catch(() => {
+      // A transient failure must not discard an EXPLICIT choice. Falling back to gh
+      // here would ignore an instruction the user gave and send the repo to a
+      // provider that cannot talk to its host — and because the result is cached
+      // against the choice that produced it, one failed `git remote` read would pin
+      // the repo to the wrong provider until the setting changed or the daemon
+      // restarted.
+      //
+      // `auto` keeps the original behaviour: with no opinion attached, gh is the
+      // status quo for a repo we could not read.
+      if (choice === "forgejo" || choice === "gitea") {
+        inUse.add("forgejo");
+        return deps.forgejo;
+      }
+      if (choice === "none") {
+        inUse.add("none");
+        return deps.none;
+      }
       inUse.add("github");
       return deps.github;
     });

@@ -603,3 +603,29 @@ test("a repo set to None offers no PRs, so the picker cannot reach a checkout", 
     rmSync(a, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Review findings on the P2 work itself.
+// ---------------------------------------------------------------------------
+
+test("addProject will not open one directory twice under two spellings", async () => {
+  // Found while reviewing `repointProject`: that method refuses a duplicate path
+  // using a CANONICAL comparison, but `addProject` compared with `resolve` only,
+  // which does not follow symlinks. So the state repointProject carefully forbids —
+  // two projects at one directory, where settings and the forge decision are both
+  // looked up BY PATH and therefore answer for each other — was still reachable by
+  // the ordinary "add a project" route, and the two entry points disagreed about
+  // what counts as the same repo.
+  const real = repoWithBranches([]);
+  const link = join(mkdtempSync(join(tmpdir(), "makit-addlink-")), "alias");
+  symlinkSync(real, link);
+  try {
+    const m = manager([]);
+    const first = m.addProject(real);
+    const second = m.addProject(link);
+    assert.equal(second.id, first.id, "the same directory is the same project");
+    assert.equal(m.listProjects().length, 1);
+  } finally {
+    rmSync(real, { recursive: true, force: true });
+  }
+});

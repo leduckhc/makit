@@ -328,8 +328,18 @@ export class SessionManager extends EventEmitter {
    */
   addProject(path: string): ProjectDTO {
     const resolved = resolve(path);
+    // Compared CANONICALLY, so `/tmp/x` and `/private/tmp/x` — one directory on
+    // macOS — cannot become two projects. Settings and the forge decision are both
+    // looked up by path, so two projects at one directory answer for each other.
+    // `repointProject` already refuses this; comparing with `resolve` alone here let
+    // the ordinary add route create exactly the state the other one forbids.
+    //
+    // The path is still STORED as `resolved` rather than canonicalised: that is what
+    // persisted ids are already mapped to, and rewriting it would change the stored
+    // value for every existing project on the next save.
+    const canonical = canonicalPath(resolved);
     const existing = [...this.projects.values()].find(
-      (p) => resolve(p.dto.path) === resolved,
+      (p) => canonicalPath(p.dto.path) === canonical,
     );
     if (existing) return existing.dto;
 
