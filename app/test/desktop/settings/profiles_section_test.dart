@@ -460,8 +460,9 @@ void main() {
     );
     expect(successes, isNotEmpty);
     expect(successes.last.title, contains('Deleted feat-profiles'));
-    // The NSUserDefaults keys the deleter cannot purge are surfaced, not hidden.
-    expect(successes.last.detail, contains('NSUserDefaults'));
+    // Stores the deleter could not purge are surfaced, not hidden. This wiring
+    // has no prefs, so the prefs store is honestly reported as skipped.
+    expect(successes.last.detail, contains('preference keys'));
     // The registry entry is gone, so the row disappears.
     expect(find.text('feat-profiles'), findsNothing);
   });

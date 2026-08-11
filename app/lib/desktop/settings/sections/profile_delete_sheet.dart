@@ -9,8 +9,8 @@
 /// The confirm wires to [ProfileDeleter], then reflects its
 /// [ProfileDeletionResult] honestly: on refusal it surfaces the reason from
 /// `skipped`; on success it reports the bytes freed **and** the stores that were
-/// skipped (notably the `NSUserDefaults` keys the deleter cannot purge from this
-/// process — SPEC-50 D11), never hiding them.
+/// skipped (for example the secure-store file on a platform that has none),
+/// never hiding them.
 library;
 
 import 'package:flutter/material.dart';
@@ -128,6 +128,11 @@ class _ProfileDeleteDialog extends StatelessWidget {
                 'this profile’s TLS identity',
               ),
               const _DeletedItem('keychain / secure store', 'pairing bearer'),
+              // Genuinely deleted now: prefs are scoped by key prefix, so the
+              // deleter can purge another profile's keys (the sheet used to carry
+              // a caveat here, from when the global setPrefix made them
+              // unreachable).
+              _DeletedItem('prefs', 'flutter.$prefsKeyPrefix* keys'),
               const _DeletedItem('profiles.json', 'registry entry'),
               const SizedBox(height: kSpace16),
               _SectionLabel(label: 'Will be kept', color: cs.primary),
@@ -138,18 +143,6 @@ class _ProfileDeleteDialog extends StatelessWidget {
               const _KeptItem(
                 'other profiles',
                 'every other profile is unaffected',
-              ),
-              const SizedBox(height: kSpace12),
-              // Honest caveat: prefs cannot be purged from this process while
-              // another profile's prefix is pinned (SPEC-50 D11), so the sheet
-              // must not list them under "Will be deleted" — the deletion reports
-              // them as skipped.
-              Text(
-                'A few app preferences (flutter.$prefsKeyPrefix*) are left '
-                'behind for now — they can’t be purged from another profile.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: cs.outline),
               ),
               if (running) ...[
                 const SizedBox(height: kSpace12),
