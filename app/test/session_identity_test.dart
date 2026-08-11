@@ -106,9 +106,7 @@ void main() {
       // Asserted rather than implied: rev 1 stated the padding but left it
       // unprovable, so a stub that never padded would have passed.
       final lines = sessionIdentityText(_identity()).split('\n');
-      final valueStarts = lines
-          .map((l) => l.indexOf(': ') + 2)
-          .toSet();
+      final valueStarts = lines.map((l) => l.indexOf(': ') + 2).toSet();
       expect(
         valueStarts,
         hasLength(1),

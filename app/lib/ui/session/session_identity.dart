@@ -183,8 +183,7 @@ class SessionIdentity {
   /// whose back end has no native session concept.
   bool get hasAgentSession => agentSessionId != null;
 
-  static String? _blankToNull(String? v) =>
-      (v == null || v.isEmpty) ? null : v;
+  static String? _blankToNull(String? v) => (v == null || v.isEmpty) ? null : v;
 }
 
 // ─── the copy contract (D14) ─────────────────────────────────────────────────
@@ -207,12 +206,8 @@ String sessionIdentityText(SessionIdentity identity) {
     if (identity.resumeCommand case final cmd?) ('resume', cmd),
     ('makit session', identity.makitSessionId),
   ];
-  final width = rows
-      .map((r) => r.$1.length)
-      .fold(0, (a, b) => math.max(a, b));
-  return rows
-      .map((r) => '${r.$1.padRight(width)}: ${r.$2}')
-      .join('\n');
+  final width = rows.map((r) => r.$1.length).fold(0, (a, b) => math.max(a, b));
+  return rows.map((r) => '${r.$1.padRight(width)}: ${r.$2}').join('\n');
 }
 
 /// Lower-cases the display label for the clipboard, so the payload reads as
@@ -468,9 +463,7 @@ Future<void> showSessionIdentity({
       // Scrollable because the sheet's height is capped by the window while the
       // panel's height depends on how far the transcript path wraps — which on a
       // 320pt phone is four lines.
-      builder: (_) => SafeArea(
-        child: SingleChildScrollView(child: body()),
-      ),
+      builder: (_) => SafeArea(child: SingleChildScrollView(child: body())),
     );
   }
   return showDialog<void>(
@@ -514,6 +507,7 @@ class _WatchedIdentity extends ConsumerWidget {
   final String sessionId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) =>
-      SessionIdentityDetails(identity: ref.watch(sessionIdentityProvider(sessionId)));
+  Widget build(BuildContext context, WidgetRef ref) => SessionIdentityDetails(
+    identity: ref.watch(sessionIdentityProvider(sessionId)),
+  );
 }

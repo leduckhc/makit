@@ -57,7 +57,10 @@ Widget _host(Widget child, {StatusCenter? status}) => ProviderScope(
   overrides: [
     if (status != null) statusCenterProvider.overrideWithValue(status),
   ],
-  child: MaterialApp(theme: makitDarkTheme, home: Scaffold(body: child)),
+  child: MaterialApp(
+    theme: makitDarkTheme,
+    home: Scaffold(body: child),
+  ),
 );
 
 void main() {
@@ -210,7 +213,8 @@ void main() {
         expect(
           destructive.hasMatch(data),
           isFalse,
-          reason: 'lifecycle lives in the menu, not one mis-tap from a copy row',
+          reason:
+              'lifecycle lives in the menu, not one mis-tap from a copy row',
         );
       }
     });
@@ -238,10 +242,7 @@ void main() {
       await tester.pumpWidget(
         _host(SessionIdentityDetails(identity: identity())),
       );
-      expect(
-        find.bySemanticsLabel(RegExp('pi session.*$kId')),
-        findsOneWidget,
-      );
+      expect(find.bySemanticsLabel(RegExp('pi session.*$kId')), findsOneWidget);
       handle.dispose();
     });
 
@@ -366,10 +367,8 @@ void main() {
       await tester.pumpWidget(
         _host(
           Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () {},
-              child: const Text('x'),
-            ),
+            builder: (context) =>
+                ElevatedButton(onPressed: () {}, child: const Text('x')),
           ),
         ),
       );
@@ -403,8 +402,7 @@ void main() {
           _host(
             ValueListenableBuilder<SessionIdentity>(
               valueListenable: notifier,
-              builder: (_, value, _) =>
-                  SessionIdentityDetails(identity: value),
+              builder: (_, value, _) => SessionIdentityDetails(identity: value),
             ),
           ),
         );

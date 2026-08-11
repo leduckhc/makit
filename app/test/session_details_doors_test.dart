@@ -37,20 +37,23 @@ class _EmptyStorage implements SecureStore {
   Future<void> delete({required String key}) async {}
 }
 
-Session _session(String id, String title, {String? agentSessionId = kAgentId}) =>
-    Session(
-      id: id,
-      projectId: 'p1',
-      agent: 'pi',
-      title: title,
-      status: SessionStatus.idle,
-      policy: ApprovalPolicy.askOnRisky,
-      lastPreview: '',
-      lastActivityAt: 0,
-      worktreePath: '/tmp/wt-a',
-      branch: 'feat/x',
-      agentSessionId: agentSessionId,
-    );
+Session _session(
+  String id,
+  String title, {
+  String? agentSessionId = kAgentId,
+}) => Session(
+  id: id,
+  projectId: 'p1',
+  agent: 'pi',
+  title: title,
+  status: SessionStatus.idle,
+  policy: ApprovalPolicy.askOnRisky,
+  lastPreview: '',
+  lastActivityAt: 0,
+  worktreePath: '/tmp/wt-a',
+  branch: 'feat/x',
+  agentSessionId: agentSessionId,
+);
 
 class _Clipboard {
   final List<String> writes = [];
@@ -189,8 +192,9 @@ void main() {
       return c;
     }
 
-    Finder chip(String label) =>
-        find.ancestor(of: find.text(label), matching: find.byType(Container)).first;
+    Finder chip(String label) => find
+        .ancestor(of: find.text(label), matching: find.byType(Container))
+        .first;
 
     testWidgets('offers Copy session id and NOT Session details (D13)', (
       tester,

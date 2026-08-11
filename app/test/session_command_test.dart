@@ -115,7 +115,9 @@ void main() {
     expect(await r.handled, isTrue);
   });
 
-  testWidgets('bare /session opens the panel and does NOT copy', (tester) async {
+  testWidgets('bare /session opens the panel and does NOT copy', (
+    tester,
+  ) async {
     clipboard.install(tester);
     addTearDown(() => clipboard.remove(tester));
     await _run(tester, '/session', session: _session());
@@ -139,10 +141,7 @@ void main() {
     );
     expect(await r.handled, isTrue);
     expect(clipboard.writes, [kAgentId]); // the bare id, not the whole payload
-    expect(
-      status.events.map((e) => e.title),
-      contains('Session id copied'),
-    );
+    expect(status.events.map((e) => e.title), contains('Session id copied'));
   });
 
   testWidgets('/session id with no agent id copies nothing and says why', (
@@ -165,7 +164,9 @@ void main() {
     );
   });
 
-  testWidgets('/sessions (a different word) is NOT intercepted', (tester) async {
+  testWidgets('/sessions (a different word) is NOT intercepted', (
+    tester,
+  ) async {
     // Matching is exact, not prefix-based: `/sessions` must fall through to the
     // agent. The "make the matcher prefix-based" mutation flips this to true.
     final r = await _run(tester, '/sessions', session: _session());
