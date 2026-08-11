@@ -134,6 +134,23 @@ class _PublishSheetState extends ConsumerState<_PublishSheet> {
     }
   }
 
+  /// Re-read the clock every 30s while a grant is live, so the expiry pill counts
+  /// down. `nowMs` was otherwise frozen at the build that first showed the grant,
+  /// leaving the pill reading "30 min" until the sheet was reopened.
+  void _startTicking() {
+    _tick?.cancel();
+    _tick = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted || _grant == null) return;
+      setState(() => _nowMs = DateTime.now().millisecondsSinceEpoch);
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => PublishSheetBody(
     title: widget.title,

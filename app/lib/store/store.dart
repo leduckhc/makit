@@ -1225,7 +1225,10 @@ class StoreController extends StateNotifier<StoreState> {
       MsgType.cmd,
       {'kind': 'docs.grants'},
     );
-    final raw = (ack['grants'] as List?) ?? const [];
+    // Tolerant, like ports.dart: a malformed payload yields an empty list, not
+    // a cast error thrown into the caller's Future.
+    final grants = ack['grants'];
+    final raw = grants is List ? grants : const <dynamic>[];
     return raw
         .whereType<Map<dynamic, dynamic>>()
         .map((m) => DocGrant.fromJson(Map<String, dynamic>.from(m)))

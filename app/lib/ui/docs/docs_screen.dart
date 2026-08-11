@@ -43,6 +43,19 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
   DocsFilter _filter = DocsFilter.all;
   String _query = '';
 
+  DocsSnapshot? _countsSnapshot;
+  Map<DocsFilter, int> _countsCache = const {};
+
+  /// [docsFilterCounts] walks every doc; the result changes only when the
+  /// snapshot does. Recomputing it per rebuild made each keystroke O(docs).
+  Map<DocsFilter, int> _countsFor(DocsSnapshot? snapshot) {
+    if (!identical(snapshot, _countsSnapshot)) {
+      _countsSnapshot = snapshot;
+      _countsCache = docsFilterCounts(snapshot);
+    }
+    return _countsCache;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -61,7 +74,9 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
   Widget build(BuildContext context) {
     final snapshot = ref.watch(docsProvider);
     final repos = ref.watch(reposProvider);
-    final counts = docsFilterCounts(snapshot);
+    // Counts describe the whole snapshot, not the query, so they must not be
+    // recomputed on every keystroke — memoised against the snapshot identity.
+    final counts = _countsFor(snapshot);
 
     return Scaffold(
       appBar: AppBar(
