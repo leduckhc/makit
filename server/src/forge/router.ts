@@ -379,14 +379,21 @@ export function createForgeRouter(
     setPaused: (paused: boolean) => deps.github.setPaused(paused),
     onBudgetChange: (fn) => deps.github.onBudgetChange(fn),
 
-    /** Summed, so the ≥80% call-reduction figure covers every provider in play. */
+    /**
+     * Summed across EVERY provider, so the ≥80% call-reduction figure covers every
+     * one in play.
+     *
+     * `unsupported` and `none` report zeros today, so omitting them was right by
+     * accident — and would have drifted silently the moment either started counting a
+     * call. Reading all four costs nothing and keeps the number honest by
+     * construction rather than by coincidence.
+     */
     stats(): GatewayStats {
-      const a = deps.github.stats();
-      const b = deps.forgejo.stats();
+      const all = [deps.github, deps.forgejo, deps.unsupported, deps.none].map((g) => g.stats());
       return {
-        execs: a.execs + b.execs,
-        exemptExecs: a.exemptExecs + b.exemptExecs,
-        cacheHits: a.cacheHits + b.cacheHits,
+        execs: all.reduce((n, s) => n + s.execs, 0),
+        exemptExecs: all.reduce((n, s) => n + s.exemptExecs, 0),
+        cacheHits: all.reduce((n, s) => n + s.cacheHits, 0),
       };
     },
     providersInUse: () => new Set(inUse),
@@ -411,8 +418,10 @@ export function createForgeRouter(
       warned.clear();
       decided.clear();
       remotes.clear();
-      deps.github.close();
-      deps.forgejo.close();
+      // All four, for the same reason `stats` reads all four: the two no-op gateways
+      // close to nothing today, and a provider that later acquires a timer or socket
+      // must not depend on someone remembering to add it here.
+      for (const g of [deps.github, deps.forgejo, deps.unsupported, deps.none]) g.close();
     },
   };
 }

@@ -600,11 +600,20 @@ async function checkoutViaPullRef(
       target,
     );
     if (onOrigin.code === 0) {
-      await run(
+      const upstream = await run(
         "git",
         ["branch", `--set-upstream-to=origin/${headRefName}`, branchName],
         target,
       );
+      // Best-effort, but not silent: without an upstream a later `git push` in this
+      // worktree does not update the PR, and "my push did nothing" is unanswerable
+      // if the reason was never recorded. Not fatal -- the worktree is the point,
+      // and it is checked out correctly either way.
+      if (upstream.code !== 0) {
+        log.warn(
+          `[makit] PR #${prNumber}: could not track origin/${headRefName}, so pushing from this worktree will not update the pull request: ${upstream.stderr.trim() || `exit ${upstream.code}`}`,
+        );
+      }
     }
   }
   return null;

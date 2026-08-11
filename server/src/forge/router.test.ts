@@ -173,15 +173,22 @@ test("budget reporting delegates to GitHub, the only provider with a quota", asy
   ]);
 });
 
-test("stats sums both providers so the call-reduction figure stays whole", () => {
+test("stats sums the providers so the call-reduction figure stays whole", () => {
+  // Four gateways now, all read: github 3, and forgejo/unsupported/none 5 each from
+  // `fake` (which reports 5 for anything not named "github").
   const { router } = harness({});
-  assert.deepEqual(router.stats(), { execs: 8, exemptExecs: 2, cacheHits: 4 });
+  assert.deepEqual(router.stats(), { execs: 18, exemptExecs: 4, cacheHits: 8 });
 });
 
-test("close closes both providers", () => {
+test("close closes every provider", () => {
   const { router, calls } = harness({});
   router.close();
-  assert.deepEqual(calls.sort(), ["forgejo.close", "github.close"]);
+  assert.deepEqual(calls.sort(), [
+    "forgejo.close",
+    "github.close",
+    "none.close",
+    "unsupported.close",
+  ]);
 });
 
 // ---------------------------------------------------------------------------
@@ -656,4 +663,39 @@ test("a failure AFTER the remote was read keeps the remote fact true", async () 
   });
   await router.prForBranch("/y", "b");
   assert.equal(router.hasRemoteFor("/y"), true, "the remote WAS read; only detection failed");
+});
+
+test("stats sums EVERY provider, matching what the doc comment claims", async () => {
+  // Review finding: the sum covered github and forgejo only, while the comment said
+  // it "covers every provider in play". Both omitted gateways return zeros today, so
+  // the number was right by accident — and would drift silently the moment either
+  // started counting a call.
+  const calls: string[] = [];
+  const counting = (n: number): ForgeGateway => ({
+    ...fake(`c${n}`, calls),
+    stats: () => ({ execs: n, exemptExecs: n, cacheHits: n }),
+  });
+  const router = createForgeRouter({
+    github: { ...githubFake(calls), stats: () => ({ execs: 1, exemptExecs: 1, cacheHits: 1 }) } as GithubGateway,
+    forgejo: counting(2),
+    unsupported: counting(4),
+    none: counting(8),
+    resolveInstance: async () => ({ host: "git.example", baseUrl: "https://git.example" }),
+    detect: async () => "forgejo",
+  });
+  assert.deepEqual(router.stats(), { execs: 15, exemptExecs: 15, cacheHits: 15 });
+});
+
+test("close closes EVERY provider, not just the two with caches", async () => {
+  const calls: string[] = [];
+  const router = createForgeRouter({
+    github: githubFake(calls),
+    forgejo: fake("forgejo", calls),
+    unsupported: fake("unsupported", calls),
+    none: fake("none", calls),
+    resolveInstance: async () => ({ host: "git.example", baseUrl: "https://git.example" }),
+    detect: async () => "forgejo",
+  });
+  router.close();
+  assert.deepEqual(calls.sort(), ["forgejo.close", "github.close", "none.close", "unsupported.close"]);
 });

@@ -65,7 +65,7 @@ import {
   type ProviderChoice,
   type RepoSettings,
 } from "./repo_settings.js";
-import type { ForgeInspector } from "./forge/router.js";
+import type { ForgeForgetful, ForgeInspector } from "./forge/router.js";
 
 /**
  * What a {@link SessionManager.wrapUpWorktree} run actually did. The base-branch
@@ -223,7 +223,16 @@ export class SessionManager extends EventEmitter {
   private readonly store?: EventStore;
   private capabilityCache?: CapabilityCache;
   private bridge?: BridgeBinding;
-  private readonly _gateway: GithubGateway;
+  /**
+   * The forge gateway.
+   *
+   * Typed as the gateway PLUS the optional inspection/invalidation ports, so the
+   * three call sites that ask it what it decided no longer need an
+   * `as unknown as` double cast. `Partial` is the honest shape: a test may inject a
+   * plain `GithubGateway`, and only the real router implements the ports — which is
+   * exactly why the calls are optional-chained rather than assumed.
+   */
+  private readonly _gateway: GithubGateway & Partial<ForgeInspector & ForgeForgetful>;
 
   constructor(opts: ManagerOpts) {
     super();
@@ -457,8 +466,7 @@ export class SessionManager extends EventEmitter {
     // re-detected instead of reported from a stale probe. Keyed on the path the
     // gateway was actually called with -- the DTO's own value, not its canonical
     // form, since that is what became the cache key.
-    const inspector = this._gateway as unknown as { forgetRepo?: (p: string) => void };
-    inspector.forgetRepo?.(entryPathBefore);
+    this._gateway.forgetRepo?.(entryPathBefore);
     this.notifyProjectsChanged();
     return { ok: true, path: next };
   }
@@ -800,8 +808,7 @@ export class SessionManager extends EventEmitter {
     if (chosen === "forgejo" || chosen === "gitea") return "pull-ref";
     if (chosen === "github") return "gh";
     // `auto` (or `none`, which never reaches a checkout): believe detection.
-    const inspector = this._gateway as unknown as Partial<ForgeInspector>;
-    const software = inspector.forgeFor?.(repoPath)?.software;
+    const software = this._gateway.forgeFor?.(repoPath)?.software;
     return software === "forgejo" || software === "gitea" ? "pull-ref" : "gh";
   }
 
@@ -1328,8 +1335,7 @@ export class SessionManager extends EventEmitter {
     const stored = parseRepoSettings(this.projects.get(project.id)?.settings);
     const worktreeRoot = resolveWorktreeRoot(stored, process.env);
     const provider = resolveProvider(stored);
-    const inspector = this._gateway as unknown as Partial<ForgeInspector>;
-    const forge = inspector.forgeFor?.(project.path);
+    const forge = this._gateway.forgeFor?.(project.path);
     return {
       // Re-validated here too: an override read back from a hand-edited file must
       // not be reported as in force if it would be refused on use.
@@ -1354,7 +1360,7 @@ export class SessionManager extends EventEmitter {
       //
       // `true` when the router has not reached this repo yet, so the app says "not
       // identified yet" (a probe pending) rather than "no remote" (a conclusion).
-      hasRemote: inspector.hasRemoteFor?.(project.path) ?? true,
+      hasRemote: this._gateway.hasRemoteFor?.(project.path) ?? true,
       forge,
     };
   }

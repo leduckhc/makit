@@ -237,14 +237,20 @@ export function validateRepoPath(raw: string): Validation<string> {
   try {
     real = realpathSync(normalize(input));
   } catch {
-    return { ok: false, error: `${input} does not exist.` };
+    // Not "does not exist": `realpath` also fails on a permission error or an I/O
+    // error, and telling someone their present-but-unreadable directory is missing
+    // sends them to create a path that is already there.
+    return { ok: false, error: `Could not resolve ${input}. Check it exists and is readable.` };
   }
   try {
     if (!statSync(real).isDirectory()) {
-      return { ok: false, error: `${input} is not a directory.` };
+      // Reports the CANONICAL path, which is the thing actually inspected: with
+      // `/tmp` symlinked to `/private/tmp`, echoing the input describes a different
+      // place from the one that failed.
+      return { ok: false, error: `${real} is not a directory.` };
     }
   } catch {
-    return { ok: false, error: `Could not read ${input}.` };
+    return { ok: false, error: `Could not inspect ${real}.` };
   }
   return { ok: true, value: real };
 }
