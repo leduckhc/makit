@@ -244,12 +244,23 @@ class WireCodec {
           resumable: j['resumable'] == true,
           closed: j['closed'] == true,
           orphaned: j['orphaned'] == true,
+          // SPEC-51 D1/D9: normalise `''` to null at the edge. A blank string is
+          // what a sloppy server sends for "no value", and it would render a copy
+          // affordance that copies nothing — the placeholder D9 forbids. Doing it
+          // here means nothing above this line has to think about it.
+          agentSessionId: _nonEmpty(j['agentSessionId']),
+          transcriptPath: _nonEmpty(j['transcriptPath']),
           queued: decodeQueued(j['queued']),
         ),
       );
     }
     return out;
   }
+
+  /// A non-empty string, or null. Rejects non-strings too, so a malformed
+  /// snapshot degrades one field instead of failing the whole session list.
+  static String? _nonEmpty(Object? v) =>
+      (v is String && v.isNotEmpty) ? v : null;
 
   /// Decode a session's `queued` array (SPEC-35). Absent/malformed entries yield
   /// an empty queue rather than failing the whole snapshot: a session list is

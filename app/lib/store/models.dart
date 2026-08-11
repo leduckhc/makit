@@ -1124,6 +1124,8 @@ class Session {
     this.resumable = false,
     this.closed = false,
     this.orphaned = false,
+    this.agentSessionId,
+    this.transcriptPath,
     this.queued = const [],
   });
 
@@ -1171,6 +1173,18 @@ class Session {
   /// repo root (no recreate-worktree path).
   final bool orphaned;
 
+  /// The underlying agent's own session id — pi's ACP `sessionId` (which is pi's
+  /// OWN session uuid, reused by `pi-acp`) or codex's `threadId`. Null for a
+  /// draft, for a back end with no native session concept, and for any server
+  /// older than SPEC-51 (D1).
+  final String? agentSessionId;
+
+  /// Absolute path to the transcript on the SERVER's host, resolved server-side
+  /// (D2/D3) — the app never derives it, because the slug algorithm is pi's and
+  /// the app cannot stat the server's filesystem to check itself. Null for codex
+  /// in P1 (D16) and whenever no file was found (D9).
+  final String? transcriptPath;
+
   /// Messages submitted while the agent was busy that could not be steered into
   /// the running turn (SPEC-35), oldest first. They are delivered one per idle
   /// transition and can be cancelled until then.
@@ -1191,6 +1205,8 @@ class Session {
     bool? resumable,
     bool? closed,
     bool? orphaned,
+    String? agentSessionId,
+    String? transcriptPath,
     List<QueuedMessage>? queued,
   }) => Session(
     id: id,
@@ -1210,6 +1226,8 @@ class Session {
     resumable: resumable ?? this.resumable,
     closed: closed ?? this.closed,
     orphaned: orphaned ?? this.orphaned,
+    agentSessionId: agentSessionId ?? this.agentSessionId,
+    transcriptPath: transcriptPath ?? this.transcriptPath,
     queued: queued ?? this.queued,
   );
 }
