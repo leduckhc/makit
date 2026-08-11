@@ -17,6 +17,7 @@ function fakeClient(authed = true, subs: string[] = []): FakeClient {
     subscribed: new Set(subs),
     watchingMetrics: false,
     watchingPorts: false,
+    watchingDocs: false,
     isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},

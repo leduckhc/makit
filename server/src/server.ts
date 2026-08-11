@@ -98,6 +98,12 @@ import {
 import { loadHistory, saveHistory, historyFile } from "./ports/history_store.js";
 import { PortHealthProbe, createNetConnector } from "./ports/health.js";
 import { tailnetAddressFromBindHost } from "./ports/attribute.js";
+import { register as registerDocsCommands } from "./ws/commands/docs.js";
+import { DocsService, type DocWorktree } from "./docs/service.js";
+import { DocGrantStore } from "./docs/grants.js";
+import { attachDocRoute, attachDocNotFound } from "./docs/route.js";
+import { DocListener } from "./docs/listener.js";
+import type { DocReach } from "./docs/publish.js";
 import { run as execRun } from "./git.js";
 import { stat as fsStat } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
@@ -328,11 +334,97 @@ export function startWsServer(opts: ServerOpts) {
     return null;
   };
 
+  // -------- docs index + publish (SPEC-46) --------------------------------
+  //
+  // Worktrees to index, with the two branches the merge-base `changed` diff
+  // needs (D5), from the CACHED git-only repos snapshot — never a git shell-out
+  // per walk, exactly like the ports scanner's worktree source.
+  const listDocWorktrees = (): DocWorktree[] => {
+    const out: DocWorktree[] = [];
+    for (const repo of lastGitOnlyRepos ?? [])
+      for (const wt of repo.worktrees)
+        out.push({ worktreePath: wt.path, baseBranch: repo.defaultBranch, currentBranch: wt.branch });
+    return out;
+  };
+
+  // D10 rev 2: a SEPARATE plain-HTTP listener for published docs — never the
+  // pinned WSS listener, never `0.0.0.0`. It is bound LAZILY on the first
+  // publish and released once nothing is published, so makit holds no routable
+  // port open for a feature you are not using.
+  //
+  // Tailnet only: the capability lives in the URL path (D9), and rev 2 dropped
+  // the LAN fallback rather than let that capability cross a network WireGuard
+  // is not encrypting. No tailnet address ⇒ publish refuses with a reason (D15).
+  const docGrants = new DocGrantStore();
+  const docListener = new DocListener({
+    bindHost: tailnetAddressFromBindHost(host),
+    attach: (server) => {
+      attachDocRoute(server, { grants: docGrants });
+      // Dedicated listener: nothing else answers, so unmatched paths (Safari's
+      // /favicon.ico, a probe of /) must 404 rather than hang the socket.
+      attachDocNotFound(server);
+    },
+  });
+  const docReach = (): Promise<DocReach | null> => docListener.ensureOrigin();
+  // Release the port once no grant remains. There is no expiry reaper of its
+  // own: `onGrantsChanged` fires only from `DocsService.unpublish()` and
+  // `DocsService.grants()`, and expired/idle grants are reaped lazily on the way
+  // through `grants.list()`. So the listener stays bound while live grants
+  // remain, and a grant that merely expired frees the port on the NEXT
+  // grant-list or unpublish request rather than the instant its TTL passes.
+  const releaseDocsIfIdle = (): void => {
+    void docListener.releaseIfIdle(docGrants.list().length);
+  };
+
+  const emitDocsSnapshot = (snapshot: unknown): OutgoingFrame => ({
+    t: "event",
+    id: newId("docs"),
+    kind: "docs.snapshot",
+    snapshot,
+  });
+  const docsService = new DocsService({
+    listWorktrees: listDocWorktrees,
+    exec: execRun,
+    grants: docGrants,
+    reach: docReach,
+    onGrantsChanged: releaseDocsIfIdle,
+    onSnapshot: (snapshot) => {
+      const frame = emitDocsSnapshot(snapshot);
+      for (const c of clients.values()) if (c.authed && c.watchingDocs) c.send(frame);
+    },
+    now: () => Date.now(),
+    // One-shot debounce, NOT a cadence: docs re-index only on a worktree change.
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (h) => clearTimeout(h as NodeJS.Timeout),
+  });
+  https.on("close", () => {
+    docsService.stop();
+    void docListener.close();
+  });
+
+  const countDocsWatchers = (): number => {
+    let n = 0;
+    for (const c of clients.values()) if (c.authed && c.watchingDocs) n++;
+    return n;
+  };
+  // Recompute after a `docs.watch` toggle or a socket close: the 0→1 edge runs
+  // one immediate walk, the 1→0 edge cancels any pending debounce.
+  const recomputeDocsWatchers = (): void => docsService.setWatchers(countDocsWatchers());
+  const sendDocsSnapshot = (client: WsClient): void => {
+    const cached = docsService.cachedSnapshot();
+    if (cached !== undefined) client.send(emitDocsSnapshot(cached));
+  };
+
   // Watch each project's git worktrees so a `git worktree add`/`remove` done
   // outside makit pushes a fresh repos.snapshot instead of waiting for the
   // next client reconnect. Kept in sync with the project set inside
   // broadcastReposSnapshot; closed when the listeners shut down.
-  const worktreeWatcher = watchWorktrees(() => void broadcastReposSnapshot());
+  const worktreeWatcher = watchWorktrees(() => {
+    void broadcastReposSnapshot();
+    // Same trigger drives the doc re-index (debounced 400ms inside the service);
+    // no polling loop of its own (D11).
+    docsService.onWorktreeChange();
+  });
   worktreeWatcher.sync(manager.listProjects().map((p) => p.path));
   https.on("close", () => worktreeWatcher.close());
 
@@ -781,6 +873,10 @@ export function startWsServer(opts: ServerOpts) {
       // ports popover open never sends `ports.watch {on:false}`.
       state.watchingPorts = false;
       recomputePortsWatchers();
+      // SPEC-46: same leak guard for the doc index — a window killed with the
+      // Docs screen open never sends `docs.watch {on:false}`.
+      state.watchingDocs = false;
+      recomputeDocsWatchers();
       // SPEC-44 D3: revoke this device's forward grants. A `browser:true` grant
       // resolves on its id alone, so without this the URL would keep working for
       // up to its TTL after the device that asked for it went away — and the
@@ -882,6 +978,9 @@ export function startWsServer(opts: ServerOpts) {
       sendMetricsHistory,
       onPortsWatchersChanged: recomputePortsWatchers,
       sendPortsSnapshot,
+      onDocsWatchersChanged: recomputeDocsWatchers,
+      sendDocsSnapshot,
+      docs: docsService,
       killPort: (target: PortKillTarget, deviceId?: string) =>
         portsService.killPort(target, { deviceId }),
       killOrphans: (deviceId?: string) => portsService.killOrphans({ deviceId }),
@@ -899,6 +998,7 @@ export function startWsServer(opts: ServerOpts) {
     registerGithubCommands(r, deps);
     registerMetricsCommands(r, deps);
     registerPortsCommands(r, deps);
+    registerDocsCommands(r, deps);
 
     // In-app logging: ingest client diagnostics into the server log. Always on
     // (not dev-gated) — field crash reports from iOS are a production need.
@@ -997,6 +1097,13 @@ export function startWsServer(opts: ServerOpts) {
       // enrichment (which may reject or never resolve) — attribution must work
       // regardless of `gh` health (finding 27).
       lastGitOnlyRepos = gitOnly;
+      // The doc index is keyed off this worktree list, so it must re-walk when the
+      // list first arrives or changes. Without this the common case is an EMPTY
+      // Docs screen that never recovers: the app sends `docs.watch {on:true}`
+      // from the home screen's initState, which lands BEFORE the first
+      // `repos.snapshot`, so the 0→1 scan sees no worktrees and nothing else
+      // ever triggers a re-index. Debounced inside the service (D11).
+      docsService.onWorktreeChange();
       emit(preserveLastKnownPrs(gitOnly));
     } catch (e) {
       if (generation === reposSnapshotGeneration) {
@@ -1056,6 +1163,7 @@ export function startWsServer(opts: ServerOpts) {
       isLocal,
       watchingMetrics: false,
       watchingPorts: false,
+      watchingDocs: false,
       subscribed: new Set<string>(),
       send(frame: OutgoingFrame) {
         if (ws.readyState !== ws.OPEN) return;

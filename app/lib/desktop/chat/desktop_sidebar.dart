@@ -7,9 +7,12 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../store/models.dart';
+import '../../store/docs.dart';
 import '../../store/ports.dart';
 import '../../store/store.dart';
 import '../../ui/home/repo_chips.dart';
+import '../../ui/docs/docs_popover.dart';
+import '../../ui/docs/doc_preview.dart';
 import '../../ui/ports/ports_popover.dart';
 import '../../ui/ports/session_ports_glyph.dart';
 import '../../ui/widgets/pr_state_style.dart';
@@ -498,6 +501,11 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   // menu back to a diff pill under the cursor while the popover is open. The
   // popover reports its open-state through `onOpenChanged` (SPEC-41 §5 trap).
   bool _portsOpen = false;
+  bool _docsOpen = false;
+
+  // Hold the ref-counted docs watch while any worktree group is mounted (D11),
+  // the same discipline as the ports watch below.
+  late final DocsWatch _docsWatch = ref.read(docsWatchProvider);
 
   // Hold the ref-counted ports watch while any worktree group is mounted in the
   // sidebar, so the server polls `lsof` only while the sidebar is up (SPEC-41
@@ -509,11 +517,13 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   void initState() {
     super.initState();
     _portsWatch.watch();
+    _docsWatch.watch();
   }
 
   @override
   void dispose() {
     _portsWatch.release();
+    _docsWatch.release();
     super.dispose();
   }
 
@@ -620,7 +630,8 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                             if (_hovering ||
                                 _focused ||
                                 _menuOpen ||
-                                _portsOpen)
+                                _portsOpen ||
+                                _docsOpen)
                               _WorktreeMenuButton(
                                 worktree: worktree,
                                 onMenuOpened: () =>
@@ -704,6 +715,15 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                     ],
                                   ),
                                 ),
+                              ),
+                              // Docs glyph, sharing the trailing slot with the
+                              // ports plug (mockup Card 2 right frame). Renders
+                              // nothing when the branch owns no docs.
+                              _SubRowDocsGlyph(
+                                worktreePath: worktree.path,
+                                branch: branch,
+                                onOpenChanged: (open) =>
+                                    setState(() => _docsOpen = open),
                               ),
                               // Ports glyph, right-aligned on the same 8 pt edge
                               // as line 1's swap (SPEC-41 §5). 14 pt glyph in a
@@ -898,12 +918,72 @@ class _WorktreeMenuButton extends ConsumerWidget {
   }
 }
 
+/// The worktree sub-row's docs glyph (SPEC-46), desktop form. A 14 pt glyph in
+/// a fixed 22 × 16 hit target so the sub-row keeps its reserved height. Opens
+/// the docs popover; renders nothing when the branch owns no docs.
+class _SubRowDocsGlyph extends ConsumerStatefulWidget {
+  const _SubRowDocsGlyph({
+    required this.worktreePath,
+    required this.branch,
+    required this.onOpenChanged,
+  });
+
+  final String worktreePath;
+  final String branch;
+  final ValueChanged<bool> onOpenChanged;
+
+  @override
+  ConsumerState<_SubRowDocsGlyph> createState() => _SubRowDocsGlyphState();
+}
+
+class _SubRowDocsGlyphState extends ConsumerState<_SubRowDocsGlyph> {
+  // The DocsPopover lives inside this subtree. When the branch's last doc goes
+  // away we return SizedBox.shrink() and the popover unmounts WITHOUT reporting
+  // closed (its dispose only cancels timers), so the host's `_docsOpen` latch
+  // would stay stuck and keep the overflow menu replacing the diff pill. We own
+  // the mount, so we clear the latch on the non-empty->empty edge. Doing it here
+  // (not in the popover's dispose) avoids a setState on the host during the row
+  // teardown that unmounts glyph and host together.
+  bool _hadDocs = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final docs = ref.watch(docsForWorktreeProvider(widget.worktreePath));
+    if (docs.isEmpty) {
+      if (_hadDocs) {
+        _hadDocs = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) widget.onOpenChanged(false);
+        });
+      }
+      return const SizedBox.shrink();
+    }
+    _hadDocs = true;
+    return SizedBox(
+      key: ValueKey('docsSubRowTarget-${widget.worktreePath}'),
+      width: 22,
+      height: 16,
+      child: Center(
+        child: DocsPopover(
+          branch: widget.branch,
+          docs: docs,
+          onOpenChanged: widget.onOpenChanged,
+          // The preview is a widget in a sheet (D12); Navigator.of works on the
+          // MaterialApp(home:) desktop shell — unlike `context.go`, which has no
+          // GoRouter there.
+          onOpenDoc: (doc) => showDocPreviewSheet(context, doc),
+        ),
+      ),
+    );
+  }
+}
+
 /// The worktree sub-row's ports glyph (SPEC-41 §5), desktop form. A 14 pt glyph
 /// in a fixed 22 × 16 hit target — wider, not taller — so the sub-row keeps its
 /// reserved 16 pt height. Hit testing is bounded by this box (Flutter clips to
 /// the parent), so the target is honestly 22 × 16, not 22 × 22. Renders nothing
 /// when the branch is serving nothing.
-class _SubRowPortsGlyph extends ConsumerWidget {
+class _SubRowPortsGlyph extends ConsumerStatefulWidget {
   const _SubRowPortsGlyph({
     required this.worktreePath,
     required this.branch,
@@ -915,22 +995,41 @@ class _SubRowPortsGlyph extends ConsumerWidget {
   final ValueChanged<bool> onOpenChanged;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(portsGlyphStateProvider(worktreePath));
-    if (state == PortsGlyphState.none) return const SizedBox.shrink();
-    final ports = ref.watch(portsForWorktreeProvider(worktreePath));
+  ConsumerState<_SubRowPortsGlyph> createState() => _SubRowPortsGlyphState();
+}
+
+class _SubRowPortsGlyphState extends ConsumerState<_SubRowPortsGlyph> {
+  // Same latch invariant as _SubRowDocsGlyph: PortsPopover unmounts without
+  // reporting closed when the branch stops serving, so clear `_portsOpen` on the
+  // serving->none edge from the side that owns the mount.
+  bool _wasServing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(portsGlyphStateProvider(widget.worktreePath));
+    if (state == PortsGlyphState.none) {
+      if (_wasServing) {
+        _wasServing = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) widget.onOpenChanged(false);
+        });
+      }
+      return const SizedBox.shrink();
+    }
+    _wasServing = true;
+    final ports = ref.watch(portsForWorktreeProvider(widget.worktreePath));
     return SizedBox(
-      key: ValueKey('portsSubRowTarget-$worktreePath'),
+      key: ValueKey('portsSubRowTarget-${widget.worktreePath}'),
       width: 22,
       height: 16,
       child: Center(
         child: PortsPopover(
           state: state,
           count: ports.length,
-          branch: branch,
+          branch: widget.branch,
           ports: ports,
           nowMs: DateTime.now().millisecondsSinceEpoch,
-          onOpenChanged: onOpenChanged,
+          onOpenChanged: widget.onOpenChanged,
         ),
       ),
     );

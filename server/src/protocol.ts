@@ -99,7 +99,15 @@ export type EventKind =
    * Watch-gated — nothing is scanned or sent unless a client asked via
    * `ports.watch`. See {@link PortsSnapshotDTO}.
    */
-  | "ports.snapshot";
+  | "ports.snapshot"
+  /**
+   * Every renderable document (`.md` / `.html`) inside each known worktree's
+   * allowlisted doc roots (SPEC-46). Like {@link ports.snapshot} this is a
+   * top-level broadcast, NOT a session event: documents describe the checkout,
+   * not one session. Watch-gated — nothing is walked or sent unless a client
+   * asked via `docs.watch`. See {@link DocsSnapshotDTO}.
+   */
+  | "docs.snapshot";
 
 /**
  * Normalized context/cost usage for one session (SPEC-37), unified across three
@@ -398,6 +406,86 @@ export interface PortsSnapshotDTO {
 }
 
 /**
+ * One renderable document inside a worktree (SPEC-46).
+ *
+ * The index is an **allowlist** of doc roots (`mockups/`, `docs/`, root `*.md`),
+ * not a file tree (D1): a tree invites traversal and buries the four
+ * directories you want under twelve you do not.
+ */
+export interface DocDTO {
+  /**
+   * `"<worktreePath>:<relPath>"`. A **snapshot key, never persisted** (D3) —
+   * same discipline as {@link PortDTO.key}. Files get renamed and moved, so a
+   * stored key rots silently; the UI re-selects by `(worktreePath, relPath)`.
+   */
+  key: string;
+  /** Worktree-relative POSIX path, e.g. `"mockups/open-ports.html"`. */
+  relPath: string;
+  /**
+   * A **human** name, extracted from the file (D4): `<title>` for HTML, the
+   * first ATX heading for markdown, and the basename only as a last resort.
+   * `2026-08-07-SPEC-44-ports-forward.md` is unreadable on a 375 pt row.
+   */
+  title: string;
+  kind: "md" | "html";
+  bytes: number;
+  /** Epoch ms of the file's mtime. Rows sort by this, descending. */
+  modifiedAt: number;
+  worktreePath: string;
+  /** Session that last wrote it when known; absent, never guessed. */
+  sessionId?: string;
+  /**
+   * True when the file differs from the branch's **merge base** — the review
+   * question, not "dirty in the working tree" (D5). Absent when undetermined.
+   */
+  changed?: boolean;
+  /**
+   * Parsed from a leading `**Status:** …` line, shortened to its first clause
+   * (`"Draft"`, `"Implemented"`). **Absent rather than guessed** (D14): this
+   * repo writes the line by convention, but a doc without one must not be
+   * labelled.
+   */
+  docStatus?: string;
+}
+
+export interface DocsSnapshotDTO {
+  /** Documents across every known worktree, mtime-descending within a worktree. */
+  docs: DocDTO[];
+  /** Epoch ms this walk completed. */
+  scannedAt: number;
+  /**
+   * True when the walk ran — **not** that the list is complete (the
+   * {@link PortsSnapshotDTO.scanOk} rule). An unreadable file is skipped
+   * without failing the walk.
+   */
+  scanOk: boolean;
+  /** One-line reason when `scanOk` is false. */
+  scanError?: string;
+}
+
+/**
+ * An active publication of one document over the tailnet (SPEC-46 D9).
+ *
+ * A URL that must open in Safari cannot carry a bearer *header*, so the
+ * capability lives in the path: `/docs/<grantId>/<relPath>`. Publishing is
+ * therefore always explicit, always time-boxed, and always revocable.
+ */
+export interface DocGrantDTO {
+  /** 32 bytes of CSPRNG, hex. This value **is** the capability — treat as secret. */
+  grantId: string;
+  worktreePath: string;
+  relPath: string;
+  /** The full URL to hand over. Never `localhost`. */
+  url: string;
+  /**
+   * What actually bound, never invented (D15): `tailnet` when `tailscale serve`
+   * fronted it, `lan` for the explicitly-labelled fallback.
+   */
+  reach: "tailnet" | "lan";
+  expiresAt: number;
+}
+
+/**
  * The endpoint the user confirmed killing, captured from the row they saw
  * (SPEC-43 D1/D8).
  */
@@ -495,7 +583,7 @@ export interface PortKillOrphansResult {
  */
 export type SessionEventKind = Exclude<
   EventKind,
-  "github.budget" | "metrics.sample" | "ports.snapshot"
+  "github.budget" | "metrics.sample" | "ports.snapshot" | "docs.snapshot"
 >;
 
 export interface SessionEvent {
@@ -804,6 +892,29 @@ export type CmdKind =
    * nothing is scanned while no client is watching.
    */
   | "ports.watch"
+  /**
+   * SPEC-46: hold/release the host-wide document index. Ref-counted exactly
+   * like `ports.watch` — nothing is walked while no client is watching.
+   */
+  | "docs.watch"
+  /**
+   * SPEC-46: read one markdown document's text over this channel (D7). Errors
+   * for `kind === "html"`, which is only useful once a browser engine renders
+   * it. `{kind:'docs.read', worktreePath, relPath}`.
+   */
+  | "docs.read"
+  /**
+   * SPEC-46 D8 rev 2: open the document on the machine holding it, via the
+   * host's OS opener. **Local clients only** — a remote client cannot be served
+   * this way and must publish instead. `{kind:'docs.open', worktreePath, relPath}`.
+   */
+  | "docs.open"
+  /** SPEC-46: publish one document over the tailnet, returning a {@link DocGrantDTO}. */
+  | "docs.publish"
+  /** SPEC-46: revoke a publication by `grantId`. */
+  | "docs.unpublish"
+  /** SPEC-46: list active publications, so the app can say "3 docs are shared". */
+  | "docs.grants"
   /**
    * SPEC-43: terminate ONE listening process the user is looking at. Carries the
    * full identity tuple captured from the row it displayed

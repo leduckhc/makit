@@ -17,6 +17,8 @@ import type { GithubGateway } from "../../github/gateway.js";
 import type { BudgetWatch } from "../../github/budget_watch.js";
 import type { WsClient } from "../client.js";
 import type { MediaStore } from "../../media/store.js";
+import type { DocsCommandPort } from "../../docs/service.js";
+export type { DocsCommandPort } from "../../docs/service.js";
 
 export interface CommandDeps {
   readonly manager: SessionManager;
@@ -54,6 +56,17 @@ export interface CommandDeps {
   onPortsWatchersChanged(): void;
   /** SPEC-41: send this client the cached port snapshot, if one exists yet. */
   sendPortsSnapshot(client: WsClient): void;
+  /**
+   * SPEC-46: recompute the doc index's watcher count from the current set of
+   * `watchingDocs` clients and re-arm. Called after a `docs.watch` toggle or a
+   * socket close — a router built without it would ACK a `docs.watch`, set the
+   * flag, and then walk nothing.
+   */
+  onDocsWatchersChanged(): void;
+  /** SPEC-46: send this client the cached docs snapshot, if one exists yet. */
+  sendDocsSnapshot(client: WsClient): void;
+  /** SPEC-46: read/publish/unpublish/enumerate docs (the DocsService surface). */
+  readonly docs: DocsCommandPort;
   /**
    * SPEC-43: terminate the confirmed listener and report a terminal outcome. The
    * target is passed through UNCHANGED — the service re-verifies it on a fresh

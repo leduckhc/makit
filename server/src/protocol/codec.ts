@@ -42,26 +42,39 @@ const MSG_TYPES: ReadonlySet<MsgType> = new Set<MsgType>([
   "srv.response",
 ]);
 
-const EVENT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
-  "user.message",
-  "agent.message",
-  "agent.message.delta",
-  "agent.media",
-  "agent.thinking",
-  "agent.thinking.delta",
-  "tool.call.start",
-  "tool.call.delta",
-  "tool.call.end",
-  "session.status",
-  "session.error",
-  "session.commands",
-  "session.meta",
-  "session.action_error",
-  "session.usage",
-  "github.budget",
-  "metrics.sample",
-  "ports.snapshot",
-]);
+/**
+ * Every event kind, as a `Record` so the compiler forces this list to agree with
+ * the `EventKind` union: a typo is an unknown key (rejected) and a missing kind
+ * is a missing required key (rejected).
+ *
+ * This is the same guard `HOST_ONLY_KIND_FLAGS` below uses (finding 26),
+ * extended here because membership of a *host-only* kind in this set is not
+ * observable through `decodeFrame` (which validates only `v`/`t`/`id`) nor
+ * through `decodeSessionEvent` (which rejects the kind for being host-only
+ * first). Without the compiler check, a missing entry here is silent.
+ */
+const EVENT_KIND_FLAGS: Record<EventKind, true> = {
+  "user.message": true,
+  "agent.message": true,
+  "agent.message.delta": true,
+  "agent.media": true,
+  "agent.thinking": true,
+  "agent.thinking.delta": true,
+  "tool.call.start": true,
+  "tool.call.delta": true,
+  "tool.call.end": true,
+  "session.status": true,
+  "session.error": true,
+  "session.commands": true,
+  "session.meta": true,
+  "session.action_error": true,
+  "session.usage": true,
+  "github.budget": true,
+  "metrics.sample": true,
+  "ports.snapshot": true,
+  "docs.snapshot": true,
+};
+const EVENT_KINDS: ReadonlySet<string> = new Set(Object.keys(EVENT_KIND_FLAGS));
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -89,6 +102,7 @@ const HOST_ONLY_KIND_FLAGS: Record<Exclude<EventKind, SessionEventKind>, true> =
   "github.budget": true,
   "metrics.sample": true,
   "ports.snapshot": true,
+  "docs.snapshot": true,
 };
 const HOST_ONLY_KINDS: ReadonlySet<string> = new Set(Object.keys(HOST_ONLY_KIND_FLAGS));
 
