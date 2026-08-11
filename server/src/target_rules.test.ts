@@ -38,6 +38,11 @@ async function fixture(): Promise<Fixture> {
   const prevWt = process.env.MAKIT_WORKTREE_DIR;
   process.env.MAKIT_HOME = home;
   process.env.MAKIT_WORKTREE_DIR = wtDir;
+  // Pin the targets file explicitly. `worktreeTargetsFile()` prefers
+  // MAKIT_WORKTREE_TARGETS_FILE over MAKIT_HOME, so an inherited value from
+  // another suite would silently point these tests at a shared store.
+  const prevTargets = process.env.MAKIT_WORKTREE_TARGETS_FILE;
+  process.env.MAKIT_WORKTREE_TARGETS_FILE = join(home, "worktree-targets.json");
 
   const g = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd });
   g(repo, "init", "-q", "-b", "main");
@@ -58,6 +63,8 @@ async function fixture(): Promise<Fixture> {
       else process.env.MAKIT_HOME = prevHome;
       if (prevWt === undefined) delete process.env.MAKIT_WORKTREE_DIR;
       else process.env.MAKIT_WORKTREE_DIR = prevWt;
+      if (prevTargets === undefined) delete process.env.MAKIT_WORKTREE_TARGETS_FILE;
+      else process.env.MAKIT_WORKTREE_TARGETS_FILE = prevTargets;
       rmSync(home, { recursive: true, force: true });
       rmSync(repo, { recursive: true, force: true });
       rmSync(wtDir, { recursive: true, force: true });

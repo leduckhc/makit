@@ -77,6 +77,22 @@ const PR_CONCURRENCY = 6;
  * wait on the network.
  */
 /**
+ * Whether a cached pull request is **authoritative** about where its branch
+ * lands: it exists, it is OPEN, and it is fresh.
+ *
+ * `stale` matters as much as the state. `enrichPrs` deliberately retains the
+ * last-known PR when a lookup could not complete, so during a GitHub outage a
+ * stale record would otherwise let an unverified — possibly closed or
+ * since-retargeted — base overwrite a target the user just chose.
+ *
+ * One predicate, because two sites encoded it independently and a change to one
+ * silently diverged from the other.
+ */
+function isLivePr(pr: PullRequestDTO | null): pr is PullRequestDTO {
+  return pr !== null && !pr.stale && pr.state?.toUpperCase() === "OPEN";
+}
+
+/**
  * Persist the base of any **live** pull request that disagrees with what we have
  * stored, and return the effective map.
  *
@@ -112,7 +128,7 @@ function adoptLivePrTargets(
     // retained by `enrichPrs` when a lookup could not complete; adopting its base
     // during a GitHub outage could overwrite a freshly-chosen user target with an
     // unverified — possibly closed or since-retargeted — base.
-    if (!pr || pr.stale || pr.state?.toUpperCase() !== "OPEN") continue;
+    if (!isLivePr(pr)) continue;
     const base = pr.baseRefName;
     // A PR cannot land in its own head branch; treat that as bad data rather than
     // persisting a self-target we would then have to discard on every read.
@@ -217,7 +233,7 @@ async function repairVanishedTargets(
   for (const e of entries) {
     if (!e.branch) continue;
     const pr = lastKnown(repoPath, e.branch);
-    if (pr && !pr.stale && pr.state?.toUpperCase() === "OPEN" && pr.baseRefName) {
+    if (isLivePr(pr) && pr.baseRefName) {
       live.add(pr.baseRefName);
     }
   }

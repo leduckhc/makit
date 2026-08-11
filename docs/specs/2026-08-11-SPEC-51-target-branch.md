@@ -67,10 +67,10 @@ A winner equal to the worktree's own branch is discarded and resolution continue
 
 **Rule 1 — one vocabulary.** `base` → `target` across server and app. Two documented exceptions:
 `baseRefName` (GitHub's own field, mirrored from their API) and two **one-release** wire aliases —
-`worktree.create` and `worktree.wrapUp` read `env.targetBranch ?? env.baseBranch`, the app sends
+`worktree.create` and `worktree.wrapUp` read `env.targetBranch || env.baseBranch`, the app sends
 both keys, and `WrapUpReport.fromJson` reads both sets. The wrapUp alias is load-bearing, not
 cosmetic: a client that predates the rename would otherwise send a key the server ignores, the
-manager's `?? detectDefaultBranch()` fallback would fast-forward the **wrong branch**, and the ack
+manager's `?? defaultBranchFor()` fallback would fast-forward the **wrong branch**, and the ack
 would report success. Guarded by a test that fails the day someone deletes the alias without
 shipping the app first.
 
