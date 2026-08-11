@@ -712,3 +712,25 @@ test("syncBaseBranch refuses a remote-tracking base instead of mangling it", asy
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test("a LOCAL branch named origin/... is still synced, not mistaken for a remote ref", async () => {
+  // Review finding on the previous fix: the guard matched the `origin/` PREFIX, but
+  // `refs/heads/origin/release` is a legal local branch, and `resolveDefaultBranch`
+  // returns such a name bare. The prefix test then refused to fast-forward a perfectly
+  // ordinary local base. The discriminator has to be which ref actually exists, not how
+  // the name is spelled.
+  const repo = makeRepo();
+  try {
+    execFileSync("git", ["branch", "origin/release"], { cwd: repo });
+    const r = await syncBaseBranch(repo, "origin/release");
+    // It reaches the real sync path, so it fails on the ABSENT REMOTE rather than being
+    // waved through as "nothing to catch up".
+    assert.doesNotMatch(
+      r.reason ?? "",
+      /no local branch/i,
+      "a local branch must not be skipped as remote-tracking",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

@@ -788,7 +788,10 @@ export async function syncBaseBranch(repoPath: string, branch: string): Promise<
   // `git fetch origin origin/trunk` and compare `origin/trunk..origin/origin/trunk`,
   // both nonsense. `resolveDefaultBranch` returns this form when the default exists
   // only on the remote.
-  if (branch.startsWith("origin/")) {
+  //
+  // BUT: a local branch can be *literally* named `origin/release` (i.e.
+  // `refs/heads/origin/release`). Check if it's actually local before refusing.
+  if (branch.startsWith("origin/") && !(await branchExists(repoPath, branch))) {
     return { updated: false, reason: `${branch} has no local branch to catch up` };
   }
   // `run` without a cap, not `git`: this talks to the network inside a
