@@ -13,8 +13,7 @@
  *     server refuses is exit `4`. That probe is also where `cli.grant` mints the
  *     CLI's own device, so liveness and credential are one round trip.
  */
-import { AuthError, WireError } from "./client.js";
-import { connectCli, failAuth, failCommand } from "./connect.js";
+import { withClient } from "./connect.js";
 import { renderSessionLine } from "./render.js";
 import type { SessionDTO } from "../protocol.js";
 
@@ -42,8 +41,7 @@ export function parseLsArgs(argv: string[]): LsArgs {
 export async function runLs(argv: string[]): Promise<void> {
   const args = parseLsArgs(argv);
 
-  const client = await connectCli(args);
-  try {
+  await withClient(args, async (client) => {
     const sessions = args.closed
       ? ((await client.cmd("session.listClosed")).sessions as SessionDTO[]) ?? []
       : (await client.awaitSnapshot()).sessions;
@@ -57,14 +55,5 @@ export async function runLs(argv: string[]): Promise<void> {
       return;
     }
     for (const s of shown) console.log(renderSessionLine(s));
-  } catch (e) {
-    if (e instanceof AuthError) return failAuth(e.message);
-    // A plain refusal (`--closed` asks the server a question it can decline) is
-    // a sentence and exit 1, as in every other verb; only a real bug keeps its
-    // stack.
-    if (e instanceof WireError) return failCommand(e);
-    throw e;
-  } finally {
-    client.close();
-  }
+  });
 }

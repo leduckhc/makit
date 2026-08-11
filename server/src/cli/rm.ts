@@ -6,8 +6,7 @@
  * and only `--kill` tears the agent down for good. Defaulting to the destructive
  * verb would be the wrong way round, so close is the default and kill opts in.
  */
-import { AuthError } from "./client.js";
-import { connectCli, failAuth } from "./connect.js";
+import { withClient } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 
 export interface RmArgs {
@@ -38,8 +37,7 @@ export async function runRm(argv: string[]): Promise<void> {
   const args = parseRmArgs(argv);
   if (!args.sessionId) return failUsage("usage: makit rm <id> [--kill]");
 
-  const client = await connectCli(args);
-  try {
+  await withClient(args, async (client) => {
     if (args.kill) {
       await client.cmd("session.kill", { sessionId: args.sessionId });
       console.log(`[makit] killed ${args.sessionId}`);
@@ -47,11 +45,5 @@ export async function runRm(argv: string[]): Promise<void> {
       await client.cmd("session.close", { sessionId: args.sessionId });
       console.log(`[makit] closed ${args.sessionId}`);
     }
-  } catch (e) {
-    if (e instanceof AuthError) return failAuth(e.message);
-    console.error(`[makit] ${(e as Error).message}`);
-    process.exit(1);
-  } finally {
-    client.close();
-  }
+  });
 }

@@ -11,8 +11,7 @@
  */
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { AuthError } from "./client.js";
-import { connectCli, failAuth } from "./connect.js";
+import { withClient } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 import { ATTACHABLE, mimeForPath, uploadMedia } from "./media_upload.js";
 
@@ -59,8 +58,7 @@ export async function runSend(argv: string[]): Promise<void> {
     }
   });
 
-  const client = await connectCli(args);
-  try {
+  await withClient(args, async (client) => {
     const attachments: { mediaId: string; name: string }[] = [];
     for (const f of files) {
       const mediaId = await uploadMedia(
@@ -76,11 +74,5 @@ export async function runSend(argv: string[]): Promise<void> {
       text: args.message,
       attachments: attachments.length > 0 ? attachments : undefined,
     });
-  } catch (e) {
-    if (e instanceof AuthError) return failAuth(e.message);
-    console.error(`[makit] ${(e as Error).message}`);
-    process.exit(1);
-  } finally {
-    client.close();
-  }
+  });
 }

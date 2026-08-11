@@ -108,6 +108,16 @@ export interface MakitClient {
  * from a thrown Error so a verb can report the refusal as a sentence and leave
  * genuine bugs to surface with their stack.
  */
+/**
+ * An **expected refusal**: the server understood the request and declined it, or
+ * the operation failed for a reason the user needs to read rather than debug.
+ *
+ * This is the CLI's one non-credential failure class, and it is deliberately not
+ * tied to the WebSocket: `POST /media` rides a different transport but fails the
+ * same way, so it raises this too. Callers do not handle it individually —
+ * {@link withClient} maps it to a sentence and exit 1, which is what keeps a
+ * refusal from reaching an agent's shell as a stack trace.
+ */
 export class WireError extends Error {
   constructor(message: string) {
     super(message);

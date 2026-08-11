@@ -6,8 +6,7 @@
  * path uses. The server re-hydrates the session and re-attaches it to a fresh
  * agent process; the CLI just names which one.
  */
-import { AuthError } from "./client.js";
-import { connectCli, failAuth } from "./connect.js";
+import { withClient } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 
 export interface ResumeArgs {
@@ -36,15 +35,8 @@ export async function runResume(argv: string[]): Promise<void> {
   const args = parseResumeArgs(argv);
   if (!args.sessionId) return failUsage("usage: makit resume <id>");
 
-  const client = await connectCli(args);
-  try {
+  await withClient(args, async (client) => {
     await client.cmd("session.attach", { sessionId: args.sessionId });
     console.log(`[makit] resumed ${args.sessionId}`);
-  } catch (e) {
-    if (e instanceof AuthError) return failAuth(e.message);
-    console.error(`[makit] ${(e as Error).message}`);
-    process.exit(1);
-  } finally {
-    client.close();
-  }
+  });
 }

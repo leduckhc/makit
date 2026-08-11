@@ -26,8 +26,7 @@
  * `makit tree` to nest and nothing for the app to caption.
  */
 import { readFileSync } from "node:fs";
-import { connectCli, failCommand } from "./connect.js";
-import { WireError } from "./client.js";
+import { withClient } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 import { parseManifest, renderManifest, renderTranscriptExcerpt, type HandoffManifest } from "./handoff_manifest.js";
 import type { SessionDTO, SessionEvent } from "../protocol.js";
@@ -133,8 +132,7 @@ export async function runHandoff(argv: string[]): Promise<void> {
     return failUsage("nothing to hand over — give at least --goal, --next, --file, or --carry");
   }
 
-  const client = await connectCli(args);
-  try {
+  await withClient(args, async (client) => {
     const parent = (await client.awaitSnapshot()).sessions.find((s: SessionDTO) => s.id === parentId);
     const projectId = parent?.projectId ?? process.env.MAKIT_PROJECT_ID;
     if (!projectId) {
@@ -189,12 +187,5 @@ export async function runHandoff(argv: string[]): Promise<void> {
     const to = args.to ? ` to ${args.to}` : "";
     const where = branch ? ` on ${branch}` : "";
     console.log(`[makit] handed off${to} — session ${sessionId}${where}`);
-  } catch (e) {
-    // Only a refusal from the server is reported as a sentence; a real bug keeps
-    // its stack.
-    if (e instanceof WireError) return failCommand(e);
-    throw e;
-  } finally {
-    client.close();
-  }
+  });
 }

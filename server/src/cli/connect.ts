@@ -15,7 +15,7 @@
  */
 import { requireDaemon } from "./require-daemon.js";
 import { controlSocketPath } from "../daemon/paths.js";
-import { openClient, resolveBearer, AuthError, type MakitClient } from "./client.js";
+import { openClient, resolveBearer, AuthError, WireError, type MakitClient } from "./client.js";
 import { EXIT_AUTH, EXIT_USAGE } from "./exit-codes.js";
 
 export interface ConnectArgs {
@@ -87,4 +87,38 @@ export async function connectCli(args: ConnectArgs): Promise<MakitClient> {
     return failAuth(e instanceof AuthError ? e.message : (e as Error).message);
   }
   return client;
+}
+
+/**
+ * Connect, run `body`, and guarantee the two things every verb owes its caller:
+ * the socket is closed, and a refusal becomes a sentence with a contracted exit
+ * code rather than a stack trace (D8).
+ *
+ * This exists because "connect → try → map the error → finally close" was written
+ * out in fourteen verbs and got it right in seven: `send`, `tail`, `wait`,
+ * `resume`, `rm`, `respond` and `attach` turned a plain server refusal into an
+ * unhandled rejection with an exit code nobody chose. Fixing that one bug seven
+ * times, in seven files, is the signature of a missing abstraction — so the
+ * contract lives here once and every verb inherits it.
+ *
+ * `body` may still `process.exit` for its own outcomes (`wait`'s codes, a usage
+ * error): that terminates synchronously and skips the `finally`, so anything
+ * exiting mid-flight closes the client itself — same as before.
+ */
+export async function withClient<T>(
+  args: ConnectArgs,
+  body: (client: MakitClient) => Promise<T>,
+): Promise<T | undefined> {
+  const client = await connectCli(args);
+  try {
+    return await body(client);
+  } catch (e) {
+    // A revoked or refused credential is exit 4; a command the server declined is
+    // a sentence and exit 1. Anything else is a real bug and keeps its stack.
+    if (e instanceof AuthError) return failAuth(e.message);
+    if (e instanceof WireError) return failCommand(e);
+    throw e;
+  } finally {
+    client.close();
+  }
 }

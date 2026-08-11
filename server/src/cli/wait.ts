@@ -22,7 +22,7 @@
  * immediately: no edge is required, because it is already waiting on the human,
  * and pretending otherwise would hang a script on a question it cannot see.
  */
-import { connectCli } from "./connect.js";
+import { withClient } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 import type { MakitClient } from "./client.js";
 import type { SessionEvent } from "../protocol.js";
@@ -219,29 +219,32 @@ export async function runWait(argv: string[]): Promise<void> {
     return failUsage("usage: makit wait <id> [--for idle|approval|input|any] [--timeout S]");
   }
 
-  const client = await connectCli(args);
-  const snapshot = await client.awaitSnapshot();
-  const current = snapshot.sessions.find((s) => s.id === sessionId);
-  if (!current) {
-    console.error(`[makit] no such session: ${sessionId}`);
-    client.close();
-    return process.exit(1);
-  }
+  await withClient(args, async (client) => {
+    const snapshot = await client.awaitSnapshot();
+    const current = snapshot.sessions.find((s) => s.id === sessionId);
+    if (!current) {
+      console.error(`[makit] no such session: ${sessionId}`);
+      client.close();
+      return process.exit(1);
+    }
 
-  // A session already blocked or exited needs no edge — it is already waiting.
-  const initial = codeForStatus(current.status);
-  if (initial !== undefined && initial !== 0 && wanted(args.forWhat, initial)) {
-    client.close();
-    return process.exit(initial);
-  }
+    // A session already blocked or exited needs no edge — it is already waiting.
+    const initial = codeForStatus(current.status);
+    if (initial !== undefined && initial !== 0 && wanted(args.forWhat, initial)) {
+      client.close();
+      return process.exit(initial);
+    }
 
-  const outcome = await awaitOutcome(client, sessionId, {
-    forWhat: args.forWhat,
-    timeoutMs: args.timeoutMs,
-    initialStatus: current.status,
+    const outcome = await awaitOutcome(client, sessionId, {
+      forWhat: args.forWhat,
+      timeoutMs: args.timeoutMs,
+      initialStatus: current.status,
+    });
+
+    // Closed explicitly: `process.exit` below terminates synchronously, so the
+    // wrapper's own teardown never runs on this path.
+    client.close();
+    if (outcome.message) console.error(`[makit] ${outcome.message}`);
+    process.exit(outcome.code);
   });
-
-  client.close();
-  if (outcome.message) console.error(`[makit] ${outcome.message}`);
-  process.exit(outcome.code);
 }

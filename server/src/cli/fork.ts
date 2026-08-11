@@ -17,8 +17,7 @@
  * Unlike `handoff`, the source is named on the argv (there is no manifest and no
  * first message to write): `makit fork <id>`.
  */
-import { connectCli, failCommand } from "./connect.js";
-import { WireError } from "./client.js";
+import { withClient } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 import type { SessionDTO } from "../protocol.js";
 
@@ -51,15 +50,14 @@ export function parseForkArgs(argv: string[]): ForkArgs {
 
 function failUsage(message: string): never {
   console.error(`[makit] ${message}`);
-  return process.exit(EXIT_USAGE);
+  process.exit(EXIT_USAGE);
 }
 
 export async function runFork(argv: string[]): Promise<void> {
   const args = parseForkArgs(argv);
   if (!args.sessionId) return failUsage("usage: makit fork <id> [--agent A] [--worktree]");
 
-  const client = await connectCli(args);
-  try {
+  await withClient(args, async (client) => {
     const source = (await client.awaitSnapshot()).sessions.find(
       (s: SessionDTO) => s.id === args.sessionId,
     );
@@ -108,12 +106,5 @@ export async function runFork(argv: string[]): Promise<void> {
     const to = args.agent ? ` to ${args.agent}` : "";
     const where = branch ? ` on ${branch}` : "";
     console.log(`[makit] forked${to} — session ${sessionId}${where}`);
-  } catch (e) {
-    // A server refusal (unsupported harness, no rollout, depth bound) is a
-    // sentence, not the stack trace an agent's shell would otherwise print.
-    if (e instanceof WireError) return failCommand(e);
-    throw e;
-  } finally {
-    client.close();
-  }
+  });
 }

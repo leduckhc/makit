@@ -14,6 +14,7 @@
  */
 import { request } from "node:https";
 import { basename, extname } from "node:path";
+import { WireError } from "./client.js";
 
 /** What the server will store, keyed by extension (`MEDIA_MIME_ALLOWLIST`). */
 const MIME_BY_EXT: Readonly<Record<string, string>> = {
@@ -79,7 +80,7 @@ export function uploadMedia(
           const body = Buffer.concat(chunks).toString();
           if (res.statusCode !== 201) {
             const detail = body ? `: ${body}` : "";
-            reject(new Error(`${basename(path)} was refused (${res.statusCode})${detail}`));
+            reject(new WireError(`${basename(path)} was refused (${res.statusCode})${detail}`));
             return;
           }
           try {
@@ -87,12 +88,12 @@ export function uploadMedia(
             if (typeof mediaId !== "string" || mediaId === "") throw new Error("no mediaId");
             resolve(mediaId);
           } catch {
-            reject(new Error(`${basename(path)}: the server's upload reply was not a descriptor`));
+            reject(new WireError(`${basename(path)}: the server's upload reply was not a descriptor`));
           }
         });
       },
     );
-    req.on("error", (e) => reject(new Error(`${basename(path)}: ${e.message}`)));
+    req.on("error", (e) => reject(new WireError(`${basename(path)}: ${e.message}`)));
     // This leg does not ride the WebSocket, so `client.close()` cannot rescue it:
     // a server that takes the connection and then stalls left the promise
     // unsettled, keeping the event loop alive so the verb never reached an exit
