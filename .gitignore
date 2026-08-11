@@ -24,3 +24,10 @@ app/test/sim/frames/
 
 # Local QA artifacts (screenshots, issue logs) from tool/shoot-ports.sh
 .qa/
+
+# Editor/agent scratch files must never be committed.
+*.bak
+*.orig
+
+# Local pnpm store, created when a store-dir is set for this checkout
+.pnpm-store/

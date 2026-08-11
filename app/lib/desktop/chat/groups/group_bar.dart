@@ -54,6 +54,9 @@ class GroupBar extends ConsumerWidget {
     final activeId = ref.watch(
       groupsControllerProvider.select<String>((s) => s.active.id),
     );
+    // Preview status is identity too (it italicises a tab and adds its Keep
+    // item), and it is not part of the string above.
+    final previewId = ref.watch(previewGroupIdProvider);
 
     // A single horizontally-scrolling Row (never a Wrap) is the whole of
     // decision 12: tabs overflow into a scroll offset instead of a second row.
@@ -71,6 +74,7 @@ class GroupBar extends ConsumerWidget {
                 group: groups[i],
                 index: i,
                 active: groups[i].id == activeId,
+                preview: groups[i].id == previewId,
               ),
             const _NewGroupButton(),
           ],
@@ -88,6 +92,7 @@ class _GroupTab extends ConsumerWidget {
     required this.group,
     required this.index,
     required this.active,
+    this.preview = false,
   });
 
   final Group group;
@@ -96,6 +101,9 @@ class _GroupTab extends ConsumerWidget {
   final int index;
 
   final bool active;
+
+  /// SPEC-51 — this is the disposable group: the next branch click replaces it.
+  final bool preview;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -129,12 +137,13 @@ class _GroupTab extends ConsumerWidget {
       message: _tabTooltip(ref),
       child: GestureDetector(
         // Boards are user-named, so a board tab offers Rename on right-click /
-        // long-press. A worktree group's label is its branch — not editable.
-        onSecondaryTapDown: isBoard
-            ? (d) => _showBoardMenu(context, ref, d.globalPosition)
+        // long-press. A worktree group's label is its branch — not editable, but
+        // a *preview* worktree tab offers the Keep gesture (SPEC-51 decision 4).
+        onSecondaryTapDown: isBoard || preview
+            ? (d) => _showTabMenu(context, ref, d.globalPosition)
             : null,
-        onLongPressStart: isBoard
-            ? (d) => _showBoardMenu(context, ref, d.globalPosition)
+        onLongPressStart: isBoard || preview
+            ? (d) => _showTabMenu(context, ref, d.globalPosition)
             : null,
         child: Material(
           color: Colors.transparent,
@@ -175,6 +184,9 @@ class _GroupTab extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: active ? cs.onSurface : cs.onSurfaceVariant,
+                        // Italic = disposable, borrowed from VSCode's preview
+                        // tab: the one signal users already read this way.
+                        fontStyle: preview ? FontStyle.italic : null,
                       ),
                     ),
                   ),
@@ -203,8 +215,10 @@ class _GroupTab extends ConsumerWidget {
     );
   }
 
-  /// Right-click / long-press menu for a **board** tab: one item, Rename.
-  Future<void> _showBoardMenu(
+  /// Right-click / long-press menu: Rename for a **board**, Keep for a
+  /// **preview** worktree tab (SPEC-51 decision 4). One menu rather than two
+  /// builders, so a tab that is both offers both items in a fixed order.
+  Future<void> _showTabMenu(
     BuildContext context,
     WidgetRef ref,
     Offset globalPosition,
@@ -221,13 +235,25 @@ class _GroupTab extends ConsumerWidget {
       ),
       popUpAnimationStyle: AnimationStyle.noAnimation,
       items: [
-        themedMenuItem(
-          value: 'rename',
-          icon: PhosphorIconsLight.pencilSimple,
-          label: 'Rename board',
-        ),
+        if (preview)
+          themedMenuItem(
+            value: 'keep',
+            icon: PhosphorIconsLight.pushPin,
+            label: 'Keep this view',
+          ),
+        if (group.kind == GroupKind.board)
+          themedMenuItem(
+            value: 'rename',
+            icon: PhosphorIconsLight.pencilSimple,
+            label: 'Rename board',
+          ),
       ],
     );
+    if (selected == 'keep') {
+      if (!context.mounted) return;
+      ref.read(groupsControllerProvider.notifier).keepGroup(group.id);
+      return;
+    }
     if (selected != 'rename' || !context.mounted) return;
     await _promptRename(context, ref);
   }
@@ -248,7 +274,12 @@ class _GroupTab extends ConsumerWidget {
   /// (decision 16).
   String _tabTooltip(WidgetRef ref) {
     final base = group.kind == GroupKind.worktree
-        ? 'Worktree group — membership follows the branch'
+        ? preview
+              // Say what will happen and how to stop it: the italic alone does
+              // not tell you the next branch click will take this slot.
+              ? 'Preview — the next branch you open replaces this tab. '
+                    'Click this branch again, or right-click → Keep this view.'
+              : 'Worktree group — membership follows the branch'
         : 'Board — hand-picked, can span repos';
     final action = ShortcutAction.switchGroupAtIndex(index);
     if (action == null) return '$base · no shortcut (10th+)';

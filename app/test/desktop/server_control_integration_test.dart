@@ -15,6 +15,7 @@ import 'package:makit/desktop/desktop_controller.dart';
 import 'package:makit/desktop/screens/fake_control_client.dart';
 import 'package:makit/desktop/settings/server_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:makit/store/prefs/profile_scoped_prefs.dart';
 
 const _cliPath = '/usr/local/bin/makit';
 
@@ -38,7 +39,7 @@ void main() {
   ]) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    return ServerConfigController(prefs, initial);
+    return ServerConfigController(ProfileScopedPrefs.unscoped(prefs), initial);
   }
 
   DesktopController build(ServerConfigController config) {
@@ -75,7 +76,7 @@ void main() {
 
   test('LAN mode forwards --lan', () async {
     final config = await makeConfig();
-    await config.setBindMode(ServerBindMode.lan);
+    await config.setAllowLanFallback(true);
     final controller = build(config);
     addTearDown(controller.dispose);
 
@@ -86,7 +87,7 @@ void main() {
 
   test('loopback mode pins --host 127.0.0.1', () async {
     final config = await makeConfig();
-    await config.setBindMode(ServerBindMode.loopback);
+    await config.setReachability(Reachability.thisMacOnly);
     final controller = build(config);
     addTearDown(controller.dispose);
 
@@ -104,7 +105,6 @@ void main() {
 
   test('custom mode forwards the explicit host and port on restart', () async {
     final config = await makeConfig();
-    await config.setBindMode(ServerBindMode.custom);
     await config.setCustomHost('0.0.0.0');
     await config.setPort(7788);
     final controller = build(config);
@@ -146,7 +146,7 @@ void main() {
       // Change the bind mode after the controller was built; the serveArgs
       // closure reads live config, so the next start reflects it.
       calls.clear();
-      await config.setBindMode(ServerBindMode.lan);
+      await config.setAllowLanFallback(true);
       await controller.start();
       expect(calls.single, [_cliPath, 'start', '--lan', '--port', '7777']);
     },

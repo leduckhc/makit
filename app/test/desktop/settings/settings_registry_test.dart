@@ -5,12 +5,13 @@ import 'package:makit/desktop/settings/registry/settings_section.dart';
 
 void main() {
   group('kSettingsSections', () {
-    test('lists the 8 top-level sections in taxonomy order', () {
+    test('lists the 9 top-level sections in taxonomy order', () {
       expect(kSettingsSections.map((s) => s.id).toList(), [
         'general',
         'appearance',
         'agents_chat',
         'server_devices',
+        'profiles',
         'notifications',
         'shortcuts',
         'advanced',

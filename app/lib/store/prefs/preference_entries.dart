@@ -194,6 +194,22 @@ const PreferenceEntry<int> autoSplitThresholdPreference = PreferenceEntry(
   decode: _decodeInt,
 );
 
+/// SPEC-51 — whether clicking a worktree in the sidebar opens it as a **preview**
+/// (disposable) group: at most one exists, and the next worktree click replaces
+/// it instead of appending a tab. Promotion is explicit only — double-click the
+/// branch, or "Keep this view" on the tab (decision 4).
+///
+/// Default **off**: the mode trades a browsed group's split/tab arrangement for
+/// a rail that stays short, and that trade has to be chosen rather than
+/// discovered. Nothing about a group's *membership* changes — replacing a
+/// preview group closes no agent (decision 5).
+const PreferenceEntry<bool> previewGroupsPreference = PreferenceEntry(
+  id: 'layout.previewGroups',
+  defaultValue: false,
+  encode: _encodeBool,
+  decode: _decodeBool,
+);
+
 /// SPEC-34 — whether the **desktop** transcript renders the message rail. Mobile
 /// does not read this (it reaches its messages through a sheet instead; see
 /// `messageNavigatorStyleProvider`), so this is a desktop-only preference.
@@ -253,6 +269,7 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   sidebarWidthPreference,
   sidebarStartCollapsedPreference,
   autoSplitThresholdPreference,
+  previewGroupsPreference,
   textScalePreference,
   preferredIdePreference,
   lastPrActionPreference,

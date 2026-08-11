@@ -9,6 +9,8 @@ library;
 
 import 'dart:io';
 
+import 'daemon_result_utils.dart';
+
 /// Runs an executable and resolves to its [ProcessResult]. Injected so tests
 /// can assert on the spawned command without touching real processes.
 typedef ProcessRunner =
@@ -47,8 +49,13 @@ class MakitCliResolver {
   final String Function()? _overridePath;
 
   /// Returns the absolute path to `makit`, or `null` if it cannot be found.
-  Future<String?> resolve() async {
-    final override = _overridePath?.call().trim() ?? '';
+  ///
+  /// [overridePath] takes precedence over the constructor's `overridePath`
+  /// closure, so a caller acting on **another** profile can supply that
+  /// profile's configured binary instead of the active profile's.
+  Future<String?> resolve({String? overridePath}) async {
+    final configured = overridePath ?? _overridePath?.call();
+    final override = configured?.trim() ?? '';
     if (override.isNotEmpty && _exists(override)) return override;
     for (final path in candidatePaths) {
       if (_exists(path)) return path;
@@ -118,6 +125,21 @@ enum DaemonActionOutcome {
   /// The CLI ran but exited non-zero, or spawning threw.
   failed,
 }
+
+/// Builds the human-readable detail for a non-zero `makit <verb>` exit.
+///
+/// Both streams are consulted, because `makit start` reports *why* it failed on
+/// **stdout**, not stderr: the daemon is spawned detached with its own output
+/// redirected into the log file, so the parent process's only diagnostic is
+/// `deps.out(...)` -> `console.log` (see `start` in
+/// `server/src/daemon/service.ts` and `out:` in `server/src/index.ts`).
+/// Reading stderr alone yielded the bare, useless `makit start exited 1: ` for
+/// every real start failure -- including the common "port already in use" case,
+/// whose message names the log file and the fix.
+///
+/// stderr comes first (it carries the lower-level cause), duplicates are
+/// collapsed, and the separator is dropped entirely when neither stream said
+/// anything -- so the message never ends in a dangling colon.
 
 /// Result of a lifecycle action, with an optional human-readable [message].
 class DaemonActionResult {
@@ -189,10 +211,9 @@ class DaemonLifecycle {
     try {
       final res = await run(path, [verb, ...extraArgs]);
       if (res.exitCode == 0) return DaemonActionResult(onSuccess);
-      final stderr = (res.stderr is String) ? res.stderr as String : '';
       return DaemonActionResult(
         DaemonActionOutcome.failed,
-        message: 'makit $verb exited ${res.exitCode}: ${stderr.trim()}',
+        message: formatDaemonError(verb, res),
       );
     } on ProcessException catch (e) {
       return DaemonActionResult(

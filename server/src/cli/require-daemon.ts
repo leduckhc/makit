@@ -9,9 +9,10 @@
  */
 
 import { connectControlClient, type ControlClient } from "../daemon/control-client.js";
+import { EXIT_NOT_RUNNING } from "./exit-codes.js";
 
 /** Exit code used by every "daemon not running" error path. */
-export const EXIT_NOT_RUNNING = 3;
+export { EXIT_NOT_RUNNING };
 
 const NOT_RUNNING_MSG = "makit is not running — start it with 'makit start'";
 

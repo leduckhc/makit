@@ -8,6 +8,7 @@
  */
 
 import type { Envelope } from "../protocol.js";
+import type { Principal } from "./principal.js";
 
 /** A frame ready to send, minus the protocol version the transport stamps. */
 export type OutgoingFrame = Omit<Envelope, "v">;
@@ -26,6 +27,16 @@ export interface WsClient {
   /** Registry id of the paired device, once authenticated (for `devices.list`). */
   deviceId?: string;
   /**
+   * The authenticated subject (SPEC-46 D17), set by `AuthGate` on a successful
+   * `hello`. **Undefined on an unauthed socket, and undefined means full access
+   * once authed** — every device paired before SPEC-46 has no capabilities, so
+   * the absence of a principal must never be read as "deny".
+   *
+   * Read by the command router (capability check) and by fanout (a
+   * session-scoped principal sees only its own session's events).
+   */
+  principal?: Principal;
+  /**
    * True while this client is watching metrics (`metrics.watch {on:true}`).
    * Cleared on socket close so a panel closed by killing the window cannot pin
    * the collector at 1 Hz forever (SPEC-37 decision 7).
@@ -38,6 +49,13 @@ export interface WsClient {
    * scanner running forever.
    */
   watchingPorts: boolean;
+  /**
+   * True while this client is watching docs (`docs.watch {on:true}`, SPEC-46).
+   * Required (like {@link watchingPorts}): every `WsClient` initialises it to
+   * `false`. Cleared on socket close so a killed window cannot keep the doc
+   * index re-walking on every tree change forever.
+   */
+  watchingDocs: boolean;
   /**
    * True when the socket's remote address is loopback. Gates acceptance of the
    * app's reported pid in `hello` (SPEC-37 decision 6) — a non-loopback client

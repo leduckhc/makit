@@ -91,6 +91,7 @@ class MakitConnState {
     this.useFake = false,
     this.lastError,
     this.pushRegistered = false,
+    this.serverIsLocal = false,
   });
 
   /// Every server this device has paired with. Only [activeServer] holds a live
@@ -125,6 +126,15 @@ class MakitConnState {
   /// (SPEC-07). Resets on reconnect; used by Settings to show wake status.
   final bool pushRegistered;
 
+  /// SPEC-46 D8 rev 2: whether this client shares a machine with the server,
+  /// **as stated by the server** in `hello.ack`.
+  ///
+  /// Never inferred from [PairedServer.host]: mDNS rediscovery rewrites that
+  /// behind us, and a loopback-looking host is not proof anyway. Governs whether
+  /// a document can be opened directly (`docs.open`) or has to be published.
+  /// Defaults false, so the safe path (publish) is the fallback.
+  final bool serverIsLocal;
+
   bool get paired => activeServer != null || useFake || _wsUrl.isNotEmpty;
 
   MakitConnState copyWith({
@@ -134,6 +144,7 @@ class MakitConnState {
     bool? useFake,
     String? lastError,
     bool? pushRegistered,
+    bool? serverIsLocal,
     bool clearError = false,
     bool clearServer = false,
     bool clearPushRegistered = false,
@@ -146,6 +157,7 @@ class MakitConnState {
     pushRegistered: clearPushRegistered
         ? false
         : (pushRegistered ?? this.pushRegistered),
+    serverIsLocal: serverIsLocal ?? this.serverIsLocal,
   );
 }
 
@@ -510,7 +522,19 @@ class ConnectionController extends StateNotifier<MakitConnState> {
 
     final ws = _transportFactory();
     _ws = ws;
-    _wsSub = ws.frames.listen(_inFrames.add);
+    // Reset serverIsLocal on each new connection; it will be set from hello.ack if local.
+    state = state.copyWith(serverIsLocal: false);
+    _wsSub = ws.frames.listen((env) {
+      // D8 rev 2: the server states whether we share its machine. Captured here,
+      // before fan-out, so it is set by the time any screen reads it.
+      if (env.t == MsgType.helloAck) {
+        final isLocal = env.body['isLocal'];
+        // Absent (an older server) is treated as remote: publishing works
+        // everywhere, so the fallback must be the one that cannot be wrong.
+        state = state.copyWith(serverIsLocal: isLocal == true);
+      }
+      _inFrames.add(env);
+    });
     _wsStateSub = ws.state.listen((s) {
       // Clear any stale "unreachable" error once we're actually connected, so
       // the connection chip doesn't keep showing a dead-server message after a

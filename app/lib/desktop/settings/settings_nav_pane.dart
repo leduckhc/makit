@@ -75,7 +75,11 @@ class SettingsNavPane extends StatelessWidget {
         ),
         Expanded(
           child: searching
-              ? _SearchResults(query: query, onSelectResult: onSelectResult)
+              ? _SearchResults(
+                  query: query,
+                  sections: sections,
+                  onSelectResult: onSelectResult,
+                )
               : _SectionList(
                   sections: sections,
                   selectedId: selectedId,
@@ -134,7 +138,9 @@ class _SectionList extends StatelessWidget {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kRadius8),
             ),
-            leading: Icon(section.icon),
+            // A section with a mark of its own draws it; everything else keeps its
+            // glyph. See SettingsSection.leading (SPEC-48 D15).
+            leading: section.leading ?? Icon(section.icon),
             title: Text(section.title),
             onTap: () => onSelect(section.id),
           ),
@@ -144,21 +150,32 @@ class _SectionList extends StatelessWidget {
 }
 
 class _SearchResults extends StatelessWidget {
-  const _SearchResults({required this.query, required this.onSelectResult});
+  const _SearchResults({
+    required this.query,
+    required this.sections,
+    required this.onSelectResult,
+  });
   final String query;
+
+  /// The same list the pane renders, so repo rows are searchable and their result
+  /// titles read as the repo name rather than `repo:<id>`.
+  final List<SettingsSection> sections;
   final void Function(String sectionId, String itemId) onSelectResult;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final results = searchSettings(query);
+    // Over the sections this pane was GIVEN, not the static list: otherwise repo
+    // rows are unsearchable, which is the whole point of generating their items.
+    final results = searchSettings(query, sections: sections);
     if (results.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(kSpace16),
         child: Text('No matches', style: TextStyle(color: cs.outline)),
       );
     }
-    final sectionTitles = {for (final s in kSettingsSections) s.id: s.title};
+    // Titles from the same list, or a repo result renders as its raw `repo:<id>`.
+    final sectionTitles = {for (final s in sections) s.id: s.title};
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: kSpace8),
       children: [

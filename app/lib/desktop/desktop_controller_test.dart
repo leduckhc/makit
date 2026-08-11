@@ -206,6 +206,53 @@ void main() {
       expect(calls.single, ['/x/makit', 'stop']);
     });
 
+    test('lifecycle actions are serialized, never overlapping', () async {
+      // start/stop/restart share the PID file and control socket, so overlapping
+      // them can drop a fresh PID or launch a second daemon. They must run
+      // strictly one at a time.
+      var active = 0;
+      var maxActive = 0;
+      final gates = <Completer<void>>[];
+      final lifecycle = DaemonLifecycle(
+        resolver: MakitCliResolver(
+          candidatePaths: const ['/x/makit'],
+          exists: (_) => true,
+          shellLookup: () async => null,
+        ),
+        run: (exe, args) async {
+          active++;
+          if (active > maxActive) maxActive = active;
+          final gate = Completer<void>();
+          gates.add(gate);
+          await gate.future;
+          active--;
+          return ProcessResult(0, 0, '', '');
+        },
+      );
+      final c = DesktopController(
+        client: _FakeControlClient(),
+        lifecycle: lifecycle,
+      );
+
+      // Fire two actions without awaiting them.
+      final f1 = c.start();
+      final f2 = c.stop();
+      await pumpEventQueue();
+
+      // Only the first action has begun; the second is queued behind it.
+      expect(gates.length, 1);
+      expect(maxActive, 1);
+
+      gates[0].complete();
+      await pumpEventQueue();
+      // Now the second action runs — still alone.
+      expect(gates.length, 2);
+      gates[1].complete();
+      await Future.wait([f1, f2]);
+
+      expect(maxActive, 1, reason: 'lifecycle actions must never overlap');
+    });
+
     test('notifies listeners on refresh', () async {
       var notes = 0;
       final c = DesktopController(

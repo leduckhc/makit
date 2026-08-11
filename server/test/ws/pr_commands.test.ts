@@ -18,6 +18,7 @@ import { CommandRouter } from "../../src/ws/command_router.js";
 import { register } from "../../src/ws/commands/worktree.js";
 import type { CommandDeps } from "../../src/ws/commands/deps.js";
 import { portsDepsStub } from "./ports_deps_stub.js";
+import { docsDepsStub } from "./docs_deps_stub.js";
 import type { WsClient, OutgoingFrame } from "../../src/ws/client.js";
 import type { Envelope } from "../../src/protocol.js";
 
@@ -36,6 +37,7 @@ function fakeClient(): FakeClient {
     // without it would ACK `ports.watch` and then never scan), so every fake
     // client declares it. This domain does not exercise ports.
     watchingPorts: false,
+    watchingDocs: false,
     isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},
@@ -62,6 +64,10 @@ function routerWith(manager: Partial<CommandDeps["manager"]>) {
     // SPEC-41: required members, inert here — the PR domain sends no ports frames.
     onPortsWatchersChanged: () => {},
     sendPortsSnapshot: () => {},
+    ...docsDepsStub,
+    // Required since a settings write that acks without re-broadcasting is
+    // indistinguishable from a lost write; this harness observes neither.
+    onProjectsChanged: () => {},
     ...portsDepsStub,
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;

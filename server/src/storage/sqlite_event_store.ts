@@ -76,6 +76,17 @@ export class SqliteEventStore implements EventStore {
     } else if (!cols.some((c) => c.name === "closed")) {
       this.db.exec("ALTER TABLE sessions ADD COLUMN closed INTEGER NOT NULL DEFAULT 0");
     }
+    // SPEC-46 lineage (D10): nullable, back-filled to NULL on existing rows so a
+    // session written before SPEC-46 rehydrates with all three undefined.
+    if (!cols.some((c) => c.name === "parent_id")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN parent_id TEXT");
+    }
+    if (!cols.some((c) => c.name === "handoff_reason")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN handoff_reason TEXT");
+    }
+    if (!cols.some((c) => c.name === "origin")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN origin TEXT");
+    }
   }
 
   append(sessionId: string, e: NewEvent): SessionEvent {
@@ -99,21 +110,44 @@ export class SqliteEventStore implements EventStore {
         "SELECT seq, ts, kind, payload FROM events WHERE session_id = ? AND seq > ? ORDER BY seq ASC",
       )
       .all(sessionId, fromSeq) as Array<{ seq: number; ts: number; kind: string; payload: string }>;
-    return rows.map((r) => ({
+    return rows.map((r) => this.hydrate(sessionId, r));
+  }
+
+  /**
+   * SPEC-46 D5: the last `limit` events, bounded by `LIMIT` in the query and
+   * reversed in memory. `read().slice(-limit)` would return the same rows while
+   * loading the entire log to do it — which is the cost D5 exists to remove, on
+   * exactly the long sessions worth carrying context out of.
+   */
+  readTail(sessionId: string, limit: number): SessionEvent[] {
+    if (limit <= 0) return [];
+    const rows = this.db
+      .prepare(
+        "SELECT seq, ts, kind, payload FROM events WHERE session_id = ? ORDER BY seq DESC LIMIT ?",
+      )
+      .all(sessionId, limit) as Array<{ seq: number; ts: number; kind: string; payload: string }>;
+    return rows.reverse().map((r) => this.hydrate(sessionId, r));
+  }
+
+  private hydrate(
+    sessionId: string,
+    r: { seq: number; ts: number; kind: string; payload: string },
+  ): SessionEvent {
+    return {
       seq: Number(r.seq),
       sessionId,
       ts: Number(r.ts),
       kind: r.kind as SessionEvent["kind"],
       payload: JSON.parse(r.payload) as Record<string, unknown>,
-    }));
+    };
   }
 
   saveSession(m: SessionMeta): void {
     this.db
       .prepare(
         `INSERT INTO sessions
-           (id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, agent_session_id, branch, worktree_path, closed)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, agent_session_id, branch, worktree_path, closed, parent_id, handoff_reason, origin)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            project_id = excluded.project_id,
            agent = excluded.agent,
@@ -126,7 +160,10 @@ export class SqliteEventStore implements EventStore {
            agent_session_id = excluded.agent_session_id,
            branch = excluded.branch,
            worktree_path = excluded.worktree_path,
-           closed = excluded.closed`,
+           closed = excluded.closed,
+           parent_id = excluded.parent_id,
+           handoff_reason = excluded.handoff_reason,
+           origin = excluded.origin`,
       )
       .run(
         m.id,
@@ -143,13 +180,16 @@ export class SqliteEventStore implements EventStore {
         m.branch ?? null,
         m.worktreePath ?? null,
         m.closed ? 1 : 0,
+        m.parentId ?? null,
+        m.handoffReason ?? null,
+        m.origin ?? null,
       );
   }
 
   loadSessions(): SessionMeta[] {
     const rows = this.db
       .prepare(
-        `SELECT id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, agent_session_id, branch, worktree_path, closed
+        `SELECT id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, agent_session_id, branch, worktree_path, closed, parent_id, handoff_reason, origin
          FROM sessions ORDER BY last_activity_at DESC`,
       )
       .all() as Array<Record<string, unknown>>;
@@ -168,6 +208,9 @@ export class SqliteEventStore implements EventStore {
       branch: (r.branch as string | null) ?? undefined,
       worktreePath: (r.worktree_path as string | null) ?? undefined,
       closed: Number(r.closed ?? 0) === 1,
+      parentId: (r.parent_id as string | null) ?? undefined,
+      handoffReason: (r.handoff_reason as string | null) ?? undefined,
+      origin: (r.origin as SessionMeta["origin"] | null) ?? undefined,
     }));
   }
 

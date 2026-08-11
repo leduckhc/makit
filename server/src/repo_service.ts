@@ -13,9 +13,17 @@
 import type { ProjectDTO, PullRequestDTO, RepoDTO, WorktreeDTO } from "./protocol.js";
 import type { Session } from "./session.js";
 import type { GithubGateway } from "./github/gateway.js";
+import type { RepoSettingsDTO } from "./protocol.js";
+
+/**
+ * Supplies one project's settings DTO. Injected rather than reached for: the
+ * resolution chain lives in `repo_settings.ts` and the forge decision in the
+ * router, and `listRepos` should not know about either.
+ */
+export type RepoSettingsLookup = (project: ProjectDTO) => RepoSettingsDTO | undefined;
 import {
   isGitRepo,
-  detectDefaultBranch,
+  resolveDefaultBranch,
   detectCurrentBranch,
   listWorktrees,
   diffStat,
@@ -65,24 +73,40 @@ export async function listRepos(
   includePrs: boolean,
   gateway: GithubGateway,
   lastKnown: LastKnownPr,
+  settingsFor?: RepoSettingsLookup,
 ): Promise<RepoDTO[]> {
   // Bounded fan-out across projects (SPEC-17 P3 × #66 concurrency cap).
-  const repos = await mapLimit(projects, PROJECT_CONCURRENCY, (p) => repoSnapshot(p, sessions));
+  const repos = await mapLimit(projects, PROJECT_CONCURRENCY, async (p) => {
+    // Settings are resolved BEFORE the snapshot because the snapshot needs one of
+    // them: `defaultBranch` is the base every diff +/- number and ahead count is
+    // measured against, so an override that arrived only in the settings blob would
+    // leave the row claiming one base while the numbers used another.
+    const settings = settingsFor?.(p);
+    const repo = await repoSnapshot(p, sessions, settings?.defaultBranch?.value);
+    return settings === undefined ? repo : { ...repo, settings };
+  });
   return includePrs ? enrichPrs(repos, gateway, lastKnown) : repos;
 }
 
 /**
  * Git-only snapshot of one project (no `gh`/network). Per-worktree diff stats
  * are read in parallel but bounded ({@link WORKTREE_CONCURRENCY}).
+ *
+ * [defaultBranchOverride] is the user's stored choice; it wins only if the branch
+ * still resolves — see {@link resolveDefaultBranch}.
  */
-async function repoSnapshot(dto: ProjectDTO, sessions: Session[]): Promise<RepoDTO> {
+async function repoSnapshot(
+  dto: ProjectDTO,
+  sessions: Session[],
+  defaultBranchOverride?: string,
+): Promise<RepoDTO> {
   const repoPath = dto.path;
   const gitRepo = await isGitRepo(repoPath);
   // Branch detection + worktree enumeration are independent reads — run
   // them concurrently rather than in a serial chain.
   const [defaultBranch, currentBranch, entries] = gitRepo
     ? await Promise.all([
-        detectDefaultBranch(repoPath),
+        resolveDefaultBranch(repoPath, defaultBranchOverride),
         detectCurrentBranch(repoPath),
         listWorktrees(repoPath),
       ])

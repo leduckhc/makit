@@ -15,8 +15,12 @@ import '../sections/agents_chat_section.dart';
 import '../sections/appearance_section.dart';
 import '../sections/general_section.dart';
 import '../sections/notifications_section.dart';
+import '../sections/profiles_section.dart';
 import '../sections/server_devices_section.dart';
 import '../sections/shortcuts_section.dart';
+import '../../../store/models.dart';
+import '../../../ui/home/repo_monogram.dart';
+import '../repository_settings_page.dart';
 import 'settings_item.dart';
 import 'settings_section.dart';
 
@@ -200,6 +204,53 @@ final List<SettingsSection> kSettingsSections = [
     ],
   ),
   SettingsSection(
+    id: 'profiles',
+    title: 'Profiles',
+    icon: PhosphorIconsLight.cube,
+    builder: (_) => const ProfilesSection(),
+    items: const [
+      SettingsItem(
+        id: 'profiles.list',
+        title: 'Profiles',
+        help:
+            'Every server profile: name, home, size, running state, and '
+            'per-profile Start/Stop/Rename/Delete.',
+        keywords: [
+          'profile',
+          'profiles',
+          'work',
+          'personal',
+          'dev build',
+          'server instance',
+          'start',
+          'stop',
+          'rename',
+        ],
+      ),
+      SettingsItem(
+        id: 'profiles.new',
+        title: 'New profile',
+        help: 'Create a new named server profile with its own home and port.',
+        keywords: ['new profile', 'create profile', 'add profile'],
+      ),
+      SettingsItem(
+        id: 'profiles.delete',
+        title: 'Delete profile',
+        help:
+            'Erase a profile across all four of its stores; your worktrees, '
+            'repos and other profiles are never touched.',
+        keywords: ['delete profile', 'remove profile', 'danger', 'erase'],
+      ),
+      SettingsItem(
+        id: 'profiles.reclaim',
+        title: 'Stale profiles',
+        help:
+            'Review and bulk-delete dev profiles whose source folder is gone.',
+        keywords: ['stale', 'orphan', 'orphaned', 'reclaim', 'cleanup'],
+      ),
+    ],
+  ),
+  SettingsSection(
     id: 'notifications',
     title: 'Notifications',
     icon: PhosphorIconsLight.bell,
@@ -301,6 +352,63 @@ class SettingsSearchResult {
   /// The matching item.
   final SettingsItem item;
 }
+
+/// The section list for a given set of repositories: the fixed app sections, then
+/// one per repository under a REPOSITORIES group.
+///
+/// Only **pinned** repos get a section. That is what bounds the sidebar: a pinned
+/// project is one the user added (`manager.ts:215`), where an unpinned one is
+/// merely something makit noticed (`:287`). Without the filter the settings
+/// sidebar would grow into a file browser.
+///
+/// Section ids are `repo:<projectId>` — keyed off the persisted id, never the
+/// path, so a repo that moves keeps its section and its deep links.
+List<SettingsSection> sectionsFor(List<RepoInfo> repos) {
+  final pinned = repos.where((r) => r.pinned).toList();
+  return [
+    ...kSettingsSections,
+    for (final repo in pinned)
+      SettingsSection(
+        id: repoSectionId(repo.id),
+        title: repo.name,
+        icon: PhosphorIconsLight.folder,
+        // The repo's own mark, so the sidebar rows are distinguishable — which is
+        // the place the "two repos look identical" problem actually bites, and the
+        // place the user looks to confirm a chosen colour took effect (D15/D14′).
+        // `icon` stays as the fallback for any renderer that ignores `leading`.
+        leading: RepoMonogram(
+          name: repo.name,
+          hue: repo.settings?.logoHue,
+          size: 20,
+        ),
+        builder: (_) => RepositorySettingsPage(repoId: repo.id),
+        // Generated per repo so the existing search field reaches these rows too;
+        // without them "worktree root" would find nothing.
+        items: [
+          SettingsItem(
+            id: '${repoSectionId(repo.id)}.identity',
+            title: 'Identity',
+            help:
+                'Logo, root path, git provider and default branch for ${repo.name}.',
+            keywords: const ['logo', 'path', 'provider', 'forge', 'branch'],
+          ),
+          SettingsItem(
+            id: '${repoSectionId(repo.id)}.worktrees',
+            title: 'Worktrees',
+            help: 'Where new worktrees for ${repo.name} are created.',
+            keywords: const ['worktree', 'worktree root', 'directory'],
+          ),
+        ],
+      ),
+  ];
+}
+
+/// The section id for a repo. One function, so the window, the nav pane and any
+/// deep link cannot disagree about the format.
+String repoSectionId(String projectId) => 'repo:$projectId';
+
+/// True when [sectionId] addresses a repository section.
+bool isRepoSection(String sectionId) => sectionId.startsWith('repo:');
 
 /// A reusable search over an arbitrary list of sections. Defaults to the
 /// app-wide [kSettingsSections]. Returns items whose title, keywords, or help

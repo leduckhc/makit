@@ -163,6 +163,94 @@ test("migrates a legacy sessions schema in place, idempotently, keeping existing
   }
 });
 
+test("saveSession round-trips SPEC-46 lineage (absent stays undefined)", () => {
+  const store = new SqliteEventStore();
+  store.saveSession(
+    meta("s1", { parentId: "parent-1", handoffReason: "out of context", origin: "agent" }),
+  );
+  store.saveSession(meta("s2")); // no lineage → all three undefined, not null
+
+  const byId = new Map(store.loadSessions().map((s) => [s.id, s]));
+  assert.equal(byId.get("s1")!.parentId, "parent-1");
+  assert.equal(byId.get("s1")!.handoffReason, "out of context");
+  assert.equal(byId.get("s1")!.origin, "agent");
+  assert.equal(byId.get("s2")!.parentId, undefined);
+  assert.equal(byId.get("s2")!.handoffReason, undefined);
+  assert.equal(byId.get("s2")!.origin, undefined);
+  store.close();
+});
+
+test("migrates a pre-SPEC-46 schema, rehydrating a legacy row with undefined lineage", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-store-"));
+  const path = join(dir, "events.db");
+  try {
+    // Seed a pre-SPEC-46 DB: the SPEC-29 schema (no parent_id / handoff_reason /
+    // origin columns), plus one row written before lineage existed.
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      CREATE TABLE sessions (
+        id             TEXT PRIMARY KEY,
+        project_id     TEXT NOT NULL,
+        agent          TEXT NOT NULL,
+        title          TEXT NOT NULL,
+        status         TEXT NOT NULL,
+        policy         TEXT NOT NULL,
+        created_at     INTEGER NOT NULL,
+        last_activity_at INTEGER NOT NULL,
+        last_preview   TEXT NOT NULL,
+        resume_session_path TEXT,
+        agent_session_id TEXT,
+        branch         TEXT,
+        worktree_path  TEXT,
+        archived       INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    legacy
+      .prepare(
+        "INSERT INTO sessions (id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run("s-old", "p1", "pi", "pre-lineage row", "idle", "ask-on-risky", 1000, 1000, "old");
+    legacy.close();
+
+    // Opening through the store migrates in place: the row is intact and the
+    // load-bearing assertion holds — lineage rehydrates as undefined, never null
+    // and never a throw.
+    const store = new SqliteEventStore(path);
+    try {
+      const loaded = store.loadSessions();
+      assert.equal(loaded.length, 1);
+      assert.equal(loaded[0].title, "pre-lineage row");
+      assert.equal(loaded[0].parentId, undefined);
+      assert.equal(loaded[0].handoffReason, undefined);
+      assert.equal(loaded[0].origin, undefined);
+      // The migrated columns are writable end-to-end.
+      store.saveSession(
+        meta("s-old", {
+          title: "pre-lineage row",
+          parentId: "parent-1",
+          handoffReason: "why",
+          origin: "cli",
+        }),
+      );
+    } finally {
+      store.close();
+    }
+
+    // Reopening the already-migrated file reads the lineage back (idempotent).
+    const reopened = new SqliteEventStore(path);
+    try {
+      const again = reopened.loadSessions();
+      assert.equal(again[0].parentId, "parent-1");
+      assert.equal(again[0].handoffReason, "why");
+      assert.equal(again[0].origin, "cli");
+    } finally {
+      reopened.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("deleteSession removes the session and its events", () => {
   const store = new SqliteEventStore();
   store.saveSession(meta("s1"));
@@ -243,4 +331,72 @@ test("saveSession round-trips the closed flag (SPEC-29)", () => {
   const loaded = store.loadSessions();
   assert.equal(loaded.find((s) => s.id === "s1")!.closed, true);
   assert.equal(loaded.find((s) => s.id === "s2")!.closed, false);
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-46 D5 — a bounded tail is bounded in SQL, not by slicing afterwards
+//
+// D5 exists because `--carry last:5` on a long session "would therefore load and
+// ship the whole transcript to print five lines". Reading everything and then
+// slicing keeps that cost exactly, just out of sight: the flood stays possible
+// rather than becoming impossible.
+// ---------------------------------------------------------------------------
+
+test("readTail returns the LAST n events, oldest-first", () => {
+  const store = new SqliteEventStore();
+  for (let i = 1; i <= 10; i++) {
+    store.append("s1", { ts: i, kind: "agent.message", payload: { text: `m${i}` } });
+  }
+  assert.deepEqual(store.readTail("s1", 3).map((e) => e.seq), [8, 9, 10]);
+  assert.equal(store.readTail("s1", 3)[0].payload.text, "m8");
+  store.close();
+});
+
+test("readTail returns the whole log when it is shorter than the limit", () => {
+  const store = new SqliteEventStore();
+  store.append("s1", { ts: 1, kind: "user.message", payload: { text: "one" } });
+  store.append("s1", { ts: 2, kind: "agent.message", payload: { text: "two" } });
+  assert.deepEqual(store.readTail("s1", 50).map((e) => e.seq), [1, 2]);
+  store.close();
+});
+
+test("readTail is scoped to its own session and empty for an unknown one", () => {
+  const store = new SqliteEventStore();
+  store.append("s1", { ts: 1, kind: "user.message", payload: { text: "mine" } });
+  store.append("s2", { ts: 2, kind: "user.message", payload: { text: "theirs" } });
+  assert.deepEqual(store.readTail("s1", 5).map((e) => e.payload.text), ["mine"]);
+  assert.deepEqual(store.readTail("ghost", 5), []);
+  store.close();
+});
+
+test("readTail reads only the rows it returns, never the whole log", () => {
+  // The point of the method. Counted at the SQL seam, because a `.slice()` on a
+  // full read passes every assertion above while keeping the cost D5 forbids.
+  const store = new SqliteEventStore();
+  for (let i = 1; i <= 500; i++) {
+    store.append("s1", { ts: i, kind: "agent.message", payload: { text: `m${i}` } });
+  }
+  const db = (store as unknown as { db: DatabaseSync }).db;
+  const origPrepare = db.prepare.bind(db);
+  let rowsRead = 0;
+  (db as unknown as { prepare: typeof db.prepare }).prepare = ((sql: string) => {
+    const stmt = origPrepare(sql);
+    if (!/FROM events/.test(sql)) return stmt;
+    const origAll = stmt.all.bind(stmt);
+    return new Proxy(stmt, {
+      get(t, p, r) {
+        if (p !== "all") return Reflect.get(t, p, r);
+        return (...a: unknown[]) => {
+          const rows = origAll(...(a as never[]));
+          rowsRead += rows.length;
+          return rows;
+        };
+      },
+    });
+  }) as typeof db.prepare;
+
+  const tail = store.readTail("s1", 5);
+  assert.equal(tail.length, 5);
+  assert.equal(rowsRead, 5, `readTail must not materialize the whole log (read ${rowsRead} rows for 5)`);
+  store.close();
 });

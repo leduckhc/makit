@@ -1727,6 +1727,104 @@ void main() {
       },
     );
 
+    testWidgets('the popover unmounting with the last port clears the latch '
+        '(no stuck `…` menu)', (tester) async {
+      // The latch above is held by the sidebar, but the popover that sets it
+      // lives INSIDE the glyph subtree — and that subtree disappears the
+      // moment the branch stops serving. `PortsPopover.dispose` only cancels
+      // timers, so nothing reports closed on that edge: without the
+      // serving->none clear in `_SubRowPortsGlyphState`, `_portsOpen` stays
+      // true forever and line 1 keeps showing the actions menu in place of
+      // the diff pill, for a popover that is no longer on screen.
+      //
+      // Mutation that proves it bites: delete the `if (_wasServing)` block in
+      // `_SubRowPortsGlyphState.build` — the final two expectations invert.
+      final wt = _worktree('w1', branch: 'feat', insertions: 5, deletions: 2);
+      final repos = [
+        _repo(
+          'p1',
+          'proj',
+          worktrees: [_worktree('main', isPrimary: true), wt],
+        ),
+      ];
+      // Only the ports snapshot varies between the two states, so the rest is
+      // hoisted into an inferred list literal and spread. Inferred rather than
+      // a `List<Override>`-returning helper because Riverpod does not export
+      // the `Override` base type (same reason as `split_view_test.dart` and
+      // `settings_window_test.dart`).
+      final fixedOverrides = [
+        reposProvider.overrideWithValue(ReposState(repos)),
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+        connectionControllerProvider.overrideWith(
+          (ref) => ConnectionController(const _EmptyStorage()),
+        ),
+      ];
+      // `overrideWithValue` is a fixed value, so the snapshot is swapped with
+      // `updateOverrides` — the same thing a fresh `ports.snapshot` frame does
+      // to a running app.
+      final container = ProviderContainer(
+        overrides: [
+          ...fixedOverrides,
+          portsProvider.overrideWithValue(snap(wt.path)),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Pin the popover, then drop focus. `tester.tap` focuses the row's
+      // InkWell, and `_focused` holds the hovered presentation on its own — so
+      // without this unfocus the assertions below would pass even if the latch
+      // were never cleared. After it, `_portsOpen` is the ONLY flag still up.
+      await tester.tap(find.byKey(ValueKey('portsSubRowTarget-${wt.path}')));
+      await tester.pump();
+      expect(find.byKey(kPortsPopover), findsOneWidget);
+      tester.binding.focusManager.primaryFocus?.unfocus();
+      await tester.pump();
+      expect(
+        find.byTooltip('Worktree actions'),
+        findsOneWidget,
+        reason: 'the latch alone must hold the hovered presentation',
+      );
+
+      // The branch stops serving while the popover is pinned.
+      container.updateOverrides([
+        ...fixedOverrides,
+        portsProvider.overrideWithValue(snap('/tmp/wt/other')),
+      ]);
+      await tester.pump();
+      // The post-frame clear runs on the next frame.
+      await tester.pump();
+
+      expect(
+        find.byKey(ValueKey('portsSubRowTarget-${wt.path}')),
+        findsNothing,
+        reason: 'the glyph must unmount with the last port',
+      );
+      expect(
+        find.byKey(kPortsPopover),
+        findsNothing,
+        reason: 'the popover went with its subtree',
+      );
+      expect(
+        find.byTooltip('Worktree actions'),
+        findsNothing,
+        reason: 'the latch must not survive the popover that set it',
+      );
+      expect(
+        find.text('+5'),
+        findsOneWidget,
+        reason: 'line 1 returns to its idle diff pill',
+      );
+    });
+
     testWidgets(
       'N mounted worktree groups hold exactly one ports watch, released to 0 '
       'on dispose',

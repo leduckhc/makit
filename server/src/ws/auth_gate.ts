@@ -17,20 +17,36 @@ import type { Envelope } from "../protocol.js";
 import { WireErrorCode } from "../protocol/codec.js";
 import { log } from "../log.js";
 import type { WsClient } from "./client.js";
+import type { Principal } from "./principal.js";
+import type { DeviceCap } from "../protocol.js";
 
 /** The slice of the device registry the gate depends on. */
 export interface AuthRegistry {
-  authenticate(bearer: string): { id: string; label: string } | null;
+  authenticate(bearer: string): { id: string; label: string; caps?: DeviceCap[] } | null;
   consumePairToken(
     token: string,
     label: string,
   ): { id: string; label: string; bearer: string } | null;
 }
 
+/**
+ * The slice of the agent-token store the gate consults after the registry
+ * (SPEC-46 T3/C2). A hit yields a session-scoped {@link Principal}.
+ */
+export interface AuthSessionTokens {
+  authenticate(token: string): Principal | null;
+}
+
 export interface AuthGateDeps {
   registry: AuthRegistry;
   /** Called after a successful `hello.ack`, to push initial snapshots. */
   onAuthenticated: (client: WsClient) => void;
+  /**
+   * SPEC-46 (C2): the in-memory per-session agent-token store. Consulted only
+   * when the registry does not know the bearer, so a phone bearer never pays
+   * for the extra lookup and an agent token is a strictly additional subject.
+   */
+  sessionTokens?: AuthSessionTokens;
 }
 
 const UNAUTHORIZED_CODE = 4401;
@@ -65,7 +81,7 @@ export class AuthGate {
 
     if (client.authed) {
       // Already trusted (localhost dev mode).
-      client.send({ t: "hello.ack", id: env.id, ok: true });
+      client.send({ t: "hello.ack", id: env.id, ok: true, isLocal: client.isLocal });
       this.deps.onAuthenticated(client);
       return;
     }
@@ -75,17 +91,47 @@ export class AuthGate {
 
   private handleBearer(client: WsClient, env: Envelope, bearer: string): void {
     const device = this.deps.registry.authenticate(bearer);
-    if (!device) {
-      log.warn("[makit] hello: unknown bearer (rejected)");
-      this.reject(client, env, "unknown device");
+    if (device) {
+      client.authed = true;
+      client.deviceLabel = device.label;
+      client.deviceId = device.id;
+      // SPEC-46 D17: the subject the router + fanout gate read. `caps` is passed
+      // through verbatim — undefined (an existing phone) stays undefined, which
+      // `isFullAccess` reads as full access.
+      client.principal = { deviceId: device.id, label: device.label, caps: device.caps };
+      client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: device.id, isLocal: client.isLocal });
+      log.info(`[makit] hello: authed as ${device.label} (${device.id}); sent snapshots`);
+      this.deps.onAuthenticated(client);
       return;
     }
-    client.authed = true;
-    client.deviceLabel = device.label;
-    client.deviceId = device.id;
-    client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: device.id });
-    log.info(`[makit] hello: authed as ${device.label} (${device.id}); sent snapshots`);
-    this.deps.onAuthenticated(client);
+
+    // SPEC-46 C2: not a paired device — try the agent-token store. A hit is a
+    // session-scoped principal (caps read/send/spawn, `sessionId` set).
+    const agent = this.deps.sessionTokens?.authenticate(bearer) ?? null;
+    if (agent) {
+      // Fail closed on an under-specified principal. `isFullAccess` reads a
+      // missing `caps` as FULL access and `isAgentScoped` reads a missing
+      // `sessionId` as "not an agent", so either omission would silently promote
+      // the agent past the capability map and every read gate. The real store sets
+      // both; the interface does not require it, so the invariant is enforced at
+      // the boundary rather than trusted to each implementation.
+      if (!agent.sessionId || !agent.caps) {
+        log.warn("[makit] hello: agent token yielded an incomplete principal (rejected)");
+        this.reject(client, env, "malformed agent credential");
+        return;
+      }
+      client.authed = true;
+      client.deviceLabel = agent.label;
+      client.deviceId = agent.deviceId;
+      client.principal = agent;
+      client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: agent.deviceId, isLocal: client.isLocal });
+      log.info(`[makit] hello: authed agent-scoped token for session ${agent.sessionId}`);
+      this.deps.onAuthenticated(client);
+      return;
+    }
+
+    log.warn("[makit] hello: unknown bearer (rejected)");
+    this.reject(client, env, "unknown device");
   }
 
   private handlePair(
@@ -109,6 +155,7 @@ export class AuthGate {
       ok: true,
       deviceId: device.id,
       bearer: device.bearer,
+      isLocal: client.isLocal,
     });
     this.deps.onAuthenticated(client);
   }

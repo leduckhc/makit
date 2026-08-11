@@ -8,14 +8,26 @@
 
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { basename, resolve, join } from "node:path";
 import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
 import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/catalog.js";
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO } from "./protocol.js";
+import { sessionTokens } from "./ws/session_tokens.js";
+import {
+  DEFAULT_SESSION_TITLE,
+  type ApprovalPolicy,
+  type ProjectDTO,
+  type RepoDTO,
+  type RepoSettingsDTO,
+  type SessionConfigOption,
+  type SessionDTO,
+  type SessionEvent,
+  type SessionOrigin,
+} from "./protocol.js";
+import { spawnBoundError, spawnDepth, type LineageNode } from "./lineage.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { resolveTranscriptPath, type TranscriptQuery } from "./transcript-path.js";
 import { DetachedAdapter } from "./adapters/detached.js";
@@ -25,11 +37,12 @@ import { listAcpSessions } from "./adapters/acp.js";
 import { listCodexThreads } from "./adapters/codex.js";
 import type { AgentSessionInfo } from "./adapters/adapter.js";
 import { listRepos, enrichPrs, type LastKnownPr } from "./repo_service.js";
-import { createGithubGateway, type GithubGateway } from "./github/gateway.js";
+import type { GithubGateway } from "./github/gateway.js";
+import { createDefaultForgeGateway } from "./forge/router.js";
 import type { PersistedProject } from "./project-store.js";
 import {
   isGitRepo,
-  detectDefaultBranch,
+  resolveDefaultBranch,
   listWorktrees,
   addWorktree,
   addWorktreeForPr,
@@ -38,11 +51,11 @@ import {
   deleteBranch,
   syncBaseBranch,
   listOpenPrs,
+  type PrCheckoutStrategy,
   findOpenPr,
   branchExists,
   slugify,
   slugifyBranch,
-  worktreeBaseDir,
   run,
   type OpenPr,
   type WorktreeEntry,
@@ -50,6 +63,16 @@ import {
 import type { PrMutation } from "./github/queries.js";
 import type { EventStore } from "./storage/event_store.js";
 import { log } from "./log.js";
+import {
+  parseRepoSettings,
+  resolveProvider,
+  resolveWorktreeRoot,
+  validateRepoPath,
+  validateWorktreeRoot,
+  type ProviderChoice,
+  type RepoSettings,
+} from "./repo_settings.js";
+import type { ForgeForgetful, ForgeInspector } from "./forge/router.js";
 
 /**
  * What a {@link SessionManager.wrapUpWorktree} run actually did. The base-branch
@@ -183,7 +206,29 @@ function reason(e: unknown): string {
 export const DEFAULT_CLOSE_GRACE_MS = 10_000;
 
 interface ProjectEntry {
+  /**
+   * Persisted per-repo settings, verbatim. Held as an opaque record so a save
+   * cannot drop keys this build does not understand; typed and validated at the
+   * point of use (`repo_settings.ts`).
+   */
+  settings?: Record<string, unknown>;
   dto: ProjectDTO;
+}
+
+/**
+ * A path in its canonical form, or `resolve`d when it cannot be canonicalised.
+ *
+ * Used wherever two paths are compared for "same directory". Falls back rather
+ * than throwing because a project whose directory has since been deleted must
+ * still compare, and still be re-pointable -- that is the case re-pointing exists
+ * to fix.
+ */
+function canonicalPath(p: string): string {
+  try {
+    return realpathSync(resolve(p));
+  } catch {
+    return resolve(p);
+  }
 }
 
 export class SessionManager extends EventEmitter {
@@ -225,7 +270,16 @@ export class SessionManager extends EventEmitter {
   /** Deadline for a graceful `adapter.close()` before we reap regardless. */
   private readonly closeGraceMs: number;
   private bridge?: BridgeBinding;
-  private readonly _gateway: GithubGateway;
+  /**
+   * The forge gateway.
+   *
+   * Typed as the gateway PLUS the optional inspection/invalidation ports, so the
+   * three call sites that ask it what it decided no longer need an
+   * `as unknown as` double cast. `Partial` is the honest shape: a test may inject a
+   * plain `GithubGateway`, and only the real router implements the ports — which is
+   * exactly why the calls are optional-chained rather than assumed.
+   */
+  private readonly _gateway: GithubGateway & Partial<ForgeInspector & ForgeForgetful>;
 
   constructor(opts: ManagerOpts) {
     super();
@@ -237,10 +291,23 @@ export class SessionManager extends EventEmitter {
     this.store = opts.store;
     this.capabilityCache = opts.capabilityCache;
     this.closeGraceMs = opts.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
-    // The single GitHub gateway (SPEC-32). A real one over git.ts's `run` unless
-    // a fake is injected; `run` resolves `gh` via PATH, so the test PATH-shim
+    // The single forge gateway (SPEC-32). A router over every provider unless a
+    // fake is injected: it dispatches per repo on that repo's own provider setting
+    // and, failing that, on what detection reports -- github.com to the `gh`-backed
+    // gateway, Forgejo/Gitea to the REST one -- and forwards the budget surface to
+    // the gh gateway, which owns the only quota that exists. `run` resolves `gh`
+    // via PATH, so the test PATH-shim
     // keeps working. Constructed here does NOT self-refresh (no subprocess).
-    this._gateway = opts.gateway ?? createGithubGateway({ exec: run });
+    //
+    // `providerFor` is passed as a bound method, not a captured value: the router
+    // calls it per routing decision, so a provider the user changes at runtime is
+    // honoured on the next poll (SPEC-48 D3").
+    this._gateway =
+      opts.gateway ??
+      createDefaultForgeGateway({
+        exec: run,
+        providerFor: (repoPath) => this.providerFor(repoPath),
+      });
     for (const entry of opts.projects) {
       // A bare path gets a fresh server-generated id; a restored `{ id, path }`
       // keeps its id so a client's persisted projectId stays valid across a
@@ -255,6 +322,8 @@ export class SessionManager extends EventEmitter {
           pinned: true,
           lastActivityAt: Date.now(),
         },
+        // Carried verbatim so a save cannot drop keys this build does not know.
+        settings: typeof entry === "string" ? undefined : entry.settings,
       });
     }
     this.rehydrate();
@@ -303,7 +372,13 @@ export class SessionManager extends EventEmitter {
 
   /** Listing for the home screen. */
   listProjects(): ProjectDTO[] {
-    return [...this.projects.values()].map((p) => p.dto);
+    return [...this.projects.values()].map((p) => ({
+      ...p.dto,
+      // Include validated settings if present; undefined if absent (optional in DTO)
+      // No cast: the DTO now declares the keys that are actually persisted, so the
+      // compiler checks this shape instead of the cast hiding a mismatch.
+      ...(p.settings ? { settings: p.settings } : {}),
+    }));
   }
 
   /**
@@ -314,8 +389,18 @@ export class SessionManager extends EventEmitter {
    */
   addProject(path: string): ProjectDTO {
     const resolved = resolve(path);
+    // Compared CANONICALLY, so `/tmp/x` and `/private/tmp/x` — one directory on
+    // macOS — cannot become two projects. Settings and the forge decision are both
+    // looked up by path, so two projects at one directory answer for each other.
+    // `repointProject` already refuses this; comparing with `resolve` alone here let
+    // the ordinary add route create exactly the state the other one forbids.
+    //
+    // The path is still STORED as `resolved` rather than canonicalised: that is what
+    // persisted ids are already mapped to, and rewriting it would change the stored
+    // value for every existing project on the next save.
+    const canonical = canonicalPath(resolved);
     const existing = [...this.projects.values()].find(
-      (p) => resolve(p.dto.path) === resolved,
+      (p) => canonicalPath(p.dto.path) === canonical,
     );
     if (existing) return existing.dto;
 
@@ -332,6 +417,112 @@ export class SessionManager extends EventEmitter {
     return dto;
   }
 
+  /**
+   * Apply a settings patch to a project and persist it. Returns false for an
+   * unknown id.
+   *
+   * A `null` value **clears** that key rather than storing null: absent means
+   * "inherit", so clearing is how the UI says "go back to inheriting" without a
+   * sentinel. Unknown keys already on disk are untouched — this merges into the
+   * stored record rather than replacing it, so a newer app's field survives an
+   * older daemon writing a neighbouring one.
+   */
+  updateProjectSettings(id: string, patch: Record<string, unknown>): boolean {
+    const entry = this.projects.get(id);
+    if (entry === undefined) return false;
+    const next: Record<string, unknown> = { ...(entry.settings ?? {}) };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null) delete next[k];
+      else next[k] = v;
+    }
+    entry.settings = Object.keys(next).length === 0 ? undefined : next;
+    this.notifyProjectsChanged();
+    return true;
+  }
+
+  /** Persisted settings for a project id, verbatim (for the DTO + tests). */
+  projectSettings(id: string): Record<string, unknown> | undefined {
+    return this.projects.get(id)?.settings;
+  }
+
+  /**
+   * Re-point a project at a new root path, **keeping its id** (SPEC-48 D4′).
+   *
+   * Not equivalent to remove-and-re-add, which is why it exists: re-adding mints a
+   * fresh `PersistedProject.id`, and everything keyed to that id — per-repo
+   * settings, session history — is lost. A repo that merely moved on disk should
+   * keep its identity, and preserving the id across a move is the entire reason the
+   * id exists rather than the path being the key.
+   *
+   * Three refusals, each for a failure that would otherwise be silent:
+   *
+   *   - **not a git repo** — the constraint D4′ states. A project pointed at a
+   *     plain directory has no branches, no forge and no diff, and presents as
+   *     broken rather than as misconfigured.
+   *   - **already another project's path** — settings and the forge decision are
+   *     both looked up BY PATH, so two projects at one path would silently answer
+   *     for each other.
+   *   - anything {@link validateRepoPath} rejects.
+   *
+   * The forge decision for the OLD path is discarded, so detection re-runs against
+   * the new one: D4′ requires it, because the forge and the default branch may both
+   * change with the move.
+   *
+   * Known limitation, stated rather than hidden: sessions already bound to a
+   * worktree keep their recorded paths. For the case this exists for — a repo that
+   * moved — worktrees live under the worktree root, which is a separate setting and
+   * unaffected; a session whose worktree was the repo directory itself will still
+   * point at the old location.
+   */
+  async repointProject(
+    id: string,
+    rawPath: string,
+  ): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
+    const entry = this.projects.get(id);
+    if (entry === undefined) return { ok: false, error: `No project ${id}.` };
+    const entryPathBefore = entry.dto.path;
+
+    const checked = validateRepoPath(rawPath);
+    if (!checked.ok) return { ok: false, error: checked.error };
+    const next = checked.value;
+
+    // Both sides of every comparison below are canonicalised. Comparing a
+    // canonicalised new path against a stored one that is not is how a duplicate
+    // slips through: on macOS `/tmp/x` and `/private/tmp/x` are the same directory,
+    // and a project restored from `projects.json` holds whichever spelling was
+    // written. Two projects at one path would then look distinct while sharing
+    // settings and a forge decision, because both are looked up BY PATH.
+    const previous = canonicalPath(entry.dto.path);
+    // Re-submitting the same directory -- possibly under a different spelling, since
+    // `/tmp/x` and `/private/tmp/x` are one place -- is a no-op, not a conflict with
+    // itself. Reports the path actually in force rather than the canonical form,
+    // because nothing was stored and claiming otherwise would show the client a
+    // value the store does not hold.
+    if (next === previous) return { ok: true, path: entryPathBefore };
+
+    for (const [otherId, other] of this.projects) {
+      if (otherId !== id && canonicalPath(other.dto.path) === next) {
+        return {
+          ok: false,
+          error: `${next} is already open in makit as "${other.dto.name}".`,
+        };
+      }
+    }
+
+    if (!(await isGitRepo(next))) {
+      return { ok: false, error: `${next} is not a git repository.` };
+    }
+
+    entry.dto = { ...entry.dto, path: next, name: basename(next) };
+    // Drop the routing decision for where the repo used to be, so the forge is
+    // re-detected instead of reported from a stale probe. Keyed on the path the
+    // gateway was actually called with -- the DTO's own value, not its canonical
+    // form, since that is what became the cache key.
+    this._gateway.forgetRepo?.(entryPathBefore);
+    this.notifyProjectsChanged();
+    return { ok: true, path: next };
+  }
+
   /** Remove a project by id. Throws on an unknown id. Sessions are left as-is. */
   removeProject(id: string): void {
     if (!this.projects.has(id)) throw new Error(`unknown project: ${id}`);
@@ -341,7 +532,13 @@ export class SessionManager extends EventEmitter {
 
   private notifyProjectsChanged(): void {
     this.onProjectsChanged?.(
-      [...this.projects.values()].map((p) => ({ id: p.dto.id, path: p.dto.path })),
+      [...this.projects.values()].map((p) =>
+        // `settings` is included only when present, so an untouched project keeps
+        // its two-key shape on disk and the file stays diffable.
+        p.settings === undefined || Object.keys(p.settings).length === 0
+          ? { id: p.dto.id, path: p.dto.path }
+          : { id: p.dto.id, path: p.dto.path, settings: p.settings },
+      ),
     );
   }
 
@@ -401,6 +598,46 @@ export class SessionManager extends EventEmitter {
 
   getSession(id: string): Session | undefined {
     return this.sessions.get(id);
+  }
+
+  /**
+   * SPEC-46 D9/T11: the reason a new child of `parentId` may not be spawned, or
+   * null when it may. Depth and live-child count are recomputed here from the
+   * persisted `parentId` links of every session (closed ones stay in the map,
+   * killed ones are gone) — never from the forgeable `MAKIT_SPAWN_DEPTH`.
+   */
+  checkSpawnBounds(parentId: string): string | null {
+    return spawnBoundError(parentId, this.lineageNodes());
+  }
+
+  /**
+   * How deep a session sits in the spawn tree: 0 for one nobody handed off, +1
+   * per ancestor link. Display only (D9) — the guard above is the enforcement.
+   */
+  private sessionDepth(sessionId: string): number {
+    const parentId = this.sessions.get(sessionId)?.parentId;
+    return parentId ? spawnDepth(parentId, this.lineageNodes()) : 0;
+  }
+
+  /** Every session's lineage fact, for the depth/fan-out walks. */
+  private lineageNodes(): Map<string, LineageNode> {
+    const nodes = new Map<string, LineageNode>();
+    for (const s of this.sessions.values()) {
+      nodes.set(s.id, { id: s.id, parentId: s.parentId, closed: s.closed });
+    }
+    return nodes;
+  }
+
+  /**
+   * SPEC-46 C3: a session's persisted events, read from the event store rather
+   * than the session's in-memory cache, so a bounded tail (session.transcript)
+   * never hydrates the whole log just to return its last few lines (D5). The
+   * `limit` is pushed all the way down to the SQL; falls back to the in-memory
+   * events when there is no store (M0 / tests).
+   */
+  readTranscript(sessionId: string, limit: number): SessionEvent[] {
+    if (this.store) return this.store.readTail(sessionId, limit);
+    return (this.sessions.get(sessionId)?.events ?? []).slice(-limit);
   }
 
   /**
@@ -522,7 +759,7 @@ export class SessionManager extends EventEmitter {
    * dir (non-git project / unborn HEAD). Uses a {@link DetachedAdapter}
    * placeholder so the session wires + shows in snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[]): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[], lineage?: { parentId?: string; handoffReason?: string; origin?: SessionOrigin }, policy?: ApprovalPolicy, resumeAgentSessionId?: string): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
@@ -565,13 +802,34 @@ export class SessionManager extends EventEmitter {
       title: DEFAULT_SESSION_TITLE,
       adapter: new DetachedAdapter(agentId),
       store: this.store,
+      // SPEC-46 D10: lineage derived by the caller (session.spawn) from the
+      // credential, never the wire. Set once at construction.
+      parentId: lineage?.parentId,
+      handoffReason: lineage?.handoffReason,
+      origin: lineage?.origin,
+      // SPEC-46 D13: a relaxed approval policy is human-gated at the command
+      // layer; undefined falls back to the Session default (`ask-on-risky`).
+      policy,
     });
     session.beginDraft({
       agent: agentId,
       pendingWorktreePath: boundPath,
       branch: boundBranch,
       configPicks,
+      // SPEC-46 U4: a fork rides the draft as a resume handle, adopted by the
+      // adapter's resume path at promotion (see startPendingSession).
+      resumeAgentSessionId,
     });
+    // SPEC-46 D9: the bound is re-checked HERE, in the same synchronous step as
+    // the registration below. The command layer checks it too, but that check
+    // happens before the `await listWorktrees` above, so the count it read is
+    // stale — two spawns fired together from one parent both saw a free slot and
+    // both landed. Nothing may await between this check and `sessions.set`, which
+    // is what makes it a reservation rather than a second advisory read.
+    if (lineage?.parentId) {
+      const boundError = spawnBoundError(lineage.parentId, this.lineageNodes());
+      if (boundError) throw new Error(boundError);
+    }
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
     return session;
@@ -608,7 +866,7 @@ export class SessionManager extends EventEmitter {
     const base =
       baseBranch && (await branchExists(repoPath, baseBranch))
         ? baseBranch
-        : await detectDefaultBranch(repoPath);
+        : await this.defaultBranchFor(repoPath);
     // Unborn HEAD (no commits yet): `git worktree add -b` would fail, so run
     // the session in the repo dir instead of forking a worktree.
     if (!base) return { path: repoPath, branch: null };
@@ -633,6 +891,7 @@ export class SessionManager extends EventEmitter {
       // path.
       const dirName = this.uniqueWorktreeDir(repoPath, branch.replace(/\//g, "-"));
       const path = await addWorktree({
+        baseDir: this.worktreeRootFor(repoPath),
         repoPath,
         name: dirName,
         branch,
@@ -670,7 +929,36 @@ export class SessionManager extends EventEmitter {
     const prs = await listOpenPrs(this._gateway, repoPath);
     const pr = prs.find((p) => p.number === prNumber);
     if (!pr) throw new Error(`PR #${prNumber} is not an open PR of this repo`);
-    return addWorktreeForPr({ repoPath, prNumber, headRefName: pr.headRefName });
+    return addWorktreeForPr({
+      repoPath,
+      prNumber,
+      headRefName: pr.headRefName,
+      baseDir: this.worktreeRootFor(repoPath),
+      // Read AFTER `listOpenPrs`, which is what routes the repo — so detection has
+      // run and its decision is available rather than empty.
+      checkout: this.prCheckoutStrategyFor(repoPath),
+    });
+  }
+
+  /**
+   * How a PR should be checked out for [repoPath] (SPEC-48).
+   *
+   * Resolved from the SAME two sources the router uses to pick a gateway, and in the
+   * same order — the user's override first, then routing's decision — so the checkout
+   * cannot disagree with the provider that served the PR list. "New worktree from PR"
+   * used to list Forgejo PRs correctly and then run `gh pr checkout`, so it failed
+   * halfway for every non-GitHub repo.
+   *
+   * Falls back to `gh` when nothing is known: that is the status quo for an
+   * unreadable remote, and the router makes the same choice for the same reason.
+   */
+  prCheckoutStrategyFor(repoPath: string): PrCheckoutStrategy {
+    const chosen = this.providerFor(repoPath);
+    if (chosen === "forgejo" || chosen === "gitea") return "pull-ref";
+    if (chosen === "github") return "gh";
+    // `auto` (or `none`, which never reaches a checkout): believe detection.
+    const software = this._gateway.forgeFor?.(repoPath)?.software;
+    return software === "forgejo" || software === "gitea" ? "pull-ref" : "gh";
   }
 
   /**
@@ -880,7 +1168,7 @@ export class SessionManager extends EventEmitter {
     const { repoPath, branchDeleted, branchReason } =
         await this._removeWorktreeAndBranch(projectId, worktreePath, expectBranch);
 
-    const base = baseBranch ?? (await detectDefaultBranch(repoPath));
+    const base = baseBranch ?? (await this.defaultBranchFor(repoPath));
     if (!base) {
       return {
         branchDeleted,
@@ -973,7 +1261,10 @@ export class SessionManager extends EventEmitter {
       this.adapterFactory?.({ projectPath: worktreePath, sessionId: session.id, agent: agentId }) ??
       built.adapter;
     session.replaceAdapter(adapter);
-    await adapter.start(this.startOpts(worktreePath, session.id));
+    // SPEC-46 U4: a forked draft resumes the forked thread here — the same
+    // resume path a cold session takes — rather than launching a fresh one,
+    // which would discard the fork.
+    await adapter.start(this.startOpts(worktreePath, session.id, undefined, lc.resumeAgentSessionId));
     // Apply pre-spawn config picks now: AFTER the real session/thread exists
     // and BEFORE the first prompt (SPEC-27). Best-effort per transport — ACP
     // routes to session/set_config_option, codex caches model/effort for the
@@ -1071,14 +1362,87 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Find an unused worktree directory name under `<worktreeBaseDir>/<repoName>`,
-   * appending `-2`, `-3`, … on collision. Needed because two distinct branches
-   * can flatten to the same dir name (`feat/new-ui` → `feat-new-ui`), so a
-   * unique branch is not enough to guarantee `git worktree add`'s target path
-   * is free. Mirrors {@link addWorktree}'s target layout.
+   * The worktree root in force for [repoPath] — the repo's override, else
+   * `MAKIT_WORKTREE_DIR`, else `~/.worktrees` (SPEC-48 D8').
+   *
+   * Re-validated on read, not trusted from the file: `projects.json` is plain JSON
+   * a user can edit by hand, so a write-time check alone is not a guarantee. An
+   * invalid stored value falls back to the inherited root rather than failing the
+   * worktree creation, and says so once.
    */
-  private uniqueWorktreeDir(repoPath: string, base: string): string {
-    const parent = join(worktreeBaseDir(), basename(resolve(repoPath)));
+  worktreeRootFor(repoPath: string): string {
+    const settings = this.settingsForPath(repoPath);
+    const resolved = resolveWorktreeRoot(settings, process.env);
+    if (resolved.source !== "override") return resolved.value;
+    const checked = validateWorktreeRoot(resolved.value);
+    if (checked.ok) return checked.value;
+    log.warn(
+      `[makit] ignoring invalid worktree root for ${repoPath}: ${checked.error} — using the inherited root instead`,
+    );
+    return resolveWorktreeRoot(undefined, process.env).value;
+  }
+
+  /**
+   * Parsed settings for the project owning [repoPath], or `{}`.
+   *
+   * Compared CANONICALLY on both sides, like `addProject` and `repointProject`.
+   * `addProject` stores the resolved -- not canonicalised -- spelling, so a project
+   * added through a symlinked path used to fail this lookup whenever a caller supplied
+   * the canonical path (which is what git hands back). Every override then silently
+   * fell back to the default while still being shown in the UI.
+   */
+  private settingsForPath(repoPath: string): RepoSettings {
+    const target = canonicalPath(repoPath);
+    for (const p of this.projects.values()) {
+      if (canonicalPath(p.dto.path) === target) return parseRepoSettings(p.settings);
+    }
+    return {};
+  }
+
+  /**
+   * The provider the user chose for [repoPath], or `auto` to believe detection
+   * (SPEC-48 D3").
+   *
+   * Public because the forge router calls it **at routing time**, once per routing
+   * decision — not at construction. That is what makes a changed setting take
+   * effect on the next poll instead of at the next daemon restart, and a setting
+   * that only applies after a restart is indistinguishable from one that does
+   * nothing.
+   *
+   * A path makit does not know reports `auto`: an unknown repo has no override, and
+   * throwing here would break routing for a directory that is merely unregistered.
+   */
+  providerFor(repoPath: string): ProviderChoice {
+    return resolveProvider(this.settingsForPath(repoPath)).value;
+  }
+
+  /**
+   * The default branch in force for [repoPath] — the repo's override when it still
+   * resolves, else git's own answer (SPEC-48 D14/rev 3).
+   *
+   * The ONE place the three consumers read from: the repos snapshot (whose
+   * `defaultBranch` is what the diff +/- numbers and ahead counts are measured
+   * against), `createWorktree`'s base, and `wrapUpWorktree`'s base sync. Each used
+   * to call `detectDefaultBranch` directly, which is why storing an override changed
+   * nothing anywhere — the same mistake R5 caught for the worktree root.
+   */
+  async defaultBranchFor(repoPath: string): Promise<string | null> {
+    return resolveDefaultBranch(repoPath, this.settingsForPath(repoPath).defaultBranch);
+  }
+
+  /**
+   * Find an unused worktree directory name under
+   * `<worktreeRootFor(repoPath)>/<repoName>`, appending `-2`, `-3`, … on collision.
+   * Needed because two distinct branches can flatten to the same dir name
+   * (`feat/new-ui` → `feat-new-ui`), so a unique branch is not enough to guarantee
+   * `git worktree add`'s target path is free. Mirrors {@link addWorktree}'s layout.
+   *
+   * Reads the SAME per-repo root the creation paths use. If it did not, collision
+   * detection would look in one directory while `git worktree add` wrote to
+   * another — the two would disagree and a real collision would slip through.
+   */
+  uniqueWorktreeDir(repoPath: string, base: string): string {
+    const parent = join(this.worktreeRootFor(repoPath), basename(resolve(repoPath)));
     let candidate = base;
     let n = 1;
     while (existsSync(join(parent, candidate))) {
@@ -1107,7 +1471,60 @@ export class SessionManager extends EventEmitter {
     lastKnown: LastKnownPr = () => null,
   ): Promise<RepoDTO[]> {
     const includePrs = opts.includePrs ?? true;
-    return listRepos(this.listProjects(), this.allSessions(), includePrs, this._gateway, lastKnown);
+    return listRepos(
+      this.listProjects(),
+      this.allSessions(),
+      includePrs,
+      this._gateway,
+      lastKnown,
+      (p) => this.settingsDtoFor(p),
+    );
+  }
+
+  /**
+   * One project's settings as the app sees them: **effective values with their
+   * sources**, so the UI labels rather than guesses.
+   *
+   * The forge is read from the router's own decision record, which is `undefined`
+   * until that repo has actually been routed — reported as absent rather than as a
+   * guess, because "not measured yet" and "no forge" are different statements and
+   * only one of them is worth investigating.
+   */
+  private settingsDtoFor(project: ProjectDTO): RepoSettingsDTO {
+    const stored = parseRepoSettings(this.projects.get(project.id)?.settings);
+    const worktreeRoot = resolveWorktreeRoot(stored, process.env);
+    const provider = resolveProvider(stored);
+    const forge = this._gateway.forgeFor?.(project.path);
+    return {
+      // Re-validated here too: an override read back from a hand-edited file must
+      // not be reported as in force if it would be refused on use.
+      // A stored override that no longer validates falls back to whatever the chain
+      // says WITHOUT relabelling it: dropping the override can land on the env var,
+      // and `source` exists so the app states the origin rather than guessing it.
+      worktreeRoot:
+        worktreeRoot.source === "override" && !validateWorktreeRoot(worktreeRoot.value).ok
+          ? resolveWorktreeRoot(undefined, process.env)
+          : worktreeRoot,
+      provider,
+      // Present ONLY when overridden. Absent means "no override" — the app already
+      // has `RepoDTO.defaultBranch` from git, so repeating it here would be two
+      // sources for one fact.
+      defaultBranch:
+        stored.defaultBranch !== undefined
+          ? { value: stored.defaultBranch, source: "override" as const }
+          : undefined,
+      logoHue: stored.logoHue,
+      // Asked of the router as its own question, NOT derived from `forge`. Those two
+      // facts have three states between them — not measured, no remote, a forge — and
+      // one boolean cannot hold three: deriving it made every un-polled repo claim to
+      // have no origin, which is the one reading that sends the user hunting for a
+      // problem that does not exist.
+      //
+      // `true` when the router has not reached this repo yet, so the app says "not
+      // identified yet" (a probe pending) rather than "no remote" (a conclusion).
+      hasRemote: this._gateway.hasRemoteFor?.(project.path) ?? true,
+      forge,
+    };
   }
 
   /**
@@ -1279,6 +1696,12 @@ export class SessionManager extends EventEmitter {
 
   /** The teardown itself; {@link closeSession} owns de-duplication. */
   private async runClose(id: string, session: Session): Promise<void> {
+    // SPEC-46 D3: the session is ending, so its agent credential must stop
+    // authenticating now — and before the teardown below, every step of which is
+    // deliberately best-effort. A token that outlives a close whose kill() gave
+    // up is the exact case that matters, because that agent process may still be
+    // alive to use it.
+    sessionTokens.drop(id);
     // Stop means stop (SPEC-35), as with `cancel`: drop pending mid-turn input
     // before the agent is asked to close. Otherwise the `idle` an adapter emits
     // while cancelling its turn triggers `flushNext()` and a queued message is
@@ -1369,6 +1792,9 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
 
+    // SPEC-46 D3: revoked when the session ends, and before the kill — an agent
+    // that outlives its kill() signal must not still hold spawn/send/read.
+    sessionTokens.drop(id);
     await session.adapter.kill();
     this.sessions.delete(id);
     // Drop any attach mapping so the underlying pi session can be re-attached.
@@ -1408,7 +1834,9 @@ export class SessionManager extends EventEmitter {
     // Seed history BEFORE the adapter goes live so it precedes new events.
     if (opts.backfill && opts.backfill.length > 0) session.backfill(opts.backfill);
 
-    await activeAdapter.start(this.startOpts(project.dto.path, session.id, opts.resumeSessionPath));
+    await activeAdapter.start(
+      this.startOpts(project.dto.path, session.id, opts.resumeSessionPath),
+    );
     // Persist the live adapter's native session/thread id for restart-resume.
     session.captureAgentSessionId();
     this.sessions.set(session.id, session);
@@ -1426,6 +1854,20 @@ export class SessionManager extends EventEmitter {
     resumeSessionPath?: string,
     resumeAgentSessionId?: string,
   ): import("./adapters/adapter.js").SpawnOpts {
+    // Lineage is read from the session, not passed in: three call sites launch an
+    // adapter (draft promotion, spawn-with-backfill, re-attach) and the one that
+    // every app and CLI session actually takes used to pass nothing, so the agent
+    // got an empty MAKIT_PROJECT_ID and a depth of 0 however deep it really was.
+    const session = this.sessions.get(sessionId);
+    // SPEC-46 D3: the agent's environment carries a per-session scoped credential
+    // plus its lineage context. The token is minted here (and re-minted on
+    // re-attach, which drops the old one first) because env is a spawn-time
+    // snapshot — it cannot be rotated in a running process, so its lifecycle is
+    // tied to the adapter's. `MAKIT_SESSION_ID` was already injected; the rest
+    // is additive. `MAKIT_SPAWN_DEPTH` is display-only (D9: the guard recomputes
+    // depth from persisted lineage and ignores a forged value) — which is exactly
+    // why the value handed out must still be honest: an agent reads it to decide
+    // whether handing off again is reasonable.
     return {
       cwd: projectPath,
       sessionId,
@@ -1437,6 +1879,10 @@ export class SessionManager extends EventEmitter {
             MAKIT_BRIDGE_URL: this.bridge.url,
             MAKIT_BRIDGE_TOKEN: this.bridge.token,
             MAKIT_SESSION_ID: sessionId,
+            MAKIT_CLI_TOKEN: sessionTokens.mint(sessionId),
+            MAKIT_PROJECT_ID: session?.projectId ?? "",
+            MAKIT_WORKTREE: session?.worktreePath ?? projectPath,
+            MAKIT_SPAWN_DEPTH: String(this.sessionDepth(sessionId)),
           }
         : undefined,
       extensions: this.bridge ? this.bridge.extensionPaths : [],
@@ -1555,7 +2001,14 @@ export class SessionManager extends EventEmitter {
       );
     }
     try {
-      await adapter.start(this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId));
+      // SPEC-46 D3: re-attach restarts the adapter, which is the only moment an
+      // env-delivered token can change. Drop the pre-restart token and mint a
+      // fresh one in the same step (startOpts mints), so the resumed agent's
+      // old credential stops authenticating the instant it is superseded.
+      sessionTokens.drop(session.id);
+      await adapter.start(
+        this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId),
+      );
     } catch (e) {
       // Roll back to the cold placeholder. Leaving a never-started adapter in
       // place would make the session look live while silently swallowing input,

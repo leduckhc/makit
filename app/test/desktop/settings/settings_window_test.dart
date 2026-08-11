@@ -11,9 +11,12 @@ import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:makit/desktop/settings/sections/appearance_section.dart';
 import 'package:makit/desktop/settings/server_config.dart';
 import 'package:makit/desktop/settings/settings_item_anchor.dart';
+import 'package:makit/desktop/settings/registry/settings_registry.dart';
+import 'package:makit/desktop/settings/settings_nav_pane.dart';
 import 'package:makit/desktop/settings/settings_window.dart';
 import 'package:makit/store/connection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:makit/store/prefs/profile_scoped_prefs.dart';
 
 class _RecordingObserver extends NavigatorObserver {
   final List<Route<dynamic>> pushed = [];
@@ -38,7 +41,10 @@ ProviderContainer _sectionContainer({PreferencesController? controller}) {
       if (controller != null)
         preferencesControllerProvider.overrideWith((ref) => controller),
       serverConfigProvider.overrideWith(
-        (ref) => ServerConfigController(_prefs, const ServerConfig()),
+        (ref) => ServerConfigController(
+          ProfileScopedPrefs.unscoped(_prefs),
+          const ServerConfig(),
+        ),
       ),
       desktopControllerProvider.overrideWithValue(
         DesktopController(
@@ -111,6 +117,28 @@ void main() {
 
     expect(find.text('APPEARANCE'), findsOneWidget);
     expect(find.byType(AppearanceSection), findsOneWidget);
+  });
+
+  testWidgets('a stored repo section that is gone leaves the sidebar in step', (
+    tester,
+  ) async {
+    // A repo section is only offered while its repo is pinned and present. When the
+    // stored `repo:<id>` is unavailable the detail pane falls back to the first
+    // section, but `_selectedId` still held the missing id, so `SettingsNavPane`
+    // matched no row and the window looked like it had lost its place.
+    final controller = PreferencesController.ephemeral();
+    await controller.set(lastSectionPreference, 'repo:gone');
+    await tester.pumpWidget(
+      _wrap(SettingsWindow(onClose: () {}), controller: controller),
+    );
+
+    final nav = tester.widget<SettingsNavPane>(find.byType(SettingsNavPane));
+    expect(nav.selectedId, isNot('repo:gone'));
+    expect(
+      nav.selectedId,
+      kSettingsSections.first.id,
+      reason: 'the highlighted row is the section actually rendered',
+    );
   });
 
   testWidgets('selecting a section persists settings.lastSection', (

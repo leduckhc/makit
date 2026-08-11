@@ -12,6 +12,22 @@ import type { AskUser } from "../uicall.js";
 export type AdapterEvent = Omit<SessionEvent, "seq" | "sessionId">;
 
 /**
+ * Thrown by {@link AgentAdapter.forkSession} when the back end cannot fork
+ * because the thread has no persisted rollout yet — codex answers a
+ * `thread/fork` on a thread that has never completed a turn with
+ * `-32600 no rollout found for thread id <id>` (SPEC-46 U4). A distinct type so
+ * `session.fork` can refuse this in plain words ("… has not run a turn yet")
+ * instead of relaying the raw JSON-RPC string, and so a *real* transport bug
+ * still surfaces as an unexpected error rather than a graceful refusal.
+ */
+export class ForkPreconditionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ForkPreconditionError";
+  }
+}
+
+/**
  * Transport-neutral summary of ONE prior agent session/thread, produced by a
  * transport's native listing (ACP `session/list`, codex `thread/list`) and
  * normalized here so the manager can merge results across agents (SPEC-29).
@@ -163,6 +179,17 @@ export interface AgentAdapter extends EventEmitter {
    * or the v2 draft, so its adapter reports `false`. Never called while idle.
    */
   steer(input: UserInput): Promise<boolean>;
+  /**
+   * Optional: adapter-native fork of THIS session/thread at its head — a
+   * high-fidelity branch of the same conversation (codex `thread/fork`; ACP
+   * `session/fork` when it lands). Gated on {@link SessionCapabilities.fork};
+   * an adapter that advertises `fork: false` omits it. Resolves the forked
+   * thread's native id, which the caller adopts through the resume path so the
+   * child continues the conversation rather than starting fresh (SPEC-46 U4).
+   * Rejects with {@link ForkPreconditionError} when the back end has no rollout
+   * to fork yet.
+   */
+  forkSession?(): Promise<{ agentSessionId: string }>;
   /**
    * Optional: run a built-in control action (e.g. `compact`, `thinking`) that
    * is NOT a user turn and never reaches the LLM as a prompt. Adapters that
