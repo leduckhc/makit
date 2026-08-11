@@ -60,6 +60,7 @@ import {
   resolveProvider,
   resolveWorktreeRoot,
   validateWorktreeRoot,
+  type ProviderChoice,
   type RepoSettings,
 } from "./repo_settings.js";
 import type { ForgeInspector } from "./forge/router.js";
@@ -220,7 +221,16 @@ export class SessionManager extends EventEmitter {
     // and forwards the budget surface to the gh gateway, which owns the only
     // quota that exists. `run` resolves `gh` via PATH, so the test PATH-shim
     // keeps working. Constructed here does NOT self-refresh (no subprocess).
-    this._gateway = opts.gateway ?? createDefaultForgeGateway({ exec: run });
+    //
+    // `providerFor` is passed as a bound method, not a captured value: the router
+    // calls it per routing decision, so a provider the user changes at runtime is
+    // honoured on the next poll (SPEC-48 D3").
+    this._gateway =
+      opts.gateway ??
+      createDefaultForgeGateway({
+        exec: run,
+        providerFor: (repoPath) => this.providerFor(repoPath),
+      });
     for (const entry of opts.projects) {
       // A bare path gets a fresh server-generated id; a restored `{ id, path }`
       // keeps its id so a client's persisted projectId stays valid across a
@@ -1092,6 +1102,23 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * The provider the user chose for [repoPath], or `auto` to believe detection
+   * (SPEC-48 D3").
+   *
+   * Public because the forge router calls it **at routing time**, once per routing
+   * decision — not at construction. That is what makes a changed setting take
+   * effect on the next poll instead of at the next daemon restart, and a setting
+   * that only applies after a restart is indistinguishable from one that does
+   * nothing.
+   *
+   * A path makit does not know reports `auto`: an unknown repo has no override, and
+   * throwing here would break routing for a directory that is merely unregistered.
+   */
+  providerFor(repoPath: string): ProviderChoice {
+    return resolveProvider(this.settingsForPath(repoPath)).value;
+  }
+
+  /**
    * Find an unused worktree directory name under
    * `<worktreeRootFor(repoPath)>/<repoName>`, appending `-2`, `-3`, … on collision.
    * Needed because two distinct branches can flatten to the same dir name
@@ -1173,10 +1200,15 @@ export class SessionManager extends EventEmitter {
           ? { value: stored.defaultBranch, source: "override" as const }
           : undefined,
       logoHue: stored.logoHue,
-      // The remote is what makes a forge possible at all. Derived from the
-      // router's decision when it has one, since that is the component that
-      // actually read the remote.
-      hasRemote: forge !== undefined,
+      // Asked of the router as its own question, NOT derived from `forge`. Those two
+      // facts have three states between them — not measured, no remote, a forge — and
+      // one boolean cannot hold three: deriving it made every un-polled repo claim to
+      // have no origin, which is the one reading that sends the user hunting for a
+      // problem that does not exist.
+      //
+      // `true` when the router has not reached this repo yet, so the app says "not
+      // identified yet" (a probe pending) rather than "no remote" (a conclusion).
+      hasRemote: inspector.hasRemoteFor?.(project.path) ?? true,
       forge,
     };
   }

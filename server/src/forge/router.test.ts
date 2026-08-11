@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { createForgeRouter, forgejoRefFromRemote, isGitHubHost, ORIGIN_REMOTE_ARGV } from "./router.js";
 import type { ForgeGateway, ForgeSoftwareName, GatewayStats, PrLookup } from "./types.js";
+import type { ProviderChoice } from "../repo_settings.js";
 import type { GithubGateway } from "../github/gateway.js";
 
 /** A recording stand-in for either provider. */
@@ -59,10 +60,18 @@ function harness(hosts: Record<string, string | null>, software: Record<string, 
   const calls: string[] = [];
   const lookups: string[] = [];
   const probes: string[] = [];
+  /**
+   * Per-repo provider overrides, MUTABLE on purpose: the setting is changed while
+   * the daemon runs, so a test that could only set it before the first route
+   * would never catch the routing cache serving a stale decision.
+   */
+  const choices = new Map<string, ProviderChoice>();
   const router = createForgeRouter({
     github: githubFake(calls),
     forgejo: fake("forgejo", calls),
     unsupported: fake("unsupported", calls),
+    none: fake("none", calls),
+    providerFor: (repoPath: string) => choices.get(repoPath) ?? "auto",
     resolveInstance: async (repoPath: string) => {
       lookups.push(repoPath);
       const host = hosts[repoPath];
@@ -76,7 +85,7 @@ function harness(hosts: Record<string, string | null>, software: Record<string, 
     },
     onUnsupported: (host, sw) => calls.push(`warn(${host},${sw})`),
   });
-  return { router, calls, lookups, probes };
+  return { router, calls, lookups, probes, choices };
 }
 
 // ---------------------------------------------------------------------------
@@ -350,6 +359,7 @@ test("a detection failure falls back to GitHub rather than breaking the poll", a
     github: githubFake(calls),
     forgejo: fake("forgejo", calls),
     unsupported: fake("unsupported", calls),
+    none: fake("none", calls),
     resolveInstance: async () => ({ host: "git.example", baseUrl: "https://git.example" }),
     detect: async () => {
       throw new Error("probe exploded");
@@ -376,13 +386,18 @@ test("forgeFor reports the software, host and whether a credential exists", asyn
     software: "gitea",
     host: "gitea.example",
     authed: true,
+    source: "detected",
   });
 });
 
 test("a GitHub repo reports no authed flag — gh's budget is not host auth", async () => {
   const { router } = harness({ "/gh": "github.com" });
   await router.prForBranch("/gh", "b");
-  assert.deepEqual(router.forgeFor("/gh"), { software: "github", host: "github.com" });
+  assert.deepEqual(router.forgeFor("/gh"), {
+    software: "github",
+    host: "github.com",
+    source: "detected",
+  });
 });
 
 test("an unsupported forge is still recorded, so the UI can name it", async () => {
@@ -404,4 +419,155 @@ test("close() forgets the decisions", async () => {
   await router.prForBranch("/fj", "b");
   router.close();
   assert.equal(router.forgeFor("/fj"), undefined);
+});
+
+// ---------------------------------------------------------------------------
+// P2 / D3" — the provider override DRIVES ROUTING.
+//
+// The whole point of the control: detection returns `unknown` for a private
+// instance that answers 401 to an anonymous probe, and for one behind a proxy
+// that hides `/api/forgejo/v1/version`. Both route to the *unsupported* provider,
+// where the repo is unusable with no recourse. The override is the recourse — so
+// it must pick the gateway, not merely be displayed.
+// ---------------------------------------------------------------------------
+
+test("an override to Forgejo rescues a repo detection could not identify", async () => {
+  // Detection says `unknown`, which today lands on `unsupported` — unusable.
+  const { router, calls, choices } = harness({ "/fj": "private.example" }, { "private.example": "unknown" });
+  choices.set("/fj", "forgejo");
+  await router.prForBranch("/fj", "b");
+  assert.deepEqual(calls, ["forgejo.prForBranch(/fj,b)"]);
+});
+
+test("an override skips the probe entirely — the probe is what failed", async () => {
+  // Not an optimisation. A proxy that hides the version endpoint makes the probe
+  // useless; spending it anyway would delay every poll for no information.
+  const { router, probes, choices } = harness({ "/fj": "private.example" }, { "private.example": "unknown" });
+  choices.set("/fj", "forgejo");
+  await router.prForBranch("/fj", "b");
+  assert.deepEqual(probes, []);
+});
+
+test("an override to Gitea routes to the Forgejo provider and records gitea", async () => {
+  const { router, calls, choices } = harness({ "/gt": "gt.example" }, { "gt.example": "unknown" });
+  choices.set("/gt", "gitea");
+  await router.prForBranch("/gt", "b");
+  assert.deepEqual(calls, ["forgejo.prForBranch(/gt,b)"]);
+  assert.equal(router.forgeFor("/gt")?.software, "gitea");
+});
+
+test("an override to GitHub sends a non-github.com host to the gh gateway", async () => {
+  // A GitHub Enterprise host is not github.com, so the host rule alone sends it to
+  // Forgejo, where it fails. This is the only way to reach `gh` for such a repo.
+  const { router, calls, choices } = harness({ "/ghe": "github.acme.test" });
+  choices.set("/ghe", "github");
+  await router.prForBranch("/ghe", "b");
+  assert.deepEqual(calls, ["github.prForBranch(/ghe,b)"]);
+});
+
+test("an override to None talks to no forge at all", async () => {
+  // "Stops checking pull requests" has to mean no provider call and no remote read,
+  // otherwise it is a label rather than an instruction.
+  const { router, calls, lookups, probes, choices } = harness({ "/mirror": "gt.example" });
+  choices.set("/mirror", "none");
+  const lookup = await router.prForBranch("/mirror", "b");
+  assert.deepEqual(calls, ["none.prForBranch(/mirror,b)"]);
+  assert.deepEqual(lookups, [], "None must not even read the origin remote");
+  assert.deepEqual(probes, []);
+  // `none`, not `unknown`: we are not failing to look, we were told not to.
+  assert.deepEqual(lookup, { kind: "none" });
+});
+
+test("None counts as its own provider in the mix, so cadence can ignore it", async () => {
+  const { router, choices } = harness({ "/mirror": "gt.example" });
+  choices.set("/mirror", "none");
+  await router.prForBranch("/mirror", "b");
+  assert.deepEqual([...router.providersInUse()], ["none"]);
+});
+
+test("changing the override re-routes WITHOUT a restart", async () => {
+  // The routing cache keys on the repo path alone, so without re-checking the
+  // choice the setting would appear to do nothing until the daemon restarted —
+  // which is indistinguishable from the feature being broken.
+  const { router, calls, choices } = harness({ "/r": "git.example" });
+  await router.prForBranch("/r", "b");
+  assert.deepEqual(calls, ["forgejo.prForBranch(/r,b)"]);
+  choices.set("/r", "github");
+  await router.prForBranch("/r", "b");
+  assert.deepEqual(calls, ["forgejo.prForBranch(/r,b)", "github.prForBranch(/r,b)"]);
+});
+
+test("an unchanged override still resolves the host only once", async () => {
+  // Re-checking the choice must not throw away the cache that makes the home-screen
+  // fan-out cheap.
+  const { router, lookups, choices } = harness({ "/r": "git.example" });
+  choices.set("/r", "forgejo");
+  await router.prForBranch("/r", "b");
+  await router.prForBranch("/r", "c");
+  await router.openPrs("/r", 10);
+  assert.deepEqual(lookups, ["/r"]);
+});
+
+test("forgeFor says the decision came from the override, not from detection", async () => {
+  // The UI must not caption an override "detected": that is the one thing the
+  // reader would use to decide whether to trust it.
+  const { router, choices } = harness({ "/fj": "private.example" }, { "private.example": "unknown" });
+  choices.set("/fj", "forgejo");
+  await router.prForBranch("/fj", "b");
+  assert.deepEqual(router.forgeFor("/fj"), {
+    software: "forgejo",
+    host: "private.example",
+    authed: true,
+    source: "override",
+  });
+});
+
+test("a detected decision is labelled detected", async () => {
+  const { router } = harness({ "/gt": "gitea.example" }, { "gitea.example": "gitea" });
+  await router.prForBranch("/gt", "b");
+  assert.equal(router.forgeFor("/gt")?.source, "detected");
+});
+
+test("Auto is unchanged: detection still decides", async () => {
+  const { router, calls, probes } = harness({ "/gl": "gitlab.example" }, { "gitlab.example": "gitlab" });
+  await router.prForBranch("/gl", "b");
+  assert.deepEqual(probes, ["https://gitlab.example"]);
+  assert.equal(calls[0], "warn(gitlab.example,gitlab)");
+  assert.equal(calls[1], "unsupported.prForBranch(/gl,b)");
+});
+
+// ---------------------------------------------------------------------------
+// P2 — "no remote" and "not measured yet" must be separable.
+//
+// `settingsDtoFor` derived hasRemote from `forge !== undefined`, which made the
+// app's "Auto: not identified yet" branch UNREACHABLE: every repo that had not
+// been polled yet claimed to have no remote. rev 3.2 pinned that these two read
+// differently, so the router has to record the remote as its own fact.
+// ---------------------------------------------------------------------------
+
+test("hasRemoteFor is undefined until the repo has been routed", () => {
+  const { router } = harness({ "/r": "git.example" });
+  assert.equal(router.hasRemoteFor("/r"), undefined);
+});
+
+test("hasRemoteFor is true once a readable remote has been routed", async () => {
+  const { router } = harness({ "/r": "git.example" });
+  await router.prForBranch("/r", "b");
+  assert.equal(router.hasRemoteFor("/r"), true);
+});
+
+test("hasRemoteFor is false for a repo whose origin cannot be read", async () => {
+  // The local-only repo. `forgeFor` is undefined here too — which is exactly why
+  // one field cannot carry both facts.
+  const { router } = harness({ "/local": null });
+  await router.prForBranch("/local", "b");
+  assert.equal(router.hasRemoteFor("/local"), false);
+  assert.equal(router.forgeFor("/local"), undefined);
+});
+
+test("close() forgets the remote facts along with the decisions", async () => {
+  const { router } = harness({ "/r": "git.example" });
+  await router.prForBranch("/r", "b");
+  router.close();
+  assert.equal(router.hasRemoteFor("/r"), undefined);
 });

@@ -41,6 +41,19 @@ function manager(projects: Array<{ id: string; path: string; settings?: Record<s
   });
 }
 
+/** As {@link manager}, but with a gateway that also answers forge inspection. */
+function managerWithInspector(
+  projects: Array<{ id: string; path: string; settings?: Record<string, unknown> }>,
+  inspector: {
+    forgeFor: (p: string) => unknown;
+    hasRemoteFor: (p: string) => boolean | undefined;
+  },
+) {
+  const m = manager(projects);
+  Object.assign((m as unknown as { _gateway: object })._gateway, inspector);
+  return m;
+}
+
 test("two repos with different overrides get different worktree roots", () => {
   const home = homedir();
   const a = mkdtempSync(join(tmpdir(), "makit-a-"));
@@ -111,4 +124,61 @@ test("collision detection looks in the repo's OWN root, not the global one", () 
     "feat-x",
     "the same name is free under the inherited root",
   );
+});
+
+// ---------------------------------------------------------------------------
+// P2 — the provider choice reaches the router, and the DTO stops conflating
+// "no remote" with "not measured yet".
+// ---------------------------------------------------------------------------
+
+test("the manager reports a repo's stored provider choice, so routing can honour it", () => {
+  // The router asks this at routing time (not at construction), which is what lets
+  // a changed setting take effect without restarting the daemon.
+  const a = mkdtempSync(join(tmpdir(), "makit-p1-"));
+  const b = mkdtempSync(join(tmpdir(), "makit-p2-"));
+  const m = manager([
+    { id: "a", path: a, settings: { provider: "forgejo" } },
+    { id: "b", path: b },
+  ]);
+  assert.equal(m.providerFor(a), "forgejo");
+  assert.equal(m.providerFor(b), "auto", "no override means believe detection");
+});
+
+test("a repo makit does not know reports auto rather than throwing", () => {
+  const m = manager([]);
+  assert.equal(m.providerFor("/nowhere"), "auto");
+});
+
+test("an un-routed repo reports hasRemote true — not measured is not 'no remote'", async () => {
+  // The bug this pins: hasRemote was `forge !== undefined`, so a repo the router had
+  // not reached yet claimed to have no origin. That made the app's "not identified
+  // yet" wording unreachable and sent the reader looking for a missing remote that
+  // was never missing.
+  const a = mkdtempSync(join(tmpdir(), "makit-hr1-"));
+  const m = manager([{ id: "a", path: a }]);
+  const [repo] = await m.listRepos({ includePrs: false });
+  assert.equal(repo.settings?.hasRemote, true);
+  assert.equal(repo.settings?.forge, undefined, "and the forge is still absent");
+});
+
+test("a routed repo with no readable origin reports hasRemote false", async () => {
+  const a = mkdtempSync(join(tmpdir(), "makit-hr2-"));
+  const m = managerWithInspector([{ id: "a", path: a }], {
+    forgeFor: () => undefined,
+    hasRemoteFor: () => false,
+  });
+  const [repo] = await m.listRepos({ includePrs: false });
+  assert.equal(repo.settings?.hasRemote, false);
+});
+
+test("a routed repo with a forge reports hasRemote true and the forge", async () => {
+  const a = mkdtempSync(join(tmpdir(), "makit-hr3-"));
+  const forge = { software: "forgejo" as const, host: "git.example", authed: true, source: "override" as const };
+  const m = managerWithInspector([{ id: "a", path: a }], {
+    forgeFor: () => forge,
+    hasRemoteFor: () => true,
+  });
+  const [repo] = await m.listRepos({ includePrs: false });
+  assert.equal(repo.settings?.hasRemote, true);
+  assert.deepEqual(repo.settings?.forge, forge);
 });

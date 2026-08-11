@@ -42,6 +42,8 @@ import { createFetchHttp, createForgejoGateway, type ForgejoRepoRef } from "./fo
 import { parseForgejoRemote } from "./forgejo/map.js";
 import { createForgeDetector, isGitHubHost } from "./detect.js";
 import { createUnsupportedGateway } from "./unsupported.js";
+import { createNoForgeGateway } from "./none.js";
+import type { ProviderChoice } from "../repo_settings.js";
 
 // Re-exported: routing is where callers reach for it, detection is where it lives.
 export { isGitHubHost };
@@ -157,6 +159,16 @@ export interface RepoForge {
    * authentication and reporting it would be a guess dressed as a fact.
    */
   authed?: boolean;
+  /**
+   * Whether this repo's provider came from probing the instance or from the user's
+   * override (SPEC-48 D3").
+   *
+   * Recorded because the UI must not caption an override "detected": whether the
+   * answer was measured or asserted is the one thing a reader would use to decide
+   * how much to trust it — and when an override is in force, detection's answer is
+   * deliberately never asked for.
+   */
+  source: "detected" | "override";
 }
 
 /**
@@ -166,6 +178,18 @@ export interface RepoForge {
  */
 export interface ForgeInspector {
   forgeFor(repoPath: string): RepoForge | undefined;
+  /**
+   * Whether `origin` could be read, or `undefined` when this repo has not been
+   * routed yet.
+   *
+   * Its own fact rather than `forgeFor(p) !== undefined`, because those two
+   * questions have three answers between them and one boolean cannot hold them:
+   * *not measured yet*, *no remote so no forge is possible*, and *a forge we
+   * identified*. Deriving "has a remote" from the forge decision collapsed the
+   * first two, which made the app's "not identified yet" wording unreachable and
+   * had every un-polled repo claim to have no remote.
+   */
+  hasRemoteFor(repoPath: string): boolean | undefined;
 }
 
 export interface ForgeRouterDeps {
@@ -173,6 +197,14 @@ export interface ForgeRouterDeps {
   forgejo: ForgeGateway;
   /** Used for a forge makit cannot talk to (GitLab, or unidentifiable). */
   unsupported: ForgeGateway;
+  /** Used for a repo whose provider the user set to `none`. See `none.ts`. */
+  none: ForgeGateway;
+  /**
+   * The user's per-repo provider override (SPEC-48 D3"), or `auto` to believe
+   * detection. Read at routing time rather than injected once, because the setting
+   * changes while the daemon runs.
+   */
+  providerFor?: (repoPath: string) => ProviderChoice;
   /** Where a repo lives, or null when the remote cannot be read. */
   resolveInstance: (repoPath: string) => Promise<ForgeInstance | null>;
   /** Ask the instance what software it runs. See `detect.ts`. */
@@ -186,8 +218,13 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
    * Cache of the chosen provider per repo. Stores the PROMISE, not the resolved
    * value, so the home-screen fan-out — which hits every worktree of a repo at
    * once — shares one `git remote` read instead of spawning one per worktree.
+   *
+   * The CHOICE that produced it is stored alongside, so a changed override
+   * re-routes on the next call. Without that, setting a provider would appear to do
+   * nothing until the daemon restarted, which is indistinguishable from the feature
+   * being broken.
    */
-  const chosen = new Map<string, Promise<ForgeGateway>>();
+  const chosen = new Map<string, { choice: ProviderChoice; gateway: Promise<ForgeGateway> }>();
   /**
    * Providers actually reached. Recorded rather than inferred from config because
    * only routing knows the truth, and the poll cadence depends on it.
@@ -197,18 +234,68 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
   const warned = new Set<string>();
   /** What routing concluded, per repo. See {@link RepoForge}. */
   const decided = new Map<string, RepoForge>();
+  /** Whether `origin` was readable, per repo. See {@link ForgeInspector.hasRemoteFor}. */
+  const remotes = new Map<string, boolean>();
 
   function pick(repoPath: string): Promise<ForgeGateway> {
+    const choice = deps.providerFor?.(repoPath) ?? "auto";
     const hit = chosen.get(repoPath);
-    if (hit !== undefined) return hit;
-    const p = (async (): Promise<ForgeGateway> => {
+    // Re-check the choice, but keep the cache when it has not changed: re-resolving
+    // on every call would throw away the read-sharing the fan-out depends on.
+    if (hit !== undefined && hit.choice === choice) return hit.gateway;
+    const p = route(repoPath, choice);
+    chosen.set(repoPath, { choice, gateway: p });
+    return p;
+  }
+
+  function route(repoPath: string, choice: ProviderChoice): Promise<ForgeGateway> {
+    return (async (): Promise<ForgeGateway> => {
+      // `none` short-circuits before the remote is even read. "Talks to no forge"
+      // has to include not looking one up, or it is a label rather than an
+      // instruction — and the decision is the user's, so there is nothing to learn.
+      if (choice === "none") {
+        inUse.add("none");
+        decided.delete(repoPath);
+        remotes.delete(repoPath);
+        return deps.none;
+      }
+
       const inst = await deps.resolveInstance(repoPath);
+      remotes.set(repoPath, inst !== null);
+
+      // An override is honoured WITHOUT probing. That is the point: the cases it
+      // exists for are exactly the ones where the probe cannot answer — a private
+      // instance that 401s an anonymous request, or one behind a proxy that hides
+      // the version endpoint. Spending the probe anyway would delay every poll to
+      // learn nothing.
+      if (choice !== "auto") {
+        if (inst !== null) {
+          decided.set(repoPath, {
+            software: choice,
+            host: inst.host,
+            // Omitted for GitHub for the same reason detection omits it.
+            ...(choice === "github"
+              ? {}
+              : { authed: inst.token !== undefined && inst.token.length > 0 }),
+            source: "override",
+          });
+        }
+        if (choice === "github") {
+          inUse.add("github");
+          return deps.github;
+        }
+        inUse.add("forgejo");
+        return deps.forgejo;
+      }
+
       // No readable remote: stay on gh, which is the status quo for anything that
       // is not a checkout. Routing it elsewhere would change where such a
       // directory fails, for no gain.
       if (inst === null || isGitHubHost(inst.host)) {
         inUse.add("github");
-        if (inst !== null) decided.set(repoPath, { software: "github", host: inst.host });
+        if (inst !== null) {
+          decided.set(repoPath, { software: "github", host: inst.host, source: "detected" });
+        }
         return deps.github;
       }
       const software = await deps.detect(inst.baseUrl, inst.token);
@@ -216,6 +303,7 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
         software,
         host: inst.host,
         authed: inst.token !== undefined && inst.token.length > 0,
+        source: "detected",
       });
       if (software === "forgejo" || software === "gitea") {
         inUse.add("forgejo");
@@ -231,8 +319,6 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
       inUse.add("github");
       return deps.github;
     });
-    chosen.set(repoPath, p);
-    return p;
   }
 
   return {
@@ -270,11 +356,13 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
     },
     providersInUse: () => new Set(inUse),
     forgeFor: (repoPath: string) => decided.get(repoPath),
+    hasRemoteFor: (repoPath: string) => remotes.get(repoPath),
     close(): void {
       chosen.clear();
       inUse.clear();
       warned.clear();
       decided.clear();
+      remotes.clear();
       deps.github.close();
       deps.forgejo.close();
     },
@@ -289,6 +377,8 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
 export function createDefaultForgeGateway(opts: {
   exec: Exec;
   env?: Record<string, string | undefined>;
+  /** See {@link ForgeRouterDeps.providerFor}. */
+  providerFor?: (repoPath: string) => ProviderChoice;
 }): GithubGateway {
   const env = opts.env ?? process.env;
   const readRemote = async (repoPath: string): Promise<string | null> => {
@@ -310,6 +400,8 @@ export function createDefaultForgeGateway(opts: {
       },
     }),
     unsupported: createUnsupportedGateway({ software: () => currentSoftware }),
+    none: createNoForgeGateway(),
+    providerFor: opts.providerFor,
     resolveInstance: async (repoPath) => {
       const url = await readRemote(repoPath);
       if (url === null) return null;

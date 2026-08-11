@@ -85,7 +85,7 @@ export interface BudgetReporting {
 }
 
 /** The providers this build can route to. */
-export type ForgeProviderId = "github" | "forgejo" | "unsupported";
+export type ForgeProviderId = "github" | "forgejo" | "unsupported" | "none";
 
 /** Forge software an instance may run, as reported by detection. */
 export type ForgeSoftwareName = "github" | "forgejo" | "gitea" | "gitlab" | "unknown";
