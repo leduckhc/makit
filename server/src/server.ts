@@ -88,6 +88,7 @@ import { createSelfProbe } from "./metrics/self.js";
 import { WireMeter } from "./metrics/wire_meter.js";
 import { CpuLedger } from "./metrics/ledger.js";
 import { register as registerPortsCommands } from "./ws/commands/ports.js";
+import { register as registerDocsCommands } from "./ws/commands/docs.js";
 import { PortsService } from "./ports/service.js";
 import { ForwardGrants } from "./ports/forward_grants.js";
 import { attachForwardRoute, FORWARD_PREFIX } from "./ports/forward_route.js";
@@ -709,6 +710,12 @@ export function startWsServer(opts: ServerOpts) {
     const cached = portsService.cachedSnapshot();
     if (cached !== undefined) client.send(emitPortsSnapshot(cached));
   };
+  // Stubs for docs watcher — not yet implemented in CLI branch
+  const recomputeDocsWatchers = (): void => {};
+  const sendDocsSnapshot = (client: WsClient): void => {
+    client.send({ t: "event", kind: "docs.snapshot", docs: [] });
+  };
+  const docsService = { snapshot: () => [] } as any;
 
   // -------- collaborators -------------------------------------------------
 
@@ -1089,6 +1096,7 @@ export function startWsServer(opts: ServerOpts) {
       isLocal,
       watchingMetrics: false,
       watchingPorts: false,
+      watchingDocs: false,
       subscribed: new Set<string>(),
       send(frame: OutgoingFrame) {
         if (ws.readyState !== ws.OPEN) return;
@@ -1123,6 +1131,7 @@ export function buildCommandRouter(
   registerGithubCommands(r, deps);
   registerMetricsCommands(r, deps);
   registerPortsCommands(r, deps);
+  registerDocsCommands(r, deps);
 
   // In-app logging: ingest client diagnostics into the server log. Always on
   // (not dev-gated) — field crash reports from iOS are a production need.

@@ -35,6 +35,7 @@ function fakeClient(opts: { authed?: boolean; subs?: string[]; principal?: Princ
     subscribed: new Set(opts.subs ?? []),
     principal: opts.principal,
     watchingMetrics: false,
+    watchingDocs: false,
     watchingPorts: false,
     isLocal: true,
     send: (frame) => sent.push(frame),

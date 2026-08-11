@@ -99,7 +99,7 @@ export class AuthGate {
       // through verbatim — undefined (an existing phone) stays undefined, which
       // `isFullAccess` reads as full access.
       client.principal = { deviceId: device.id, label: device.label, caps: device.caps };
-      client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: device.id });
+      client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: device.id, isLocal: client.isLocal });
       log.info(`[makit] hello: authed as ${device.label} (${device.id}); sent snapshots`);
       this.deps.onAuthenticated(client);
       return;
@@ -131,7 +131,7 @@ export class AuthGate {
     }
 
     log.warn("[makit] hello: unknown bearer (rejected)");
-    this.reject(client, env, "unknown device")
+    this.reject(client, env, "unknown device");
   }
 
   private handlePair(

@@ -31,6 +31,7 @@ function fakeClient(principal?: Principal): WsClient & { events: string[] } {
     authed: true,
     principal,
     watchingMetrics: false,
+    watchingDocs: false,
     watchingPorts: false,
     isLocal: false,
   };

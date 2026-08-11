@@ -33,6 +33,7 @@ function fakeClient(): WsClient & { frames: Frame[]; closed?: { code: number } }
     subscribed: new Set<string>(),
     authed: false,
     watchingMetrics: false,
+    watchingDocs: false,
     watchingPorts: false,
     isLocal: false,
   };
