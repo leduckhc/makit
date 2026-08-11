@@ -4,13 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:makit/desktop/daemon/cli_installer.dart';
 import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
-import 'package:makit/desktop/desktop_app.dart' show desktopControllerProvider;
+import 'package:makit/desktop/daemon/server_profile.dart';
+import 'package:makit/desktop/desktop_app.dart'
+    show desktopControllerProvider, serverProfileProvider;
 import 'package:makit/desktop/desktop_controller.dart';
 import 'package:makit/desktop/screens/fake_control_client.dart';
 import 'package:makit/desktop/screens/providers.dart'
-    show cliInstallerProvider, controlClientProvider;
+    show controlClientProvider;
 import 'package:makit/desktop/settings/sections/server_devices_section.dart';
 import 'package:makit/desktop/settings/server_config.dart';
 import 'package:makit/status/status_center.dart';
@@ -73,19 +74,28 @@ Future<void> _pump(
   required ServerConfigController config,
   DesktopController? controller,
   MakitConnState? connection,
-  CliInstaller? installer,
   StatusCenter? statusCenter,
+  ServerProfile? profile,
+  bool tall = false,
 }) async {
+  if (tall) {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         serverConfigProvider.overrideWith((ref) => config),
+        serverProfileProvider.overrideWithValue(profile ?? _testProfile()),
         desktopControllerProvider.overrideWithValue(
           controller ?? _controller(),
         ),
         connectionProvider.overrideWithValue(connection ?? MakitConnState()),
-        if (installer != null)
-          cliInstallerProvider.overrideWithValue(installer),
+        controlClientProvider.overrideWithValue(
+          FakeControlClient(devices: const [], sessions: const []),
+        ),
         if (statusCenter != null)
           statusCenterProvider.overrideWithValue(statusCenter),
       ],
@@ -95,6 +105,15 @@ Future<void> _pump(
   await tester.pump();
 }
 
+ServerProfile _testProfile() => const ServerProfile(
+  id: 'work',
+  name: 'Work',
+  kind: ProfileKind.user,
+  home: '/Users/test/.makit',
+  port: 7777,
+  storage: ProfileStorage.legacy,
+);
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -103,16 +122,17 @@ void main() {
     return ServerConfigController(prefs, const ServerConfig());
   }
 
-  testWidgets('renders the section with its subsection headers', (
+  testWidgets('renders the four-row Server group and subsection headers', (
     tester,
   ) async {
     await _pump(tester, config: await makeConfig());
     expect(find.text('SERVER & DEVICES'), findsOneWidget);
     expect(find.text('SERVER'), findsOneWidget);
-    expect(find.text('Endpoint'), findsOneWidget);
-    expect(find.text('Lifecycle'), findsOneWidget);
+    expect(find.text('Who can reach this server?'), findsOneWidget);
+    expect(find.text('Pair a phone'), findsOneWidget);
+    expect(find.text('Diagnostics'), findsOneWidget);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pump();
     expect(find.text('DEVICES'), findsOneWidget);
 
@@ -121,138 +141,242 @@ void main() {
     expect(find.text('SESSIONS'), findsOneWidget);
   });
 
-  testWidgets('defaults to Auto and has no Save button', (tester) async {
+  testWidgets('active-profile row shows the profile name and a status', (
+    tester,
+  ) async {
+    await _pump(tester, config: await makeConfig());
+    expect(find.text('Work'), findsOneWidget);
+    expect(
+      find.text(
+        'Projects, agents, devices and sessions are separate per profile.',
+      ),
+      findsOneWidget,
+    );
+    // Daemon is stopped in tests → the status reads "Stopped".
+    expect(find.text('Stopped'), findsOneWidget);
+  });
+
+  testWidgets('defaults to My devices and has no Save button', (tester) async {
     final config = await makeConfig();
     await _pump(tester, config: config);
 
-    expect(config.current.bindMode, ServerBindMode.auto);
+    expect(config.current.reachability, Reachability.myDevices);
+    expect(find.text('Save & restart server'), findsNothing);
     expect(find.widgetWithText(FilledButton, 'Save'), findsNothing);
-    expect(find.widgetWithText(OutlinedButton, 'Save'), findsNothing);
 
-    // Auto mode shows no host field.
+    // The LAN fallback checkbox is shown under "My devices"; it is off.
+    expect(config.current.allowLanFallback, isFalse);
     expect(
-      find.ancestor(of: find.text('Host'), matching: find.byType(TextField)),
-      findsNothing,
-    );
-  });
-
-  testWidgets('selecting LAN persists the bind mode', (tester) async {
-    final config = await makeConfig();
-    await _pump(tester, config: config);
-
-    await tester.tap(find.text('LAN'));
-    await tester.pump();
-
-    expect(config.current.bindMode, ServerBindMode.lan);
-  });
-
-  testWidgets('Custom reveals a host field that applies on commit', (
-    tester,
-  ) async {
-    final config = await makeConfig();
-    await _pump(tester, config: config);
-
-    await tester.tap(find.text('Custom'));
-    await tester.pump();
-    expect(config.current.bindMode, ServerBindMode.custom);
-
-    final host = find.ancestor(
-      of: find.text('Host'),
-      matching: find.byType(TextField),
-    );
-    await tester.enterText(host, '0.0.0.0');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump();
-
-    expect(config.current.customHost, '0.0.0.0');
-  });
-
-  testWidgets('endpoint applies a valid port on commit', (tester) async {
-    final config = await makeConfig();
-    await _pump(tester, config: config);
-
-    final port = find.ancestor(
-      of: find.text('Port'),
-      matching: find.byType(TextField),
-    );
-    await tester.enterText(port, '9000');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump();
-
-    expect(config.current.port, 9000);
-  });
-
-  testWidgets('endpoint rejects an out-of-range port and keeps config', (
-    tester,
-  ) async {
-    final config = await makeConfig();
-    await _pump(tester, config: config);
-
-    final port = find.ancestor(
-      of: find.text('Port'),
-      matching: find.byType(TextField),
-    );
-    await tester.enterText(port, '70000');
-    await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.pump();
-
-    expect(config.current.port, kDefaultServerPort);
-    expect(
-      find.text('Port must be a number between 1 and 65535.'),
+      find.text('Also allow plain Wi-Fi when Tailscale is off'),
       findsOneWidget,
     );
   });
 
-  testWidgets('shows the fingerprint with a copy action when connected', (
+  testWidgets('selecting "Just this Mac" persists thisMacOnly + restarts', (
     tester,
   ) async {
-    // Tall viewport so the fingerprint row (in the Server group) is on-screen
-    // and its copy button is hit-testable.
-    tester.view.physicalSize = const Size(1200, 2400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+    final config = await makeConfig();
+    final controller = _okController();
+    addTearDown(controller.dispose);
+    await _pump(tester, config: config, controller: controller);
 
-    // Capture what the copy button writes to the system clipboard.
-    String? copied;
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied = (call.arguments as Map)['text'] as String?;
-        }
-        return null;
-      },
+    await tester.tap(find.text('Just this Mac'));
+    await tester.pumpAndSettle();
+
+    expect(config.current.reachability, Reachability.thisMacOnly);
+  });
+
+  testWidgets('the LAN fallback checkbox toggles allowLanFallback', (
+    tester,
+  ) async {
+    final config = await makeConfig();
+    final controller = _okController();
+    addTearDown(controller.dispose);
+    await _pump(tester, config: config, controller: controller);
+
+    await tester.tap(find.byType(Checkbox));
+    await tester.pumpAndSettle();
+
+    expect(config.current.allowLanFallback, isTrue);
+  });
+
+  testWidgets('a failed restart after a reachability change is reported', (
+    tester,
+  ) async {
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    final controller = _failingController(
+      'makit: failed to start \u2014 no response within 3000ms '
+      '(see /Users/le/.makit-dev/a1b2c3d4/makit.log)',
     );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    addTearDown(controller.dispose);
+    await _pump(
+      tester,
+      config: await makeConfig(),
+      controller: controller,
+      statusCenter: center,
+    );
+
+    await tester.tap(find.text('Just this Mac'));
+    await tester.pumpAndSettle();
+
+    expect(
+      center.events.where((e) => e.severity == StatusSeverity.failure),
+      isNotEmpty,
+    );
+    expect(center.events.last.detail, contains('makit.log'));
+  });
+
+  testWidgets('Install CLI does not live in this section (moved to General)', (
+    tester,
+  ) async {
+    await _pump(tester, config: await makeConfig(), tall: true);
+    expect(find.text('Install CLI'), findsNothing);
+  });
+
+  group('Diagnostics disclosure', () {
+    testWidgets('is collapsed until tapped, then reveals the moved rows', (
+      tester,
+    ) async {
+      await _pump(tester, config: await makeConfig(), tall: true);
+
+      // Collapsed: none of the moved rows are built yet.
+      expect(find.text('Lifecycle'), findsNothing);
+
+      await tester.tap(find.text('Diagnostics'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Lifecycle'), findsOneWidget);
+      expect(find.text('CLI'), findsOneWidget);
+      expect(find.text('Fingerprint / TLS trust'), findsOneWidget);
+      expect(find.text('Advanced'), findsOneWidget);
+    });
+
+    testWidgets('Advanced applies a valid port on commit', (tester) async {
+      final config = await makeConfig();
+      final controller = _okController();
+      addTearDown(controller.dispose);
+      await _pump(tester, config: config, controller: controller, tall: true);
+
+      await tester.tap(find.text('Diagnostics'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Advanced'));
+      await tester.pumpAndSettle();
+
+      final port = find.ancestor(
+        of: find.text('Port'),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(port, '9000');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(config.current.port, 9000);
+    });
+
+    testWidgets('Advanced rejects an out-of-range port and keeps config', (
+      tester,
+    ) async {
+      final config = await makeConfig();
+      final controller = _okController();
+      addTearDown(controller.dispose);
+      await _pump(tester, config: config, controller: controller, tall: true);
+
+      await tester.tap(find.text('Diagnostics'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Advanced'));
+      await tester.pumpAndSettle();
+
+      final port = find.ancestor(
+        of: find.text('Port'),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(port, '70000');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(config.current.port, kDefaultServerPort);
+      expect(
+        find.text('Port must be a number between 1 and 65535.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a failed Lifecycle "Start" is reported', (tester) async {
+      final center = StatusCenter();
+      addTearDown(center.dispose);
+      final controller = _failingController(
+        'makit: failed to start \u2014 no response within 3000ms',
+      );
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        config: await makeConfig(),
+        controller: controller,
+        statusCenter: center,
+        tall: true,
+      );
+
+      await tester.tap(find.text('Diagnostics'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+
+      expect(
+        center.events.where((e) => e.severity == StatusSeverity.failure),
+        isNotEmpty,
+      );
+      expect(center.events.last.detail, contains('failed to start'));
+    });
+
+    testWidgets('shows the fingerprint with a copy action when connected', (
+      tester,
+    ) async {
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
-        null,
-      ),
-    );
-
-    const fingerprint = 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99';
-    final connected = MakitConnState(
-      servers: [
-        PairedServer(
-          host: 'h',
-          port: 7788,
-          fingerprint: fingerprint,
-          bearer: 'b',
-          label: 'Mac',
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied = (call.arguments as Map)['text'] as String?;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
         ),
-      ],
-      activeId: fingerprint,
-    );
-    await _pump(tester, config: await makeConfig(), connection: connected);
+      );
 
-    expect(find.byTooltip('Copy fingerprint'), findsOneWidget);
+      const fingerprint = 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99';
+      final connected = MakitConnState(
+        servers: [
+          PairedServer(
+            host: 'h',
+            port: 7788,
+            fingerprint: fingerprint,
+            bearer: 'b',
+            label: 'Mac',
+          ),
+        ],
+        activeId: fingerprint,
+      );
+      await _pump(
+        tester,
+        config: await makeConfig(),
+        connection: connected,
+        tall: true,
+      );
 
-    await tester.tap(find.byTooltip('Copy fingerprint'));
-    await tester.pump();
+      await tester.tap(find.text('Diagnostics'));
+      await tester.pumpAndSettle();
 
-    // The full fingerprint is copied (the subtitle only shows a shortened form).
-    expect(copied, fingerprint);
+      expect(find.byTooltip('Copy fingerprint'), findsOneWidget);
+      await tester.tap(find.byTooltip('Copy fingerprint'));
+      await tester.pump();
+      expect(copied, fingerprint);
+    });
   });
 
   testWidgets('unpair shows a confirm dialog that can be cancelled', (
@@ -280,12 +404,6 @@ void main() {
   testWidgets('nav rows disclose their content inline (no page push)', (
     tester,
   ) async {
-    // Tall viewport so every row lays out (a ListView doesn't build far
-    // off-screen children) and is hit-testable without scrolling.
-    tester.view.physicalSize = const Size(1200, 2400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
     final config = await makeConfig();
     final observer = _RecordingObserver();
     await tester.pumpWidget(
@@ -304,17 +422,18 @@ void main() {
         ),
       ),
     );
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pump();
     observer.pushed.clear();
 
-    // Collapsed: the row's inline content is not built yet.
     expect(find.text('No running sessions'), findsNothing);
 
     await tester.tap(find.text('Running sessions'));
     await tester.pumpAndSettle();
 
-    // Expanded inline — content is revealed and nothing was pushed onto the
-    // navigator.
     expect(find.text('No running sessions'), findsOneWidget);
     expect(observer.pushed.whereType<MaterialPageRoute<dynamic>>(), isEmpty);
   });
@@ -322,25 +441,7 @@ void main() {
   testWidgets('rows behave as an accordion (opening one closes the other)', (
     tester,
   ) async {
-    tester.view.physicalSize = const Size(1200, 2400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final config = await makeConfig();
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          serverConfigProvider.overrideWith((ref) => config),
-          desktopControllerProvider.overrideWithValue(_controller()),
-          connectionProvider.overrideWithValue(MakitConnState()),
-          controlClientProvider.overrideWithValue(
-            FakeControlClient(devices: const [], sessions: const []),
-          ),
-        ],
-        child: const MaterialApp(home: Scaffold(body: ServerDevicesSection())),
-      ),
-    );
-    await tester.pump();
+    await _pump(tester, config: await makeConfig(), tall: true);
 
     await tester.tap(find.text('Paired devices'));
     await tester.pumpAndSettle();
@@ -349,141 +450,7 @@ void main() {
     await tester.tap(find.text('Running sessions'));
     await tester.pumpAndSettle();
 
-    // Opening Sessions collapses the previously-open Devices row.
     expect(find.text('No running sessions'), findsOneWidget);
     expect(find.text('No paired devices'), findsNothing);
-  });
-
-  group('Install CLI button', () {
-    late Directory tmp;
-    setUp(() => tmp = Directory.systemTemp.createTempSync('cli_install_ui'));
-    tearDown(() => tmp.deleteSync(recursive: true));
-
-    CliInstaller installerWithBundle({required bool bundled}) {
-      final path = '${tmp.path}/Resources/makit/makit';
-      if (bundled) {
-        File(path).createSync(recursive: true);
-      }
-      return CliInstaller(bundledCliPath: () => path, homeDir: () => tmp.path);
-    }
-
-    Future<void> scrollToCli(WidgetTester tester) async {
-      await tester.scrollUntilVisible(
-        find.text('CLI'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pump();
-    }
-
-    testWidgets('shown when the app bundles a CLI; installs on tap', (
-      tester,
-    ) async {
-      final center = StatusCenter();
-      addTearDown(center.dispose);
-      await _pump(
-        tester,
-        config: await makeConfig(),
-        installer: installerWithBundle(bundled: true),
-        statusCenter: center,
-      );
-      await scrollToCli(tester);
-
-      final button = find.text('Install CLI');
-      expect(button, findsOneWidget);
-
-      await tester.tap(button);
-      await tester.pump();
-      await tester.pump();
-
-      expect(File('${tmp.path}/.local/bin/makit').existsSync(), isTrue);
-      expect(center.events.single.title, startsWith('Installed makit CLI'));
-    });
-
-    testWidgets('hidden when the build has no bundled CLI', (tester) async {
-      await _pump(
-        tester,
-        config: await makeConfig(),
-        installer: installerWithBundle(bundled: false),
-      );
-      await scrollToCli(tester);
-
-      expect(find.text('Install CLI'), findsNothing);
-    });
-  });
-
-  group('daemon action failures', () {
-    // `restart()`'s DaemonActionResult used to be discarded by both call sites,
-    // so a daemon that refused to start (the common case: its port is already
-    // held by another build) failed completely silently in the UI.
-    testWidgets('a failed "Save & restart server" is reported', (tester) async {
-      final center = StatusCenter();
-      addTearDown(center.dispose);
-      final controller = _failingController(
-        'makit: failed to start \u2014 no response within 3000ms '
-        '(see /Users/le/.makit-dev/a1b2c3d4/makit.log)',
-      );
-      addTearDown(controller.dispose);
-      await _pump(
-        tester,
-        config: await makeConfig(),
-        controller: controller,
-        statusCenter: center,
-      );
-
-      await tester.tap(find.text('Save & restart server'));
-      await tester.pumpAndSettle();
-
-      expect(center.events, isNotEmpty);
-      final event = center.events.last;
-      expect(event.severity, StatusSeverity.failure);
-      expect(event.detail, contains('failed to start'));
-      expect(event.detail, contains('makit.log'));
-    });
-
-    testWidgets('a successful restart posts no failure', (tester) async {
-      final center = StatusCenter();
-      addTearDown(center.dispose);
-      final controller = _okController();
-      addTearDown(controller.dispose);
-      await _pump(
-        tester,
-        config: await makeConfig(),
-        controller: controller,
-        statusCenter: center,
-      );
-
-      await tester.tap(find.text('Save & restart server'));
-      await tester.pumpAndSettle();
-
-      expect(
-        center.events.where((e) => e.severity == StatusSeverity.failure),
-        isEmpty,
-      );
-    });
-    testWidgets('a failed Lifecycle "Start" is reported', (tester) async {
-      final center = StatusCenter();
-      addTearDown(center.dispose);
-      final controller = _failingController(
-        'makit: failed to start \u2014 no response within 3000ms',
-      );
-      addTearDown(controller.dispose);
-      await _pump(
-        tester,
-        config: await makeConfig(),
-        controller: controller,
-        statusCenter: center,
-      );
-
-      // The Lifecycle row offers Start while the daemon is not running.
-      await tester.tap(find.text('Start'));
-      await tester.pumpAndSettle();
-
-      expect(
-        center.events.where((e) => e.severity == StatusSeverity.failure),
-        isNotEmpty,
-      );
-      expect(center.events.last.detail, contains('failed to start'));
-    });
   });
 }

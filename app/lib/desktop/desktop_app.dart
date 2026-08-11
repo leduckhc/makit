@@ -42,7 +42,12 @@ import 'chat/loopback_pairing.dart';
 import 'chat/groups/groups_controller.dart';
 import 'chat/sidebar_layout.dart';
 import 'daemon/daemon_lifecycle.dart';
+import 'daemon/profile_deleter.dart';
+import 'daemon/profile_lifecycle.dart';
+import 'daemon/profile_registry.dart';
+import 'daemon/profiles_controller.dart';
 import 'daemon/server_profile.dart';
+import 'settings/sections/profiles_providers.dart';
 import 'desktop_controller.dart';
 import 'desktop_ports_route.dart';
 import 'screens/providers.dart';
@@ -61,11 +66,19 @@ final desktopControllerProvider = Provider<DesktopController>(
   (ref) => throw UnimplementedError('overridden in runDesktopApp'),
 );
 
-/// The isolated server profile this app instance runs against (per build).
-/// Self-derives from the running executable by default (so widget tests need no
-/// override); [runDesktopApp] overrides it with the already-derived profile.
+/// The server profile this app instance runs against.
+///
+/// Defaults to [ServerProfile.bootstrap] so widget tests need no override;
+/// [runDesktopApp] replaces it with the profile [ProfileRegistry] resolved,
+/// which is the one with a persisted identity and a probed port.
 final serverProfileProvider = Provider<ServerProfile>(
-  (ref) => ServerProfile.resolve(),
+  (ref) => ServerProfile.bootstrap(),
+);
+
+/// The registry backing [serverProfileProvider]. Overridden alongside it so the
+/// Profiles UI can list, create, rename and delete without re-reading the file.
+final profileRegistryProvider = Provider<ProfileRegistry>(
+  (ref) => throw UnimplementedError('overridden in runDesktopApp'),
 );
 
 /// Navigator for the chat window, so the sidebar can push the Settings/Server
@@ -77,10 +90,21 @@ Future<void> runDesktopApp() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized();
 
-  // Per-build isolation: a `main` build and a worktree build each get their own
-  // MAKIT_HOME, port, prefs namespace, and window label so two windows never
-  // collide. The installed app keeps the historical ~/.makit + 7777 defaults.
-  final profile = ServerProfile.resolve();
+  // Per-profile isolation: a `main` build and a worktree build each get their
+  // own MAKIT_HOME, port, prefs namespace and window label so two windows never
+  // collide. Identity is persisted in ~/.makit/profiles.json rather than derived
+  // from this executable's path, so moving or rebuilding a worktree re-binds to
+  // the same profile instead of orphaning it (SPEC-50 D3).
+  final resolvedHome = Platform.environment['HOME'] ?? '';
+  final registry = ProfileRegistry.load(makitRoot: '$resolvedHome/.makit');
+  final resolution = await registry.resolveFor(
+    executablePath: Platform.resolvedExecutable,
+    home: resolvedHome,
+  );
+  final profile = resolution.profile;
+  // Only write when the set actually changed: launching must not rewrite the
+  // registry (and bump its mtime) on every start.
+  if (resolution.created) registry.save();
 
   final socketPath = profile.controlSocketPath;
   final client = ReconnectingControlClient(
@@ -88,9 +112,12 @@ Future<void> runDesktopApp() async {
     connect: (c) => (c as MakitControlClient).connect(),
     dispose: (c) => (c as MakitControlClient).dispose(),
   );
-  // Namespace SharedPreferences per profile (dev builds only) so a worktree
-  // window's settings don't overwrite main's. Must run before getInstance().
-  if (!profile.isDefault) SharedPreferences.setPrefix(profile.prefsPrefix);
+  // Namespace SharedPreferences per profile (non-legacy profiles only) so a
+  // worktree window's settings don't overwrite the installed app's. Must run
+  // before getInstance(). Retired by SPEC-50 D11 when in-place switching lands.
+  if (profile.storage != ProfileStorage.legacy) {
+    SharedPreferences.setPrefix(profile.prefsPrefix);
+  }
   final prefs = await SharedPreferences.getInstance();
   final configController = ServerConfigController(
     prefs,
@@ -106,6 +133,25 @@ Future<void> runDesktopApp() async {
     // Pass MAKIT_HOME so the spawned daemon writes its socket/pid/db under this
     // profile's home — matching the control socket the app connects to above.
     environment: profile.environment,
+  );
+
+  // Profiles (SPEC-50 D7/D8/D9). All three share ONE registry instance: the
+  // deleter removes the entry directly and the controller repaints from the same
+  // list, so two copies would show a profile that no longer exists.
+  final cliResolver = MakitCliResolver(
+    overridePath: () => configController.current.cliPath,
+  );
+  final profileLifecycle = ProfileLifecycle(resolver: cliResolver);
+  final profileDeleter = ProfileDeleter(
+    registry: registry,
+    lifecycle: profileLifecycle,
+    activeProfileId: profile.id,
+  );
+  final profilesController = ProfilesController(
+    registry: registry,
+    activeProfileId: profile.id,
+    isRunning: profileLifecycle.isRunning,
+    diskUsage: profileDeleter.diskUsage,
   );
   final keymapController = KeymapController.load(
     prefs,
@@ -177,11 +223,15 @@ Future<void> runDesktopApp() async {
         controlClientProvider.overrideWithValue(client),
         desktopControllerProvider.overrideWithValue(controller),
         serverProfileProvider.overrideWithValue(profile),
+        profileRegistryProvider.overrideWithValue(registry),
+        profilesControllerProvider.overrideWithValue(profilesController),
+        profileLifecycleProvider.overrideWithValue(profileLifecycle),
+        profileDeleterProvider.overrideWithValue(profileDeleter),
         // Per-profile pairing bearer so main and worktree builds never clobber
         // each other's stored server (a shared bearer wedged the app into
         // permanent "Reconnecting").
         secureStorageProvider.overrideWithValue(
-          defaultSecureStore(namespace: profile.isDefault ? null : profile.id),
+          defaultSecureStore(namespace: profile.secureStoreNamespace),
         ),
         serverConfigProvider.overrideWith((ref) => configController),
         keymapProvider.overrideWith((ref) => keymapController),

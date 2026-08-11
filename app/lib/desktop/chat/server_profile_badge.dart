@@ -1,10 +1,14 @@
-/// A small colored pill naming the server profile this window runs against
-/// (e.g. `main` vs a worktree). Renders nothing for the default (installed)
-/// profile — shipped users have a single server and don't need the noise.
+/// A small coloured pill naming the server profile this window runs against
+/// (e.g. `Work` vs a worktree), shown for **every** profile.
 ///
-/// The color is derived deterministically from the profile id so the *same*
-/// build always gets the *same* hue: a quick visual cue to tell a `main` window
-/// apart from a worktree window at a glance.
+/// It used to render nothing for the installed profile, which was right while
+/// profiles were invisible plumbing and wrong the moment they became something
+/// the user chooses (SPEC-50): a single-profile user sees one calm pill, and a
+/// multi-profile user is never left guessing which server a window talks to.
+///
+/// The colour is derived deterministically from the profile id so the *same*
+/// profile always gets the *same* hue: a quick visual cue to tell one window
+/// from another at a glance.
 library;
 
 import 'package:flutter/material.dart';
@@ -21,9 +25,7 @@ class ServerProfileBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(serverProfileProvider);
-    if (profile.isDefault) return const SizedBox.shrink();
-
-    final color = _hueFor(profile.id);
+    final color = hueForProfileId(profile.id);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: kSpace8,
@@ -44,7 +46,7 @@ class ServerProfileBadge extends ConsumerWidget {
           ),
           const SizedBox(width: kSpace6),
           Text(
-            profile.label,
+            profile.name,
             style: Theme.of(context).textTheme.labelXs?.copyWith(
               fontWeight: FontWeight.w600,
               color: color,
@@ -54,13 +56,17 @@ class ServerProfileBadge extends ConsumerWidget {
       ),
     );
   }
+}
 
-  /// Maps a profile id to a stable, well-spaced hue.
-  static Color _hueFor(String id) {
-    var h = 0;
-    for (final c in id.codeUnits) {
-      h = (h * 31 + c) & 0xffffff;
-    }
-    return HSLColor.fromAHSL(1, (h % 360).toDouble(), 0.6, 0.55).toColor();
+/// Maps a profile id to a stable, well-spaced hue.
+///
+/// Top-level so the Profiles list and the switcher menu can colour their rows
+/// identically — the colour is part of a profile's identity, not decoration
+/// private to the badge.
+Color hueForProfileId(String id) {
+  var h = 0;
+  for (final c in id.codeUnits) {
+    h = (h * 31 + c) & 0xffffff;
   }
+  return HSLColor.fromAHSL(1, (h % 360).toDouble(), 0.6, 0.55).toColor();
 }
