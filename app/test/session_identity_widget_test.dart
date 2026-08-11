@@ -357,6 +357,38 @@ void main() {
       },
     );
 
+    testWidgets('passing both sessionId and identity is a programming error', (
+      tester,
+    ) async {
+      // The API is exactly-one-of, asserted. The first wiring accepted both and
+      // silently ignored `identity`, so every door did a redundant `ref.read`
+      // whose result was discarded.
+      await tester.pumpWidget(
+        _host(
+          Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () {},
+              child: const Text('x'),
+            ),
+          ),
+        ),
+      );
+      final context = tester.element(find.text('x'));
+      expect(
+        () => showSessionIdentity(
+          context: context,
+          desktop: false,
+          sessionId: 's1',
+          identity: identity(),
+        ),
+        throwsAssertionError,
+      );
+      expect(
+        () => showSessionIdentity(context: context, desktop: false),
+        throwsAssertionError,
+      );
+    });
+
     testWidgets(
       'D19 — the panel fills in live when the id arrives while it is open',
       (tester) async {

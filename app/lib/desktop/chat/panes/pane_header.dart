@@ -9,6 +9,7 @@ import '../../../store/store.dart';
 import '../../../status/status_event.dart';
 import '../../../status/status_providers.dart';
 import '../../../ui/composer/client_commands.dart';
+import '../../../ui/session/session_identity.dart';
 import '../../../ui/widgets/menu_item.dart';
 import '../sidebar_layout.dart';
 import '../title_bar_strip.dart';
@@ -145,6 +146,15 @@ class SessionActionsMenu extends ConsumerWidget {
               ref: ref,
               sessionId: sessionId,
             );
+          case 'details':
+            // Reads state the client already holds (D13) — not capability
+            // gated. `desktop: true` for the anchored popover, `sessionId` so
+            // the open panel watches and fills in live (D19).
+            showSessionIdentity(
+              context: context,
+              desktop: true,
+              sessionId: sessionId,
+            );
           case 'quit':
             _confirmClose(context, ref);
         }
@@ -154,6 +164,11 @@ class SessionActionsMenu extends ConsumerWidget {
           value: 'rename',
           icon: PhosphorIconsLight.pencilSimple,
           label: 'Rename session',
+        ),
+        themedMenuItem(
+          value: 'details',
+          icon: PhosphorIconsLight.fingerprint,
+          label: 'Session details',
         ),
         const PopupMenuDivider(),
         themedMenuItem(

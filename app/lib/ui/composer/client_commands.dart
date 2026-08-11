@@ -7,6 +7,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -20,6 +21,7 @@ import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
 import '../widgets/sheet_header.dart';
 import '../widgets/searchable_list_sheet.dart';
+import '../session/session_identity.dart';
 import '../../app/routes.dart';
 
 typedef ClientCmdHandler =
@@ -260,6 +262,57 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       status.progress(
         'Switching to ${picked.name}…',
         source: StatusSources.agent,
+        sessionId: sessionId,
+      );
+    },
+  ),
+  ClientCommand(
+    name: 'session',
+    description: 'Show this session’s identity, or /session id to copy its id',
+    handler: (context, ref, {required sessionId, required arg}) async {
+      // WHY a CLIENT command and not sent to the agent (D7): pi's own `/session`
+      // is an agent command, so in makit's composer it would fall through to
+      // `store.sendMessage` and — mid-turn — land in the server's pending queue,
+      // executing only after the turn it was meant to help you hand off.
+      // Intercepting it here answers at 100% of a turn. This handler returning
+      // (via `handleClientCommand` matching) is the fix for that bug.
+      //
+      // Resolved before any await (SPEC-48 D3, enforced by
+      // `test/status/status_lifetime_test.dart`): `ref` dies with its widget.
+      final status = ref.status;
+      // `/session id` copies ONLY the bare agent session id (D6). The panel's
+      // `Copy all` is the "give me everything" job; this is "give me the id", so
+      // it must not emit the whole label:value payload.
+      if (arg == 'id') {
+        final id = ref.read(sessionIdentityProvider(sessionId)).agentSessionId;
+        if (id == null) {
+          // Say why rather than copying an empty string: a draft (or a back end
+          // with no native session concept) has no id to hand off yet.
+          status.warning(
+            'No agent session id yet',
+            source: StatusSources.session,
+            sessionId: sessionId,
+          );
+          return;
+        }
+        await Clipboard.setData(ClipboardData(text: id));
+        status.info(
+          'Session id copied',
+          source: StatusSources.session,
+          detail: id,
+          sessionId: sessionId,
+        );
+        return;
+      }
+      // Bare `/session` opens the panel. Presented as a bottom sheet
+      // (`desktop: false`) like the other client commands (`/model`,
+      // `/thinking`): the invocation comes from the composer, where a sheet is
+      // the established surface. `sessionId` is passed so the open panel watches
+      // and fills in live (D19).
+      if (!context.mounted) return;
+      await showSessionIdentity(
+        context: context,
+        desktop: false,
         sessionId: sessionId,
       );
     },

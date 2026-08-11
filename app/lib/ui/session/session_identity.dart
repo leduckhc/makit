@@ -30,6 +30,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
+import '../../store/store.dart';
 
 // ─── per-agent vocabulary (D10) ──────────────────────────────────────────────
 
@@ -78,6 +79,38 @@ const _unknownAgentVocabulary = AgentSessionVocabulary(
   label: 'Agent session',
   resume: null,
 );
+
+// ─── the store seam (C2a) ────────────────────────────────────────────────────
+
+/// Maps the store's [Session] to the [SessionIdentity] the panel watches (D19).
+///
+/// It returns a `SessionIdentity` with null FIELDS — never null itself — and
+/// never throws. Rationale: the panel always has something to show (the makit
+/// session id at minimum), so a null provider would force every call site to
+/// branch on it.
+///
+/// An UNKNOWN session id echoes the requested id back as [makitSessionId] with
+/// an unknown agent, rather than throwing or returning null: that is truthful
+/// (this client holds no record of it) and, like the empty case, keeps the
+/// panel openable without a null check. A draft (no `agent` yet) falls back to
+/// its `pendingAgent` for the label, matching `StoreController._cacheCommands`.
+final sessionIdentityProvider = Provider.family<SessionIdentity, String>((
+  ref,
+  sessionId,
+) {
+  final session = ref.watch(sessionsProvider).byId(sessionId);
+  final agent = session == null
+      ? ''
+      : (session.agent.isNotEmpty
+            ? session.agent
+            : (session.pendingAgent ?? ''));
+  return SessionIdentity.from(
+    agent: agent,
+    makitSessionId: sessionId,
+    agentSessionId: session?.agentSessionId,
+    transcriptPath: session?.transcriptPath,
+  );
+});
 
 // ─── the value type ──────────────────────────────────────────────────────────
 
@@ -401,11 +434,33 @@ class _CopyAllRow extends ConsumerWidget {
 
 /// Opens the identity panel: a modal bottom sheet on mobile, an anchored
 /// popover on desktop. Same split as `ContextUsageButton` (SPEC-37).
+///
+/// Pass EXACTLY ONE of [sessionId] or [identity]:
+///
+///  * [sessionId] — the production path. The panel WATCHES
+///    [sessionIdentityProvider] and rebuilds live (D19): a draft's panel can be
+///    opened before the adapter assigns `agentSessionId`, and that assignment
+///    fans out a fresh snapshot, so a watching panel fills in its rows while
+///    open rather than lying until reopened.
+///  * [identity] — the store-free path, for the QA harness and widget tests.
+///
+/// Exactly one, asserted, rather than "both, and one silently wins": the first
+/// wiring took a required [identity] *and* an optional [sessionId], so all three
+/// doors did a redundant `ref.read` whose result was then discarded. An argument
+/// that is ignored depending on another argument is a trap, not an API.
 Future<void> showSessionIdentity({
   required BuildContext context,
-  required SessionIdentity identity,
   required bool desktop,
+  String? sessionId,
+  SessionIdentity? identity,
 }) {
+  assert(
+    (sessionId == null) != (identity == null),
+    'pass exactly one of sessionId (watches the store) or identity (static)',
+  );
+  Widget body() => sessionId == null
+      ? SessionIdentityDetails(identity: identity!)
+      : _WatchedIdentity(sessionId: sessionId);
   if (!desktop) {
     return showModalBottomSheet<void>(
       context: context,
@@ -414,9 +469,7 @@ Future<void> showSessionIdentity({
       // panel's height depends on how far the transcript path wraps — which on a
       // 320pt phone is four lines.
       builder: (_) => SafeArea(
-        child: SingleChildScrollView(
-          child: SessionIdentityDetails(identity: identity),
-        ),
+        child: SingleChildScrollView(child: body()),
       ),
     );
   }
@@ -445,12 +498,22 @@ Future<void> showSessionIdentity({
               ),
               maxHeight: window.height - 2 * _kIdentityPanelMargin,
             ),
-            child: SingleChildScrollView(
-              child: SessionIdentityDetails(identity: identity),
-            ),
+            child: SingleChildScrollView(child: body()),
           ),
         ),
       );
     },
   );
+}
+
+/// Renders [SessionIdentityDetails] against a WATCHED identity, so the open
+/// panel fills in live when the agent id is assigned underneath it (D19).
+class _WatchedIdentity extends ConsumerWidget {
+  const _WatchedIdentity({required this.sessionId});
+
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) =>
+      SessionIdentityDetails(identity: ref.watch(sessionIdentityProvider(sessionId)));
 }

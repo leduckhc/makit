@@ -17,6 +17,7 @@ import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
 import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
+import { resolveTranscriptPath, type TranscriptQuery } from "./transcript-path.js";
 import { DetachedAdapter } from "./adapters/detached.js";
 import { withDeadline } from "./adapters/deadline.js";
 import { buildAdapter, piAcpSpec } from "./agent_factory.js";
@@ -103,6 +104,12 @@ export interface ManagerOpts {
   projects: Array<string | PersistedProject>;
   /** Override the production pi adapter, used by deterministic e2e tests. */
   adapterFactory?: AdapterFactory;
+  /**
+   * Resolve a session's transcript path (SPEC-51 D3). Injected so tests can
+   * observe the (memoized) directory read; production uses the real resolver
+   * over the pi agent dir.
+   */
+  transcriptResolver?: (q: TranscriptQuery) => string | undefined;
   /**
    * Called with the current `{ id, path }` list after every add/remove so the
    * caller can persist them (ids included, so they survive a restart).
@@ -201,6 +208,15 @@ export class SessionManager extends EventEmitter {
   /** Tail of the per-repo worktree-creation chain (see withWorktreeCreateLock). */
   private readonly worktreeCreateLock = new Map<string, Promise<unknown>>();
   private readonly adapterFactory?: AdapterFactory;
+  private readonly transcriptResolver: (q: TranscriptQuery) => string | undefined;
+  /**
+   * Per-session-id transcript path cache, INCLUDING misses (SPEC-51 D3). A
+   * `sessions.snapshot` is rebroadcast on every `metaChanged` (150ms coalesce),
+   * so resolving per projection would `readdir` per session per broadcast — a
+   * real regression. Memoized here it costs at most one read per session per
+   * server lifetime and zero I/O per snapshot.
+   */
+  private readonly transcriptPathMemo = new Map<string, string | undefined>();
   private readonly onProjectsChanged?: (projects: PersistedProject[]) => void;
   private readonly defaultModel?: string;
   private readonly defaultAgentId: string;
@@ -214,6 +230,7 @@ export class SessionManager extends EventEmitter {
   constructor(opts: ManagerOpts) {
     super();
     this.adapterFactory = opts.adapterFactory;
+    this.transcriptResolver = opts.transcriptResolver ?? ((q) => resolveTranscriptPath(q));
     this.onProjectsChanged = opts.onProjectsChanged;
     this.defaultModel = opts.defaultModel;
     this.defaultAgentId = "pi";
@@ -332,7 +349,7 @@ export class SessionManager extends EventEmitter {
     // Closed sessions (SPEC-29) are hidden from the ACTIVE list, but kept in
     // the registry (resumable + restorable). `allSessions()` still returns them
     // for fan-out/lookup; only this DTO list excludes them.
-    return [...this.sessions.values()].filter((s) => !s.closed).map((s) => s.toDTO());
+    return [...this.sessions.values()].filter((s) => !s.closed).map((s) => this.projectSessionDTO(s));
   }
 
   /** The closed sessions (SPEC-29), for the "Show closed" list. Newest first.
@@ -355,7 +372,7 @@ export class SessionManager extends EventEmitter {
         liveByProject.set(session.projectId, live);
       }
       const orphaned = this.isOrphaned(session.worktreePath, project.dto.path, live);
-      out.push({ ...session.toDTO(), orphaned });
+      out.push({ ...this.projectSessionDTO(session), orphaned });
     }
     return out.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   }
@@ -384,6 +401,42 @@ export class SessionManager extends EventEmitter {
 
   getSession(id: string): Session | undefined {
     return this.sessions.get(id);
+  }
+
+  /**
+   * Project a session for the wire (SPEC-51 D1). `Session.toDTO()` cannot do
+   * this: `agentSessionId` is passed through verbatim, but `transcriptPath`
+   * needs the project's filesystem path, which the session does not hold
+   * (`projectId` + `worktreePath` only) — the manager does, via `this.projects`.
+   */
+  private projectSessionDTO(session: Session): SessionDTO {
+    return {
+      ...session.toDTO(),
+      agentSessionId: session.agentSessionId,
+      transcriptPath: this.transcriptPathFor(session),
+    };
+  }
+
+  /** Memoized transcript-path lookup (SPEC-51 D3); see {@link transcriptPathMemo}. */
+  private transcriptPathFor(session: Session): string | undefined {
+    if (this.transcriptPathMemo.has(session.id)) return this.transcriptPathMemo.get(session.id);
+    // A draft has no id and no resume handle yet: nothing to resolve, and no I/O
+    // to spend. Deliberately NOT memoized — the id is assigned later (session.ts
+    // captureAgentSessionId) and must resolve on the next projection.
+    if (!session.agentSessionId && !session.resumeSessionPath) return undefined;
+    const project = this.projects.get(session.projectId);
+    // cwd is the WORKTREE pi actually ran in (D3), NOT the project root: pi's
+    // slug follows the spawn cwd, and worktree-bound sessions spawn in the
+    // worktree. Using project.dto.path here would miss every such session.
+    const cwd = session.worktreePath ?? project?.dto.path;
+    const path = this.transcriptResolver({
+      agent: session.agent,
+      agentSessionId: session.agentSessionId,
+      resumeSessionPath: session.resumeSessionPath,
+      cwd,
+    });
+    this.transcriptPathMemo.set(session.id, path);
+    return path;
   }
 
   /** Set the loopback bridge + askUser wiring so subsequently-spawned
