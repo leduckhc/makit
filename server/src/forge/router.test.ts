@@ -617,3 +617,43 @@ test("Auto still falls back to GitHub when routing throws", async () => {
   await router.prForBranch("/x", "b");
   assert.deepEqual(calls, ["github.prForBranch(/x,b)"]);
 });
+
+test("a failed remote read is RECORDED as no-remote, not left as 'unmeasured'", async () => {
+  // Review finding: the fallback path recorded nothing, so `hasRemoteFor` stayed
+  // `undefined` — indistinguishable from a repo that has not been routed yet, which
+  // is the exact three-states-in-one-boolean confusion this pair of methods exists to
+  // stop.
+  const calls: string[] = [];
+  const router = createForgeRouter({
+    github: githubFake(calls),
+    forgejo: fake("forgejo", calls),
+    unsupported: fake("unsupported", calls),
+    none: fake("none", calls),
+    resolveInstance: async () => {
+      throw new Error("git remote read exploded");
+    },
+    detect: async () => "forgejo",
+  });
+  await router.prForBranch("/x", "b");
+  assert.equal(router.hasRemoteFor("/x"), false);
+});
+
+test("a failure AFTER the remote was read keeps the remote fact true", async () => {
+  // The trap in the obvious fix. Two different failures reach the same catch: the
+  // remote read failing (no remote) and DETECTION failing (a perfectly good remote we
+  // could not classify). Recording `false` unconditionally would turn the second into
+  // a claim that the repo has no origin — a fact we already measured as true.
+  const calls: string[] = [];
+  const router = createForgeRouter({
+    github: githubFake(calls),
+    forgejo: fake("forgejo", calls),
+    unsupported: fake("unsupported", calls),
+    none: fake("none", calls),
+    resolveInstance: async () => ({ host: "git.example", baseUrl: "https://git.example" }),
+    detect: async () => {
+      throw new Error("probe exploded");
+    },
+  });
+  await router.prForBranch("/y", "b");
+  assert.equal(router.hasRemoteFor("/y"), true, "the remote WAS read; only detection failed");
+});

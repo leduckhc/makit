@@ -212,13 +212,29 @@ class RepositorySettingsPage extends ConsumerWidget {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Re-point'),
+          // Disabled until the value is both non-empty and actually different. The
+          // guard below still returns early, but a button that closes the dialog and
+          // does nothing is the failure this feature already refuses elsewhere: a
+          // control that appears to act and does not is worse than one that says it
+          // cannot.
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (ctx, field, _) {
+              final next = field.text.trim();
+              return TextButton(
+                onPressed: next.isEmpty || next == view.path
+                    ? null
+                    : () => Navigator.pop(ctx, next),
+                child: const Text('Re-point'),
+              );
+            },
           ),
         ],
       ),
     );
+    // Kept as a guard even though the button is disabled: dismissing the dialog and
+    // the disabled state are two different mechanisms, and only one of them is
+    // enforced by the widget tree.
     if (value == null || value.isEmpty || value == view.path) return;
     // Not validated here: the server owns the rules (absolute, no `..`, exists, is a
     // git repo, not already open) and re-implementing them in Dart would give two

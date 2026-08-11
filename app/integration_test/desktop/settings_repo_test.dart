@@ -195,19 +195,27 @@ void main() {
     expect(diana.hue, 2, reason: 'the stored hue must reach the sidebar');
   });
 
-  testWidgets('search reaches a repo row and lands on that repo', (tester) async {
+  testWidgets('search reaches a repo row and lands on THAT repo', (tester) async {
     // The nav pane searches the DYNAMIC sections; on the static list "worktree root"
-    // found nothing and the result title would have been a raw `repo:<id>`.
+    // found nothing and the result would have been titled `repo:<id>`.
+    //
+    // Landing on the RIGHT repo is asserted, not just landing on a repo section: with
+    // two pinned repos the query matches both, so tapping `.first` and checking only
+    // that some repo section rendered would pass even if the search sent the user to
+    // the other repo. The result's subtitle is the repo name, so the tap targets
+    // Diana specifically and the assertion is on a value only Diana has.
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, 'worktree root');
     await tester.pumpAndSettle();
 
-    final result = find.text('Worktrees').first;
-    await tester.tap(result);
+    final results = find.widgetWithText(ListTile, 'Diana');
+    expect(results, findsOneWidget, reason: 'one matching row for Diana');
+    await tester.tap(results);
     await tester.pumpAndSettle();
 
     expect(find.byType(RepositorySettingsSection), findsOneWidget);
+    expect(find.text('~/trees/diana'), findsOneWidget, reason: 'landed on Diana, not makit');
   });
 }

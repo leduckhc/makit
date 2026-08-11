@@ -335,6 +335,12 @@ export function createForgeRouter(
       // the repo to the wrong provider until the setting changed or the daemon
       // restarted.
       //
+      // Record the remote as unreadable ONLY if nothing was recorded, because two
+      // different failures land here: the remote read failing (no remote) and
+      // DETECTION failing (a good remote we could not classify, already recorded as
+      // `true`). Setting `false` unconditionally would turn the second into a claim
+      // that the repo has no origin — a fact we just measured otherwise.
+      if (!remotes.has(repoPath)) remotes.set(repoPath, false);
       // `auto` keeps the original behaviour: with no opinion attached, gh is the
       // status quo for a repo we could not read.
       if (choice === "forgejo" || choice === "gitea") {

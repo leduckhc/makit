@@ -79,6 +79,15 @@ Future<void> _pump(
   await tester.pumpAndSettle();
 }
 
+/// The colour the monogram actually paints, read off its `BoxDecoration` — the
+/// only thing that proves what the user sees.
+Color? _paintedHue(WidgetTester t) {
+  final container = t.widget<Container>(
+    find.descendant(of: find.byType(RepoMonogram), matching: find.byType(Container)).first,
+  );
+  return (container.decoration as BoxDecoration?)?.color;
+}
+
 void main() {
   group('what it renders', () {
     testWidgets('the repo name is the page title, above the group headers', (t) async {
@@ -264,17 +273,24 @@ void main() {
       // hardcoded 3 asserted nothing. Picking the first index that differs keeps the
       // test honest if either the palette or the hash changes.
       final derived = RepoMonogram.hueFor(_base.name);
-      final chosen = List.generate(RepoMonogram.paletteLength, (i) => i)
-          .firstWhere((i) => RepoMonogram.paletteAt(i) != derived);
+      final chosen = List.generate(RepoMonogram.paletteLength, (i) => i).firstWhere(
+        (i) => RepoMonogram.paletteAt(i) != derived,
+        // Not reachable with the current palette, but a cryptic "Bad state: No
+        // element" would send the next reader hunting in the wrong file.
+        orElse: () => fail('every palette entry equals the derived hue $derived'),
+      );
       await _pump(t, _view(logoHue: chosen));
-      final mark = t.widget<RepoMonogram>(find.byType(RepoMonogram));
-      expect(mark.hue, chosen);
-      expect(RepoMonogram.paletteAt(mark.hue!), isNot(derived));
+      expect(_paintedHue(t), RepoMonogram.paletteAt(chosen));
+      expect(_paintedHue(t), isNot(derived));
     });
 
-    testWidgets('with no choice the mark stays name-derived', (t) async {
+    testWidgets('with no choice the mark PAINTS the name-derived hue', (t) async {
+      // Asserting `hue == null` alone proved nothing: it holds whatever the widget
+      // then paints, so a hardcoded fallback colour inside build() would pass. The
+      // assertion has to be on the pixel decision, not on the input that informs it.
       await _pump(t, _view());
       expect(t.widget<RepoMonogram>(find.byType(RepoMonogram)).hue, isNull);
+      expect(_paintedHue(t), RepoMonogram.hueFor(_base.name));
     });
   });
 
