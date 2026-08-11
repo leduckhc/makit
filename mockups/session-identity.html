@@ -108,14 +108,14 @@
   .panel{width:300px;background:var(--bg);border:1px solid var(--hairline);border-radius:14px;overflow:hidden}
   .panel.wide{width:340px}
   .ph{padding:12px 14px 0}
-  .ttl{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .ttl{font-size:11px;letter-spacing:.05em;color:var(--muted);font-weight:600}
   .sec{border-top:1px solid var(--hairline);padding:10px 14px}
   .sec.first{border-top:none}
   /* Stacked row: label above a full-bleed mono value. Removing the 24pt copy
      column + the 84pt label column returns ~116px to the value, which is what
      lets a 36-char uuid sit on ONE line at 11.5px mono (≈248px of 312). */
   .idrow{padding:5px 0}
-  .idrow .k{display:block;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:2px}
+  .idrow .k{display:block;font-size:10.5px;color:var(--muted);font-weight:500;margin-bottom:2px}
   .idrow .v{display:block;font-size:11.5px;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.45}
   .idrow .v.dim{color:var(--muted);font-family:inherit;font-style:italic;word-break:normal}
   .actrow{display:flex;align-items:center;gap:9px;height:38px;padding:0 14px;font-size:12.5px;color:var(--text);border-top:1px solid var(--hairline)}
@@ -233,6 +233,15 @@
       <code>/Users/&lt;x&gt;/</code> heuristic (wrong on a Linux host, wrong for a non-standard home) or shipping
       <code>homeDir</code> on the wire for pure cosmetics. Paths are now <b>absolute everywhere</b> — wire,
       clipboard and display — and the row simply wraps (spec D4).</li>
+    <li><b>Row labels and the section title are sentence case, not uppercase.</b> Rev 1 set them
+      <code>text-transform:uppercase</code>; the shipped design system does not —
+      <code>ContextUsageDetails</code> ships <code>Context usage</code> and rows labelled
+      <code>Session total</code> / <code>Input</code> / <code>Cost</code>. Matching the panel this one sits
+      beside beats matching a local choice on this page.</li>
+    <li><b>The in-panel footnotes are gone.</b> Explanatory prose belongs in this document, not inside a
+      panel you read once and then read past forever.</li>
+    <li><b>“1 line”, not “1 lines”.</b> Found by the pixel gate on the real macOS app, on the one case the
+      tests had not exercised: a stub session whose only measured value is the makit id. Now asserted.</li>
     <li><b>codex’s transcript row is P2</b>, not P1: the rollout is date-sharded
       (<code>~/.codex/sessions/YYYY/MM/DD/</code>) with no existing helper, whereas pi’s is a single-directory
       lookup through already-tested code. D9 lets P1 omit the row rather than fabricate it (spec D16).</li>
@@ -272,9 +281,7 @@
           <div class="actrow primary"><svg class="g" width="15" height="15"><use href="#g-copy"/></svg> Copy all<span class="sk">4 lines</span></div>
           <div class="actrow"><svg class="g" width="15" height="15"><use href="#g-folder"/></svg> Reveal transcript in Finder</div>
           <div class="actrow"><svg class="g" width="15" height="15"><use href="#g-share"/></svg> Share transcript…<span class="sk"><span class="tag fu">follow-up</span></span></div>
-          <div class="foot"><b>The id is pi's own.</b> <code>pi-acp</code> reuses pi's session uuid as the ACP
-            <code>sessionId</code>, so this is the same value <code>/session</code> prints and
-            <code>pi --session</code> accepts (partial uuid included).</div>
+
         </div>
       </div>
 
@@ -394,8 +401,7 @@
             </div>
             <div class="actrow primary"><svg class="g" width="15" height="15"><use href="#g-copy"/></svg> Copy all<span class="sk">4 lines</span></div>
             <div class="actrow"><svg class="g" width="15" height="15"><use href="#g-share"/></svg> Share transcript…</div>
-            <div class="foot"><b>Transcript is on the server's host</b>, not this phone. Copy all gives you the
-              path; Share sends the file.</div>
+
           </div>
         </div>
         <p class="why" style="width:320px">Row order is <em>usefulness</em>, not hierarchy: the agent id first

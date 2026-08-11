@@ -46,6 +46,39 @@ void main() {
     );
   });
 
+  test('a comment mentioning await does not create a false positive', () {
+    // Found while adding SPEC-51's identity panel, whose hoist comment
+    // legitimately names the rule it follows ("resolved before the first
+    // `await`"). The scanner sliced `body.text` out of the ORIGINAL source, so
+    // that comment supplied the "first await" and the correctly-hoisted
+    // `final status = ref.status;` on the NEXT line was reported as an offender.
+    //
+    // The guard is deliberately biased toward false positives, but not this kind:
+    // it made the sanctioned fix un-writable, which pushes authors toward
+    // wording their comments around the linter instead of hoisting.
+    const src = '''
+void f() async {
+  // ref.status is resolved before the first await, deliberately.
+  final status = ref.status;
+  await g();
+  status.info('fine');
+  // ref.status.info('this is commented out and must not count');
+}
+''';
+    final bodies = _asyncBodies(src).toList();
+    expect(bodies, hasLength(1));
+    final body = bodies.single;
+    final firstAwait = body.text.indexOf('await ');
+    expect(firstAwait, greaterThan(0), reason: 'the real await is still seen');
+    expect(
+      _refStatus.allMatches(body.text).where((m) => m.start > firstAwait),
+      isEmpty,
+      reason:
+          'the hoisted read is before the real await, and the commented-out '
+          'one is not code',
+    );
+  });
+
   test('a brace in a string or a comment does not end a body early', () {
     // The scanner used to count raw braces, so either line below closed the
     // body and hid the `ref.status` after the await — a silent false negative
@@ -78,6 +111,13 @@ final RegExp _asyncOpen = RegExp(r'async\s*\*?\s*\{');
 ///
 /// A nested body is reported inside its parent too — deliberately conservative:
 /// a false positive costs one hoist, a false negative costs a crash.
+///
+/// The returned `text` is the BLANKED copy, not the original: a comment that
+/// names the rule ("resolved before the first `await`") used to supply the first
+/// `await` and turn the correctly-hoisted line below it into an offender, and a
+/// commented-out `ref.status` counted as a real one. Offsets are preserved by the
+/// blanking, so `body.start + match.start` still maps onto `src` for line
+/// numbers.
 Iterable<({int start, String text})> _asyncBodies(String src) {
   final scan = _blankStringsAndComments(src);
   final out = <({int start, String text})>[];
@@ -89,7 +129,10 @@ Iterable<({int start, String text})> _asyncBodies(String src) {
       if (scan[i] == '}') {
         depth--;
         if (depth == 0) {
-          out.add((start: open + 1, text: src.substring(open + 1, i)));
+          // `scan`, not `src`: detection must not see `await` or `ref.status`
+          // inside a comment or a string. Blanking preserves length, so the
+          // offsets still map onto the original source for line numbers.
+          out.add((start: open + 1, text: scan.substring(open + 1, i)));
           break;
         }
       }
