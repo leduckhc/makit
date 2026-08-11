@@ -22,6 +22,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_providers.dart';
 import '../../store/docs.dart';
 import '../../store/connection.dart';
 import '../../store/store.dart';
@@ -629,7 +630,7 @@ class _DocPreviewSheetState extends ConsumerState<_DocPreviewSheet> {
   );
 
   /// D8 rev 2: hand the file to the host's opener. Failure is stated — the
-  /// server's reason surfaces in a snack bar rather than a silent no-op.
+  /// server's reason surfaces in the Activity record rather than a silent no-op.
   Future<void> _openLocal() async {
     try {
       await ref
@@ -637,9 +638,9 @@ class _DocPreviewSheetState extends ConsumerState<_DocPreviewSheet> {
           .openDoc(_doc.worktreePath, _doc.relPath);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not open: $e')));
+      ref
+          .read(statusCenterProvider)
+          .failure('Could not open: $e', source: 'docs.open');
     }
   }
 

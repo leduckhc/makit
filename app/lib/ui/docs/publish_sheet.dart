@@ -17,6 +17,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_providers.dart';
 import '../../store/docs.dart';
 import '../../store/store.dart';
 import '../widgets/sheet_header.dart';
@@ -114,7 +115,7 @@ class _PublishSheetState extends ConsumerState<_PublishSheet> {
   Future<void> _open() async {
     final url = _grant?.url;
     if (url == null) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    final status = ref.status;
     final uri = Uri.tryParse(url);
     try {
       if (uri == null) throw const FormatException('bad url');
@@ -123,13 +124,17 @@ class _PublishSheetState extends ConsumerState<_PublishSheet> {
         mode: LaunchMode.externalApplication,
       );
       if (!launched) {
-        messenger?.showSnackBar(
-          const SnackBar(content: Text('Could not open the link')),
+        status.failure(
+          'Could not open the published link',
+          source: 'docs',
+          detail: url,
         );
       }
-    } catch (_) {
-      messenger?.showSnackBar(
-        const SnackBar(content: Text('Could not open the link')),
+    } catch (e) {
+      status.failure(
+        'Could not open the published link',
+        source: 'docs',
+        detail: '$url\n$e',
       );
     }
   }
@@ -246,9 +251,10 @@ class _GrantPanel extends StatelessWidget {
   final VoidCallback onOpen;
 
   Future<void> _copy(BuildContext context) async {
-    final messenger = ScaffoldMessenger.maybeOf(context);
+    // A plain widget with no `ref`, hence `statusOf` (SPEC-48).
+    final status = statusOf(context);
     await Clipboard.setData(ClipboardData(text: grant.url));
-    messenger?.showSnackBar(const SnackBar(content: Text('Link copied')));
+    status.success('Link copied', source: 'docs', detail: grant.url);
   }
 
   @override
