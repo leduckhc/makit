@@ -127,4 +127,48 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // assumed — including the client that just wrote.
     onProjectsChanged?.();
   });
+
+  /**
+   * Re-point a project at a new root path (D4′).
+   *
+   * A separate command from `repo.settings.set`, not a field in its patch, because
+   * it is not a setting: it mutates the project record, must re-validate that the
+   * target is a git repository, and re-runs forge detection. Folding an async
+   * filesystem-and-subprocess check into a loop that validates plain values would
+   * also break that loop's all-or-nothing property — one bad field would abort a
+   * move that had already happened.
+   *
+   * Same loopback gate, for a sharper reason than the worktree root: this names the
+   * directory every session's git commands run in.
+   */
+  r.register("repo.path.set", async (ctx) => {
+    if (!ctx.client.isLocal) {
+      ctx.err(
+        WireErrorCode.Unauthorized,
+        "A repository's path can only be changed on the machine running makit.",
+      );
+      return;
+    }
+    const projectId = typeof ctx.env.projectId === "string" ? ctx.env.projectId : "";
+    if (projectId.length === 0) {
+      ctx.err(WireErrorCode.BadRequest, "projectId is required.");
+      return;
+    }
+    const path = typeof ctx.env.path === "string" ? ctx.env.path : "";
+    if (path.length === 0) {
+      ctx.err(WireErrorCode.BadRequest, "path is required.");
+      return;
+    }
+
+    const result = await manager.repointProject(projectId, path);
+    if (!result.ok) {
+      // Verbatim: the reasons are actionable ("not a git repository", "already open
+      // as X"), and a generic message would discard the only part the user can act
+      // on.
+      ctx.err(WireErrorCode.BadRequest, result.error);
+      return;
+    }
+    ctx.ack();
+    onProjectsChanged?.();
+  });
 }

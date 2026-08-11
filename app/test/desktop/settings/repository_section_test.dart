@@ -59,6 +59,7 @@ Future<void> _pump(
   VoidCallback? onReset,
   VoidCallback? onBranch,
   VoidCallback? onLogo,
+  VoidCallback? onRootPath,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -70,6 +71,7 @@ Future<void> _pump(
           onResetWorktreeRoot: onReset,
           onChooseDefaultBranch: onBranch,
           onEditLogo: onLogo,
+          onChangeRootPath: onRootPath,
         ),
       ),
     ),
@@ -283,6 +285,27 @@ void main() {
       await t.tap(find.text('Logo'));
       await t.pumpAndSettle();
       expect(taps, 1);
+    });
+
+    testWidgets('the root path row opens the re-point flow (SPEC-48 D4\u2032)', (t) async {
+      // It used to show a "not supported yet" notice. The row is only honest once it
+      // actually re-points, because the alternative it recommended — remove and
+      // re-add — loses the project id and everything keyed to it.
+      var taps = 0;
+      await _pump(t, _view(), onRootPath: () => taps++);
+      await t.tap(find.text('Root path'));
+      await t.pumpAndSettle();
+      expect(taps, 1);
+    });
+
+    testWidgets('a read-only client cannot re-point the repository', (t) async {
+      // D16 governs every write, and this is the most consequential one: it names the
+      // directory every session's git commands run in.
+      var taps = 0;
+      await _pump(t, _view(editable: false), onRootPath: () => taps++);
+      await t.tap(find.text('Root path'));
+      await t.pumpAndSettle();
+      expect(taps, 0);
     });
 
     testWidgets('default branch is pickable when there are branches to pick', (t) async {

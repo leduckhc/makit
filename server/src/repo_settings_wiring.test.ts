@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
@@ -271,5 +271,150 @@ test("a new worktree branches from the overridden default", async () => {
   } finally {
     rmSync(a, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-48 D4' — re-pointing a project that moved on disk.
+//
+// Why this is not "remove and re-add": that mints a new `PersistedProject.id`, and
+// everything keyed to it — per-repo settings, session history — is lost. Preserving
+// the id across a move is the entire reason the id exists.
+// ---------------------------------------------------------------------------
+
+test("re-pointing keeps the project id and its settings", async () => {
+  // The whole justification. If the settings do not survive, the user has done
+  // remove-and-re-add by a longer route.
+  const from = repoWithBranches([]);
+  const to = repoWithBranches([]);
+  try {
+    const m = manager([{ id: "a", path: from, settings: { logoHue: 4 } }]);
+    const r = await m.repointProject("a", to);
+    assert.equal(r.ok, true);
+    const [dto] = m.listProjects();
+    assert.equal(dto.id, "a", "the id is preserved");
+    assert.equal(dto.path, realpathSync(to));
+    assert.deepEqual(m.projectSettings("a"), { logoHue: 4 });
+  } finally {
+    rmSync(from, { recursive: true, force: true });
+    rmSync(to, { recursive: true, force: true });
+  }
+});
+
+test("re-pointing at something that is not a git repo is refused", async () => {
+  // The constraint D4' names explicitly: re-validate that the target is a git repo,
+  // because a project silently pointed at a plain directory has no branches, no
+  // forge and no diff — and looks merely broken rather than misconfigured.
+  const from = repoWithBranches([]);
+  const plain = mkdtempSync(join(tmpdir(), "makit-plain-"));
+  try {
+    const m = manager([{ id: "a", path: from }]);
+    const r = await m.repointProject("a", plain);
+    assert.equal(r.ok, false);
+    assert.match(r.ok ? "" : r.error, /git/i);
+    assert.equal(m.listProjects()[0].path, from, "and the project is untouched");
+  } finally {
+    rmSync(from, { recursive: true, force: true });
+    rmSync(plain, { recursive: true, force: true });
+  }
+});
+
+test("re-pointing onto another project's path is refused", async () => {
+  // Two projects at one path makes settings and the forge decision — both looked up
+  // BY PATH — ambiguous, so one repo would silently answer for the other.
+  const a = repoWithBranches([]);
+  const b = repoWithBranches([]);
+  try {
+    const m = manager([
+      { id: "a", path: a },
+      { id: "b", path: b },
+    ]);
+    const r = await m.repointProject("a", b);
+    assert.equal(r.ok, false);
+    assert.match(r.ok ? "" : r.error, /already/i);
+    assert.equal(m.listProjects()[0].path, a);
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+    rmSync(b, { recursive: true, force: true });
+  }
+});
+
+test("re-pointing a project at its own path is a no-op, not a duplicate error", async () => {
+  // Re-submitting the same value must not read as a conflict with itself.
+  const a = repoWithBranches([]);
+  try {
+    const m = manager([{ id: "a", path: a }]);
+    assert.equal((await m.repointProject("a", a)).ok, true);
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("re-pointing an unknown project is refused rather than creating one", async () => {
+  const a = repoWithBranches([]);
+  try {
+    const m = manager([]);
+    const r = await m.repointProject("ghost", a);
+    assert.equal(r.ok, false);
+    assert.equal(m.listProjects().length, 0);
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("a new path given via a symlink is stored canonicalised", async () => {
+  // `settingsForPath` and the router's decision map are both keyed by path, so an
+  // uncanonicalised value would mean the repo's own settings stop resolving for it.
+  // The symlink must point at a DIFFERENT directory: aliasing the project's own path
+  // is the no-op case and would prove nothing about the stored value.
+  const from = repoWithBranches([]);
+  const to = repoWithBranches([]);
+  const link = join(mkdtempSync(join(tmpdir(), "makit-link-")), "alias");
+  symlinkSync(to, link);
+  try {
+    const m = manager([{ id: "a", path: from, settings: { provider: "gitea" } }]);
+    assert.equal((await m.repointProject("a", link)).ok, true);
+    const stored = m.listProjects()[0].path;
+    assert.equal(stored, realpathSync(to), "stored resolved, not as the alias");
+    assert.equal(m.providerFor(stored), "gitea", "and its settings still resolve");
+  } finally {
+    rmSync(from, { recursive: true, force: true });
+    rmSync(to, { recursive: true, force: true });
+  }
+});
+
+test("re-pointing at an equivalent spelling of the same directory changes nothing", async () => {
+  // `/tmp/x` and `/private/tmp/x` are one directory on macOS. Treating that as a
+  // move would re-run detection for no reason and report a path the store does not
+  // hold, so the no-op reports what is actually in force.
+  const a = repoWithBranches([]);
+  const alias = join(mkdtempSync(join(tmpdir(), "makit-alias-")), "same");
+  symlinkSync(a, alias);
+  try {
+    const m = manager([{ id: "a", path: a }]);
+    const r = await m.repointProject("a", alias);
+    assert.equal(r.ok, true);
+    assert.equal(r.ok && r.path, m.listProjects()[0].path, "reports the path in force");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("re-pointing re-runs detection rather than keeping the old forge decision", async () => {
+  // D4' names this: the forge and the default branch may both change with the move,
+  // so a cached decision for the OLD path must not be what the UI reports.
+  const from = repoWithBranches([]);
+  const to = repoWithBranches([]);
+  const forgotten: string[] = [];
+  try {
+    const m = manager([{ id: "a", path: from }]);
+    Object.assign((m as unknown as { _gateway: object })._gateway, {
+      forgetRepo: (p: string) => forgotten.push(p),
+    });
+    assert.equal((await m.repointProject("a", to)).ok, true);
+    assert.deepEqual(forgotten, [from], 'keyed on the path the gateway was called with');
+  } finally {
+    rmSync(from, { recursive: true, force: true });
+    rmSync(to, { recursive: true, force: true });
   }
 });

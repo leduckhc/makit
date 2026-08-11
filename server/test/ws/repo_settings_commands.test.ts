@@ -213,3 +213,94 @@ test("an unknown project is reported, not silently ignored", async () => {
   await router.dispatch(c, cmd({ projectId: "nope", settings: { logoHue: 1 } }));
   assert.match(errOf(c)?.message ?? "", /No project nope/);
 });
+
+// ---------------------------------------------------------------------------
+// `repo.path.set` — re-pointing a project that moved on disk (SPEC-48 D4').
+//
+// A separate command from `repo.settings.set` because it is not a setting: it
+// mutates the project record itself, has to re-validate that the target is a git
+// repo, and re-runs forge detection. Folding it into the settings patch would put
+// an async filesystem-and-subprocess check inside a loop that validates plain
+// values, and one bad field would then abort a half-done move.
+//
+// The same loopback gate applies, for a sharper reason than the worktree root: this
+// decides the directory every session's git commands run in.
+// ---------------------------------------------------------------------------
+
+const pathCmd = (fields: Partial<Envelope>): Envelope =>
+  ({ v: 1, t: "cmd", id: "c1", kind: "repo.path.set", ...fields }) as Envelope;
+
+/** As {@link harness}, but recording `repointProject` and its answer. */
+function pathHarness(result: { ok: true; path: string } | { ok: false; error: string }) {
+  const calls: Array<[string, string]> = [];
+  let broadcasts = 0;
+  const router = new CommandRouter();
+  const deps = {
+    manager: {
+      repointProject: async (id: string, path: string) => {
+        calls.push([id, path]);
+        return result;
+      },
+    },
+    gateway: {} as never,
+    budgetWatch: {} as never,
+    broadcastSnapshots: () => {},
+    broadcastReposSnapshot: async () => {},
+    broadcastBudget: () => {},
+    onMetricsWatchersChanged: () => {},
+    sendMetricsHistory: () => {},
+    onPortsWatchersChanged: () => {},
+    sendPortsSnapshot: () => {},
+    onProjectsChanged: () => {
+      broadcasts += 1;
+    },
+    ...portsDepsStub,
+    askDevice: async () => ({}) as Envelope,
+  } as unknown as CommandDeps;
+  register(router, deps);
+  return { router, calls, broadcasts: () => broadcasts };
+}
+
+test("a non-loopback client cannot re-point a repository", async () => {
+  // Sharper than the worktree-root gate: this names the directory every session's
+  // git commands run in, so a paired phone could redirect all of them.
+  const { router, calls } = pathHarness({ ok: true, path: "/x" });
+  const c = fakeClient(false);
+  await router.dispatch(c, pathCmd({ projectId: "p1", path: "/tmp/anything" }));
+  assert.equal(calls.length, 0, "nothing was attempted");
+  assert.match(errOf(c)?.message ?? "", /machine running makit/);
+});
+
+test("a loopback client re-points and the snapshot is re-broadcast", async () => {
+  const { router, calls, broadcasts } = pathHarness({ ok: true, path: "/real/path" });
+  const c = fakeClient(true);
+  await router.dispatch(c, pathCmd({ projectId: "p1", path: "/real/path" }));
+  assert.deepEqual(calls, [["p1", "/real/path"]]);
+  assert.ok(ackOf(c), "acked");
+  assert.equal(broadcasts(), 1, "every client re-renders from one source");
+});
+
+test("a refusal is an explicit error carrying the reason verbatim", async () => {
+  // The reasons are actionable — "not a git repository", "already open as X" — and a
+  // generic failure would throw away the only part the user can act on.
+  const { router, broadcasts } = pathHarness({
+    ok: false,
+    error: "/tmp/plain is not a git repository.",
+  });
+  const c = fakeClient(true);
+  await router.dispatch(c, pathCmd({ projectId: "p1", path: "/tmp/plain" }));
+  assert.equal(errOf(c)?.message, "/tmp/plain is not a git repository.");
+  assert.equal(ackOf(c), undefined, "not acked");
+  assert.equal(broadcasts(), 0, "and nothing is re-broadcast");
+});
+
+test("a missing projectId or path is a bad request, not a crash", async () => {
+  const { router, calls } = pathHarness({ ok: true, path: "/x" });
+  const noId = fakeClient(true);
+  await router.dispatch(noId, pathCmd({ path: "/tmp/x" }));
+  assert.ok(errOf(noId));
+  const noPath = fakeClient(true);
+  await router.dispatch(noPath, pathCmd({ projectId: "p1" }));
+  assert.ok(errOf(noPath));
+  assert.equal(calls.length, 0);
+});

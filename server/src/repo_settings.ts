@@ -193,6 +193,62 @@ export function validateWorktreeRoot(
   return { ok: true, value: trailing.length === 0 ? realAncestor : join(realAncestor, ...trailing) };
 }
 
+/**
+ * Validate and canonicalise a repository's root path, for re-pointing a project
+ * that moved on disk (D4′).
+ *
+ * Shares two rules with {@link validateWorktreeRoot} — absolute only, and `..`
+ * rejected on sight rather than collapsed — and deliberately differs on two:
+ *
+ *   - **It must already exist.** A worktree root is created on demand, so naming
+ *     one before it exists is the normal case. A repository you have not got is
+ *     not a repository: accepting the path would detach the project from its
+ *     sessions with nothing to reattach to, which is the exact failure the P1
+ *     notice existed to avoid.
+ *   - **It is NOT confined to `$HOME`.** That rule protects the worktree root
+ *     because the daemon creates and, via prune, REMOVES directories beneath it.
+ *     makit never deletes a repo path, and a checkout on an external volume or a
+ *     shared mount is ordinary — refusing it would be security theatre with a real
+ *     cost to real users.
+ *
+ * Canonicalised so `/tmp` and `/private/tmp` cannot become two projects for one
+ * directory: settings and the forge decision are both looked up BY PATH, so two
+ * spellings of one repo would silently disagree about its configuration.
+ *
+ * Being a git repository is NOT checked here — that needs a subprocess, and this
+ * stays synchronous and pure-ish so it can be unit-tested and reused. The caller
+ * checks it (see `SessionManager.repointProject`).
+ */
+export function validateRepoPath(raw: string): Validation<string> {
+  const input = raw.trim();
+  if (input.length === 0) return { ok: false, error: "Repository path cannot be empty." };
+  if (!isAbsolute(input)) {
+    return { ok: false, error: "Repository path must be an absolute path." };
+  }
+  // Split the RAW input: `normalize` collapses `..`, which would make this dead
+  // code — the mistake this file has already made once.
+  if (input.split(sep).some((seg) => seg === "..")) {
+    return {
+      ok: false,
+      error: "Repository path must not contain '..'. Give the path you mean.",
+    };
+  }
+  let real: string;
+  try {
+    real = realpathSync(normalize(input));
+  } catch {
+    return { ok: false, error: `${input} does not exist.` };
+  }
+  try {
+    if (!statSync(real).isDirectory()) {
+      return { ok: false, error: `${input} is not a directory.` };
+    }
+  } catch {
+    return { ok: false, error: `Could not read ${input}.` };
+  }
+  return { ok: true, value: real };
+}
+
 /** Validate a provider choice coming off the wire. */
 export function validateProvider(raw: unknown): Validation<ProviderChoice> {
   if (typeof raw !== "string" || !PROVIDER_CHOICES.includes(raw as ProviderChoice)) {

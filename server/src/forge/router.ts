@@ -192,6 +192,16 @@ export interface ForgeInspector {
   hasRemoteFor(repoPath: string): boolean | undefined;
 }
 
+/**
+ * Invalidation, kept apart from {@link ForgeInspector} on purpose: inspection is a
+ * read and this is a write, and the consumers are different components. Only the
+ * one place that re-points a project needs it (SPEC-48 D4′), so putting it on the
+ * read port would hand every reader a way to clear the cache.
+ */
+export interface ForgeForgetful {
+  forgetRepo(repoPath: string): void;
+}
+
 export interface ForgeRouterDeps {
   github: GithubGateway;
   forgejo: ForgeGateway;
@@ -213,7 +223,9 @@ export interface ForgeRouterDeps {
   onUnsupported?: (host: string, software: ForgeSoftwareName) => void;
 }
 
-export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & ProviderMix & ForgeInspector {
+export function createForgeRouter(
+  deps: ForgeRouterDeps,
+): GithubGateway & ProviderMix & ForgeInspector & ForgeForgetful {
   /**
    * Cache of the chosen provider per repo. Stores the PROMISE, not the resolved
    * value, so the home-screen fan-out — which hits every worktree of a repo at
@@ -357,6 +369,19 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
     providersInUse: () => new Set(inUse),
     forgeFor: (repoPath: string) => decided.get(repoPath),
     hasRemoteFor: (repoPath: string) => remotes.get(repoPath),
+    /**
+     * Discard everything routing learned about [repoPath].
+     *
+     * Called when a project is re-pointed (SPEC-48 D4′): the repo at the old path is
+     * no longer the project's repo, so its cached gateway, forge decision and remote
+     * fact must not be reported — and detection has to run again for the new path,
+     * because the forge may have changed with the move.
+     */
+    forgetRepo(repoPath: string): void {
+      chosen.delete(repoPath);
+      decided.delete(repoPath);
+      remotes.delete(repoPath);
+    },
     close(): void {
       chosen.clear();
       inUse.clear();

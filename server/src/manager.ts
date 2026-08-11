@@ -8,7 +8,7 @@
 
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { basename, resolve, join } from "node:path";
 import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
@@ -59,6 +59,7 @@ import {
   parseRepoSettings,
   resolveProvider,
   resolveWorktreeRoot,
+  validateRepoPath,
   validateWorktreeRoot,
   type ProviderChoice,
   type RepoSettings,
@@ -181,6 +182,22 @@ interface ProjectEntry {
    */
   settings?: Record<string, unknown>;
   dto: ProjectDTO;
+}
+
+/**
+ * A path in its canonical form, or `resolve`d when it cannot be canonicalised.
+ *
+ * Used wherever two paths are compared for "same directory". Falls back rather
+ * than throwing because a project whose directory has since been deleted must
+ * still compare, and still be re-pointable -- that is the case re-pointing exists
+ * to fix.
+ */
+function canonicalPath(p: string): string {
+  try {
+    return realpathSync(resolve(p));
+  } catch {
+    return resolve(p);
+  }
 }
 
 export class SessionManager extends EventEmitter {
@@ -354,6 +371,85 @@ export class SessionManager extends EventEmitter {
   /** Persisted settings for a project id, verbatim (for the DTO + tests). */
   projectSettings(id: string): Record<string, unknown> | undefined {
     return this.projects.get(id)?.settings;
+  }
+
+  /**
+   * Re-point a project at a new root path, **keeping its id** (SPEC-48 D4′).
+   *
+   * Not equivalent to remove-and-re-add, which is why it exists: re-adding mints a
+   * fresh `PersistedProject.id`, and everything keyed to that id — per-repo
+   * settings, session history — is lost. A repo that merely moved on disk should
+   * keep its identity, and preserving the id across a move is the entire reason the
+   * id exists rather than the path being the key.
+   *
+   * Three refusals, each for a failure that would otherwise be silent:
+   *
+   *   - **not a git repo** — the constraint D4′ states. A project pointed at a
+   *     plain directory has no branches, no forge and no diff, and presents as
+   *     broken rather than as misconfigured.
+   *   - **already another project's path** — settings and the forge decision are
+   *     both looked up BY PATH, so two projects at one path would silently answer
+   *     for each other.
+   *   - anything {@link validateRepoPath} rejects.
+   *
+   * The forge decision for the OLD path is discarded, so detection re-runs against
+   * the new one: D4′ requires it, because the forge and the default branch may both
+   * change with the move.
+   *
+   * Known limitation, stated rather than hidden: sessions already bound to a
+   * worktree keep their recorded paths. For the case this exists for — a repo that
+   * moved — worktrees live under the worktree root, which is a separate setting and
+   * unaffected; a session whose worktree was the repo directory itself will still
+   * point at the old location.
+   */
+  async repointProject(
+    id: string,
+    rawPath: string,
+  ): Promise<{ ok: true; path: string } | { ok: false; error: string }> {
+    const entry = this.projects.get(id);
+    if (entry === undefined) return { ok: false, error: `No project ${id}.` };
+    const entryPathBefore = entry.dto.path;
+
+    const checked = validateRepoPath(rawPath);
+    if (!checked.ok) return { ok: false, error: checked.error };
+    const next = checked.value;
+
+    // Both sides of every comparison below are canonicalised. Comparing a
+    // canonicalised new path against a stored one that is not is how a duplicate
+    // slips through: on macOS `/tmp/x` and `/private/tmp/x` are the same directory,
+    // and a project restored from `projects.json` holds whichever spelling was
+    // written. Two projects at one path would then look distinct while sharing
+    // settings and a forge decision, because both are looked up BY PATH.
+    const previous = canonicalPath(entry.dto.path);
+    // Re-submitting the same directory -- possibly under a different spelling, since
+    // `/tmp/x` and `/private/tmp/x` are one place -- is a no-op, not a conflict with
+    // itself. Reports the path actually in force rather than the canonical form,
+    // because nothing was stored and claiming otherwise would show the client a
+    // value the store does not hold.
+    if (next === previous) return { ok: true, path: entryPathBefore };
+
+    for (const [otherId, other] of this.projects) {
+      if (otherId !== id && canonicalPath(other.dto.path) === next) {
+        return {
+          ok: false,
+          error: `${next} is already open in makit as "${other.dto.name}".`,
+        };
+      }
+    }
+
+    if (!(await isGitRepo(next))) {
+      return { ok: false, error: `${next} is not a git repository.` };
+    }
+
+    entry.dto = { ...entry.dto, path: next, name: basename(next) };
+    // Drop the routing decision for where the repo used to be, so the forge is
+    // re-detected instead of reported from a stale probe. Keyed on the path the
+    // gateway was actually called with -- the DTO's own value, not its canonical
+    // form, since that is what became the cache key.
+    const inspector = this._gateway as unknown as { forgetRepo?: (p: string) => void };
+    inspector.forgetRepo?.(entryPathBefore);
+    this.notifyProjectsChanged();
+    return { ok: true, path: next };
   }
 
   /** Remove a project by id. Throws on an unknown id. Sessions are left as-is. */

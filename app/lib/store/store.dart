@@ -811,6 +811,24 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
+  /// Re-point a repository at a new root path (SPEC-48 D4').
+  ///
+  /// A separate verb from [setRepoSettings] because it is not a setting: the server
+  /// re-validates that the target is a git repository and re-runs forge detection,
+  /// and it keeps the project's id so its settings and session history survive the
+  /// move.
+  ///
+  /// Awaited, unlike the settings writes: the refusals here are actionable ("not a
+  /// git repository", "already open as X") and the caller shows them, where a
+  /// fire-and-forget write would drop the only part the user can act on.
+  Future<void> setRepoPath(String projectId, String path) async {
+    await _ref.read(connectionControllerProvider.notifier).request(MsgType.cmd, {
+      'kind': 'repo.path.set',
+      'projectId': projectId,
+      'path': path,
+    });
+  }
+
   /// Spawn a fresh agent session in the given project, in the worktree the
   /// caller already resolved (creating it first when the user asked for a new
   /// branch or a PR). Resolves with the new session id once the server acks.

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
@@ -11,6 +11,7 @@ import {
   resolveWorktreeRoot,
   validateBranch,
   validateProvider,
+  validateRepoPath,
   validateWorktreeRoot,
 } from "./repo_settings.js";
 
@@ -190,4 +191,74 @@ test("valid values survive the parse", () => {
     }),
     { worktreeRoot: "/h/trees", provider: "gitea", defaultBranch: "develop", logoHue: 3 },
   );
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-48 D4' — re-pointing a repository's root path.
+//
+// A different rule set from the worktree root, and the differences are the
+// interesting part:
+//
+//   - it must ALREADY EXIST. A worktree root is created on demand, so naming one
+//     before it exists is the common case; a repository you have not got is not a
+//     repository, and accepting the path would detach the project from its
+//     sessions with nothing to reattach to.
+//   - it is NOT confined to $HOME. That rule exists for the worktree root because
+//     the daemon creates and, via prune, REMOVES directories under it. makit never
+//     deletes a repo path, and a checkout on an external volume or a shared mount
+//     is ordinary — refusing it would be security theatre with a real cost.
+// ---------------------------------------------------------------------------
+
+test("a relative repo path is refused — it would resolve against the daemon's cwd", () => {
+  const r = validateRepoPath("Work/Diana");
+  assert.equal(r.ok, false);
+});
+
+test("a repo path containing '..' is refused on sight, not collapsed", () => {
+  // Same reasoning as the worktree root: collapsing yields a path the user did not
+  // type, and this one decides where every session's git operations run.
+  const r = validateRepoPath("/Users" + sep + "x" + sep + ".." + sep + "etc");
+  assert.equal(r.ok, false);
+  assert.match(r.ok ? "" : r.error, /\.\./);
+});
+
+test("a repo path that does not exist is refused", () => {
+  const r = validateRepoPath(join(tmpdir(), "makit-definitely-not-here-4919"));
+  assert.equal(r.ok, false);
+});
+
+test("a file is refused — a repository is a directory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-rp-"));
+  const file = join(dir, "a-file");
+  writeFileSync(file, "x");
+  try {
+    assert.equal(validateRepoPath(file).ok, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an existing directory is accepted and canonicalised", () => {
+  // Canonicalised so `/tmp` and `/private/tmp` cannot become two projects for one
+  // directory — which would make settings lookup by path ambiguous.
+  const dir = mkdtempSync(join(tmpdir(), "makit-rp-"));
+  try {
+    const r = validateRepoPath(dir);
+    assert.equal(r.ok, true);
+    assert.equal(r.ok && r.value, realpathSync(dir));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a repo path OUTSIDE $HOME is accepted — unlike the worktree root", () => {
+  // The asymmetry is deliberate, and asserted so it cannot be "tidied" into
+  // consistency later: nothing is ever deleted under a repo path.
+  const dir = mkdtempSync(join(tmpdir(), "makit-rp-"));
+  try {
+    assert.equal(validateRepoPath(dir).ok, true, "a repo on /tmp is legitimate");
+    assert.equal(validateWorktreeRoot(dir).ok, false, "a worktree root there is not");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

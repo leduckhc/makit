@@ -52,7 +52,7 @@ class RepositorySettingsPage extends ConsumerWidget {
       onEditWorktreeRoot: () => _promptWorktreeRoot(context, ref, view),
       onChooseDefaultBranch: () => _pickBranch(context, ref, view),
       onEditLogo: () => _pickHue(context, ref, repo),
-      onChangeRootPath: () => _showRootPathHelp(context),
+      onChangeRootPath: () => _promptRootPath(context, ref, view),
     );
   }
 
@@ -169,19 +169,75 @@ class RepositorySettingsPage extends ConsumerWidget {
     _write(ref, {'logoHue': picked < 0 ? null : picked});
   }
 
-  void _showRootPathHelp(BuildContext context) {
-    // Deliberately not an inline text field. Re-pointing a repo means the daemon
-    // must re-check it is a git repo and re-run forge detection, and getting that
-    // wrong silently detaches a project from its sessions. Until that path exists
-    // server-side, say what to do rather than offering an edit that cannot work.
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Changing a repository path is not supported yet — remove it and add it '
-          'again from its new location.',
+  /// Re-point the repository (SPEC-48 D4\u2032).
+  ///
+  /// Distinct from the settings writes in two ways, both deliberate:
+  ///
+  ///  - it **says what it will do** before doing it. The other rows change a
+  ///    preference; this one changes which directory every session in this project
+  ///    runs its git commands in, and the daemon re-runs forge detection as a
+  ///    result. A confirmation is proportionate to that.
+  ///  - it **surfaces the refusal**. "Not a git repository" and "already open as X"
+  ///    are the whole point of the server-side check, and a fire-and-forget write
+  ///    would leave the path unchanged with no explanation.
+  Future<void> _promptRootPath(
+    BuildContext context,
+    WidgetRef ref,
+    RepoSettingsView view,
+  ) async {
+    final controller = TextEditingController(text: view.path);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Repository path'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(hintText: '/Users/you/Work/project'),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Use this when the repository has moved on disk. It keeps this '
+              'project\u2019s settings and session history, which removing and '
+              're-adding it would not.\n\n'
+              'It must be an existing git repository. Sessions already bound to a '
+              'worktree keep the path they were created with.',
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+          ],
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Re-point'),
+          ),
+        ],
       ),
     );
+    if (value == null || value.isEmpty || value == view.path) return;
+    // Not validated here: the server owns the rules (absolute, no `..`, exists, is a
+    // git repo, not already open) and re-implementing them in Dart would give two
+    // answers that could disagree.
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(storeControllerProvider.notifier).setRepoPath(repoId, value);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(_reasonFrom(e))));
+    }
+  }
+
+  /// The server's own wording where there is one, so an actionable refusal is not
+  /// replaced by a generic failure.
+  static String _reasonFrom(Object error) {
+    final text = error.toString();
+    final marker = text.indexOf(': ');
+    return marker >= 0 && marker + 2 < text.length ? text.substring(marker + 2) : text;
   }
 }
 
