@@ -147,6 +147,10 @@ class PrStatusChip extends ConsumerWidget {
           context,
           status: status,
           pr: worktree.pr,
+          // Identity, so the sheet re-derives instead of freezing its facts —
+          // it now hosts the "Lands in" picker, which changes those facts.
+          projectId: repo.id,
+          worktreePath: worktree.path,
           sheet: true,
           canInsertPrompt: onInsertPrompt != null,
           onRun: (remedy) => runPrRemedy(

@@ -19,7 +19,7 @@ class NewSessionChoice {
     this.agent,
     this.source = WorktreeSource.newBranch,
     this.worktreePath,
-    this.baseBranch,
+    this.targetBranch,
     this.prNumber,
     this.configOptions = const [],
   });
@@ -34,7 +34,7 @@ class NewSessionChoice {
   final String? worktreePath;
 
   /// The base branch to fork from when [source] is [WorktreeSource.newBranch].
-  final String? baseBranch;
+  final String? targetBranch;
 
   /// The PR number to fork from when [source] is [WorktreeSource.fromPr].
   final int? prNumber;
@@ -205,7 +205,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
         agent: _agent,
         source: _source,
         worktreePath: _source == WorktreeSource.existing ? _worktreePath : null,
-        baseBranch: _source == WorktreeSource.newBranch ? _branch : null,
+        targetBranch: _source == WorktreeSource.newBranch ? _branch : null,
         prNumber: _source == WorktreeSource.fromPr ? _prNumber : null,
         configOptions: _picksList,
       ),

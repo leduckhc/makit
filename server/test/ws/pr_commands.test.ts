@@ -76,48 +76,83 @@ const OK = { projectId: "p1", worktreePath: "/wt/x" };
 
 test("worktree.wrapUp acks the whole report the app decodes", async () => {
   // Every field matters: `WrapUpReport.summary` builds its line from
-  // branchDeleted + baseBranch + baseUpdated, and the "Why?" action needs
-  // baseReason. Dropping any of them degrades the message silently.
+  // branchDeleted + targetBranch + targetUpdated, and the "Why?" action needs
+  // targetReason. Dropping any of them degrades the message silently.
   const { router, client, broadcasts } = routerWith({
     wrapUpWorktree: async () => ({
       branchDeleted: "feat/x",
-      baseBranch: "main",
-      baseUpdated: false,
-      baseReason: "main has local commits that are not on origin/main",
+      targetBranch: "main",
+      targetUpdated: false,
+      targetReason: "main has local commits that are not on origin/main",
     }),
   });
-  await router.dispatch(client, cmd("worktree.wrapUp", { ...OK, baseBranch: "main" }));
+  await router.dispatch(client, cmd("worktree.wrapUp", { ...OK, targetBranch: "main" }));
   const ack = ackOf(client);
   assert.ok(ack, "expected an ack");
   assert.equal(ack.projectId, "p1");
   assert.equal(ack.worktreePath, "/wt/x");
   assert.equal(ack.branchDeleted, "feat/x");
-  assert.equal(ack.baseBranch, "main");
-  assert.equal(ack.baseUpdated, false);
-  assert.match(String(ack.baseReason), /local commits/);
+  assert.equal(ack.targetBranch, "main");
+  assert.equal(ack.targetUpdated, false);
+  assert.match(String(ack.targetReason), /local commits/);
   assert.equal(broadcasts(), 1, "the row must refresh");
 });
 
-test("worktree.wrapUp forwards the PR's own base branch", async () => {
-  // The base is not always `main`; passing it is what makes a release-branch PR
+test("worktree.wrapUp forwards the PR's own target branch", async () => {
+  // The target is not always `main`; passing it is what makes a release-branch PR
   // fast-forward the right ref.
   const seen: unknown[] = [];
   const { router, client } = routerWith({
-    wrapUpWorktree: async (_p: string, _w: string, base?: string) => {
-      seen.push(base);
-      return { baseUpdated: true };
+    wrapUpWorktree: async (_p: string, _w: string, target?: string) => {
+      seen.push(target);
+      return { targetUpdated: true };
+    },
+  });
+  await router.dispatch(
+    client,
+    cmd("worktree.wrapUp", { ...OK, targetBranch: "release/2.0" }),
+  );
+  assert.deepEqual(seen, ["release/2.0"]);
+});
+
+test("worktree.wrapUp still honours the legacy baseBranch key", async () => {
+  // The one irreversible failure in the base->target rename: a client that
+  // predates it sends `baseBranch`, the server reads undefined, and the manager's
+  // `?? detectDefaultBranch()` fallback then fast-forwards the WRONG branch and
+  // acks it as a success. This alias is the guard, so it needs a test that fails
+  // the day someone deletes it without shipping the app first.
+  const seen: unknown[] = [];
+  const { router, client } = routerWith({
+    wrapUpWorktree: async (_p: string, _w: string, target?: string) => {
+      seen.push(target);
+      return { targetUpdated: true };
     },
   });
   await router.dispatch(
     client,
     cmd("worktree.wrapUp", { ...OK, baseBranch: "release/2.0" }),
   );
-  assert.deepEqual(seen, ["release/2.0"]);
+  assert.deepEqual(seen, ["release/2.0"], "a stale client must not fall through to the default");
+});
+
+test("worktree.wrapUp prefers targetBranch when a client sends both", async () => {
+  const seen: unknown[] = [];
+  const { router, client } = routerWith({
+    wrapUpWorktree: async (_p: string, _w: string, target?: string) => {
+      seen.push(target);
+      return { targetUpdated: true };
+    },
+  });
+  await router.dispatch(
+    client,
+    cmd("worktree.wrapUp", { ...OK, baseBranch: "old", targetBranch: "new" }),
+  );
+  assert.deepEqual(seen, ["new"]);
 });
 
 test("worktree.discard acks the branch it deleted", async () => {
   const { router, client, broadcasts } = routerWith({
-    discardWorktree: async () => ({ branchDeleted: "feat/x", baseUpdated: false }),
+    discardWorktree: async () => ({ branchDeleted: "feat/x", targetUpdated: false }),
   });
   await router.dispatch(client, cmd("worktree.discard", OK));
   assert.equal(ackOf(client).branchDeleted, "feat/x");

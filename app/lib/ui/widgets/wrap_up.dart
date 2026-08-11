@@ -43,7 +43,7 @@ class PrOpTarget {
   const PrOpTarget({
     required this.projectId,
     required this.worktreePath,
-    this.baseBranch,
+    this.targetBranch,
     this.expectBranch,
   });
 
@@ -51,7 +51,7 @@ class PrOpTarget {
   final String worktreePath;
 
   /// The PR's `baseRefName`, for wrap up's fast-forward leg.
-  final String? baseBranch;
+  final String? targetBranch;
 
   /// The branch the confirm dialog named. The server resolves the branch again
   /// when it runs, so without this the user could confirm "delete feat/x" and
@@ -78,7 +78,7 @@ final prOpRunnerProvider = Provider<PrOpRunner>(
         final report = await store.wrapUpWorktree(
           target.projectId,
           target.worktreePath,
-          baseBranch: target.baseBranch,
+          targetBranch: target.targetBranch,
           expectBranch: target.expectBranch,
         );
         return PrOpOutcome(report.summary, detail: report.detail);
@@ -193,7 +193,7 @@ Future<void> runPrRemedy(
           PrOpTarget(
             projectId: projectId,
             worktreePath: worktreePath,
-            baseBranch: pr?.baseRefName,
+            targetBranch: pr?.baseRefName,
             expectBranch: branch,
           ),
         );

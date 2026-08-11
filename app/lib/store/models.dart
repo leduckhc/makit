@@ -844,6 +844,9 @@ class Worktree {
     required this.deletions,
     required this.filesChanged,
     required this.sessionIds,
+    this.targetBranch,
+    this.targetResolved = true,
+    this.retargetedFrom,
     this.uncommittedFiles = 0,
     this.aheadCount = 0,
     this.behindCount = 0,
@@ -860,6 +863,33 @@ class Worktree {
   final int filesChanged;
   final List<String> sessionIds;
 
+  /// The branch this worktree's work lands in: what [insertions]/[deletions]
+  /// measure against (`git diff target...HEAD` — what a PR into it would
+  /// contain), what a PR will target, and what a wrap-up fast-forwards.
+  ///
+  /// Null for the primary checkout (it *is* where branches land) and for a
+  /// detached worktree (no branch to land).
+  final String? targetBranch;
+
+  /// False when [targetBranch] could not be resolved (deleted, never fetched):
+  /// the diff numbers are then working-tree-only and the committed delta is
+  /// unknown. Prefer [showsDiff] over reading this directly.
+  ///
+  /// Defaults to true so an older server that sends neither field keeps today's
+  /// rendering instead of blanking every pill.
+  final bool targetResolved;
+
+  /// The target this one replaced, when makit changed it automatically: the
+  /// branch we were aiming at vanished without a wrap-up, so we fell back to the
+  /// repo default (or to wherever the chain actually landed).
+  ///
+  /// Present so the change can be **announced**. A silent repoint moves this
+  /// worktree's diff and its future pull request to a different destination, and
+  /// doing that invisibly is how someone opens a PR against the wrong branch.
+  /// Cleared once the user picks a target explicitly — by then they own the value
+  /// and there is nothing left to tell them.
+  final String? retargetedFrom;
+
   /// Files with uncommitted changes (staged + unstaged + untracked).
   final int uncommittedFiles;
 
@@ -875,6 +905,19 @@ class Worktree {
 
   bool get hasChanges => insertions > 0 || deletions > 0 || filesChanged > 0;
 
+  /// True when the target exists but could not be resolved — the one state that
+  /// needs explaining rather than rendering.
+  bool get targetUnresolved => targetBranch != null && !targetResolved;
+
+  /// Whether the +/- diff may be shown.
+  ///
+  /// Not just [hasChanges]: when the target cannot be resolved the numbers are a
+  /// working-tree-only figure, so painting them would assert a committed delta
+  /// that was never measured. The failure mode is not a zero but a *plausible
+  /// small* count — which reads as "barely diverged" on a worktree that may be
+  /// far ahead — so suppression has to be explicit.
+  bool get showsDiff => hasChanges && !targetUnresolved;
+
   static Worktree? fromJson(Map<String, dynamic> j) {
     final path = j['path'];
     if (path is! String) return null;
@@ -887,6 +930,15 @@ class Worktree {
       insertions: (j['insertions'] as num?)?.toInt() ?? 0,
       deletions: (j['deletions'] as num?)?.toInt() ?? 0,
       filesChanged: (j['filesChanged'] as num?)?.toInt() ?? 0,
+      targetBranch: j['targetBranch'] is String
+          ? j['targetBranch'] as String
+          : null,
+      targetResolved: j['targetResolved'] is bool
+          ? j['targetResolved'] as bool
+          : true,
+      retargetedFrom: j['retargetedFrom'] is String
+          ? j['retargetedFrom'] as String
+          : null,
       uncommittedFiles: (j['uncommittedFiles'] as num?)?.toInt() ?? 0,
       aheadCount: (j['aheadCount'] as num?)?.toInt() ?? 0,
       behindCount: (j['behindCount'] as num?)?.toInt() ?? 0,
@@ -901,6 +953,95 @@ class Worktree {
       pr: rawPr is Map
           ? PullRequest.fromJson(Map<String, dynamic>.from(rawPr))
           : null,
+    );
+  }
+}
+
+/// Why a branch is offered as a target — the picker's section headers.
+///
+/// `defaultBranch` rather than `default`, which is a Dart keyword.
+enum TargetCandidateGroup {
+  /// The closest ancestor branch: the honest suggestion, and the one today's
+  /// pill gets wrong for a stacked worktree.
+  forkedFrom('Forked from'),
+
+  /// The repo's default branch — what you want once a stack lands.
+  defaultBranch('Repo default'),
+
+  /// Checked out in another worktree: the stacked case.
+  worktree('Other worktrees'),
+
+  /// Everything else, behind a filter.
+  other('All branches');
+
+  const TargetCandidateGroup(this.label);
+
+  /// Section header text.
+  final String label;
+
+  /// Wire value -> enum, defaulting to [other] so a newer server's group name
+  /// degrades to "listed under All branches" instead of throwing.
+  static TargetCandidateGroup fromWire(String? raw) => switch (raw) {
+    'forkedFrom' => TargetCandidateGroup.forkedFrom,
+    'default' => TargetCandidateGroup.defaultBranch,
+    'worktree' => TargetCandidateGroup.worktree,
+    _ => TargetCandidateGroup.other,
+  };
+}
+
+/// One row in the "Lands in" picker.
+class TargetCandidate {
+  const TargetCandidate({
+    required this.branch,
+    required this.group,
+    required this.onRemote,
+    required this.isSelf,
+    this.insertions,
+    this.deletions,
+  });
+
+  final String branch;
+  final TargetCandidateGroup group;
+
+  /// Whether the branch exists on a remote. A pull-request base must, so a
+  /// local-only branch is shown disabled with a reason rather than accepted and
+  /// then refused by `gh`.
+  final bool onRemote;
+
+  /// True for the worktree's own branch: listed so the picker can explain why it
+  /// is not selectable, rather than leaving an unexplained gap.
+  final bool isSelf;
+
+  /// What the diff would become. Null when the server did not preview this
+  /// candidate (only the ranked few are previewed) or could not measure it.
+  final int? insertions;
+  final int? deletions;
+
+  bool get hasPreview => insertions != null && deletions != null;
+
+  /// Whether picking this row is allowed.
+  bool get selectable => !isSelf && onRemote;
+
+  /// Why it is not selectable, in the user's terms — null when it is.
+  ///
+  /// Follows the "explain the block, don't hide it" convention the worktree and
+  /// PR action menus already use.
+  String? get blockedReason {
+    if (isSelf) return 'this worktree';
+    if (!onRemote) return 'not pushed yet';
+    return null;
+  }
+
+  static TargetCandidate? fromJson(Map<String, dynamic> j) {
+    final branch = j['branch'];
+    if (branch is! String || branch.isEmpty) return null;
+    return TargetCandidate(
+      branch: branch,
+      group: TargetCandidateGroup.fromWire(j['group'] as String?),
+      onRemote: j['onRemote'] != false,
+      isSelf: j['isSelf'] == true,
+      insertions: (j['insertions'] as num?)?.toInt(),
+      deletions: (j['deletions'] as num?)?.toInt(),
     );
   }
 }
@@ -1225,29 +1366,29 @@ class WrapUpReport {
   const WrapUpReport({
     this.branchDeleted,
     this.branchReason,
-    this.baseBranch,
-    this.baseUpdated = false,
-    this.baseReason,
+    this.targetBranch,
+    this.targetUpdated = false,
+    this.targetReason,
   });
 
   /// The local branch that was deleted, or null for a detached worktree — or for
   /// one whose deletion failed, in which case [branchReason] says why.
   final String? branchDeleted;
 
-  /// Why the branch survived when it should have gone. Like [baseReason] this is
+  /// Why the branch survived when it should have gone. Like [targetReason] this is
   /// reported rather than thrown: the worktree is already removed by then, so the
   /// job partly succeeded and the client cannot retry it.
   final String? branchReason;
 
   /// The branch that was caught up, or null when none could be resolved.
-  final String? baseBranch;
+  final String? targetBranch;
 
-  /// True when [baseBranch] actually moved.
-  final bool baseUpdated;
+  /// True when [targetBranch] actually moved.
+  final bool targetUpdated;
 
-  /// Why [baseBranch] was not updated, when that is worth telling the user.
+  /// Why [targetBranch] was not updated, when that is worth telling the user.
   /// Null for the benign "already up to date" case — that is not a problem.
-  final String? baseReason;
+  final String? targetReason;
 
   /// Tolerant decode: an empty/garbage ack degrades to "nothing reported"
   /// rather than throwing, because by the time this arrives the worktree has
@@ -1259,9 +1400,16 @@ class WrapUpReport {
     branchReason: j['branchReason'] is String
         ? j['branchReason'] as String
         : null,
-    baseBranch: j['baseBranch'] is String ? j['baseBranch'] as String : null,
-    baseUpdated: j['baseUpdated'] == true,
-    baseReason: j['baseReason'] is String ? j['baseReason'] as String : null,
+    // `targetBranch` is the name; `baseBranch` is read for one release so a
+    // server that predates the rename still produces a complete report.
+    targetBranch: j['targetBranch'] is String
+        ? j['targetBranch'] as String
+        : (j['baseBranch'] is String ? j['baseBranch'] as String : null),
+    // Same one-release aliases as `targetBranch` above.
+    targetUpdated: j['targetUpdated'] == true || j['baseUpdated'] == true,
+    targetReason: j['targetReason'] is String
+        ? j['targetReason'] as String
+        : (j['baseReason'] is String ? j['baseReason'] as String : null),
   );
 
   /// One line for a snackbar, e.g. `Removed feat/x · main updated`, or
@@ -1274,8 +1422,8 @@ class WrapUpReport {
         'Worktree removed',
       // Never silently imply the branch went when it did not.
       if (branchDeleted == null && branchReason != null) 'branch kept',
-      if (baseBranch != null)
-        baseUpdated ? '$baseBranch updated' : '$baseBranch unchanged',
+      if (targetBranch != null)
+        targetUpdated ? '$targetBranch updated' : '$targetBranch unchanged',
     ];
     return parts.join(' · ');
   }
@@ -1284,7 +1432,7 @@ class WrapUpReport {
   /// Null when everything went as advertised — both legs are best-effort, and
   /// either can have something to say.
   String? get detail {
-    final reasons = [?branchReason, ?baseReason];
+    final reasons = [?branchReason, ?targetReason];
     return reasons.isEmpty ? null : reasons.join('\n');
   }
 }

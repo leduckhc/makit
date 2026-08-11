@@ -4,6 +4,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../../store/store.dart';
 import '../../ui/widgets/icon_glyph.dart';
 import '../../ui/widgets/pr_detail.dart';
 import '../../ui/widgets/pr_signals.dart';
@@ -111,6 +112,10 @@ class PrComposerBar extends ConsumerWidget {
         const SizedBox(width: kSpace10),
         PrCtaButton(
           status: status,
+          // Home 1: the caret menu's "This worktree" group needs an identity to
+          // name; without one the group is simply absent.
+          projectId: projectId,
+          worktreePath: worktreePath,
           onRun: (remedy) => _run(context, ref, remedy),
         ),
       ],
@@ -121,6 +126,9 @@ class PrComposerBar extends ConsumerWidget {
     context,
     status: status,
     pr: pr,
+    // Identity, so the sheet re-derives rather than freezing its facts.
+    projectId: projectId,
+    worktreePath: worktreePath,
     onRun: (remedy) => _run(context, ref, remedy),
   );
 
@@ -269,9 +277,20 @@ class _MoreLink extends StatelessWidget {
 ///  * **agent prompt** — tonal fill in the fact's tone; inserts text,
 ///  * **direct op** — solid fill; runs now (behind a confirm when destructive).
 class PrCtaButton extends ConsumerWidget {
-  const PrCtaButton({super.key, required this.status, required this.onRun});
+  const PrCtaButton({
+    super.key,
+    required this.status,
+    required this.onRun,
+    this.projectId,
+    this.worktreePath,
+  });
 
   final PrStatus status;
+
+  /// Identity for the menu's "Lands in" entry (Home 1). Optional: a surface with
+  /// no resolvable worktree just does not show the group.
+  final String? projectId;
+  final String? worktreePath;
 
   /// Every action — prompt or direct — goes through here; [runPrRemedy] decides
   /// what each one means. This widget deliberately knows nothing about composers.
@@ -316,6 +335,13 @@ class PrCtaButton extends ConsumerWidget {
         ref,
         status: status,
         onRun: onRun,
+        projectId: projectId,
+        // Resolved from the snapshot rather than passed in, so the inline value is
+        // whatever the latest broadcast says.
+        worktree: ref
+            .watch(reposProvider)
+            .locateWorktree(worktreePath)
+            ?.worktree,
       ),
       builder: (context, controller, _) => _SplitButton(
         label: cta.label,

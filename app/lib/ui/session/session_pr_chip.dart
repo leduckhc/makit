@@ -61,6 +61,10 @@ class SessionPrChip extends ConsumerWidget {
         context,
         status: status,
         pr: pr,
+        // Identity, so the sheet re-derives its facts (it hosts the "Lands in"
+        // picker, which changes them) rather than painting open-time values.
+        projectId: projectId,
+        worktreePath: worktreePath,
         sheet: true,
         canInsertPrompt: onInsertPrompt != null,
         onRun: (remedy) => runPrRemedy(

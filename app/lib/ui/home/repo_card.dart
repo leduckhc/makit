@@ -374,7 +374,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     );
     if (base == null) return;
     try {
-      final wt = await store.createWorktree(repo.id, baseBranch: base);
+      final wt = await store.createWorktree(repo.id, targetBranch: base);
       status.success(
         'Created ${wt.branch ?? wt.path}',
         source: StatusSources.worktree,

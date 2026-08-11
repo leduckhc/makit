@@ -226,7 +226,10 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (isDefault) TagChip(label: 'default', color: cs.outline),
-                  if (worktree.hasChanges)
+                  // `showsDiff`, not `hasChanges`: an unresolvable target
+                  // yields a working-tree-only count, and painting it would
+                  // assert a committed delta we never measured.
+                  if (worktree.showsDiff)
                     DiffChip(
                       insertions: worktree.insertions,
                       deletions: worktree.deletions,

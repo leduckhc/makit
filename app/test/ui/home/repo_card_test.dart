@@ -65,10 +65,10 @@ class _FakeStore extends StoreController {
   @override
   Future<({String path, String? branch})> createWorktree(
     String projectId, {
-    String? baseBranch,
+    String? targetBranch,
     String? branchName,
   }) async {
-    createdFrom.add(baseBranch);
+    createdFrom.add(targetBranch);
     return (path: '/tmp/demo-wt', branch: 'forked');
   }
 

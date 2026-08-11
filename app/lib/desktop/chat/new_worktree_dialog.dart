@@ -62,7 +62,7 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
   String? _projectId;
   _WorktreeFrom _source = _WorktreeFrom.newBranch;
   String? _existingWorktreePath;
-  String? _baseBranch;
+  String? _targetBranch;
   int? _prNumber;
   Future<List<OpenPr>>? _prsFuture;
 
@@ -81,7 +81,7 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
         widget.initialProjectId ??
         _activeGroupRepo() ??
         (repos.isNotEmpty ? repos.first.id : null);
-    _baseBranch = _defaultBranchFor(_projectId);
+    _targetBranch = _defaultBranchFor(_projectId);
   }
 
   @override
@@ -115,9 +115,9 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
     return null;
   }
 
-  /// The base branch actually used: [_baseBranch] when it is a live option,
+  /// The target branch actually used: [_targetBranch] when it is a live option,
   /// else the first option (what [_newBranchPanel] displays).
-  String? _effectiveBaseBranch(String? projectId) {
+  String? _effectiveTargetBranch(String? projectId) {
     RepoInfo? repo;
     for (final r in ref.read(reposProvider).repos) {
       if (r.id == projectId) repo = r;
@@ -125,8 +125,8 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
     final options = repo == null
         ? const <String>[]
         : branchOptionsForRepo(repo);
-    if (options.isEmpty) return _baseBranch;
-    return options.contains(_baseBranch) ? _baseBranch : options.first;
+    if (options.isEmpty) return _targetBranch;
+    return options.contains(_targetBranch) ? _targetBranch : options.first;
   }
 
   void _close() {
@@ -148,7 +148,7 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
     if (projectId == null || projectId == _projectId) return;
     setState(() {
       _projectId = projectId;
-      _baseBranch = _defaultBranchFor(projectId);
+      _targetBranch = _defaultBranchFor(projectId);
       // A different repo has a different PR list; drop the cached future so the
       // panel refetches when From PR is shown again.
       _prsFuture = null;
@@ -200,7 +200,7 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
           final name = _branchNameCtrl.text.trim();
           created = await store.createWorktree(
             projectId,
-            baseBranch: _effectiveBaseBranch(projectId),
+            targetBranch: _effectiveTargetBranch(projectId),
             branchName: name.isEmpty ? null : name,
           );
         case _WorktreeFrom.fromPr:
@@ -499,8 +499,8 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
           )
         : DropdownButtonFormField<String>(
             key: ValueKey('wt-branch-$_projectId'),
-            initialValue: options.contains(_baseBranch)
-                ? _baseBranch
+            initialValue: options.contains(_targetBranch)
+                ? _targetBranch
                 : options.first,
             isExpanded: true,
             items: [
@@ -512,7 +512,7 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
             ],
             onChanged: _creating
                 ? null
-                : (v) => setState(() => _baseBranch = v),
+                : (v) => setState(() => _targetBranch = v),
           );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

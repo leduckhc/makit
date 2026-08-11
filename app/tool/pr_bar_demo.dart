@@ -150,14 +150,22 @@ final _scenes = <_Scene>[
     pr: _pr(state: 'MERGED', checks: _green),
     branch: 'fix/composer',
     uncommitted: 2,
-    residue: const PrResidue(sessions: 1, baseBranch: 'main', baseBehind: 6),
+    residue: const PrResidue(
+      sessions: 1,
+      targetBranch: 'main',
+      targetBehind: 6,
+    ),
   ),
   _Scene(
     'closed without merging',
     pr: _pr(state: 'CLOSED', checks: _green),
     branch: 'spike/gauge',
     uncommitted: 1,
-    residue: const PrResidue(sessions: 2, baseBranch: 'main', baseBehind: 3),
+    residue: const PrResidue(
+      sessions: 2,
+      targetBranch: 'main',
+      targetBehind: 3,
+    ),
   ),
   _Scene(
     'stale (GitHub quota)',
@@ -205,7 +213,7 @@ void main() {
             'DEMO: would run ${op.name}',
             detail:
                 'project=${target.projectId}\nworktree=${target.worktreePath}\n'
-                'base=${target.baseBranch}\nexpectBranch=${target.expectBranch}',
+                'target=${target.targetBranch}\nexpectBranch=${target.expectBranch}',
           );
         }),
       ],

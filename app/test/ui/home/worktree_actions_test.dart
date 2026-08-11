@@ -37,10 +37,10 @@ class _FakeStore extends StoreController {
   @override
   Future<({String path, String? branch})> createWorktree(
     String projectId, {
-    String? baseBranch,
+    String? targetBranch,
     String? branchName,
   }) async {
-    createdFrom.add(baseBranch);
+    createdFrom.add(targetBranch);
     return (path: '/tmp/demo/.wt/fresh', branch: 'fresh-branch');
   }
 
@@ -73,11 +73,36 @@ class _FakeStore extends StoreController {
 
   @override
   Future<List<OpenPr>> listOpenPrs(String projectId) async => const [];
+
+  // The picker reads candidates on open; return a small set so tapping
+  // "Lands in" does not blow up when a test drives the picker.
+  final List<(String, String)> retargeted = [];
+
+  @override
+  Future<List<TargetCandidate>> targetCandidates(
+    String projectId,
+    String worktreePath,
+  ) async => const [
+    TargetCandidate(
+      branch: 'main',
+      group: TargetCandidateGroup.defaultBranch,
+      onRemote: true,
+      isSelf: false,
+    ),
+  ];
+
+  @override
+  Future<void> setWorktreeTarget(
+    String projectId,
+    String worktreePath,
+    String targetBranch,
+  ) async => retargeted.add((worktreePath, targetBranch));
 }
 
 Worktree _wt({
   String branch = 'add-login',
   bool isPrimary = false,
+  String? targetBranch,
   PullRequest? pr,
   List<String> sessionIds = const [],
 }) => Worktree(
@@ -89,6 +114,7 @@ Worktree _wt({
   deletions: 0,
   filesChanged: 0,
   sessionIds: sessionIds,
+  targetBranch: targetBranch,
   pr: pr,
 );
 
@@ -186,6 +212,23 @@ void main() {
       expect(canRenameWorktree(w), isFalse);
       expect(canDeleteWorktree(w), isTrue);
     });
+
+    test('a feature branch can be retargeted; primary and detached cannot', () {
+      expect(canRetargetWorktree(_wt()), isTrue);
+      expect(
+        canRetargetWorktree(_wt(branch: 'main', isPrimary: true)),
+        isFalse,
+      );
+      expect(canRetargetWorktree(_detached()), isFalse);
+    });
+
+    test('an open PR does NOT block retargeting (unlike rename)', () {
+      // The whole point of the asymmetry: `gh pr edit --base` retargets a live
+      // PR, whereas a rename would orphan its head.
+      final w = _wt(pr: _openPr());
+      expect(canRenameWorktree(w), isFalse);
+      expect(canRetargetWorktree(w), isTrue);
+    });
   });
 
   group('worktree actions sheet', () {
@@ -271,6 +314,97 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(store.removed, ['/tmp/demo/.wt/add-login']);
+    });
+  });
+
+  group('lands in', () {
+    testWidgets('the sheet lists "Lands in" with the current target', (
+      tester,
+    ) async {
+      final repo = _repo([_wt(targetBranch: 'main')]);
+      await _pump(
+        tester,
+        WorktreeRow(
+          repo: repo,
+          worktree: repo.worktrees.first,
+          sessions: const [],
+        ),
+      );
+
+      await tester.longPress(find.text('add-login'));
+      await tester.pumpAndSettle();
+
+      final tile = _tile(tester, 'Lands in');
+      expect(tile.enabled, isTrue);
+      // Its subtitle states today's value so the row is not a mystery door.
+      expect((tile.subtitle! as Text).data, 'main');
+    });
+
+    testWidgets('disabled with a reason on the primary checkout', (
+      tester,
+    ) async {
+      final repo = _repo([_wt(branch: 'main', isPrimary: true)]);
+      await _pump(
+        tester,
+        WorktreeRow(
+          repo: repo,
+          worktree: repo.worktrees.first,
+          sessions: const [],
+        ),
+      );
+
+      await tester.longPress(find.text('main'));
+      await tester.pumpAndSettle();
+
+      final tile = _tile(tester, 'Lands in');
+      expect(tile.enabled, isFalse);
+      expect(
+        (tile.subtitle! as Text).data,
+        'This is where branches land, not one that lands',
+      );
+    });
+
+    testWidgets('stays enabled with an open PR while Rename is disabled', (
+      tester,
+    ) async {
+      // The asymmetry, exercised end to end in the sheet.
+      final repo = _repo([_wt(targetBranch: 'main', pr: _openPr())]);
+      await _pump(
+        tester,
+        WorktreeRow(
+          repo: repo,
+          worktree: repo.worktrees.first,
+          sessions: const [],
+        ),
+      );
+
+      await tester.longPress(find.text('add-login'));
+      await tester.pumpAndSettle();
+
+      expect(_tile(tester, 'Rename branch').enabled, isFalse);
+      expect(_tile(tester, 'Lands in').enabled, isTrue);
+    });
+
+    testWidgets('tapping it opens the picker (bottom sheet on touch)', (
+      tester,
+    ) async {
+      final repo = _repo([_wt(targetBranch: 'main')]);
+      await _pump(
+        tester,
+        WorktreeRow(
+          repo: repo,
+          worktree: repo.worktrees.first,
+          sessions: const [],
+        ),
+      );
+
+      await tester.longPress(find.text('add-login'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Lands in'));
+      await tester.pumpAndSettle();
+
+      // The picker renders its own candidate row for the branch it fetched.
+      expect(find.byKey(const Key('landsInCandidate-main')), findsOneWidget);
     });
   });
 

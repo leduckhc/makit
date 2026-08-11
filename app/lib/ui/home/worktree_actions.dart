@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import '../../store/models.dart';
-import '../../store/store.dart';
 import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
+import '../../store/models.dart';
+import '../../store/store.dart';
+import '../widgets/lands_in_picker.dart';
 import '../widgets/sheet_header.dart';
 
 /// Whether [w]'s branch can be renamed. Mirrors the desktop sidebar's guards:
@@ -13,6 +14,16 @@ import '../widgets/sheet_header.dart';
 /// rename, and renaming out from under an open PR would orphan the PR's head.
 bool canRenameWorktree(Worktree w) =>
     !w.isPrimary && w.branch != null && w.pr?.state.toUpperCase() != 'OPEN';
+
+/// Whether [w]'s target — the branch its work lands in — can be changed.
+///
+/// Same two exclusions as rename (the primary checkout *is* where branches
+/// land; a detached worktree has no branch to land), but pointedly NOT gated on
+/// an open PR the way [canRenameWorktree] is. Renaming out from under a PR
+/// orphans its head, so that stays blocked — but retargeting an open PR is a
+/// first-class operation (`gh pr edit --base`), so an open PR must leave this
+/// enabled. The asymmetry is deliberate.
+bool canRetargetWorktree(Worktree w) => !w.isPrimary && w.branch != null;
 
 /// Whether [w] can be deleted. Everything but the primary checkout — deleting
 /// that would take the repo with it.
@@ -31,36 +42,82 @@ Future<void> showWorktreeActions(
   required RepoInfo repo,
   required Worktree worktree,
 }) async {
+  // Renamed locally: the builder below shadows this with the LIVE value, and two
+  // identifiers one letter apart would be an easy way to reintroduce the bug.
+  final w = worktree;
   final action = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
     builder: (sheetContext) {
       final cs = Theme.of(sheetContext).colorScheme;
+      // Re-derive from the snapshot instead of closing over the `worktree` we were
+      // handed. Tapping "Lands in" pops this sheet before the picker opens, so the
+      // obvious staleness path is already closed — but a snapshot can also arrive
+      // while the sheet sits open (the agent commits, another client retargets), and
+      // then the target and guards printed here would describe a state that no
+      // longer exists. Falls back to the passed-in value for a worktree the snapshot
+      // no longer carries, so a removal cannot blank the sheet mid-tap.
+      final worktree =
+          ref.watch(reposProvider).locateWorktree(w.path)?.worktree ?? w;
       return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SheetHeader(title: worktree.branch ?? 'detached'),
-            ListTile(
-              enabled: canRenameWorktree(worktree),
-              leading: const Icon(PhosphorIconsLight.textAa),
-              title: const Text('Rename branch'),
-              subtitle: canRenameWorktree(worktree)
-                  ? null
-                  : Text(_renameBlockedReason(worktree)),
-              onTap: () => Navigator.pop(sheetContext, 'rename'),
-            ),
-            ListTile(
-              enabled: canDeleteWorktree(worktree),
-              leading: Icon(PhosphorIconsLight.trash, color: cs.error),
-              title: Text('Delete worktree', style: TextStyle(color: cs.error)),
-              subtitle: canDeleteWorktree(worktree)
-                  ? null
-                  : const Text('The primary checkout cannot be removed'),
-              onTap: () => Navigator.pop(sheetContext, 'delete'),
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SheetHeader(title: worktree.branch ?? 'detached'),
+              // Under the header so the sheet says, at a glance, where this branch
+              // lands. The header already IS the branch, so the source half is
+              // omitted — printing it twice would just waste the line. Only shown
+              // when there is a branch that lands (i.e. the retarget guard holds).
+              if (canRetargetWorktree(worktree))
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: LandsInLine(
+                    targetBranch: worktree.targetBranch,
+                    targetResolved: worktree.targetResolved,
+                  ),
+                ),
+              ListTile(
+                enabled: canRenameWorktree(worktree),
+                leading: const Icon(PhosphorIconsLight.textAa),
+                title: const Text('Rename branch'),
+                subtitle: canRenameWorktree(worktree)
+                    ? null
+                    : Text(_renameBlockedReason(worktree)),
+                onTap: () => Navigator.pop(sheetContext, 'rename'),
+              ),
+              // Between Rename and Delete: like Rename it is a non-destructive
+              // branch property, so the two are siblings and the destructive
+              // Delete stays last.
+              ListTile(
+                enabled: canRetargetWorktree(worktree),
+                leading: const Icon(kLandsInIcon),
+                title: const Text('Lands in'),
+                // Enabled: the current target (so the row states today's value).
+                // Disabled: why, following the same visible-but-disabled
+                // convention as Rename.
+                subtitle: canRetargetWorktree(worktree)
+                    ? (worktree.targetBranch == null
+                          ? null
+                          : Text(worktree.targetBranch!))
+                    : Text(_landsInBlockedReason(worktree)),
+                onTap: () => Navigator.pop(sheetContext, 'landsIn'),
+              ),
+              ListTile(
+                enabled: canDeleteWorktree(worktree),
+                leading: Icon(PhosphorIconsLight.trash, color: cs.error),
+                title: Text(
+                  'Delete worktree',
+                  style: TextStyle(color: cs.error),
+                ),
+                subtitle: canDeleteWorktree(worktree)
+                    ? null
+                    : const Text('The primary checkout cannot be removed'),
+                onTap: () => Navigator.pop(sheetContext, 'delete'),
+              ),
+            ],
+          ),
         ),
       );
     },
@@ -69,9 +126,27 @@ Future<void> showWorktreeActions(
   switch (action) {
     case 'rename':
       await _renameBranch(context, ref, repo: repo, worktree: worktree);
+    case 'landsIn':
+      // `sheet: true`: on touch the picker is a bottom sheet, matching the
+      // surface it was launched from. It persists the choice itself.
+      await showLandsInPicker(
+        context,
+        ref,
+        projectId: repo.id,
+        worktree: worktree,
+        sheet: true,
+      );
     case 'delete':
       await _deleteWorktree(context, ref, repo: repo, worktree: worktree);
   }
+}
+
+/// Why "Lands in" is disabled — shown under the greyed row like the rename
+/// reason. No open-PR case here on purpose: an open PR does not block
+/// retargeting (see [canRetargetWorktree]).
+String _landsInBlockedReason(Worktree w) {
+  if (w.isPrimary) return 'This is where branches land, not one that lands';
+  return 'This worktree has no branch to land';
 }
 
 /// Why "Rename branch" is disabled — shown under the greyed row so the block is

@@ -1748,9 +1748,9 @@ test("wrapUpWorktree reports the base branch it could not catch up", async () =>
   await withWorktreeEnv(async ({ manager, projectId }) => {
     const wt = await manager.createWorktree(projectId);
     const result = await manager.wrapUpWorktree(projectId, wt.path, "main");
-    assert.equal(result.baseBranch, "main");
-    assert.equal(result.baseUpdated, false);
-    assert.ok(result.baseReason, "it must explain why the base was not updated");
+    assert.equal(result.targetBranch, "main");
+    assert.equal(result.targetUpdated, false);
+    assert.ok(result.targetReason, "it must explain why the base was not updated");
   });
 });
 
@@ -1782,7 +1782,7 @@ test("wrapUpWorktree falls back to the repo's default branch", async () => {
   await withWorktreeEnv(async ({ manager, projectId }) => {
     const wt = await manager.createWorktree(projectId);
     const result = await manager.wrapUpWorktree(projectId, wt.path);
-    assert.equal(result.baseBranch, "main");
+    assert.equal(result.targetBranch, "main");
   });
 });
 

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { enrichPrs } from "./repo_service.js";
+import { enrichPrs, resolveTargetBranch } from "./repo_service.js";
 import type { GithubGateway, PrLookup } from "./github/gateway.js";
 import type { PullRequestDTO, RepoDTO } from "./protocol.js";
 import type { PullRequestInfo } from "./git.js";
@@ -41,6 +41,9 @@ function repos(branch: string): RepoDTO[] {
           path: "/wt",
           branch,
           isPrimary: false,
+      targetBranch: "main",
+      targetResolved: true,
+      retargetedFrom: null,
           insertions: 0,
           deletions: 0,
           filesChanged: 0,
@@ -104,4 +107,197 @@ test("a fresh PR lookup is written without the stale flag", async () => {
   assert.ok(result);
   assert.equal(result!.number, 7);
   assert.ok(!result!.stale, "a successful re-fetch is not stale");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveTargetBranch (§0 B3, B6, B7)
+//
+// One resolver owns precedence, and it must run BEFORE `diffStat` — otherwise
+// the pill's numbers come from the persisted value while the label comes from
+// the PR, inside a single broadcast.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("resolveTargetBranch: the primary checkout has no target", () => {
+  // It is where branches land, not one that lands.
+  assert.equal(
+    resolveTargetBranch({
+      branch: "main",
+      isPrimary: true,
+      prBaseRefName: "release/1.4",
+      persisted: "release/1.4",
+      defaultBranch: "main",
+    }),
+    null,
+  );
+});
+
+test("resolveTargetBranch: a detached worktree has no target", () => {
+  assert.equal(
+    resolveTargetBranch({
+      branch: null,
+      isPrimary: false,
+      prBaseRefName: "main",
+      persisted: "main",
+      defaultBranch: "main",
+    }),
+    null,
+  );
+});
+
+test("resolveTargetBranch: an open PR's baseRefName outranks the persisted value", () => {
+  // The forge is authoritative while a PR is LIVE — which is also how we inherit
+  // GitHub's automatic PR retargeting for free instead of reimplementing it.
+  assert.equal(
+    resolveTargetBranch({
+      branch: "feat/stack-b",
+      isPrimary: false,
+      prBaseRefName: "main",
+      prState: "OPEN",
+      persisted: "feat/parent",
+      defaultBranch: "main",
+    }),
+    "main",
+  );
+});
+
+test("resolveTargetBranch: the persisted value wins when there is no PR", () => {
+  assert.equal(
+    resolveTargetBranch({
+      branch: "feat/stack-b",
+      isPrimary: false,
+      prBaseRefName: null,
+      persisted: "feat/parent",
+      defaultBranch: "main",
+    }),
+    "feat/parent",
+  );
+});
+
+test("resolveTargetBranch: falls back to the repo default when nothing is stored", () => {
+  // B6: this is also the upgrade seed — it reproduces today's behaviour exactly,
+  // so shipping the feature moves nobody's numbers until they choose.
+  assert.equal(
+    resolveTargetBranch({
+      branch: "feat/stack-b",
+      isPrimary: false,
+      prBaseRefName: null,
+      persisted: null,
+      defaultBranch: "main",
+    }),
+    "main",
+  );
+});
+
+test("resolveTargetBranch: a target equal to the worktree's own branch is ignored", () => {
+  // Reachable via `renameBranch`, which keeps the path (and therefore the stored
+  // target) while changing the branch name. Self-targeting would silently make
+  // diffStat report working-tree-only, so fall through instead.
+  assert.equal(
+    resolveTargetBranch({
+      branch: "feat/parent",
+      isPrimary: false,
+      prBaseRefName: null,
+      persisted: "feat/parent",
+      defaultBranch: "main",
+    }),
+    "main",
+  );
+});
+
+test("resolveTargetBranch: returns null rather than self even via the default", () => {
+  assert.equal(
+    resolveTargetBranch({
+      branch: "main",
+      isPrimary: false,
+      prBaseRefName: null,
+      persisted: null,
+      defaultBranch: "main",
+    }),
+    null,
+  );
+});
+
+test("resolveTargetBranch: empty strings are treated as unset", () => {
+  assert.equal(
+    resolveTargetBranch({
+      branch: "feat/x",
+      isPrimary: false,
+      prBaseRefName: "",
+      persisted: "",
+      defaultBranch: "main",
+    }),
+    "main",
+  );
+});
+
+test("resolveTargetBranch: no default and nothing stored yields null", () => {
+  assert.equal(
+    resolveTargetBranch({
+      branch: "feat/x",
+      isPrimary: false,
+      prBaseRefName: null,
+      persisted: null,
+      defaultBranch: null,
+    }),
+    null,
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B7: PR lifecycle. Only a LIVE pull request is authoritative about where work
+// lands — a merged or closed one is history, and letting its base keep
+// overriding would pin a worktree to a destination that is already settled.
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("resolveTargetBranch: only an OPEN pull request outranks the persisted value", () => {
+  const args = {
+    branch: "feat/stack-b",
+    isPrimary: false,
+    persisted: "feat/parent",
+    defaultBranch: "main",
+  };
+  // Live: the forge wins.
+  assert.equal(
+    resolveTargetBranch({ ...args, prBaseRefName: "main", prState: "OPEN" }),
+    "main",
+  );
+  // Merged/closed: history. The user's own value takes over again.
+  assert.equal(
+    resolveTargetBranch({ ...args, prBaseRefName: "main", prState: "MERGED" }),
+    "feat/parent",
+  );
+  assert.equal(
+    resolveTargetBranch({ ...args, prBaseRefName: "main", prState: "CLOSED" }),
+    "feat/parent",
+  );
+});
+
+test("resolveTargetBranch: an unknown PR state is treated as not authoritative", () => {
+  // Forward compatibility: a state this build does not recognise must not be
+  // allowed to silently redirect where work lands.
+  assert.equal(
+    resolveTargetBranch({
+      branch: "feat/x",
+      isPrimary: false,
+      prBaseRefName: "release/9",
+      prState: "SOMETHING_NEW",
+      persisted: "feat/parent",
+      defaultBranch: "main",
+    }),
+    "feat/parent",
+  );
+});
+
+test("resolveTargetBranch: state is matched case-insensitively", () => {
+  assert.equal(
+    resolveTargetBranch({
+      branch: "feat/x",
+      isPrimary: false,
+      prBaseRefName: "main",
+      prState: "open",
+      persisted: "feat/parent",
+      defaultBranch: "main",
+    }),
+    "main",
+  );
 });

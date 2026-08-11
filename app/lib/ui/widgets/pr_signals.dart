@@ -300,7 +300,11 @@ String _plural(int n, String singular, [String? plural]) =>
 /// base's count is the **primary checkout's** own `behindCount`, which the server
 /// derives as `HEAD..@{upstream}` there — that is precisely "main is N behind".
 class PrResidue {
-  const PrResidue({this.sessions = 0, this.baseBranch, this.baseBehind = 0});
+  const PrResidue({
+    this.sessions = 0,
+    this.targetBranch,
+    this.targetBehind = 0,
+  });
 
   /// Sessions bound to the worktree, closed ones excluded by the server. A
   /// wrap-up or discard closes every one of them, which is what the fact names
@@ -310,10 +314,10 @@ class PrResidue {
 
   /// The branch checked out in the primary checkout, for the fact's wording.
   /// Null when there is no primary worktree in the snapshot, or it is detached.
-  final String? baseBranch;
+  final String? targetBranch;
 
   /// How far that branch trails its upstream.
-  final int baseBehind;
+  final int targetBehind;
 }
 
 /// Derive the status of a worktree.
@@ -340,6 +344,16 @@ PrStatus prStatus({
   int commitsAhead = 0,
   int commitsBehind = 0,
   bool isPrimary = false,
+
+  /// The branch this worktree's work lands in, and whether it resolved.
+  ///
+  /// Only used to report an unresolvable one. The diff counts are NOT re-derived
+  /// here — the server already measured them against this target.
+  String? targetBranch,
+  bool targetResolved = true,
+
+  /// The target this replaced, when makit moved it automatically (rule 4).
+  String? retargetedFrom,
   PrResidue residue = const PrResidue(),
 }) {
   final state = pr?.state.toUpperCase();
@@ -385,10 +399,10 @@ PrStatus prStatus({
             '${_plural(residue.sessions, 'session')} to close',
             PrTone.quiet,
           ),
-        if (residue.baseBranch != null && residue.baseBehind > 0)
+        if (residue.targetBranch != null && residue.targetBehind > 0)
           PrSignal(
-            '${residue.baseBranch} is '
-            '${_plural(residue.baseBehind, 'commit')} behind',
+            '${residue.targetBranch} is '
+            '${_plural(residue.targetBehind, 'commit')} behind',
             PrTone.quiet,
           ),
       ],
@@ -411,6 +425,27 @@ PrStatus prStatus({
   final draft = open?.isDraft ?? false;
 
   final signals = <PrSignal>[];
+
+  // FIRST, ahead of everything else: when the target cannot be resolved there is
+  // nowhere to land, and every count below is measured against a ref that is not
+  // there — so this is not merely urgent, it invalidates its neighbours.
+  //
+  // It exists because suppressing the +/- pill (see `Worktree.showsDiff`) is only
+  // half the job: hiding a misleading partial count leaves the row looking exactly
+  // like a clean worktree, so the user has committed work and the UI says nothing.
+  //
+  // Deliberately carries NO remedy. Opening a branch picker is navigation, and
+  // this remedy system is built for server ops and canned prompts — the fix has
+  // three homes already (the worktree-actions menu, the `Ship it` caret menu, and
+  // the detail sheet's own header line, which sits directly above this fact).
+  if (targetBranch != null && !targetResolved) {
+    signals.add(
+      PrSignal(
+        'target $targetBranch is gone — nowhere to land',
+        PrTone.blocking,
+      ),
+    );
+  }
 
   if (uncommittedFiles > 0) {
     signals.add(
@@ -560,6 +595,22 @@ PrStatus prStatus({
         ),
       );
     }
+  }
+
+  // Rule 4 / B7's announcement: makit moved this worktree's target because the
+  // branch it was aiming at vanished, or a live pull request disagreed with us.
+  // Not optional — the diff and the next pull request just changed destination,
+  // and letting that happen invisibly is how someone opens a PR against the
+  // wrong branch.
+  //
+  // Added LAST, like `still a draft` above, precisely so it cannot take the loud
+  // slot from an actionable fact. Real-app QA caught that: inserted earlier it
+  // became the composer strip's headline and pushed `1 commit unpushed` into
+  // `+1 more`, letting an informational note crowd out what you can act on.
+  if (retargetedFrom != null && targetBranch != null) {
+    signals.add(
+      PrSignal('was $retargetedFrom, now $targetBranch', PrTone.quiet),
+    );
   }
 
   final loud = signals.first;
@@ -776,6 +827,9 @@ PrStatus prStatusFor(
     commitsAhead: w.aheadCount,
     commitsBehind: w.behindCount,
     isPrimary: w.isPrimary,
+    targetBranch: w.targetBranch,
+    targetResolved: w.targetResolved,
+    retargetedFrom: w.retargetedFrom,
     // Residue is what a wrap-up or discard would *take with it*, and the primary
     // checkout is never removed (see the ending branch: it gets no direct op at
     // all). So it has no residue to report — its sessions are not going anywhere,
@@ -784,8 +838,8 @@ PrStatus prStatusFor(
         ? const PrResidue()
         : PrResidue(
             sessions: w.sessionIds.length,
-            baseBranch: primary?.branch,
-            baseBehind: primary?.behindCount ?? 0,
+            targetBranch: primary?.branch,
+            targetBehind: primary?.behindCount ?? 0,
           ),
   );
 }

@@ -24,6 +24,18 @@ import { listAcpSessions } from "./adapters/acp.js";
 import { listCodexThreads } from "./adapters/codex.js";
 import type { AgentSessionInfo } from "./adapters/adapter.js";
 import { listRepos, enrichPrs, type LastKnownPr } from "./repo_service.js";
+import {
+  putTarget,
+  clearTarget,
+  loadTargets,
+  renameTargetBranch,
+  worktreeTargetsFile,
+} from "./worktree-target-store.js";
+import {
+  targetCandidates,
+  resolveThroughChain,
+  type TargetCandidate,
+} from "./target_candidates.js";
 import { createGithubGateway, type GithubGateway } from "./github/gateway.js";
 import type { PersistedProject } from "./project-store.js";
 import {
@@ -34,6 +46,7 @@ import {
   addWorktreeForPr,
   removeWorktree,
   renameBranch,
+  listLocalBranches,
   deleteBranch,
   syncBaseBranch,
   listOpenPrs,
@@ -59,16 +72,16 @@ export interface WrapUpResult {
   /** The local branch that was deleted, or undefined for a detached worktree. */
   branchDeleted?: string;
   /**
-   * Why the branch survived, when it should have gone. Like {@link baseReason},
+   * Why the branch survived, when it should have gone. Like {@link targetReason},
    * this is reported rather than thrown: the worktree is already removed by then,
    * and the caller cannot retry because the path is no longer a worktree.
    */
   branchReason?: string;
   /** The branch that was caught up, or undefined when none could be resolved. */
-  baseBranch?: string;
-  baseUpdated: boolean;
-  /** Why the base branch was not updated, when that is worth surfacing. */
-  baseReason?: string;
+  targetBranch?: string;
+  targetUpdated: boolean;
+  /** Why the target branch was not updated, when that is worth surfacing. */
+  targetReason?: string;
 }
 
 export interface AdapterFactoryContext {
@@ -536,29 +549,37 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Create a fresh worktree off `baseBranch` (default branch when unset) with
-   * an auto-generated branch name (or a slugified `branchName` when supplied),
-   * WITHOUT a session (the + New worktree flow).
+   * Create a fresh worktree that will land in `targetBranch` (the repo default
+   * when unset) with an auto-generated branch name (or a slugified `branchName`
+   * when supplied), WITHOUT a session (the + New worktree flow).
+   *
+   * The one answer serves two git-level roles: the new branch **forks from**
+   * this ref now (it is passed to `addWorktree` as its `startPoint`), and the
+   * work **lands back in** it later, so it is also persisted as the worktree's
+   * target. Persisting is the point: before this, the base the user picked here
+   * was used once for `git worktree add` and then discarded, which is why the
+   * diff pill measured every worktree against the repo default.
+   *
    * The worktree exists immediately; the session is started later once the
    * user picks a harness and sends the first message (see spawnPendingSession
    * with a bound worktreePath). For a non-git project, returns the repo dir.
    */
   async createWorktree(
     projectId: string,
-    baseBranch?: string,
+    targetBranch?: string,
     branchName?: string,
   ): Promise<{ path: string; branch: string | null }> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const repoPath = project.dto.path;
     if (!(await isGitRepo(repoPath))) return { path: repoPath, branch: null };
-    const base =
-      baseBranch && (await branchExists(repoPath, baseBranch))
-        ? baseBranch
+    const target =
+      targetBranch && (await branchExists(repoPath, targetBranch))
+        ? targetBranch
         : await detectDefaultBranch(repoPath);
     // Unborn HEAD (no commits yet): `git worktree add -b` would fail, so run
     // the session in the repo dir instead of forking a worktree.
-    if (!base) return { path: repoPath, branch: null };
+    if (!target) return { path: repoPath, branch: null };
     // A user-supplied name is slugified to a git-safe ref; blank/invalid names
     // fall back to the auto-generated `worktree-<uuid>`. `slugifyBranch` keeps
     // `/` so hierarchical names like `feat/new-ui` survive as-is; either way
@@ -583,8 +604,12 @@ export class SessionManager extends EventEmitter {
         repoPath,
         name: dirName,
         branch,
-        baseBranch: base,
+        startPoint: target,
       });
+      // Persist the target now that we know the worktree's path. Without this
+      // the answer is lost the moment `git worktree add` returns, and every
+      // consumer falls back to the repo default -- the original bug.
+      putTarget(worktreeTargetsFile(), path, target);
       return { path, branch };
     });
   }
@@ -644,6 +669,11 @@ export class SessionManager extends EventEmitter {
       throw new Error(`cannot rename ${oldName}: it has an open pull request`);
     }
     await renameBranch(worktreePath, oldName, newName);
+    // Rule 2: every worktree that LANDS IN this branch must follow the rename.
+    // Targets are stored by name, so without this the rename leaves each of them
+    // aiming at a name that no longer resolves -- their diff becomes unmeasurable
+    // and they look broken, for a rename that was none of their business.
+    renameTargetBranch(worktreeTargetsFile(), oldName, newName);
   }
 
   /**
@@ -670,7 +700,7 @@ export class SessionManager extends EventEmitter {
       worktreePath,
       expectBranch,
     );
-    return { branchDeleted, branchReason, baseUpdated: false };
+    return { branchDeleted, branchReason, targetUpdated: false };
   }
 
   /**
@@ -682,6 +712,63 @@ export class SessionManager extends EventEmitter {
    * "no branch to delete" and lets {@link removeWorktree} produce the error — so
    * returning the entry and letting each caller rule on it keeps both readable.
    */
+  /**
+   * Set the branch `worktreePath`'s work lands in.
+   *
+   * Validates before it writes (R10): the worktree must belong to the project,
+   * must not be the primary checkout (that IS where branches land), must be on a
+   * branch, must not target itself, and the ref must actually exist. Without the
+   * existence check the app could persist a target no git command can resolve,
+   * which surfaces later as a `targetResolved: false` worktree whose committed
+   * delta is simply unmeasurable -- a self-inflicted version of the "target was
+   * deleted" state.
+   *
+   * The write is atomic (see `worktree-target-store`), which is what makes
+   * concurrent calls safe: `listRepos` re-reads the store on every snapshot, so
+   * last-persisted wins the final frame. A torn read-modify-write would break
+   * that guarantee silently, and the value decides where code gets merged.
+   *
+   * Returns the stored target so the ack can echo it back rather than the caller
+   * assuming its own request succeeded verbatim.
+   */
+  async setWorktreeTarget(
+    projectId: string,
+    worktreePath: string,
+    targetBranch: string,
+  ): Promise<{ worktreePath: string; targetBranch: string }> {
+    const { repoPath, wt } = await this._locateWorktree(projectId, worktreePath);
+    if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
+    if (wt.isPrimary) {
+      throw new Error("the primary checkout is where branches land, not one that lands");
+    }
+    if (!wt.branch) throw new Error("a detached worktree has no branch to land");
+    if (wt.branch === targetBranch) {
+      throw new Error(`a worktree cannot land in its own branch (${targetBranch})`);
+    }
+    if (!(await branchExists(repoPath, targetBranch))) {
+      throw new Error(`no such branch: ${targetBranch}`);
+    }
+    // Store under the canonical path so the key matches `WorktreeDTO.id`, which
+    // `listWorktrees` reports symlink-resolved.
+    const key = resolve(wt.path);
+    putTarget(worktreeTargetsFile(), key, targetBranch);
+    return { worktreePath: key, targetBranch };
+  }
+
+  /**
+   * Ranked target-branch candidates for the picker (grouped by why each is a
+   * candidate, with a diff preview on the leading few).
+   *
+   * Per-request, NOT part of the snapshot: previews are real `git diff` calls, so
+   * folding them into `broadcastReposSnapshot` would multiply them by every
+   * worktree on every broadcast.
+   */
+  async targetCandidates(projectId: string, worktreePath: string): Promise<TargetCandidate[]> {
+    const { repoPath, wt } = await this._locateWorktree(projectId, worktreePath);
+    if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
+    return targetCandidates(repoPath, resolve(wt.path));
+  }
+
   private async _locateWorktree(
     projectId: string,
     worktreePath: string,
@@ -811,39 +898,86 @@ export class SessionManager extends EventEmitter {
    *
    * **Only step 1 is fatal.** If the worktree survives, nothing was tidied and the
    * caller must say so. Steps 2 and 3 are best-effort and *reported*
-   * (`branchReason`, `baseReason`): by then the worktree is gone and the client
+   * (`branchReason`, `targetReason`): by then the worktree is gone and the client
    * cannot retry — the path is no longer a registered worktree — so throwing
    * would describe a mostly-done job as a total failure.
    *
-   * [baseBranch] should be the PR's own `baseRefName`; it falls back to the
-   * repo's default branch for an older server or a shed PR lookup.
+   * [targetBranch] should be the PR's own `baseRefName` (GitHub's word for the
+   * same thing); it falls back to the repo's default branch for an older client
+   * or a shed PR lookup.
    */
   async wrapUpWorktree(
     projectId: string,
     worktreePath: string,
-    baseBranch?: string,
+    targetBranch?: string,
     expectBranch?: string,
   ): Promise<WrapUpResult> {
     const { repoPath, branchDeleted, branchReason } =
         await this._removeWorktreeAndBranch(projectId, worktreePath, expectBranch);
 
-    const base = baseBranch ?? (await detectDefaultBranch(repoPath));
+    const base = targetBranch ?? (await detectDefaultBranch(repoPath));
     if (!base) {
       return {
         branchDeleted,
         branchReason,
-        baseUpdated: false,
-        baseReason: "the repo has no default branch to catch up",
+        targetUpdated: false,
+        targetReason: "the repo has no default branch to catch up",
       };
     }
     const sync = await syncBaseBranch(repoPath, base);
+    // Rule 3: hand this target down. Every worktree that was landing in the branch
+    // we just tidied away now lands where IT landed -- which is the only answer
+    // that keeps a stack working. Recursive, because the branch we hand them may
+    // itself already be gone (a stack landing bottom-up in one sitting).
+    if (branchDeleted) await this._handDownTarget(repoPath, branchDeleted, base);
     return {
       branchDeleted,
       branchReason,
-      baseBranch: base,
-      baseUpdated: sync.updated,
-      baseReason: sync.reason,
+      targetBranch: base,
+      targetUpdated: sync.updated,
+      targetReason: sync.reason,
     };
+  }
+
+  /**
+   * Rule 3's fan-out: repoint every worktree that was landing in `goneBranch` to
+   * `landedIn`, following the chain when that is itself already gone.
+   *
+   * The note is deliberately recorded so the change is announced rather than
+   * silent -- a worktree's diff and its future pull request both change
+   * destination here, and doing that invisibly is how someone opens a PR against
+   * the wrong branch without noticing.
+   */
+  private async _handDownTarget(
+    repoPath: string,
+    goneBranch: string,
+    landedIn: string,
+  ): Promise<void> {
+    const file = worktreeTargetsFile();
+    const all = loadTargets(file);
+    const affected = Object.entries(all).filter(([, e]) => e.target === goneBranch);
+    if (affected.length === 0) return;
+    const [live, trees, defaultBranch] = await Promise.all([
+      listLocalBranches(repoPath),
+      listWorktrees(repoPath),
+      detectDefaultBranch(repoPath),
+    ]);
+    // branch -> where it lands, so the chain can be walked without re-reading.
+    const branchTarget: Record<string, string> = {};
+    for (const t of trees) {
+      const entry = t.branch ? all[resolve(t.path)] : undefined;
+      if (t.branch && entry) branchTarget[t.branch] = entry.target;
+    }
+    branchTarget[goneBranch] = landedIn;
+    const resolved = resolveThroughChain(landedIn, {
+      live: new Set(live),
+      branchTarget,
+      defaultBranch,
+    });
+    if (!resolved) return;
+    for (const [path] of affected) {
+      putTarget(file, path, resolved, { retargetedFrom: goneBranch });
+    }
   }
 
   /**
@@ -870,6 +1004,17 @@ export class SessionManager extends EventEmitter {
     // succeeds. Killing first would orphan sessions (unrecoverably) if the
     // removal then failed, leaving the worktree on disk without its sessions.
     await removeWorktree(repoPath, worktreePath, true);
+    // Forget this worktree's target. Not housekeeping -- correctness: worktree
+    // paths are derived deterministically as `<baseDir>/<repoName>/<dirName>`,
+    // so removing a worktree and creating another with the same name reuses the
+    // path. A surviving entry would silently hand the NEW worktree the dead
+    // one's merge destination. Runs after git succeeds, so a failed removal
+    // keeps its target. (A worktree removed outside makit, e.g. by `git
+    // worktree remove`, leaves a stale entry behind; that is safe because an
+    // unresolvable target now surfaces as `targetResolved: false` rather than a
+    // silent partial count -- but it is why the store must never be treated as
+    // authoritative without resolution.)
+    clearTarget(worktreeTargetsFile(), worktreePath);
     // Reconcile sessions bound to the removed worktree (SPEC-29):
     //  - closed  → leave as-is (already preserved; it simply becomes orphaned)
     //  - draft   → kill (no transcript to keep; must not launch in a deleted dir)

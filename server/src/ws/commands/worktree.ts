@@ -13,14 +13,21 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
 
   r.register("worktree.create", async (ctx) => {
     const projectId = String(ctx.env.projectId ?? "");
-    const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
+    // Same rename + one-release alias as `worktree.wrapUp` below. Benign here by
+    // comparison (a wrong value forks from the wrong place, which is visible and
+    // deletable) but kept consistent so there is one vocabulary on the wire.
+    const targetBranch = ctx.env.targetBranch
+      ? String(ctx.env.targetBranch)
+      : ctx.env.baseBranch
+        ? String(ctx.env.baseBranch)
+        : undefined;
     const branchName = ctx.env.branchName ? String(ctx.env.branchName) : undefined;
     if (!projectId) {
       ctx.err(WireErrorCode.BadRequest, "worktree.create requires a projectId");
       return;
     }
     try {
-      const wt = await manager.createWorktree(projectId, baseBranch, branchName);
+      const wt = await manager.createWorktree(projectId, targetBranch, branchName);
       void broadcastReposSnapshot();
       ctx.ack({ projectId, path: wt.path, branch: wt.branch });
     } catch (e) {
@@ -95,7 +102,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   // which keeps the branch (the sidebar and the mobile long-press use that one):
   // "remove this worktree" is a narrower request than "discard this dead line of
   // work". No base-branch leg — nothing landed, so there is nothing to catch up,
-  // and the ack's `baseUpdated` is always false.
+  // and the ack's `targetUpdated` is always false.
   r.register("worktree.discard", async (ctx) => {
     const projectId = String(ctx.env.projectId ?? "");
     const worktreePath = String(ctx.env.worktreePath ?? "");
@@ -115,8 +122,61 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     }
   });
 
+  // Ranked candidates for the "Lands in" picker. A read, so no broadcast: opening
+  // a picker must not push a snapshot to every client.
+  r.register("worktree.targetCandidates", async (ctx) => {
+    const projectId = String(ctx.env.projectId ?? "");
+    const worktreePath = String(ctx.env.worktreePath ?? "");
+    if (!projectId || !worktreePath) {
+      ctx.err(
+        WireErrorCode.BadRequest,
+        "worktree.targetCandidates requires projectId and worktreePath",
+      );
+      return;
+    }
+    try {
+      const candidates = await manager.targetCandidates(projectId, worktreePath);
+      ctx.ack({ projectId, worktreePath, candidates });
+    } catch (e) {
+      ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+    }
+  });
+
+  // Set the branch a worktree's work lands in: what the +/- diff measures against
+  // (`git diff target...HEAD`, i.e. what a PR into it would contain), what
+  // `gh pr create --base` will target, and what a wrap-up fast-forwards.
+  //
+  // Ordering is the whole contract here (R1/R2). The manager PERSISTS before we
+  // broadcast, and we broadcast before we ack:
+  //  * persisting after the broadcast would recompute the snapshot against the
+  //    OLD target and ship stale numbers that then look correct until some
+  //    unrelated event moved them;
+  //  * acking before the broadcast is queued would let the client re-enable its
+  //    picker while still painting the previous figures.
+  // Deliberately NOT throttled: `throttledReposSnapshot` exists to coalesce
+  // turn-end churn, and a user-initiated change must land immediately.
+  r.register("worktree.setTarget", async (ctx) => {
+    const projectId = String(ctx.env.projectId ?? "");
+    const worktreePath = String(ctx.env.worktreePath ?? "");
+    const targetBranch = ctx.env.targetBranch ? String(ctx.env.targetBranch) : "";
+    if (!projectId || !worktreePath || !targetBranch) {
+      ctx.err(
+        WireErrorCode.BadRequest,
+        "worktree.setTarget requires projectId, worktreePath and targetBranch",
+      );
+      return;
+    }
+    try {
+      const result = await manager.setWorktreeTarget(projectId, worktreePath, targetBranch);
+      void broadcastReposSnapshot();
+      ctx.ack({ projectId, ...result });
+    } catch (e) {
+      ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+    }
+  });
+
   // The ending a merged PR never had: remove the worktree, delete its branch, and
-  // fast-forward the branch the PR landed on. `baseBranch` is the PR's own
+  // fast-forward the branch the PR landed on. `targetBranch` is the PR's own
   // baseRefName when the app has it; the manager falls back to the repo default.
   //
   // The ack carries what actually happened (which branch went, whether the base
@@ -126,7 +186,17 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   r.register("worktree.wrapUp", async (ctx) => {
     const projectId = String(ctx.env.projectId ?? "");
     const worktreePath = String(ctx.env.worktreePath ?? "");
-    const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
+    // `targetBranch` is the name; `baseBranch` is read for ONE release as a
+    // compatibility shim, and it is not cosmetic. A client that predates the
+    // rename sends the old key, and the manager's `?? detectDefaultBranch()`
+    // fallback would then silently fast-forward the WRONG branch and ack it as a
+    // success -- the one irreversible failure in this rename. Delete the alias a
+    // release after the app ships with the new key.
+    const targetBranch = ctx.env.targetBranch
+      ? String(ctx.env.targetBranch)
+      : ctx.env.baseBranch
+        ? String(ctx.env.baseBranch)
+        : undefined;
     const expectBranch = ctx.env.expectBranch ? String(ctx.env.expectBranch) : undefined;
     if (!projectId || !worktreePath) {
       ctx.err(WireErrorCode.BadRequest, "worktree.wrapUp requires projectId and worktreePath");
@@ -136,7 +206,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       const result = await manager.wrapUpWorktree(
         projectId,
         worktreePath,
-        baseBranch,
+        targetBranch,
         expectBranch,
       );
       void broadcastReposSnapshot();
