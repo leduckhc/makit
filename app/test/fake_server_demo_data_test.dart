@@ -181,7 +181,9 @@ void main() {
       await settle();
       final repoSessionIds = [
         for (final r in repoSnaps.last)
-          for (final w in (r['worktrees'] as List? ?? const []))
+          for (final w
+              in (r['worktrees'] as List? ?? const [])
+                  .cast<Map<String, dynamic>>())
             for (final id in (w['sessionIds'] as List? ?? const []))
               id as String,
       ];

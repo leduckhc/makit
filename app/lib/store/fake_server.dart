@@ -129,7 +129,7 @@ class FakeServer {
 
   void _pushProjects() {
     final projects = <String, Map<String, dynamic>>{};
-    for (final s in _sessions.values.where((s) => !s.closed)) {
+    for (final s in _sessions.values) {
       projects.putIfAbsent(
         s.projectId,
         () => {
@@ -325,7 +325,6 @@ class FakeServer {
         },
     ];
   }
-
 
   void _pushSessions() {
     _emit(
