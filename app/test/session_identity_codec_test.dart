@@ -1,4 +1,4 @@
-// SPEC-51 B1 — the wire contract for session identity.
+// SPEC-52 B1 — the wire contract for session identity.
 //
 // Two OPTIONAL fields on `SessionDTO`: `agentSessionId` and `transcriptPath`.
 // Optional so a new app paired with an older server renders fewer rows rather

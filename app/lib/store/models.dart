@@ -1301,7 +1301,7 @@ class Session {
   /// The underlying agent's own session id — pi's ACP `sessionId` (which is pi's
   /// OWN session uuid, reused by `pi-acp`) or codex's `threadId`. Null for a
   /// draft, for a back end with no native session concept, and for any server
-  /// older than SPEC-51 (D1).
+  /// older than SPEC-52 (D1).
   final String? agentSessionId;
 
   /// Absolute path to the transcript on the SERVER's host, resolved server-side

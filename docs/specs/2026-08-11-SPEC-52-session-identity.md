@@ -1,9 +1,22 @@
-# SPEC-51 — Session identity: copy the id, and its transcript
+# SPEC-52 — Session identity: copy the id, and its transcript
 
 **Status:** Implemented — P1 (rev 2 — dual review applied) · **Priority:** P2 · **Branch:**
 `feat/get-session-id`
 Deferred to P2: the codex/`threadId` resolver branch, and D12's identity section inside the
 context-usage panel (cut on review — see the plan's deviations 4 and 5).
+
+> **Renumbered 51 → 52.** This spec was drafted as SPEC-51, and while it was in flight two other specs
+> took the numbers around it on `main`: *Preview groups* took 51
+> (`2026-08-12-SPEC-51-preview-groups.md`, #163, referenced from `docs/UX.md` and fourteen shipped
+> source files) and *Profiles* took 50 (`2026-08-10-SPEC-50-profiles.md`, #162). Both shipped first and
+> neither can move, so this one took 52, the next free number. The branch name
+> (`feat/get-session-id`) is deliberately left alone — renaming a pushed branch would orphan its PR for
+> no gain.
+>
+> The rename does not fix the underlying hazard: nothing in the repo allocates spec numbers, so two
+> branches drafted in the same week collide silently. `main` already carries the proof — SPEC-48 names
+> *both* `2026-08-09-SPEC-48-status-and-activity.md` and `2026-08-10-SPEC-48-per-repo-settings.md`.
+
 **Depends on:** SPEC-29 (`agentSessionId` / `resumeSessionPath` persistence, closed-session
 resume), SPEC-37 (`ContextUsageDetails` — the panel this appends to, and the ring's absence
 rule this must not weaken), SPEC-47 D12 (the precedent for adding one optional field to
@@ -181,7 +194,7 @@ Required evidence, not claims. Recorded as measured:
    `flutter test --no-pub` → **0 non-`loading` failures**. The 15–17 reported failures are all of
    the form `loading <file>`, and the set varies run to run; each one passes when run directly.
    That is the recorded flake baseline (harness load timeout under full-suite concurrency), not a
-   regression. The 71 SPEC-51 tests are green run as a set. ✅
+   regression. The 71 SPEC-52 tests are green run as a set. ✅
 3. Every new test's bite proven by reverting **only** the production line — 9 mutations across the
    two trees, listed in the P1c commit body. The two load-bearing ones: `cwd` → project path fails
    the worktree test, and relaxing the transcript suffix match to a prefix fails the D15 collision

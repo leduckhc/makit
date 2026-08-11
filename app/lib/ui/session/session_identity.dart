@@ -1,4 +1,4 @@
-// SPEC-51 — session identity: the underlying agent session id, its transcript
+// SPEC-52 — session identity: the underlying agent session id, its transcript
 // path, and the one-button copy that gets them somewhere useful.
 //
 // The problem this exists for: pi's own `/session` is an AGENT command, so in

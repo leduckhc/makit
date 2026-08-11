@@ -591,7 +591,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 icon: PhosphorIconsLight.listMagnifyingGlass,
                 label: 'My messages',
               ),
-              // SPEC-51 D13: the identity panel's mobile door. Grouped with
+              // SPEC-52 D13: the identity panel's mobile door. Grouped with
               // Rename / My messages because it too reads state the client
               // already holds (the makit id at minimum) and is not capability
               // gated — it works on every agent.

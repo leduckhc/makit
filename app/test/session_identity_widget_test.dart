@@ -1,4 +1,4 @@
-// SPEC-51 A3 + A4 — the identity panel: its rows, its ONE copy affordance, its
+// SPEC-52 A3 + A4 — the identity panel: its rows, its ONE copy affordance, its
 // read-only-ness, its accessibility, and the two hosts it renders in.
 //
 // The single-copy-affordance test (D5) is the load-bearing one: four per-row

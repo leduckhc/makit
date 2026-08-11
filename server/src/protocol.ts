@@ -914,7 +914,7 @@ export interface SessionDTO {
   origin?: SessionOrigin;
   /**
    * The underlying agent's OWN session id — the native ACP `sessionId` or codex
-   * `threadId` (SPEC-51 D1). For pi this is pi's own session uuid, because
+   * `threadId` (SPEC-52 D1). For pi this is pi's own session uuid, because
    * `pi-acp` reuses it as the ACP session id, so it is exactly the value pi's
    * `/session` prints and `pi --session` accepts.
    *
@@ -929,7 +929,7 @@ export interface SessionDTO {
   agentSessionId?: string;
   /**
    * Absolute path to this session's transcript on the SERVER's host, or
-   * undefined when none was resolved (SPEC-51 D3).
+   * undefined when none was resolved (SPEC-52 D3).
    *
    * Resolved server-side only (D2): the slug algorithm is pi's and lives in
    * `pi-sessions.ts`, and the app cannot stat this filesystem to check itself.

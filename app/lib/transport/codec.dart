@@ -274,7 +274,7 @@ class WireCodec {
               ? j['handoffReason'] as String
               : null,
           origin: j['origin'] is String ? j['origin'] as String : null,
-          // SPEC-51 D1/D9: normalise `''` to null at the edge. A blank string is
+          // SPEC-52 D1/D9: normalise `''` to null at the edge. A blank string is
           // what a sloppy server sends for "no value", and it would render a copy
           // affordance that copies nothing — the placeholder D9 forbids. Doing it
           // here means nothing above this line has to think about it.

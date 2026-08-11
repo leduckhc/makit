@@ -1,4 +1,4 @@
-// Interactive QA harness for the SPEC-51 session-identity panel. Seeded data,
+// Interactive QA harness for the SPEC-52 session-identity panel. Seeded data,
 // no server, no agent binary.
 //
 //   cd app && flutter run -d macos       --debug -t tool/session_identity_demo.dart

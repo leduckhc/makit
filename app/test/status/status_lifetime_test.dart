@@ -47,7 +47,7 @@ void main() {
   });
 
   test('a comment mentioning await does not create a false positive', () {
-    // Found while adding SPEC-51's identity panel, whose hoist comment
+    // Found while adding SPEC-52's identity panel, whose hoist comment
     // legitimately names the rule it follows ("resolved before the first
     // `await`"). The scanner sliced `body.text` out of the ORIGINAL source, so
     // that comment supplied the "first await" and the correctly-hoisted

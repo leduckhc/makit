@@ -128,7 +128,7 @@ export interface ManagerOpts {
   /** Override the production pi adapter, used by deterministic e2e tests. */
   adapterFactory?: AdapterFactory;
   /**
-   * Resolve a session's transcript path (SPEC-51 D3). Injected so tests can
+   * Resolve a session's transcript path (SPEC-52 D3). Injected so tests can
    * observe the (memoized) directory read; production uses the real resolver
    * over the pi agent dir.
    */
@@ -255,7 +255,7 @@ export class SessionManager extends EventEmitter {
   private readonly adapterFactory?: AdapterFactory;
   private readonly transcriptResolver: (q: TranscriptQuery) => string | undefined;
   /**
-   * Per-session-id transcript path cache, INCLUDING misses (SPEC-51 D3). A
+   * Per-session-id transcript path cache, INCLUDING misses (SPEC-52 D3). A
    * `sessions.snapshot` is rebroadcast on every `metaChanged` (150ms coalesce),
    * so resolving per projection would `readdir` per session per broadcast — a
    * real regression. Memoized here it costs at most one read per session per
@@ -641,7 +641,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Project a session for the wire (SPEC-51 D1). `Session.toDTO()` cannot do
+   * Project a session for the wire (SPEC-52 D1). `Session.toDTO()` cannot do
    * this: `agentSessionId` is passed through verbatim, but `transcriptPath`
    * needs the project's filesystem path, which the session does not hold
    * (`projectId` + `worktreePath` only) — the manager does, via `this.projects`.
@@ -654,7 +654,7 @@ export class SessionManager extends EventEmitter {
     };
   }
 
-  /** Memoized transcript-path lookup (SPEC-51 D3); see {@link transcriptPathMemo}. */
+  /** Memoized transcript-path lookup (SPEC-52 D3); see {@link transcriptPathMemo}. */
   private transcriptPathFor(session: Session): string | undefined {
     if (this.transcriptPathMemo.has(session.id)) return this.transcriptPathMemo.get(session.id);
     // A draft has no id and no resume handle yet: nothing to resolve, and no I/O

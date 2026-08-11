@@ -2878,7 +2878,7 @@ test("reopenSession on an already-open session is a no-op", async () => {
   }
 });
 
-// --- SPEC-51 C1b: agentSessionId + transcriptPath in the projected DTO ---------
+// --- SPEC-52 C1b: agentSessionId + transcriptPath in the projected DTO ---------
 
 // A real UUIDv7 pi session id (see transcript-path.test.ts for the collision pair).
 const SPEC51_ID = "019fa9f4-443d-7d86-8f4c-d9c4988ddf4f";
@@ -2909,7 +2909,7 @@ function withSpec51AgentDir(body: (agentDir: string) => void): void {
   }
 }
 
-test("listSessions resolves transcriptPath from the WORKTREE slug, not the project slug (SPEC-51 D3)", () => {
+test("listSessions resolves transcriptPath from the WORKTREE slug, not the project slug (SPEC-52 D3)", () => {
   withSpec51AgentDir((agentDir) => {
     const store = new SqliteEventStore();
     const projectPath = "/repo/root";
@@ -2942,7 +2942,7 @@ test("listSessions resolves transcriptPath from the WORKTREE slug, not the proje
   });
 });
 
-test("listSessions projects transcriptPath into the DTO (SPEC-51)", () => {
+test("listSessions projects transcriptPath into the DTO (SPEC-52)", () => {
   const store = new SqliteEventStore();
   // A resumeSessionPath is authoritative and dir-independent, so this proves the
   // whole path-into-DTO wiring without depending on a slug lookup.
@@ -2956,7 +2956,7 @@ test("listSessions projects transcriptPath into the DTO (SPEC-51)", () => {
   }
 });
 
-test("listSessions projects agentSessionId into the DTO (SPEC-51)", () => {
+test("listSessions projects agentSessionId into the DTO (SPEC-52)", () => {
   const store = new SqliteEventStore();
   seedColdSession(store, "sess-id", { agentSessionId: "pi-42" });
   try {
@@ -2968,7 +2968,7 @@ test("listSessions projects agentSessionId into the DTO (SPEC-51)", () => {
   }
 });
 
-test("a draft projects neither agentSessionId nor transcriptPath (SPEC-51 D9)", async () => {
+test("a draft projects neither agentSessionId nor transcriptPath (SPEC-52 D9)", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-c1b-draft-"));
   try {
     const mgr = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
