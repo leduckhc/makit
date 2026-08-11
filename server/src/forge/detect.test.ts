@@ -196,3 +196,38 @@ test("no Authorization header is sent when there is no token", async () => {
   await detector.detect("https://git.test");
   assert.equal("Authorization" in calls[0].headers, false);
 });
+
+test("a gate that 401s every path is NOT reported as GitLab", async () => {
+  // Review finding: step 3 treated 401/403 on the GitLab path as proof of GitLab,
+  // because "only GitLab serves that path". That holds for the status only if the
+  // earlier probes were answered by the APPLICATION. An instance behind SSO or an
+  // authenticating reverse proxy answers 401 on every path, including both Forgejo
+  // probes — so a perfectly ordinary Forgejo instance behind a gate was classified
+  // `gitlab`, routed to the unsupported provider, and the log told the user it
+  // "looks like gitlab". When every probe returns the same auth status the responses
+  // carry no information about the software, so the honest answer is `unknown` —
+  // which is also re-probed later and can be overridden per repo.
+  const d = createForgeDetector({
+    http: async () => ({ status: 401, body: "", headers: {} }),
+  });
+  assert.equal(await d.detect("https://gated.example"), "unknown");
+});
+
+test("403 on every path is likewise unknown, not GitLab", async () => {
+  const d = createForgeDetector({
+    http: async () => ({ status: 403, body: "", headers: {} }),
+  });
+  assert.equal(await d.detect("https://gated.example"), "unknown");
+});
+
+test("401 on the GitLab path alone is still GitLab", async () => {
+  // The real gitlab.com case: the Forgejo/Gitea probes are ANSWERED (404), so the
+  // 401 on /api/v4/version carries information.
+  const d = createForgeDetector({
+    http: async (req) => {
+      if (req.url.includes("/api/v4/version")) return { status: 401, body: "", headers: {} };
+      return { status: 404, body: "", headers: {} };
+    },
+  });
+  assert.equal(await d.detect("https://gitlab.example"), "gitlab");
+});

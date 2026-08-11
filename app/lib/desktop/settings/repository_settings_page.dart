@@ -44,11 +44,11 @@ class RepositorySettingsPage extends ConsumerWidget {
 
     return RepositorySettingsSection(
       view: view,
-      onChooseProvider: (choice) => _write(ref, {
+      onChooseProvider: (choice) => _write(context, ref, {
         // `auto` clears the override; absent means "believe detection".
         'provider': choice == ForgeChoice.auto ? null : choice.name,
       }),
-      onResetWorktreeRoot: () => _write(ref, {'worktreeRoot': null}),
+      onResetWorktreeRoot: () => _write(context, ref, {'worktreeRoot': null}),
       onEditWorktreeRoot: () => _promptWorktreeRoot(context, ref, view),
       onChooseDefaultBranch: () => _pickBranch(context, ref, view),
       onEditLogo: () => _pickHue(context, ref, repo),
@@ -56,12 +56,25 @@ class RepositorySettingsPage extends ConsumerWidget {
     );
   }
 
-  void _write(WidgetRef ref, Map<String, Object?> patch) {
-    // Fire-and-forget: the server persists, then re-broadcasts the repos snapshot,
-    // and this page re-renders from that. No optimistic local state, so what is on
-    // screen is always what the daemon actually stored — and a refusal (a
-    // non-loopback client) cannot leave the UI showing a value that was rejected.
-    ref.read(storeControllerProvider.notifier).setRepoSettings(repoId, patch);
+  /// Write a settings patch and SHOW a refusal.
+  ///
+  /// The server refuses a non-loopback client, an invalid worktree root and an invalid
+  /// branch name with an explicit error, and each message is written to be read by the
+  /// user. Dropping it left the row unchanged and silent — the exact "appears to save
+  /// and does not" failure the server handler documents as unacceptable.
+  Future<void> _write(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, Object?> patch,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref
+          .read(storeControllerProvider.notifier)
+          .setRepoSettings(repoId, patch);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(_reasonFrom(e))));
+    }
   }
 
   Future<void> _promptWorktreeRoot(
@@ -109,8 +122,9 @@ class RepositorySettingsPage extends ConsumerWidget {
       if (value == null || value.isEmpty) return;
       // Not validated here: the server owns the rules (absolute, no `..`, inside
       // $HOME, canonicalised) and re-implementing them in Dart would give two
-      // answers that could disagree. A refusal comes back as an `err` frame.
-      _write(ref, {'worktreeRoot': value});
+      // answers that could disagree. The refusal is shown by `_write`.
+      if (!context.mounted) return;
+      await _write(context, ref, {'worktreeRoot': value});
     } finally {
       controller.dispose();
     }
@@ -140,7 +154,8 @@ class RepositorySettingsPage extends ConsumerWidget {
       ),
     );
     if (picked == null) return;
-    _write(ref, {'defaultBranch': picked.isEmpty ? null : picked});
+    if (!context.mounted) return;
+    await _write(context, ref, {'defaultBranch': picked.isEmpty ? null : picked});
   }
 
   Future<void> _pickHue(
@@ -179,7 +194,8 @@ class RepositorySettingsPage extends ConsumerWidget {
       ),
     );
     if (picked == null) return;
-    _write(ref, {'logoHue': picked < 0 ? null : picked});
+    if (!context.mounted) return;
+    await _write(context, ref, {'logoHue': picked < 0 ? null : picked});
   }
 
   /// Re-point the repository (SPEC-48 D4\u2032).

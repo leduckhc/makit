@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { createForgeRouter, forgejoRefFromRemote, isGitHubHost, ORIGIN_REMOTE_ARGV } from "./router.js";
+import {
+  createDefaultForgeGateway,
+  createForgeRouter,
+  forgejoRefFromRemote,
+  isGitHubHost,
+  ORIGIN_REMOTE_ARGV,
+} from "./router.js";
 import { createUnsupportedGateway } from "./unsupported.js";
 import type { ForgeGateway, ForgeSoftwareName, GatewayStats, PrLookup } from "./types.js";
 import type { ProviderChoice } from "../repo_settings.js";
@@ -782,4 +788,46 @@ test("the unsupported gateway names THIS repo's forge, not the last one detected
   const r = await router.mutatePr("/gl", "b", 1, "merge-squash");
   assert.equal(r.ok, false);
   assert.match(r.error ?? "", /GitLab/);
+});
+
+// ---------------------------------------------------------------------------
+// The production wiring's own `git remote` reads.
+// ---------------------------------------------------------------------------
+
+test("the origin remote is read ONCE per repo, not once per gateway call", async () => {
+  // Review finding: the router caches its routing promise, but the Forgejo gateway
+  // calls `resolveRepo` -- and therefore `git remote get-url origin` -- at the top of
+  // prForBranch, openPrs and mutatePr. The gateway's own cache is consulted AFTER
+  // that, so even a cache HIT paid for a subprocess, and N worktrees of one repo
+  // spawned N processes per poll tick.
+  const execs: string[] = [];
+  const gateway = createDefaultForgeGateway({
+    exec: async (cmd: string, args: readonly string[], cwd?: string) => {
+      execs.push(`${cmd} ${args.join(" ")} @${cwd ?? ""}`);
+      // A GitHub remote, so nothing reaches the network.
+      return { code: 0, stdout: "https://github.com/acme/app.git", stderr: "" };
+    },
+    env: {},
+  });
+  await gateway.prForBranch("/r", "a");
+  await gateway.prForBranch("/r", "b");
+  await gateway.openPrs("/r", 30);
+  const remoteReads = execs.filter((e) => e.includes("remote get-url origin")).length;
+  assert.equal(remoteReads, 1, `one read for three calls, got ${remoteReads}`);
+  gateway.close();
+});
+
+test("two different repos still get their own read", async () => {
+  const execs: string[] = [];
+  const gateway = createDefaultForgeGateway({
+    exec: async (_cmd: string, _args: readonly string[], cwd?: string) => {
+      execs.push(`${cwd ?? ""}`);
+      return { code: 0, stdout: "https://github.com/acme/app.git", stderr: "" };
+    },
+    env: {},
+  });
+  await gateway.prForBranch("/one", "a");
+  await gateway.prForBranch("/two", "a");
+  assert.equal(new Set(execs).size, 2);
+  gateway.close();
 });

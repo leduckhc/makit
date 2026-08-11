@@ -21,6 +21,10 @@ void main() {
         'worktrees': const <Map<String, dynamic>>[],
       })!;
       final sections = sectionsFor([repo]);
+      // Owned by the test, so the test disposes it: an undisposed ChangeNotifier is
+      // what Flutter's leak tracking reports.
+      final controller = TextEditingController(text: 'worktree root');
+      addTearDown(controller.dispose);
 
       await t.pumpWidget(
         MaterialApp(
@@ -35,7 +39,7 @@ void main() {
                 // A term only a repo section knows: nothing in the static list
                 // mentions a worktree root.
                 query: 'worktree root',
-                controller: TextEditingController(text: 'worktree root'),
+                controller: controller,
                 onQueryChanged: (_) {},
                 onSelect: (_, {String? targetItemId}) {},
                 onSelectResult: (_, _) {},

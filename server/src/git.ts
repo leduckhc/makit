@@ -115,7 +115,8 @@ export async function detectDefaultBranch(repoPath: string): Promise<string | nu
  * (`validateBranch`), it is chosen from branches that existed at the time, and a
  * branch can be deleted afterwards. A stale override is a worse base than
  * detection, not a better one, so it loses rather than winning and then failing
- * deep inside a `git diff` where the message is unrecognisable.
+ * deep inside a `git diff` where the message is unrecognisable. "Known" includes
+ * `origin/<branch>`: see {@link refKnown}.
  *
  * Checking costs one `rev-parse` and REPLACES detection's one-to-three calls when
  * the override holds, so the common case gets cheaper rather than dearer.
@@ -124,10 +125,27 @@ export async function resolveDefaultBranch(
   repoPath: string,
   override: string | undefined,
 ): Promise<string | null> {
-  if (override !== undefined && override.length > 0 && (await branchExists(repoPath, override))) {
+  if (override !== undefined && override.length > 0 && (await refKnown(repoPath, override))) {
     return override;
   }
   return detectDefaultBranch(repoPath);
+}
+
+/**
+ * Whether [branch] names something this repo knows — locally OR on `origin`.
+ *
+ * The remote-tracking half matters: after a `--single-branch` clone the intended
+ * default may exist only as `origin/<branch>`, and that is precisely the situation the
+ * override exists to fix. Checking `refs/heads` alone treated such an override as
+ * stale and silently dropped it, so the feature did nothing in its main case.
+ */
+async function refKnown(repoPath: string, branch: string): Promise<boolean> {
+  if (await branchExists(repoPath, branch)) return true;
+  const remote = await git(
+    ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`],
+    repoPath,
+  );
+  return remote.code === 0;
 }
 
 /** The currently checked-out branch, or null when HEAD is detached. */

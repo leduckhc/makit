@@ -623,3 +623,37 @@ test("an override rescues a repo whose origin/HEAD points at a branch that is go
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test("a default-branch override naming a remote-only branch is honoured", async () => {
+  // Review finding: `branchExists` checks `refs/heads/<b>` only, so an override naming
+  // a branch that exists on the remote but is not checked out locally was treated as
+  // stale and silently dropped. That is the normal state after a `--single-branch`
+  // clone -- the very case the override exists for: `trunk` is visible as
+  // `origin/trunk` and nothing else.
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    g("remote", "add", "origin", "https://example.test/x/y.git");
+    g("update-ref", "refs/remotes/origin/trunk", "HEAD");
+    assert.equal(await branchExists(repo, "trunk"), false, "not a local branch");
+    assert.equal(
+      await resolveDefaultBranch(repo, "trunk"),
+      "trunk",
+      "but the remote knows it, so the override stands",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("an override naming nothing at all is still dropped", async () => {
+  // The guard must not become "accept anything": a branch deleted from both sides is
+  // a worse base than git's own answer.
+  const repo = makeRepo();
+  try {
+    execFileSync("git", ["remote", "add", "origin", "https://example.test/x/y.git"], { cwd: repo });
+    assert.equal(await resolveDefaultBranch(repo, "never-existed"), "main");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

@@ -140,6 +140,9 @@ export function createForgeDetector(deps: ForgeDetectorDeps): ForgeDetector {
 
   const ok = (status: number): boolean => status >= 200 && status < 300;
 
+  /** A status that a gate in front of the app could have produced for any path. */
+  const isAuthStatus = (status: number): boolean => status === 401 || status === 403;
+
   async function classify(baseUrl: string, token: string | undefined): Promise<ForgeSoftware> {
     // 1. Forgejo's own namespace: decisive, and one call.
     const fj = await probe(forgejoProbeUrl(baseUrl), token);
@@ -151,10 +154,23 @@ export function createForgeDetector(deps: ForgeDetectorDeps): ForgeDetector {
       return looksLikeForgejoVersion(gt.body) ? "forgejo" : "gitea";
     }
 
-    // 3. GitLab. Any answer at all counts -- 401 is what gitlab.com returns
-    // unauthenticated, and only GitLab serves that path.
+    // 3. GitLab. `401`/`403` counts, because that is what gitlab.com returns
+    // unauthenticated and only GitLab serves that path -- but ONLY when an earlier
+    // probe was answered by the application rather than by a gate.
+    //
+    // An instance behind SSO or an authenticating reverse proxy answers the same auth
+    // status on every path, including both probes above. Treating that as proof of
+    // GitLab classified an ordinary gated Forgejo instance as unsupported and told the
+    // user it "looks like gitlab". When every probe returns the same auth status the
+    // responses carry no information about the software, so the honest answer is
+    // `unknown` -- which is re-probed later, and which the per-repo provider setting
+    // can override.
     const gl = await probe(gitlabProbeUrl(baseUrl), token);
-    if (ok(gl.status) || gl.status === 401 || gl.status === 403) return "gitlab";
+    if (ok(gl.status)) return "gitlab";
+    if (gl.status === 401 || gl.status === 403) {
+      const gatedEarlier = isAuthStatus(fj.status) && isAuthStatus(gt.status);
+      if (!gatedEarlier) return "gitlab";
+    }
 
     return "unknown";
   }

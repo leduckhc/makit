@@ -458,11 +458,36 @@ export function createDefaultForgeGateway(opts: {
   providerFor?: (repoPath: string) => ProviderChoice;
 }): GithubGateway {
   const env = opts.env ?? process.env;
-  const readRemote = async (repoPath: string): Promise<string | null> => {
-    const r = await opts.exec("git", [...ORIGIN_REMOTE_ARGV], repoPath, REMOTE_TIMEOUT_MS);
-    if (r.code !== 0) return null;
-    const url = r.stdout.trim();
-    return url.length > 0 ? url : null;
+  /**
+   * `origin`'s URL, memoised per repo and SHARED while in flight.
+   *
+   * Both the router and the Forgejo gateway need it, and the gateway asks at the top of
+   * `prForBranch`, `openPrs` and `mutatePr` -- BEFORE consulting its own cache. So even
+   * a cache hit paid for a `git remote get-url origin` subprocess, and the home-screen
+   * fan-out across a repo's worktrees spawned one process per worktree per poll tick.
+   *
+   * Cached for the process lifetime rather than with a TTL: a repo's `origin` does not
+   * change under a running daemon, and the two cases that DO change it both clear the
+   * entry -- re-pointing a project (`forgetRemote`) and shutdown (`close`).
+   */
+  const remoteUrls = new Map<string, Promise<string | null>>();
+
+  const readRemote = (repoPath: string): Promise<string | null> => {
+    const hit = remoteUrls.get(repoPath);
+    if (hit !== undefined) return hit;
+    const p = (async (): Promise<string | null> => {
+      const r = await opts.exec("git", [...ORIGIN_REMOTE_ARGV], repoPath, REMOTE_TIMEOUT_MS);
+      if (r.code !== 0) return null;
+      const url = r.stdout.trim();
+      return url.length > 0 ? url : null;
+    })().catch(() => null);
+    // A failed read is NOT retained: it is the transient case, and pinning it would
+    // repeat the bug the routing cache had.
+    void p.then((url) => {
+      if (url === null && remoteUrls.get(repoPath) === p) remoteUrls.delete(repoPath);
+    });
+    remoteUrls.set(repoPath, p);
+    return p;
   };
   const http = createFetchHttp();
   const detector = createForgeDetector({ http });
@@ -509,7 +534,15 @@ export function createDefaultForgeGateway(opts: {
   const close = router.close.bind(router);
   router.close = (): void => {
     detector.clear();
+    remoteUrls.clear();
     close();
+  };
+  const forget = router.forgetRepo.bind(router);
+  router.forgetRepo = (repoPath: string): void => {
+    // A re-pointed project is a different directory: its remembered `origin` is now
+    // another repo's, which is exactly the value that must not be reused.
+    remoteUrls.delete(repoPath);
+    forget(repoPath);
   };
   return router;
 }

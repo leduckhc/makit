@@ -147,6 +147,15 @@
   unrelated host. <strong>Nothing in the UI surfaces any of it.</strong> These are the three places it
   should, and one shape the config should <em>not</em> take.
 </p>
+<div class="note" style="border-left-color:var(--ok,#4ADE80)">
+  <strong>Status: this page is a PROPOSAL, and part of it has since shipped.</strong> Read it as the
+  argument that led to the design, not as a description of current behaviour. What is built now: each
+  repository has its own Settings section with a <strong>Git provider</strong> row
+  (<code>Auto | None | Forgejo | Gitea | GitHub</code>) that drives routing, plus worktree root,
+  default branch and logo. Tokens remain per <em>instance</em>, exactly as argued below. The current
+  behaviour is documented in <code>docs/specs/2026-08-10-SPEC-48-per-repo-settings.md</code> and
+  <code>docs/DEVELOPMENT.md</code> &sect;1b.
+</div>
 <div class="note">
   <strong>The premise needs one correction.</strong> The ask was “set up a git provider <em>per repo</em>”.
   But an API token authenticates an <em>instance</em>, not a repository — the server already enforces that
