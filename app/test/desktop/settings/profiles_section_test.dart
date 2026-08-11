@@ -30,6 +30,19 @@ class _MemFs extends FileSystemAdapter {
   T withLock<T>(String path, T Function() body) => body();
 }
 
+/// A registry adapter whose persistence fails, to prove the UI reports a save
+/// failure instead of leaking an unhandled async error.
+class _FailingFs extends FileSystemAdapter {
+  const _FailingFs();
+  @override
+  String? readOrNull(String path) => null;
+  @override
+  void writeAtomic(String path, String contents) =>
+      throw const FileSystemException('read-only filesystem');
+  @override
+  T withLock<T>(String path, T Function() body) => body();
+}
+
 /// An in-memory [ProfileFileSystem] for the deleter: only the paths seeded in
 /// [sizes] exist, and deletes are recorded rather than performed.
 class _FakeProfileFs implements ProfileFileSystem {
@@ -116,12 +129,13 @@ _wiring({
   Set<String> existingOrigins = const {},
   Map<String, int>? fsSizes,
   ProfileLifecycle? lifecycle,
+  bool failWrites = false,
 }) {
   final registry = ProfileRegistry(
     makitRoot: '$_homeDir/.makit',
     profiles: profiles,
     probe: (port) async => true,
-    fs: const _MemFs(),
+    fs: failWrites ? const _FailingFs() : const _MemFs(),
   );
   final controller = ProfilesController(
     registry: registry,
@@ -484,6 +498,45 @@ void main() {
 
     expect(w.registry.profiles.any((p) => p.name == 'Personal'), isTrue);
     expect(find.text('Personal'), findsOneWidget);
+  });
+
+  testWidgets('a rename whose save fails is reported and reverted', (
+    tester,
+  ) async {
+    // rename() mutates in memory and then persists. If the save throws, the row
+    // must not keep showing a name that never reached disk.
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    final w = _wiring(
+      profiles: [_legacy(), _dev(origin: null)],
+      activeId: 'work',
+      failWrites: true,
+    );
+    await _pump(
+      tester,
+      controller: w.controller,
+      deleter: w.deleter,
+      lifecycle: w.lifecycle,
+      statusCenter: center,
+    );
+
+    await tester.tap(find.byType(PopupMenuButton<String>).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename…'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Renamed');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    final failures = center.events.where(
+      (e) => e.severity == StatusSeverity.failure,
+    );
+    expect(failures, isNotEmpty);
+    expect(failures.last.title, contains('Could not rename profile'));
+    // Reverted: the row shows the persisted name, not the failed rename.
+    expect(find.text('Renamed'), findsNothing);
+    expect(find.text('feat-profiles'), findsOneWidget);
+    expect(w.registry.byId('a1b2c3d4')!.name, 'feat-profiles');
   });
 
   testWidgets('a failed Start is reported through the status center', (

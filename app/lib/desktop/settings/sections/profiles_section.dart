@@ -569,11 +569,29 @@ Future<void> promptRenameProfile(
     initial: profile.name,
   );
   if (name == null) return;
-  if (!controller.rename(profile.id, name)) {
+  // `rename` mutates the registry and then persists. If the save throws (an
+  // unwritable registry), the in-memory list already carries the new name, so
+  // without this the row would show the rename for the rest of the session while
+  // the change was silently lost on restart. Report it and refresh so the row
+  // reverts to what is actually persisted.
+  try {
+    if (!controller.rename(profile.id, name)) {
+      statusCenter.failure(
+        'Could not rename profile',
+        source: StatusSources.settings,
+        detail: 'A profile needs a non-blank name.',
+      );
+    }
+  } catch (error) {
+    // The registry's in-memory list already carries the new name, so revert it
+    // (without saving) and repaint: the row must show what is actually persisted,
+    // not a rename that failed to reach disk.
+    controller.registry.rename(profile.id, profile.name);
+    controller.notifyRegistryChanged();
     statusCenter.failure(
       'Could not rename profile',
       source: StatusSources.settings,
-      detail: 'A profile needs a non-blank name.',
+      detail: error.toString(),
     );
   }
 }
