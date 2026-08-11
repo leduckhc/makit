@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>makit — Per-repo settings</title>
+<title>makit — Per-repo settings (matched to the built app)</title>
 <style>
   :root{
     --bg:#171717;--lowest:#121212;--low:#1E1E1E;--cont:#242424;--high:#2E2E2E;
@@ -94,13 +94,17 @@
   .srow .lbl{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .srow .val{font-size:12px;color:var(--osv);display:flex;align-items:center;gap:6px;white-space:nowrap;max-width:52%;overflow:hidden;text-overflow:ellipsis}
   .srow .val.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+  /* The value column: right-aligned, ellipsised, ahead of the badge. */
+  .vcol{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--osv);
+        text-align:right;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* SettingsResetButton: collapses to a fixed box so rows stay aligned */
   .reset{width:22px;height:22px;flex:0 0 22px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
   .reset.hidden{visibility:hidden}
-  .inh{font-size:9.5px;padding:1px 5px;border-radius:4px;background:var(--low);border:1px solid var(--hairline);color:var(--muted)}
-  .ovr{font-size:9.5px;padding:1px 5px;border-radius:4px;background:#12241a;border:1px solid #2f5a3f;color:#9fe0b8}
-  .auto{font-size:9.5px;padding:1px 5px;border-radius:4px;background:#1a1f2e;border:1px solid #33456b;color:#a9bde8}
-  .untrusted{font-size:9.5px;padding:1px 5px;border-radius:4px;background:#241010;border:1px solid #6b2a2a;color:#f0c4c4}
+  /* Matches the shipped TagChip: colour at ~15% alpha, no border, kRadius8. */
+  .inh{font-size:9.5px;padding:2px 7px;border-radius:8px;background:rgba(158,158,158,.15);color:var(--muted);font-weight:600}
+  .ovr{font-size:9.5px;padding:2px 7px;border-radius:8px;background:rgba(74,222,128,.15);color:var(--primary);font-weight:600}
+  .auto{font-size:9.5px;padding:2px 7px;border-radius:8px;background:rgba(74,222,128,.15);color:var(--primary);font-weight:600}
+  .untrusted{font-size:9.5px;padding:2px 7px;border-radius:8px;background:rgba(224,123,57,.15);color:var(--caution);font-weight:600}
 
   .logo{width:22px;height:22px;border-radius:6px;flex:0 0 22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#0e0e0e}
   .script{margin:0 12px 12px;background:#0d0d0d;border:1px solid var(--hairline);border-radius:8px;padding:8px 10px;
@@ -149,6 +153,12 @@
   the pattern it grows into, not the first row.
 </p>
 <div class="note">
+  <strong>Card 1 has been corrected against the built section</strong>, screenshotted from the real macOS
+  app: values sit right-aligned in a column (not in the subtitle), badges use the shipped
+  <code>TagChip</code> treatment (tinted fill, no border), descriptive subtitles are gone, and the cut
+  Lifecycle Scripts group is no longer advertised. The monogram hue is whatever the name hashes to —
+  Diana is blue, makit green — because it is deterministic, not chosen per repo.
+  <br><br>
   <strong>Provider auto-detection is already built and verified</strong> (<code>server/src/forge/detect.ts</code>).
   It probes <code>/api/forgejo/v1/version</code>, <code>/api/v1/version</code> and <code>/api/v4/version</code>,
   once per host, cached — correctly identifying Forgejo (self-hosted + Codeberg), Gitea, GitLab and an unrelated
@@ -193,43 +203,34 @@
               <div class="ptitle">Diana</div>
               <div class="shdr">identity</div>
               <div class="sgroup">
-                <div class="srow"><span class="logo" style="background:#4ADE80">D</span>
-                  <div class="lbl">Logo<div class="sub">Monogram from the name</div></div>
-                  <span class="val"><span class="auto">from name</span></span>
+                <div class="srow"><span class="logo" style="background:#38BDF8">D</span>
+                  <div class="lbl">Logo</div>
+                  <span class="val"><span class="inh">from name</span></span>
                   <span class="reset hidden"></span></div>
                 <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-folder"/></svg>
-                  <div class="lbl">Root path<div class="sub">Remove and re-add to change</div></div>
-                  <span class="val mono">~/Work/Vibe/Diana</span>
+                  <div class="lbl">Root path</div>
+                  <span class="vcol">~/Work/XDent/Diana</span>
                   <span class="reset"><svg class="g" width="13" height="13"><use href="#g-copy"/></svg></span></div>
                 <div class="srow"><svg class="g" width="15" height="15" style="color:#4ADE80"><use href="#g-forgejo"/></svg>
                   <div class="lbl">Git provider<div class="sub">forgejo.internal.xdent.ai · token set</div></div>
-                  <span class="val">Forgejo 16.0.0 <span class="auto">detected</span></span>
+                  <span class="vcol">Forgejo</span><span class="auto" style="margin-left:8px">detected</span>
                   <span class="reset hidden"></span></div>
                 <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-branch"/></svg>
-                  <div class="lbl">Default branch<div class="sub">Read from origin/HEAD</div></div>
-                  <span class="val mono">main <span class="auto">from remote</span></span>
+                  <div class="lbl">Default branch</div>
+                  <span class="vcol">main</span><span class="inh" style="margin-left:8px">from remote</span>
                   <span class="reset hidden"></span></div>
               </div>
 
               <div class="shdr">worktrees</div>
               <div class="sgroup">
-                <div class="srow"><div class="lbl">Worktree root<div class="sub">Where new worktrees are created</div></div>
-                  <span class="val mono">~/.worktrees <span class="inh">inherited</span></span>
+                <div class="srow"><div class="lbl">Worktree root</div>
+                  <span class="vcol">~/.worktrees</span><span class="inh" style="margin-left:8px">inherited</span>
                   <span class="reset hidden"></span></div>
-                <div class="srow"><div class="lbl">Branch prefix<div class="sub">Prepended to a new worktree's branch</div></div>
-                  <span class="val mono">feat/ <span class="ovr">overridden</span></span>
+                <div class="srow"><div class="lbl">Worktree root <span style="color:#5c5c5c">(overridden)</span></div>
+                  <span class="vcol">~/.worktrees/makit</span><span class="ovr" style="margin-left:8px">overridden</span>
                   <span class="reset"><svg class="g" width="14" height="14"><use href="#g-undo"/></svg></span></div>
               </div>
 
-              <div class="shdr">lifecycle scripts <span class="untrusted">host only</span></div>
-              <div class="sgroup">
-                <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-term"/></svg>
-                  <div class="lbl">After worktree create<div class="sub">Not set</div></div>
-                  <svg class="g reset" width="13" height="13"><use href="#g-caretd"/></svg></div>
-                <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-term"/></svg>
-                  <div class="lbl">Before worktree prune<div class="sub">Not set · may cancel the prune</div></div>
-                  <svg class="g reset" width="13" height="13"><use href="#g-caretd"/></svg></div>
-              </div>
             </div>
           </div>
         </div>
@@ -252,12 +253,8 @@
             <div class="sgroup">
               <div class="srow"><div class="lbl">Worktree root</div><span class="val mono">~/.worktrees <span class="inh">inherited</span></span><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
             </div>
-            <div class="shdr">lifecycle scripts</div>
-            <div class="sgroup">
-              <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-warn"/></svg>
-                <div class="lbl" style="color:#9E9E9E">Editable on the host only</div></div>
-            </div>
-            <div class="hint">Scripts run on the machine hosting makit, so they cannot be changed from a paired phone. See card 4.</div>
+            <div class="hint">Worktree root is editable on the machine running makit; a paired phone shows
+              the same values read-only (D16). Lifecycle scripts are P3 and deliberately not advertised here.</div>
           </div>
           <div class="composer"><div class="fake"></div></div>
         </div>

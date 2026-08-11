@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -96,40 +98,42 @@ class RepositorySettingsSection extends StatelessWidget {
         const SettingsSectionHeader(title: 'Identity'),
         SettingsGroup(
           children: [
-            ListTile(
+            _SettingsValueRow(
               leading: RepoMonogram(name: view.name),
-              title: const Text('Logo'),
-              trailing: _Trailing(badge: _Badge(label: 'from name', color: cs.outline)),
+              title: 'Logo',
+              badge: _Badge(label: 'from name', color: cs.outline),
             ),
-            ListTile(
+            _SettingsValueRow(
               leading: Icon(PhosphorIconsLight.folder, size: 20, color: cs.outline),
-              title: const Text('Root path'),
-              // The path as the subtitle, matching how the CLI row carries its
-              // path — it is the value, not a description of one.
-              subtitle: Text(view.path),
-              trailing: IconButton(
+              title: 'Root path',
+              value: _tilde(view.path),
+              mono: true,
+              action: IconButton(
                 tooltip: 'Copy path',
                 icon: Icon(PhosphorIconsLight.copy, size: 18, color: cs.outline),
                 onPressed: () => Clipboard.setData(ClipboardData(text: view.path)),
               ),
             ),
             if (forge != null)
-              ListTile(
+              _SettingsValueRow(
                 leading: SizedBox(
                   width: 20,
                   height: 20,
                   child: forgeGlyphFor(forge).build(size: 20, color: cs.primary),
                 ),
-                title: const Text('Git provider'),
-                subtitle: Text(_forgeSubtitle(view)),
-                trailing: _Trailing(badge: _Badge(label: 'detected', color: cs.primary)),
+                title: 'Git provider',
+                // The host is a second FACT, not a description of the row.
+                subtitle: _forgeSubtitle(view),
+                value: forgeNameFor(forge),
+                badge: _Badge(label: 'detected', color: cs.primary),
               ),
             if (view.defaultBranch != null)
-              ListTile(
+              _SettingsValueRow(
                 leading: Icon(PhosphorIconsLight.gitBranch, size: 20, color: cs.outline),
-                title: const Text('Default branch'),
-                subtitle: Text(view.defaultBranch!),
-                trailing: _Trailing(badge: _Badge(label: 'from remote', color: cs.outline)),
+                title: 'Default branch',
+                value: view.defaultBranch,
+                mono: true,
+                badge: _Badge(label: 'from remote', color: cs.outline),
               ),
           ],
         ),
@@ -137,27 +141,20 @@ class RepositorySettingsSection extends StatelessWidget {
         const SettingsSectionHeader(title: 'Worktrees'),
         SettingsGroup(
           children: [
-            ListTile(
+            _SettingsValueRow(
               enabled: view.editable,
-              onTap: view.editable ? onEditWorktreeRoot : null,
-              title: const Text('Worktree root'),
-              subtitle: Text(view.worktreeRoot),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _Badge(
-                    label: view.worktreeRootOverridden ? 'overridden' : 'inherited',
-                    color: view.worktreeRootOverridden ? cs.primary : cs.outline,
-                  ),
-                  SettingsResetButton(
-                    // Only an override can be reset, and "reset" means inherit
-                    // again — not "copy today's inherited value", so a later
-                    // change to the inherited source still propagates.
-                    visible: view.worktreeRootOverridden && view.editable,
-                    onPressed: onResetWorktreeRoot ?? () {},
-                  ),
-                ],
+              onTap: onEditWorktreeRoot,
+              title: 'Worktree root',
+              value: _tilde(view.worktreeRoot),
+              mono: true,
+              badge: _Badge(
+                label: view.worktreeRootOverridden ? 'overridden' : 'inherited',
+                color: view.worktreeRootOverridden ? cs.primary : cs.outline,
               ),
+              // Only an override can be reset, and reset means inherit again — not
+              // "copy today's inherited value" — so a later change still propagates.
+              resetVisible: view.worktreeRootOverridden && view.editable,
+              onReset: onResetWorktreeRoot,
             ),
           ],
         ),
@@ -174,18 +171,16 @@ class RepositorySettingsSection extends StatelessWidget {
     );
   }
 
-  /// `Forgejo · git.example.com · token set`.
-  ///
-  /// The forge NAME leads, because it is the fact this row exists to report and a
-  /// glyph alone does not carry it — measured on the real app, where the row named
-  /// only the host and the `detected` badge, leaving "detected as *what*?"
-  /// answerable only by recognising a 20pt mark. The value lives in the subtitle
-  /// for the same reason `Root path` and `Default branch` do: in this window the
-  /// subtitle IS the value (see the shipped `CLI` row), and the trailing slot
-  /// carries provenance.
+  /// `/Users/le/x` -> `~/x`. A settings row is not the place to spend 40pt of the
+  /// value column on a home directory the reader already knows.
+  static String _tilde(String path) {
+    final home = Platform.environment['HOME'];
+    if (home == null || home.isEmpty || !path.startsWith(home)) return path;
+    return '~${path.substring(home.length)}';
+  }
+
   static String _forgeSubtitle(RepoSettingsView v) {
     final parts = <String>[
-      if (v.forge != null) forgeNameFor(v.forge!),
       if (v.forgeHost != null) v.forgeHost!,
       v.forgeAuthed ? 'token set' : 'no token',
     ];
@@ -193,21 +188,84 @@ class RepositorySettingsSection extends StatelessWidget {
   }
 }
 
-/// A badge plus the reset slot every row reserves.
+/// One settings row: title on the left, its **value right-aligned** in a column
+/// down the section, then the provenance badge and the reset slot.
 ///
-/// The slot is why the section has ONE right edge: `SettingsResetButton` collapses
-/// to a fixed 40pt box when hidden, so a row that can never be reset still lines
-/// up with one that can. Measured on the real macOS app — without this, the
-/// badge-only rows sat 40pt right of `Worktree root` and the column visibly
-/// stepped between the two groups.
-class _Trailing extends StatelessWidget {
-  const _Trailing({required this.badge});
-  final Widget badge;
+/// The value column is the mockup's idea and it earns its place — a column of
+/// right-aligned values scans in one vertical sweep, where values buried in
+/// subtitles have to be read line by line. It does mean this row style differs
+/// from `CLI`/`Fingerprint` in Server & Devices, which put their value in the
+/// subtitle; that is a deliberate, recorded divergence rather than an oversight.
+///
+/// [subtitle] is for a SECOND fact worth showing (the forge's host), never for a
+/// description of the row — "Monogram from the name" under a row labelled "Logo"
+/// is words about words.
+class _SettingsValueRow extends StatelessWidget {
+  const _SettingsValueRow({
+    required this.title,
+    this.leading,
+    this.subtitle,
+    this.value,
+    this.mono = false,
+    this.badge,
+    this.action,
+    this.resetVisible = false,
+    this.onReset,
+    this.enabled = true,
+    this.onTap,
+  });
+
+  final String title;
+  final Widget? leading;
+  final String? subtitle;
+  final String? value;
+  /// Render [value] monospaced — paths and refs, where character shape matters.
+  final bool mono;
+  final Widget? badge;
+  /// A trailing control that occupies the reset slot instead (the copy button).
+  final Widget? action;
+  final bool resetVisible;
+  final VoidCallback? onReset;
+  final bool enabled;
+  final VoidCallback? onTap;
+
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [badge, SettingsResetButton(visible: false, onPressed: () {})],
-  );
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+    final valueStyle = t.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant);
+    return ListTile(
+      enabled: enabled,
+      onTap: enabled ? onTap : null,
+      leading: leading,
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle!),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (value != null)
+            ConstrainedBox(
+              // Bounded so a long path elides instead of shoving the badge off the
+              // row — the failure the mockup hit until its subtitle was shortened.
+              constraints: const BoxConstraints(maxWidth: 260),
+              child: Text(
+                value!,
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: mono ? valueStyle?.mono : valueStyle,
+              ),
+            ),
+          if (badge != null) ...[const SizedBox(width: kSpace8), badge!],
+          // Exactly one thing occupies the trailing slot, so every row shares one
+          // right edge whether or not it can be reset.
+          if (action != null)
+            action!
+          else
+            SettingsResetButton(visible: resetVisible, onPressed: onReset ?? () {}),
+        ],
+      ),
+    );
+  }
 }
 
 /// A provenance/resolution badge. Reuses [TagChip] so it cannot drift from the

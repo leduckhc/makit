@@ -87,7 +87,9 @@ class _Shell extends StatefulWidget {
 }
 
 class _ShellState extends State<_Shell> {
-  String _key = _scenes.keys.first;
+  // Default to the OVERRIDDEN scene: the reset button is the affordance the whole
+  // inheritance model depends on, so it must be the one you see first.
+  String _key = _scenes.keys.elementAt(1);
 
   @override
   Widget build(BuildContext context) {
