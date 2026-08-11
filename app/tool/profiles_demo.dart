@@ -150,8 +150,13 @@ Future<void> main() async {
           ProfileDeleter(
             registry: registry,
             lifecycle: lifecycle,
-            // Everything is "active", so every delete is refused. A design
-            // review must not be able to erase anything.
+            // Every delete is refused, so a misclick during a design review
+            // cannot erase anything. The mechanism is `homeDir`, not the id:
+            // `_unsafeHomeReason` requires a home under `<homeDir>/.makit/` or
+            // `<homeDir>/.makit-dev/`, and no seeded profile lives under
+            // `/nonexistent/`. (`activeProfileId` alone would NOT be enough --
+            // it matches no profile, so a namespaced one like `personal` would
+            // pass both that check and `isProtected`.)
             activeProfileId: 'ALL-REFUSED',
             homeDir: '/nonexistent',
           ),
