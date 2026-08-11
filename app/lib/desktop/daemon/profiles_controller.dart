@@ -122,8 +122,14 @@ class ProfilesController extends ChangeNotifier {
   ///
   /// The count is the honest headline, not the bytes: each stale profile still
   /// holds a device pairing and a TLS keypair.
+  ///
+  /// The **active** profile is never listed here even when stale: the reclaim
+  /// sheet's deleter refuses the active profile, so it belongs in the main list
+  /// (kept there by the section) where its menu offers switch-away-&-delete.
   ({List<ProfileStatus> rows, int bytes}) get staleSummary {
-    final stale = rows.where((r) => r.stale).toList();
+    final stale = rows
+        .where((r) => r.stale && r.profile.id != activeProfileId)
+        .toList();
     var bytes = 0;
     for (final r in stale) {
       bytes += r.diskBytes ?? 0;

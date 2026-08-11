@@ -519,12 +519,20 @@ class ProfileRegistry {
     return startingGuess;
   }
 
+  /// Mints an id from [seed] that is free of both live profiles **and**
+  /// tombstoned ids.
+  ///
+  /// A tombstone (`_deleted`) causes [save] to drop any profile carrying that
+  /// id, so reusing a just-deleted slug would silently discard the freshly
+  /// created profile and orphan its home. An id is therefore “taken” if a live
+  /// profile holds it or a tombstone still names it.
   String _uniqueId(String seed) {
+    bool taken(String id) => byId(id) != null || _deleted.contains(id);
     final base = seed.isEmpty ? 'profile' : seed;
-    if (byId(base) == null) return base;
+    if (!taken(base)) return base;
     for (var n = 2; n < 1000; n++) {
       final candidate = '$base-$n';
-      if (byId(candidate) == null) return candidate;
+      if (!taken(candidate)) return candidate;
     }
     return '$base-${DateTime.now().microsecondsSinceEpoch}';
   }

@@ -66,7 +66,16 @@ class _ProfilesSectionState extends ConsumerState<ProfilesSection> {
         // deliberately excluded here. Listing them in both places showed each
         // one twice, and on a real machine (27 orphans measured) the dead
         // profiles crowded the live ones off the screen.
-        final rows = controller.rows.where((r) => !r.stale).toList();
+        //
+        // The one exception is the ACTIVE profile: if it is stale it must stay
+        // in the main list, because the reclaim group's deleter refuses the
+        // active profile — only the main row's switch-away-&-delete can remove
+        // it. `staleSummary` already omits the active profile to match.
+        final rows = controller.rows
+            .where(
+              (r) => !r.stale || r.profile.id == controller.activeProfileId,
+            )
+            .toList();
         return ListView(
           children: [
             const SettingsSectionHeaderLike(title: 'Profiles'),

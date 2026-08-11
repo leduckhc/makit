@@ -162,6 +162,13 @@ void main() {
         run: runner.run,
         // Present for the first two checks, then gone.
         socketExists: (_) => polls++ < 2,
+        // A listener answers while the socket is present, so isRunning is truly
+        // driven by socketExists and the disappearance path is exercised (not
+        // short-circuited by the real default probe failing to connect).
+        statusProbe: (_) async => true,
+        // No pid file exists for this fake home, so confirmation rests on the
+        // socket going away — exactly what this test covers.
+        readPid: (_) => null,
         sleep: (_) async {},
       );
 
@@ -172,6 +179,7 @@ void main() {
 
       expect(ok, isTrue);
       expect(runner.calls.single.args, ['stop']);
+      expect(polls, greaterThanOrEqualTo(3), reason: 'must poll until gone');
     });
 
     test(

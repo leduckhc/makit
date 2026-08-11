@@ -513,6 +513,46 @@ void main() {
       );
     });
 
+    test(
+      'a profile created after a delete is not dropped by the tombstone',
+      () async {
+        // _uniqueId must avoid tombstoned ids: reusing a just-deleted slug would
+        // make save() drop the new profile (it honours the tombstone) and orphan
+        // its home.
+        final fs = _MemoryFs();
+        final reg = ProfileRegistry(
+          makitRoot: kRoot,
+          probe: _allFree,
+          fs: fs,
+          profiles: const [_legacy],
+        );
+        final first = await reg.createUserProfile(name: 'Personal');
+        reg.save();
+        expect(reg.remove(first.id), isTrue); // tombstones 'personal'
+        reg.save();
+
+        final second = await reg.createUserProfile(name: 'Personal');
+        expect(
+          second.id,
+          isNot(first.id),
+          reason: 'must not mint a tombstoned id',
+        );
+        reg.save();
+
+        final onDisk = ProfileRegistry.load(
+          makitRoot: kRoot,
+          fs: _MemoryFs(fs.written['$kRoot/profiles.json']),
+          probe: _allFree,
+        );
+        expect(
+          onDisk.byId(second.id),
+          isNotNull,
+          reason:
+              'the new profile must persist, not be swallowed by the tombstone',
+        );
+      },
+    );
+
     test('a duplicate port on load is reassigned to a free one', () {
       // A hand-edited (or fallback-7777) namespaced profile that collides with
       // the legacy port must be moved off it, or its daemon fails to bind.

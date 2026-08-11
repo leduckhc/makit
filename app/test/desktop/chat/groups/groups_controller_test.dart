@@ -606,7 +606,9 @@ void main() {
         );
         await pumpEventQueue();
 
-        final reloaded = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
+        final reloaded = GroupsController.load(
+          ProfileScopedPrefs.unscoped(prefs),
+        );
         expect(reloaded.state.previewGroupId, id);
         expect(reloaded.state, c.state);
       },
@@ -622,7 +624,12 @@ void main() {
         }),
       });
       final prefs = await SharedPreferences.getInstance();
-      expect(GroupsController.load(ProfileScopedPrefs.unscoped(prefs)).state.previewGroupId, isNull);
+      expect(
+        GroupsController.load(
+          ProfileScopedPrefs.unscoped(prefs),
+        ).state.previewGroupId,
+        isNull,
+      );
     });
 
     test('a stale previewGroupId degrades to no preview', () async {
@@ -636,7 +643,12 @@ void main() {
         }),
       });
       final prefs = await SharedPreferences.getInstance();
-      expect(GroupsController.load(ProfileScopedPrefs.unscoped(prefs)).state.previewGroupId, isNull);
+      expect(
+        GroupsController.load(
+          ProfileScopedPrefs.unscoped(prefs),
+        ).state.previewGroupId,
+        isNull,
+      );
     });
 
     test('a previewGroupId that matches a board decodes to no preview — the '
@@ -654,7 +666,9 @@ void main() {
         }),
       });
       final prefs = await SharedPreferences.getInstance();
-      final reloaded = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
+      final reloaded = GroupsController.load(
+        ProfileScopedPrefs.unscoped(prefs),
+      );
       expect(reloaded.state.previewGroupId, isNull);
       expect(reloaded.state.groups.map((g) => g.id), ['b1']);
     });

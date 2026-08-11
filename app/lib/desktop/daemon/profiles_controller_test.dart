@@ -134,6 +134,20 @@ void main() {
       expect(s.bytes, 1024);
     });
 
+    test('an active stale profile stays listed and out of staleSummary', () async {
+      // If the active profile's source folder is gone it is still stale, but it
+      // must not fall into the reclaim group (whose deleter refuses the active
+      // profile). It stays in the main list so its switch-away-&-delete works.
+      final c = build(active: 'dev1', dirExists: (_) => false);
+      await c.refresh();
+      expect(c.rows.firstWhere((r) => r.profile.id == 'dev1').stale, isTrue);
+      expect(
+        c.staleSummary.rows.any((r) => r.profile.id == 'dev1'),
+        isFalse,
+        reason: 'the active profile must not be offered in the reclaim group',
+      );
+    });
+
     test('create persists and notifies', () async {
       final c = build();
       var notified = 0;
