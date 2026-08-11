@@ -48,77 +48,86 @@ Future<void> showWorktreeActions(
   final action = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
-    builder: (sheetContext) {
-      final cs = Theme.of(sheetContext).colorScheme;
-      // Re-derive from the snapshot instead of closing over the `worktree` we were
-      // handed. Tapping "Lands in" pops this sheet before the picker opens, so the
-      // obvious staleness path is already closed — but a snapshot can also arrive
-      // while the sheet sits open (the agent commits, another client retargets), and
-      // then the target and guards printed here would describe a state that no
-      // longer exists. Falls back to the passed-in value for a worktree the snapshot
-      // no longer carries, so a removal cannot blank the sheet mid-tap.
-      final worktree =
-          ref.watch(reposProvider).locateWorktree(w.path)?.worktree ?? w;
-      return SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SheetHeader(title: worktree.branch ?? 'detached'),
-              // Under the header so the sheet says, at a glance, where this branch
-              // lands. The header already IS the branch, so the source half is
-              // omitted — printing it twice would just waste the line. Only shown
-              // when there is a branch that lands (i.e. the retarget guard holds).
-              if (canRetargetWorktree(worktree))
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: LandsInLine(
-                    targetBranch: worktree.targetBranch,
-                    targetResolved: worktree.targetResolved,
+    builder: (_) {
+      // Scope the watch to the sheet's OWN element via a Consumer. `ref` here is
+      // the calling widget's, so `ref.watch` rebuilds the caller, not this modal
+      // route — the target and guards would otherwise freeze at open-time. The
+      // Consumer's local ref subscribes inside the sheet's own tree, so a snapshot
+      // arriving while it sits open actually repaints it.
+      return Consumer(
+        builder: (sheetContext, ref, _) {
+          final cs = Theme.of(sheetContext).colorScheme;
+          // Re-derive from the snapshot instead of closing over the `worktree` we were
+          // handed. Tapping "Lands in" pops this sheet before the picker opens, so the
+          // obvious staleness path is already closed — but a snapshot can also arrive
+          // while the sheet sits open (the agent commits, another client retargets), and
+          // then the target and guards printed here would describe a state that no
+          // longer exists. Falls back to the passed-in value for a worktree the snapshot
+          // no longer carries, so a removal cannot blank the sheet mid-tap.
+          final worktree =
+              ref.watch(reposProvider).locateWorktree(w.path)?.worktree ?? w;
+          return SafeArea(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SheetHeader(title: worktree.branch ?? 'detached'),
+                  // Under the header so the sheet says, at a glance, where this branch
+                  // lands. The header already IS the branch, so the source half is
+                  // omitted — printing it twice would just waste the line. Only shown
+                  // when there is a branch that lands (i.e. the retarget guard holds).
+                  if (canRetargetWorktree(worktree))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: LandsInLine(
+                        targetBranch: worktree.targetBranch,
+                        targetResolved: worktree.targetResolved,
+                      ),
+                    ),
+                  ListTile(
+                    enabled: canRenameWorktree(worktree),
+                    leading: const Icon(PhosphorIconsLight.textAa),
+                    title: const Text('Rename branch'),
+                    subtitle: canRenameWorktree(worktree)
+                        ? null
+                        : Text(_renameBlockedReason(worktree)),
+                    onTap: () => Navigator.pop(sheetContext, 'rename'),
                   ),
-                ),
-              ListTile(
-                enabled: canRenameWorktree(worktree),
-                leading: const Icon(PhosphorIconsLight.textAa),
-                title: const Text('Rename branch'),
-                subtitle: canRenameWorktree(worktree)
-                    ? null
-                    : Text(_renameBlockedReason(worktree)),
-                onTap: () => Navigator.pop(sheetContext, 'rename'),
+                  // Between Rename and Delete: like Rename it is a non-destructive
+                  // branch property, so the two are siblings and the destructive
+                  // Delete stays last.
+                  ListTile(
+                    enabled: canRetargetWorktree(worktree),
+                    leading: const Icon(kLandsInIcon),
+                    title: const Text('Lands in'),
+                    // Enabled: the current target (so the row states today's value).
+                    // Disabled: why, following the same visible-but-disabled
+                    // convention as Rename.
+                    subtitle: canRetargetWorktree(worktree)
+                        ? (worktree.targetBranch == null
+                              ? null
+                              : Text(worktree.targetBranch!))
+                        : Text(_landsInBlockedReason(worktree)),
+                    onTap: () => Navigator.pop(sheetContext, 'landsIn'),
+                  ),
+                  ListTile(
+                    enabled: canDeleteWorktree(worktree),
+                    leading: Icon(PhosphorIconsLight.trash, color: cs.error),
+                    title: Text(
+                      'Delete worktree',
+                      style: TextStyle(color: cs.error),
+                    ),
+                    subtitle: canDeleteWorktree(worktree)
+                        ? null
+                        : const Text('The primary checkout cannot be removed'),
+                    onTap: () => Navigator.pop(sheetContext, 'delete'),
+                  ),
+                ],
               ),
-              // Between Rename and Delete: like Rename it is a non-destructive
-              // branch property, so the two are siblings and the destructive
-              // Delete stays last.
-              ListTile(
-                enabled: canRetargetWorktree(worktree),
-                leading: const Icon(kLandsInIcon),
-                title: const Text('Lands in'),
-                // Enabled: the current target (so the row states today's value).
-                // Disabled: why, following the same visible-but-disabled
-                // convention as Rename.
-                subtitle: canRetargetWorktree(worktree)
-                    ? (worktree.targetBranch == null
-                          ? null
-                          : Text(worktree.targetBranch!))
-                    : Text(_landsInBlockedReason(worktree)),
-                onTap: () => Navigator.pop(sheetContext, 'landsIn'),
-              ),
-              ListTile(
-                enabled: canDeleteWorktree(worktree),
-                leading: Icon(PhosphorIconsLight.trash, color: cs.error),
-                title: Text(
-                  'Delete worktree',
-                  style: TextStyle(color: cs.error),
-                ),
-                subtitle: canDeleteWorktree(worktree)
-                    ? null
-                    : const Text('The primary checkout cannot be removed'),
-                onTap: () => Navigator.pop(sheetContext, 'delete'),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       );
     },
   );

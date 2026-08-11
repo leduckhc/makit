@@ -30,7 +30,6 @@ import { mapLimit } from "./concurrency.js";
 import {
   loadTargets,
   putTarget,
-  pruneTargets,
   worktreeTargetsFile,
   type TargetMap,
 } from "./worktree-target-store.js";
@@ -252,24 +251,6 @@ export function resolveTargetBranch(args: {
   return null;
 }
 
-/**
- * The set of currently-live worktree paths across every project in a snapshot,
- * or `null` when the snapshot cannot be trusted to prune against.
- *
- * A git repo always has at least its primary worktree, so a git repo reporting
- * ZERO worktrees means its enumeration failed (transient git error). Pruning the
- * global target store against a partial live set would delete valid targets, so
- * one such repo aborts the whole sweep rather than risk data loss.
- */
-export function collectLivePathsForPrune(repos: readonly RepoDTO[]): Set<string> | null {
-  const live = new Set<string>();
-  for (const repo of repos) {
-    if (repo.isGitRepo && repo.worktrees.length === 0) return null;
-    for (const w of repo.worktrees) live.add(w.path);
-  }
-  return live;
-}
-
 export async function listRepos(
   projects: ProjectDTO[],
   sessions: Session[],
@@ -281,20 +262,20 @@ export async function listRepos(
   // Read the persisted targets ONCE per snapshot rather than per worktree: it is
   // a single small JSON file, and re-reading it inside the fan-out would turn
   // one read into N.
+  //
+  // Deliberately does NOT prune the target store here. This is a read path (the
+  // snapshot is returned, not mutated), and pruning against the live worktree set
+  // from here is unsafe: a transient `isGitRepo`/`listWorktrees` failure reports
+  // an empty repo and would delete that repo's real targets, and a worktree
+  // created concurrently (between enumeration and the sweep) would lose its
+  // freshly persisted target. Stale entries are already harmless — `removeWorktree`
+  // clears its own, `createWorktree` overwrites a reused path, and a target with
+  // no branch surfaces as `targetResolved: false` rather than a silent wrong
+  // number — so pruning buys nothing that offsets that risk.
   const persistedTargets = loadTargets(worktreeTargetsFile());
   const repos = await mapLimit(projects, PROJECT_CONCURRENCY, (p) =>
     repoSnapshot(p, sessions, lastKnown, persistedTargets),
   );
-  // Sweep targets for worktrees that no longer exist. Paths are deterministic, so
-  // a removed-and-recreated worktree reuses a path and a surviving entry would
-  // hand the new worktree a dead target. `removeWorktree` clears its own entry,
-  // but a worktree deleted OUTSIDE makit leaves one behind; this is the sweep
-  // that collects those. `listProjects()` is the full project set, so the union
-  // of their live worktrees is authoritative. Guarded against a transient git
-  // failure (see {@link collectLivePathsForPrune}), and cheap: writes only when
-  // something is actually stale.
-  const live = collectLivePathsForPrune(repos);
-  if (live) pruneTargets(worktreeTargetsFile(), [...live]);
   return includePrs ? enrichPrs(repos, gateway, lastKnown) : repos;
 }
 

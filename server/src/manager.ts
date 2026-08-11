@@ -47,6 +47,7 @@ import {
   removeWorktree,
   renameBranch,
   listLocalBranches,
+  listRemoteBranchNames,
   deleteBranch,
   syncBaseBranch,
   listOpenPrs,
@@ -961,11 +962,18 @@ export class SessionManager extends EventEmitter {
     const all = loadTargets(file);
     const affected = Object.entries(all).filter(([, e]) => e.target === goneBranch);
     if (affected.length === 0) return;
-    const [live, trees, defaultBranch] = await Promise.all([
+    const [locals, remotes, trees, defaultBranch] = await Promise.all([
       listLocalBranches(repoPath),
+      listRemoteBranchNames(repoPath),
       listWorktrees(repoPath),
       detectDefaultBranch(repoPath),
     ]);
+    // Liveness is local refs ∪ `origin`: when a wrap-up's fetch did not land
+    // (offline, transient failure), `landedIn` exists only as a remote ref, and a
+    // local-only check would treat it as gone and hand every child down to the
+    // repo default — pointing them at (e.g.) `main` instead of the branch their PR
+    // actually targets.
+    const live = new Set<string>([...locals, ...remotes]);
     // branch -> where it lands, so the chain can be walked without re-reading.
     const branchTarget: Record<string, string> = {};
     for (const t of trees) {
@@ -974,7 +982,7 @@ export class SessionManager extends EventEmitter {
     }
     branchTarget[goneBranch] = landedIn;
     const resolved = resolveThroughChain(landedIn, {
-      live: new Set(live),
+      live,
       branchTarget,
       defaultBranch,
     });

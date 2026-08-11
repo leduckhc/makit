@@ -170,6 +170,11 @@ Future<String?> showLandsInPicker(
   bool sheet = false,
 }) async {
   final store = ref.read(storeControllerProvider.notifier);
+  // Capture the StatusCenter BEFORE the picker opens: reading `ref.status` once
+  // the modal returns would hit a disposed ref if the owning widget unmounted
+  // while it was open, throwing and silently losing the target change (SPEC-48
+  // lifetime rule — enforced by status_lifetime_test).
+  final status = ref.status;
   final body = _LandsInPickerBody(
     projectId: projectId,
     worktree: worktree,
@@ -192,9 +197,6 @@ Future<String?> showLandsInPicker(
           ),
         );
   if (chosen == null || chosen == worktree.targetBranch) return null;
-  // Capture the StatusCenter before the await so a later widget disposal cannot
-  // strand the failure message (SPEC-48 lifetime rule).
-  final status = ref.status;
   try {
     await store.setWorktreeTarget(projectId, worktree.path, chosen);
     return chosen;

@@ -136,7 +136,7 @@ class PrDetailBody extends ConsumerWidget {
         ? null
         : ref.watch(reposProvider).locateWorktree(worktreePath);
     final status = at == null ? this.status : prStatusFor(at);
-    final pr = at?.worktree.pr ?? this.pr;
+    final pr = at == null ? this.pr : at.worktree.pr;
     final worktree = at?.worktree;
     final checks = sortPrChecks(pr?.checks ?? const []);
     // With a pinned CTA (mobile) the loud fact is already the headline *and* the

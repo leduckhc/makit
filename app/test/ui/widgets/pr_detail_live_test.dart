@@ -197,4 +197,56 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'a PR dropped from the snapshot is not shown from the stale open-time field',
+    (tester) async {
+      // Thread 1: when the snapshot KNOWS the worktree but its PR is now null
+      // (closed and dropped), the re-derived status correctly shows no PR — so
+      // the sheet must not keep painting the open-time PR. In particular the
+      // "Open … on GitHub" link must be gone: it dereferences the live url, and
+      // resurrecting it from the stale field is exactly what threw a null assert.
+      const openPr = PullRequest(
+        number: 7,
+        url: 'https://example.test/7',
+        state: 'OPEN',
+        title: 'the pr',
+        isDraft: false,
+        checkRollup: 'none',
+        unresolvedComments: 0,
+        checks: [],
+      );
+      // The worktree in the snapshot has no PR (the `wt` helper leaves it null).
+      final repos = ValueNotifier(ReposState([repoWith(wt(insertions: 3))]));
+      addTearDown(repos.dispose);
+      await tester.pumpWidget(
+        ValueListenableBuilder<ReposState>(
+          valueListenable: repos,
+          builder: (context, value, _) => ProviderScope(
+            overrides: [reposProvider.overrideWithValue(value)],
+            child: MaterialApp(
+              home: Scaffold(
+                body: PrDetailBody(
+                  // Open-time facts carry a live PR...
+                  status: prStatus(pr: openPr, branch: 'feat/child'),
+                  pr: openPr,
+                  onRun: (_) {},
+                  projectId: 'p1',
+                  worktreePath: '/wt/child',
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // ...but the snapshot says there is no PR, so the link is gone.
+      expect(
+        find.textContaining('on GitHub'),
+        findsNothing,
+        reason: 'a worktree with no live PR must not resurrect the stale one',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

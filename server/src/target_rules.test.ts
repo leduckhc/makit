@@ -256,6 +256,38 @@ test("rule 3: the hand-down follows a chain when the middle link is already gone
   }
 });
 
+test("rule 3: hands children down to a remote-only landing branch (offline fetch)", async () => {
+  const f = await fixture();
+  try {
+    // `release` exists only as a remote-tracking ref — as if a prior fetch saw it
+    // but the wrap-up's own fetch cannot land it locally (offline / transient).
+    // It must still count as a live landing branch, or every child is dragged to
+    // the repo default instead of the branch the PR actually targeted.
+    const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: f.repo })
+      .toString()
+      .trim();
+    execFileSync("git", ["update-ref", "refs/remotes/origin/release", sha], { cwd: f.repo });
+
+    const parent = await branchWorktree(f, "parent", "main");
+    const repos1 = await f.manager.listRepos({ includePrs: false });
+    const parentBranch = repos1[0]!.worktrees.find((w) => w.path === parent)!.branch!;
+    const child = await branchWorktree(f, "child", parentBranch);
+
+    // The parent lands in the remote-only `release`.
+    await f.manager.wrapUpWorktree(f.projectId, parent, "release");
+
+    const stored = loadTargets(worktreeTargetsFile())[child];
+    assert.equal(
+      stored?.target,
+      "release",
+      "a remote-only landing branch is live, so the child follows it — not the default",
+    );
+    assert.equal(stored?.retargetedFrom, parentBranch);
+  } finally {
+    f.cleanup();
+  }
+});
+
 test("rule 3: a worktree that landed elsewhere is not dragged along", async () => {
   const f = await fixture();
   try {

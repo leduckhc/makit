@@ -5,7 +5,6 @@ import {
   enrichPrs,
   resolveTargetBranch,
   repointVanishedTargets,
-  collectLivePathsForPrune,
 } from "./repo_service.js";
 import type { GithubGateway, PrLookup } from "./github/gateway.js";
 import type { PullRequestDTO, RepoDTO } from "./protocol.js";
@@ -360,29 +359,4 @@ test("repointVanishedTargets: leaves a broken target in place when nothing resol
     defaultBranch: null,
   });
   assert.deepEqual(writes, [], "no default to fall back to: surface targetResolved:false instead");
-});
-
-// collectLivePathsForPrune — the guard that decides whether the target store can
-// be safely pruned against a snapshot.
-
-test("collectLivePathsForPrune: unions live worktree paths across projects", () => {
-  const r = repos("feat/x");
-  const live = collectLivePathsForPrune(r);
-  assert.notEqual(live, null);
-  assert.equal(live!.has("/wt"), true);
-});
-
-test("collectLivePathsForPrune: aborts (null) when a git repo reports zero worktrees", () => {
-  const r = repos("feat/x");
-  r[0].worktrees = []; // isGitRepo stays true → looks like a failed enumeration
-  assert.equal(collectLivePathsForPrune(r), null);
-});
-
-test("collectLivePathsForPrune: a non-git repo with no worktrees does not abort", () => {
-  const r = repos("feat/x");
-  r[0].isGitRepo = false;
-  r[0].worktrees = [];
-  const live = collectLivePathsForPrune(r);
-  assert.notEqual(live, null);
-  assert.equal(live!.size, 0);
 });
