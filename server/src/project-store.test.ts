@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -118,4 +118,62 @@ test("browseDirectory throws on a non-directory path", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Per-repo settings must survive load → save → load, unknown keys included: an
+// older daemon paired with a newer app must not silently drop a field, and
+// rewriting one key must not lose its siblings.
+// ---------------------------------------------------------------------------
+
+test("settings round-trip losslessly, including keys this build does not know", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-ps-settings-"));
+  const file = join(dir, "projects.json");
+  const repo = mkdtempSync(join(tmpdir(), "makit-repo-"));
+  writeFileSync(
+    file,
+    JSON.stringify({
+      projects: [
+        { id: "a", path: repo, settings: { worktreeRoot: "/h/t", futureThing: { deep: 1 } } },
+      ],
+    }),
+  );
+
+  const once = loadProjects(file);
+  assert.deepEqual(once[0].settings, { worktreeRoot: "/h/t", futureThing: { deep: 1 } });
+
+  saveProjects(file, once);
+  const twice = loadProjects(file);
+  assert.deepEqual(twice[0].settings, { worktreeRoot: "/h/t", futureThing: { deep: 1 } });
+});
+
+test("a project with no settings keeps the exact two-key shape on disk", () => {
+  // Otherwise every untouched project gains `"settings": {}` on the next save and
+  // the file churns for no reason.
+  const dir = mkdtempSync(join(tmpdir(), "makit-ps-plain-"));
+  const file = join(dir, "projects.json");
+  const repo = mkdtempSync(join(tmpdir(), "makit-repo-"));
+  saveProjects(file, [{ id: "a", path: repo }]);
+  const raw = JSON.parse(readFileSync(file, "utf8")) as { projects: Record<string, unknown>[] };
+  assert.deepEqual(Object.keys(raw.projects[0]).sort(), ["id", "path"]);
+});
+
+test("a malformed settings value degrades that repo, it does not stop the load", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-ps-bad-"));
+  const file = join(dir, "projects.json");
+  const a = mkdtempSync(join(tmpdir(), "makit-repo-a-"));
+  const b = mkdtempSync(join(tmpdir(), "makit-repo-b-"));
+  writeFileSync(
+    file,
+    JSON.stringify({
+      projects: [
+        { id: "a", path: a, settings: "not-an-object" },
+        { id: "b", path: b, settings: { worktreeRoot: "/h/t" } },
+      ],
+    }),
+  );
+  const loaded = loadProjects(file);
+  assert.equal(loaded.length, 2, "the good repo must still load");
+  assert.equal(loaded[0].settings, undefined);
+  assert.deepEqual(loaded[1].settings, { worktreeRoot: "/h/t" });
 });

@@ -801,6 +801,50 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
+  /// Write per-repo settings (SPEC-48).
+  ///
+  /// No optimistic local state on purpose — the server persists, re-broadcasts the
+  /// repos snapshot, and the page re-renders from that, so what is on screen is always
+  /// what the daemon actually stored.
+  ///
+  /// AWAITED, so a refusal is not silent. The server refuses a non-loopback client, an
+  /// invalid `worktreeRoot` and an invalid `defaultBranch` with an explicit `err`
+  /// frame, and its handler documents why: "A refusal is an explicit error, never a
+  /// silent no-op — a settings row that appears to save and does not is worse than one
+  /// that says it cannot." Sending fire-and-forget threw that frame away and produced
+  /// exactly the silent no-op the server took care to avoid. The caller shows the
+  /// message.
+  Future<void> setRepoSettings(
+    String projectId,
+    Map<String, Object?> settings,
+  ) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'repo.settings.set',
+        'projectId': projectId,
+        'settings': settings,
+      },
+    );
+  }
+
+  /// Re-point a repository at a new root path (SPEC-48 D4').
+  ///
+  /// A separate verb from [setRepoSettings] because it is not a setting: the server
+  /// re-validates that the target is a git repository and re-runs forge detection,
+  /// and it keeps the project's id so its settings and session history survive the
+  /// move.
+  ///
+  /// Awaited, unlike the settings writes: the refusals here are actionable ("not a
+  /// git repository", "already open as X") and the caller shows them, where a
+  /// fire-and-forget write would drop the only part the user can act on.
+  Future<void> setRepoPath(String projectId, String path) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'repo.path.set', 'projectId': projectId, 'path': path},
+    );
+  }
+
   /// Spawn a fresh agent session in the given project, in the worktree the
   /// caller already resolved (creating it first when the user asked for a new
   /// branch or a PR). Resolves with the new session id once the server acks.

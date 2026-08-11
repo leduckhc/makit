@@ -35,6 +35,13 @@ export interface CommandDeps {
   readonly budgetWatch: BudgetWatch<WsClient>;
   /** Re-send the projects + sessions snapshots to every authed client. */
   broadcastSnapshots(): void;
+  /**
+   * Called when per-repo settings change, so every client re-renders from one
+   * source. REQUIRED, for the same reason `onPortsWatchersChanged` is: a router built
+   * without it acks a settings write and then no client re-renders, which is
+   * indistinguishable from the write being lost. `server.ts` always supplies it.
+   */
+  onProjectsChanged(): void;
   /** Recompute + broadcast the repo-centric snapshot (git-only then PR-enriched). */
   broadcastReposSnapshot(): Promise<void>;
   /** Broadcast the current GitHub budget to every authed client (SPEC-32). */

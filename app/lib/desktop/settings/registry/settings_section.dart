@@ -15,6 +15,7 @@ class SettingsSection {
     required this.icon,
     required this.builder,
     this.items = const [],
+    this.leading,
   });
 
   /// Stable identifier; also the value stored in `settings.lastSection`.
@@ -25,6 +26,15 @@ class SettingsSection {
 
   /// Leading icon (a `PhosphorIcons.*` glyph from `phosphoricons_flutter`).
   final IconData icon;
+
+  /// A leading widget that replaces [icon] when the section has a mark of its own
+  /// — a repository's monogram (SPEC-48 D15).
+  ///
+  /// Optional and additive rather than a widened `icon`: every app section is
+  /// correctly described by a glyph, and only the generated per-repo sections need
+  /// to be told apart from each other. [icon] stays required so a section can never
+  /// end up with nothing to draw.
+  final Widget? leading;
 
   /// Builds the section body widget.
   final WidgetBuilder builder;

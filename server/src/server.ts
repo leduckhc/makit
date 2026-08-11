@@ -64,6 +64,7 @@ import { register as registerSessionCommands } from "./ws/commands/session.js";
 import { register as registerProjectCommands } from "./ws/commands/project.js";
 import { register as registerWorktreeCommands } from "./ws/commands/worktree.js";
 import { register as registerRepoCommands } from "./ws/commands/repo.js";
+import { register as registerRepoSettingsCommands } from "./ws/commands/repo_settings.js";
 import { register as registerGithubCommands } from "./ws/commands/github.js";
 import { register as registerMetricsCommands } from "./ws/commands/metrics.js";
 import { register as registerDebugCommands } from "./ws/commands/debug.js";
@@ -73,7 +74,7 @@ import { watchWorktrees } from "./worktree_watcher.js";
 import { watchPrs } from "./pr_watcher.js";
 import { watchBudget } from "./github/budget_watch.js";
 import { fetchOpenPr } from "./git.js";
-import { decide } from "./github/policy.js";
+import { forgePollIntervalMs } from "./forge/cadence.js";
 import { attachMediaRoute } from "./media/route.js";
 import { sharedMediaStore } from "./media/store.js";
 import {
@@ -357,7 +358,7 @@ export function startWsServer(opts: ServerOpts) {
     // quota burn (≥2N calls every 5s); feeding the policy's pollIntervalMs lets
     // the 5s→30s→120s→paused ladder actually take effect. `Infinity` (paused)
     // stops polling rather than busy-looping.
-    intervalMs: () => decide(gateway.budget()).pollIntervalMs,
+    intervalMs: () => forgePollIntervalMs(gateway),
   });
   https.on("close", () => prWatcher.close());
 
@@ -783,6 +784,14 @@ export function startWsServer(opts: ServerOpts) {
       stopForward: (grantId: string, deviceId?: string) =>
         void forwardGrants.stop(grantId, ownerOf(deviceId)),
       rescanPorts: () => void portsService.rescanNow(),
+      // A per-repo settings write or a re-point changed the projects. BOTH snapshots
+      // go out: `repos.snapshot` carries the settings, and `projects.snapshot`
+      // carries `path`/`name`, which a re-point also changes -- sending only the
+      // first left every client showing the old location.
+      onProjectsChanged: () => {
+        broadcastSnapshots();
+        void broadcastReposSnapshot();
+      },
     },
     registry,
   );
@@ -929,7 +938,7 @@ export function startWsServer(opts: ServerOpts) {
   // -------- command handlers (OCP registry) -------------------------------
 
   // (registration is delegated to the module-level `buildCommandRouter` so the
-  // capability-map completeness test can build the real router — see below.)
+  // capability-map completeness test can build the real router -- see below.)
 
   // -------- session fan-out + snapshots -----------------------------------
 
@@ -1128,6 +1137,7 @@ export function buildCommandRouter(
   registerProjectCommands(r, deps);
   registerWorktreeCommands(r, deps);
   registerRepoCommands(r, deps);
+  registerRepoSettingsCommands(r, deps);
   registerGithubCommands(r, deps);
   registerMetricsCommands(r, deps);
   registerPortsCommands(r, deps);

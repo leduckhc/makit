@@ -19,6 +19,7 @@
 
 import type { OpenPr } from "../git.js";
 import type { RequestPlan } from "./router.js";
+import type { PrMutation } from "../forge/types.js";
 
 /** Timeout (ms) for `gh pr` reads, matching git.ts. */
 export const PR_TIMEOUT_MS = 5_000;
@@ -298,8 +299,14 @@ export function parsePrUrl(prUrl: string): { owner: string; repo: string; number
   return { owner: m[1], repo: m[2], number: m[3] };
 }
 
-/** A state-changing `gh pr` action the app can run on the user's behalf. */
-export type PrMutation = "ready" | "update-branch" | "merge-squash";
+/**
+ * A state-changing PR action the app can run on the user's behalf.
+ *
+ * Re-exported from the provider-neutral contract: the verbs are the same on every
+ * forge even though how each is performed is not (Forgejo has no `pr ready` --
+ * see forge/forgejo/map.ts).
+ */
+export type { PrMutation } from "../forge/types.js";
 
 /**
  * argv for a PR mutation, addressed **by number**.

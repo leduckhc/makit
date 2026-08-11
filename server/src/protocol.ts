@@ -680,6 +680,30 @@ export interface ProjectDTO {
   path: string;
   pinned: boolean;
   lastActivityAt: number;
+  /**
+   * Per-repo settings, VERBATIM as persisted (SPEC-48).
+   *
+   * The key names are the stored ones -- `provider` and `logoHue`, not `gitProvider`
+   * and `logo`. They differed until a review caught it, and a cast in the manager hid
+   * the mismatch, so a client reading `settings.gitProvider` always got `undefined`.
+   *
+   * Unknown keys are preserved on purpose: a newer app's field must survive an older
+   * daemon writing a neighbouring one, so this is deliberately open rather than a
+   * closed shape. The RESOLVED, effective values live in `RepoDTO.settings`
+   * ({@link RepoSettingsDTO}), which is what the UI should render.
+   */
+  settings?: {
+    /** Provider override; absent means "believe detection". */
+    provider?: string | null;
+    /** Absolute canonicalised worktree root; absent inherits. */
+    worktreeRoot?: string | null;
+    /** Default-branch override; absent inherits git's answer. */
+    defaultBranch?: string | null;
+    /** Monogram palette index; absent derives the hue from the name. */
+    logoHue?: number | null;
+    /** Anything a newer client stored. Never dropped. */
+    [key: string]: unknown;
+  };
 }
 
 /**
@@ -762,6 +786,47 @@ export interface WorktreeDTO {
  * Repo-centric home-screen unit. Wraps a {@link ProjectDTO} with git
  * intelligence: the current + default branch and the list of live worktrees.
  */
+/** Where an effective per-repo value came from. Drives the badge, never inferred. */
+export type SettingSourceDTO = "override" | "environment" | "default";
+
+/** An effective value plus its source, so the app labels rather than guesses. */
+export interface ResolvedDTO<T> {
+  value: T;
+  source: SettingSourceDTO;
+}
+
+/**
+ * Per-repo settings as the app sees them: **effective values with their sources**,
+ * not the raw stored record.
+ *
+ * The app is told facts and never derives them — the rule that stopped it
+ * re-deriving the forge from a PR URL. So the server resolves the chain
+ * (`override → environment → default`) and sends the answer plus why.
+ */
+export interface RepoSettingsDTO {
+  /** Where new worktrees for this repo are created. Never blank. */
+  worktreeRoot: ResolvedDTO<string>;
+  /** `auto` believes detection; `none` means talk to no forge at all. */
+  provider: ResolvedDTO<"auto" | "none" | "forgejo" | "gitea" | "github">;
+  /** Absent when neither an override nor `origin/HEAD` gave one. */
+  defaultBranch?: ResolvedDTO<string>;
+  /** Monogram hue index; absent = derive it from the name. */
+  logoHue?: number;
+  /**
+   * Whether the repo has an `origin` remote at all. False means no forge is
+   * possible — a **different statement** from "not identified yet", and rendering
+   * them alike implies a probe is pending when none can help.
+   */
+  hasRemote: boolean;
+  /**
+   * What detection concluded. **Absent means not measured yet**, never "no forge":
+   * routing only happens when a PR operation runs, so a quiet repo may genuinely
+   * not know. `authed` is omitted for GitHub, where `gh`'s budget is not
+   * host-specific authentication. The token is never sent.
+   */
+  forge?: { software: string; host: string; authed?: boolean };
+}
+
 export interface RepoDTO {
   id: string;
   name: string;
@@ -772,6 +837,12 @@ export interface RepoDTO {
   defaultBranch: string | null;
   currentBranch: string | null;
   worktrees: WorktreeDTO[];
+  /**
+   * Per-repo settings. Optional so an older app renders no settings section rather
+   * than a fabricated one, and a newer app paired with an older server does the
+   * same.
+   */
+  settings?: RepoSettingsDTO;
 }
 
 export interface SessionDTO {

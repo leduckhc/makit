@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+#
+# forge — a provider-neutral shim over `gh` (GitHub) and `tea` (Forgejo/Gitea).
+#
+# WHY THIS EXISTS
+#   The agent-facing prompts in app/lib/ui/widgets/pr_actions.dart tell the model
+#   which command to run. Without this shim every prompt needs a per-provider
+#   variant. With it they name one verb and the shim picks the tool from the
+#   repo's own remote.
+#
+# WHAT THIS IS NOT
+#   Not a data source. It never parses JSON and the makit daemon never calls it:
+#   the daemon talks to each forge over its own typed provider
+#   (server/src/forge/**). This file only translates verbs and passes output
+#   through verbatim for a human or a model to read. Keep it that way — the moment
+#   it starts extracting fields, the logic belongs in TypeScript where the test
+#   suite can reach it.
+#
+set -euo pipefail
+
+usage() {
+	cat <<'EOF'
+forge — provider-neutral PR commands (gh for GitHub, tea for Forgejo/Gitea).
+
+  forge pr create [args...]        create a pull request
+  forge pr list [args...]          list pull requests
+  forge pr view [N] [args...]      show a PR with its comments
+  forge pr checks [N]              show a PR's CI status
+  forge provider                   print the detected provider
+
+The provider is read from the `origin` remote: github.com means gh, anything
+else is treated as a Forgejo/Gitea instance.
+EOF
+}
+
+die() {
+	printf 'forge: %s\n' "$1" >&2
+	exit 1
+}
+
+need() {
+	command -v "$1" >/dev/null 2>&1 || die "$1 is not installed (try: brew install $1)"
+}
+
+# The forge hosting `origin`. Anything that is not github.com is treated as
+# Forgejo/Gitea, because those are self-hosted on arbitrary hostnames — there is
+# no domain to match against.
+detect_provider() {
+	local url host
+	url="$(git remote get-url origin 2>/dev/null || true)"
+	[ -n "$url" ] || die "no 'origin' remote here; run this inside a repo checkout"
+	# Strip scheme then userinfo, then cut at the first ':' or '/' — handles both
+	# the scp-like (git@host:owner/repo) and URL (https://host/owner/repo) forms.
+	host="${url#*://}"
+	host="${host#*@}"
+	host="${host%%[:/]*}"
+	case "$host" in
+	github.com | *.github.com) printf 'github\n' ;;
+	'') die "could not read a host out of origin ($url)" ;;
+	*) printf 'forgejo\n' ;;
+	esac
+}
+
+# `tea pr <index>` shows PR detail, including the CI status list; with no index it
+# lists. Callers below always pass --comments explicitly because tea PROMPTS for
+# it when the flag is absent and stdin is a tty, which would hang an agent's turn
+# — the same reason the server passes `--squash` to `gh pr merge` rather than
+# letting it open a prompt.
+tea_detail() {
+	local want_comments="$1"
+	shift
+	local index=""
+	local rest=()
+	local arg
+	for arg in "$@"; do
+		case "$arg" in
+		# We set this ourselves; drop any caller-supplied copy so it cannot conflict.
+		--comments | --comments=*) ;;
+		-*) rest+=("$arg") ;;
+		*)
+			if [ -z "$index" ]; then index="$arg"; else rest+=("$arg"); fi
+			;;
+		esac
+	done
+	if [ -z "$index" ]; then
+		exec tea pr list ${rest+"${rest[@]}"}
+	fi
+	exec tea pr "$index" "--comments=${want_comments}" ${rest+"${rest[@]}"}
+}
+
+main() {
+	case "${1:-}" in
+	-h | --help | help | '')
+		usage
+		exit 0
+		;;
+	provider)
+		detect_provider
+		exit 0
+		;;
+	pr) ;;
+	*) die "unknown command '${1}' (try: forge --help)" ;;
+	esac
+	shift
+
+	local verb="${1:-}"
+	[ -n "$verb" ] || die "missing verb after 'pr' (try: forge --help)"
+	shift
+
+	local provider
+	provider="$(detect_provider)"
+
+	if [ "$provider" = github ]; then
+		need gh
+		exec gh pr "$verb" "$@"
+	fi
+
+	need tea
+	case "$verb" in
+	create) exec tea pr create "$@" ;;
+	list) exec tea pr list "$@" ;;
+	# Comments are the point of `gh pr view --comments`, so they are always on.
+	view) tea_detail true "$@" ;;
+	# `gh pr checks` is asking for CI state, which the detail view carries.
+	# Comments are suppressed to keep that output focused.
+	checks) tea_detail false "$@" ;;
+	ready)
+		die "Forgejo has no 'pr ready'. Draft state is derived from a WIP: title prefix, so
+leaving draft means rewriting the title:
+  tea pr edit <N> --title '<title with the WIP prefix removed>'
+The makit server does this for you via the Forgejo provider — prefer the app's action."
+		;;
+	*)
+		die "'$verb' has no tea equivalent. Reach the API directly, e.g.:
+  tea api repos/<owner>/<repo>/pulls/<N>"
+		;;
+	esac
+}
+
+main "$@"

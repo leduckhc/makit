@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Per-repo settings (matched to the built app)</title>
+<style>
+  :root{
+    --bg:#171717;--lowest:#121212;--low:#1E1E1E;--cont:#242424;--high:#2E2E2E;
+    --text:#F5F5F5;--muted:#9E9E9E;--osv:#C9C9C9;--hairline:#333333;
+    --primary:#4ADE80;--warn:#E0A72E;--caution:#E07B39;--merged:#A371F7;--err:#E5484D;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 80px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 10px;max-width:1000px}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .note{max-width:1000px;margin:12px 0 10px;padding:12px 14px;border:1px solid #2a4a34;background:#101d15;border-radius:10px;font-size:13px;color:#bfe6cd}
+  .danger{max-width:1000px;margin:0 0 28px;padding:12px 14px;border:1px solid #6b2a2a;background:#241010;border-radius:10px;font-size:13px;color:#f0c4c4}
+  .note strong,.danger strong{color:#fff}
+
+  .card{border:1px solid var(--hairline);border-radius:14px;background:#141414;margin-bottom:28px;overflow:hidden}
+  .card > header{padding:12px 16px;border-bottom:1px solid var(--hairline);display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .card h2{font-size:15px;margin:0;font-weight:600}
+  .card p{margin:0;color:var(--muted);font-size:12.5px}
+  .body{padding:18px 16px}
+  .rec,.rej,.built,.follow{font-size:10px;border-radius:5px;padding:2px 6px;font-weight:700;white-space:nowrap}
+  .rec{color:#0e0e0e;background:var(--primary)}
+  .rej{color:#0e0e0e;background:#8a8a8a}
+  .built{color:#0e0e0e;background:var(--merged)}
+  .follow{color:#0e0e0e;background:var(--warn)}
+  .sec{color:#fff;background:var(--err);font-size:10px;border-radius:5px;padding:2px 6px;font-weight:700}
+  .cap{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 8px}
+
+  .grid{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+  .col-frame{flex:0 0 320px}
+  .col-mac{flex:0 0 620px}
+  .col-prose{flex:1 1 100%;min-width:0;max-width:1000px;order:2;padding-top:6px;border-top:1px solid #202020;margin-top:2px}
+  .col-prose p{color:var(--osv);font-size:13px;margin:0 0 10px}
+  .col-prose ul{margin:0 0 10px 18px;padding:0;color:var(--osv);font-size:13px}
+  .col-prose li{margin-bottom:5px}
+
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid #222;vertical-align:top;font-size:12.5px}
+  th{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.mono,code.p{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+  .num{color:var(--muted);font-variant-numeric:tabular-nums}
+
+  .i{fill:none;stroke:currentColor;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round}
+  .i256{fill:none;stroke:currentColor;stroke-width:16;stroke-linecap:round;stroke-linejoin:round}
+  .dot{fill:currentColor;stroke:none}
+  svg.g{display:inline-block;vertical-align:-2px}
+
+  .phone{width:320px;border:1px solid var(--hairline);border-radius:26px;background:var(--bg);overflow:hidden}
+  .island{height:22px;display:flex;align-items:center;justify-content:center}
+  .island i{display:block;width:74px;height:13px;border-radius:8px;background:#000}
+  .sbar{height:14px;display:flex;justify-content:space-between;align-items:center;padding:0 14px;font-size:9.5px;color:var(--muted)}
+  .navbar{height:44px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--hairline);background:rgba(36,36,36,.7)}
+  .navbar .t{font-size:14px;font-weight:600}
+  .composer{height:46px;border-top:1px solid var(--hairline);display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--low)}
+  .composer .fake{flex:1;height:28px;border-radius:14px;background:var(--cont);border:1px solid var(--hairline)}
+
+  /* The real Settings window (see the app screenshot): own traffic lights, an
+     "X Settings" title, a search field, a ~250pt sidebar, then a GREEN uppercase
+     page title and green uppercase group headers over filled rounded cards.
+     Structure is to spec; type is enlarged for legibility — the real window is
+     ~1400pt wide, which cannot be drawn at scale on this page. */
+  .mac{width:660px;border:1px solid var(--hairline);border-radius:11px;overflow:hidden;background:var(--bg)}
+  .strip{height:24px;background:var(--bg);display:flex;align-items:center;gap:6px;padding:0 10px}
+  .tl{width:9px;height:9px;border-radius:50%}
+  .mac-body{display:flex;min-height:210px}
+  .side{width:186px;background:var(--bg);padding:0 10px 10px;flex:0 0 186px}
+  .side .stitle{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:600;padding:2px 4px 10px}
+  .side .stitle .x{color:var(--muted)}
+  .search{display:flex;align-items:center;gap:7px;height:30px;padding:0 9px;margin-bottom:10px;
+          border:1px solid var(--hairline);border-radius:8px;color:var(--muted);font-size:11.5px}
+  .navitem{display:flex;align-items:center;gap:10px;height:32px;padding:0 9px;border-radius:8px;font-size:12.5px;color:var(--osv)}
+  .navitem.on{background:#1f2a22;color:var(--primary)}
+  .navgrp{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--primary);font-weight:700;padding:14px 9px 5px}
+  .logo.sm{width:16px;height:16px;flex:0 0 16px;border-radius:4px;font-size:9px}
+  .navitem.on svg{color:var(--primary)}
+  .pane{flex:1;display:flex;flex-direction:column;min-width:0;padding:0 14px 14px;background:var(--bg)}
+  .ptitle{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--primary);font-weight:700;padding:4px 0 12px}
+  .crumb{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--osv);padding:0 0 10px}
+
+  /* SettingsGroup: one rounded filled card of rows, indented from flush-left headers */
+  .sgroup{background:var(--cont);border-radius:11px;margin:0 0 16px;overflow:hidden}
+  .shdr{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--primary);font-weight:700;padding:2px 0 7px}
+  .srow{display:flex;align-items:center;gap:10px;padding:9px 13px;min-height:42px;border-bottom:1px solid #2c2c2c}
+  .srow .sub{font-size:11px;color:var(--muted);font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srow:last-child{border-bottom:none}
+  .srow .lbl{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .srow .val{font-size:12px;color:var(--osv);display:flex;align-items:center;gap:6px;white-space:nowrap;max-width:52%;overflow:hidden;text-overflow:ellipsis}
+  .srow .val.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+  /* The value column: right-aligned, ellipsised, ahead of the badge. */
+  .seg{display:inline-flex;border:1px solid var(--hairline);border-radius:8px;overflow:hidden;font-size:10.5px}
+  .seg b,.seg i{padding:3px 10px;font-style:normal;font-weight:500;color:var(--osv)}
+  .seg b{background:rgba(74,222,128,.15);color:var(--primary);font-weight:600}
+  .seg i+i,.seg b+i{border-left:1px solid var(--hairline)}
+  .vcol{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--osv);
+        text-align:right;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* SettingsResetButton: collapses to a fixed box so rows stay aligned */
+  .reset{width:22px;height:22px;flex:0 0 22px;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .reset.hidden{visibility:hidden}
+  /* Matches the shipped TagChip: colour at ~15% alpha, no border, kRadius8. */
+  .inh{font-size:9.5px;padding:2px 7px;border-radius:8px;background:rgba(158,158,158,.15);color:var(--muted);font-weight:600}
+  .ovr{font-size:9.5px;padding:2px 7px;border-radius:8px;background:rgba(74,222,128,.15);color:var(--primary);font-weight:600}
+  .auto{font-size:9.5px;padding:2px 7px;border-radius:8px;background:rgba(74,222,128,.15);color:var(--primary);font-weight:600}
+  .untrusted{font-size:9.5px;padding:2px 7px;border-radius:8px;background:rgba(224,123,57,.15);color:var(--caution);font-weight:600}
+
+  .logo{width:22px;height:22px;border-radius:6px;flex:0 0 22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#0e0e0e}
+  .script{margin:0 12px 12px;background:#0d0d0d;border:1px solid var(--hairline);border-radius:8px;padding:8px 10px;
+          font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:#cfe6d6;white-space:pre;overflow:hidden}
+  .hint{font-size:11.5px;color:var(--muted);padding:0 12px 12px}
+  .chip{display:inline-flex;align-items:center;gap:4px;height:19px;padding:0 7px;border-radius:9.5px;background:var(--cont);border:1px solid var(--hairline);font-size:10.5px;color:var(--osv)}
+  .chip svg{width:11px;height:11px}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="g-forgejo" viewBox="0 0 256 256"><g class="i256">
+    <circle cx="76" cy="202" r="20"/><circle cx="180" cy="117" r="20"/><circle cx="180" cy="54" r="20"/>
+    <path d="M76 174V98A44 44 0 0 1 120 54H152"/><path d="M76 161A44 44 0 0 1 120 117H152"/></g></symbol>
+  <symbol id="g-git" viewBox="0 0 24 24"><g class="i"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M6 8.6v6.8M8.6 18h6.8M18 15.4V12a3.4 3.4 0 0 0-3.4-3.4H8.6"/></g></symbol>
+  <symbol id="g-caret" viewBox="0 0 24 24"><g class="i"><path d="m9 5.5 7 6.5-7 6.5"/></g></symbol>
+  <symbol id="g-back" viewBox="0 0 24 24"><g class="i"><path d="m15 5.5-7 6.5 7 6.5"/></g></symbol>
+  <symbol id="g-undo" viewBox="0 0 24 24"><g class="i"><path d="M4.5 8.4h7.8a5.4 5.4 0 1 1 0 10.8H6"/><path d="M7.6 4.8 4.4 8.4l3.2 3.6"/></g></symbol>
+  <symbol id="g-folder" viewBox="0 0 24 24"><g class="i"><path d="M3.4 6.6h5.2l2 2.4h9.9v9.4H3.4z"/></g></symbol>
+  <symbol id="g-gear" viewBox="0 0 24 24"><g class="i"><circle cx="12" cy="12" r="3.1"/><circle cx="12" cy="12" r="7.8" style="stroke-dasharray:2.1 2.5"/></g></symbol>
+  <symbol id="g-term" viewBox="0 0 24 24"><g class="i"><rect x="3.4" y="4.6" width="17.2" height="14.8" rx="2"/><path d="m7.4 10 2.4 2.4-2.4 2.4M12.4 14.8h4"/></g></symbol>
+  <symbol id="g-shield" viewBox="0 0 24 24"><g class="i"><path d="M12 3.6 19.4 6v6c0 4-3.2 7-7.4 8.4C7.8 19 4.6 16 4.6 12V6z"/><path d="m9 12.2 2.2 2.2L15 10.6"/></g></symbol>
+  <symbol id="g-warn" viewBox="0 0 24 24"><g class="i"><path d="M12 4.2 21 19.5H3z"/><path d="M12 10v4.2"/></g><circle class="dot" cx="12" cy="16.8" r="1"/></symbol>
+  <symbol id="g-img" viewBox="0 0 24 24"><g class="i"><rect x="3.6" y="5" width="16.8" height="14" rx="2"/><path d="m5.4 16.4 4-4 3.2 3 2.4-2.2 3.6 3.2"/></g><circle class="dot" cx="9" cy="9.6" r="1.1"/></symbol>
+  <symbol id="g-branch" viewBox="0 0 24 24"><g class="i"><circle cx="6.6" cy="5.4" r="2.3"/><circle cx="6.6" cy="18.6" r="2.3"/><circle cx="17.4" cy="9" r="2.3"/><path d="M6.6 7.7v8.6M15.1 9H12A5.4 5.4 0 0 0 6.6 14.4"/></g></symbol>
+  <symbol id="g-x" viewBox="0 0 24 24"><g class="i"><path d="M6 6l12 12M18 6 6 18"/></g></symbol>
+  <symbol id="g-search" viewBox="0 0 24 24"><g class="i"><circle cx="10.6" cy="10.6" r="6.2"/><path d="m15.2 15.2 4.4 4.4"/></g></symbol>
+  <symbol id="g-sliders" viewBox="0 0 24 24"><g class="i"><path d="M4 7.4h16M4 16.6h16"/></g><circle class="dot" cx="9.4" cy="7.4" r="2"/><circle class="dot" cx="15" cy="16.6" r="2"/></symbol>
+  <symbol id="g-palette" viewBox="0 0 24 24"><g class="i"><path d="M12 3.8a8.2 8.2 0 1 0 0 16.4c1.5 0 1.9-1 1.4-2-.6-1.2.2-2.3 1.6-2.3h1.8c2 0 3.4-1.5 3.4-3.6C20.2 7 16.6 3.8 12 3.8Z"/></g><circle class="dot" cx="8.4" cy="9" r="1.1"/><circle class="dot" cx="12" cy="7.6" r="1.1"/></symbol>
+  <symbol id="g-robot" viewBox="0 0 24 24"><g class="i"><rect x="4.2" y="7.4" width="15.6" height="11.2" rx="2.4"/><path d="M12 4.4v3M2.6 12.4h1.6M19.8 12.4h1.6"/></g><circle class="dot" cx="9" cy="12.6" r="1.2"/><circle class="dot" cx="15" cy="12.6" r="1.2"/></symbol>
+  <symbol id="g-server" viewBox="0 0 24 24"><g class="i"><rect x="3.6" y="4.6" width="16.8" height="6" rx="1.8"/><rect x="3.6" y="13.4" width="16.8" height="6" rx="1.8"/></g><circle class="dot" cx="7" cy="7.6" r="1"/><circle class="dot" cx="7" cy="16.4" r="1"/></symbol>
+  <symbol id="g-bell" viewBox="0 0 24 24"><g class="i"><path d="M17.4 16.6H6.6l1.2-2V10a4.2 4.2 0 0 1 8.4 0v4.6z"/><path d="M10.4 19.2a1.8 1.8 0 0 0 3.2 0"/></g></symbol>
+  <symbol id="g-kbd" viewBox="0 0 24 24"><g class="i"><rect x="2.8" y="7" width="18.4" height="10" rx="2"/><path d="M8 13.6h8"/></g><circle class="dot" cx="7" cy="10.6" r=".9"/><circle class="dot" cx="12" cy="10.6" r=".9"/><circle class="dot" cx="17" cy="10.6" r=".9"/></symbol>
+  <symbol id="g-wrench" viewBox="0 0 24 24"><g class="i"><path d="M14.6 4.4a4.6 4.6 0 0 0 5.6 6l-8 8a3 3 0 1 1-4.2-4.2l8-8a4.6 4.6 0 0 0-1.4-1.8z"/></g></symbol>
+  <symbol id="g-info" viewBox="0 0 24 24"><g class="i"><circle cx="12" cy="12" r="8.2"/><path d="M12 11.2v5"/></g><circle class="dot" cx="12" cy="8.2" r="1"/></symbol>
+  <symbol id="g-copy" viewBox="0 0 24 24"><g class="i"><rect x="8.6" y="8.6" width="11" height="11" rx="2"/><path d="M15.4 5.4H6.4a2 2 0 0 0-2 2v9"/></g></symbol>
+  <symbol id="g-caretd" viewBox="0 0 24 24"><g class="i"><path d="m5.5 9 6.5 7 6.5-7"/></g></symbol>
+  <symbol id="g-dots" viewBox="0 0 24 24"><circle class="dot" cx="5.6" cy="12" r="1.35"/><circle class="dot" cx="12" cy="12" r="1.35"/><circle class="dot" cx="18.4" cy="12" r="1.35"/></symbol>
+</svg>
+
+<h1>makit — Per-repo settings</h1>
+<p class="sub">
+  A repository needs more than a forge: a logo, a default branch, a worktree root that may or may not follow
+  the global one, and lifecycle scripts. That is a <em>settings surface</em>, not a field — so the question is
+  the pattern it grows into, not the first row.
+</p>
+<div class="note">
+  <strong>Card 1 tracks the built section</strong>, screenshotted from the real macOS app. All four
+  identity rows are editable, the provider is a segmented control in the <code>Endpoint</code> idiom, and
+  <strong>the provenance badges are gone</strong>: <code>from name</code> beside a monogram,
+  <code>from remote</code> beside <code>main</code>, and <code>detected</code> beside a subtitle already
+  reading “Auto: Forgejo · …” are each the same sentence twice — and once every row became editable, where
+  a value came from stopped being actionable. The copy button went with them: copying a path is not a
+  configuration task. What survives is <code>inherited</code> / <code>overridden</code> on Worktree root,
+  the one row with no subtitle, where the distinction is the whole point.
+  <br><br>
+  The provider selector also offers <strong>None</strong>: makit talks to no forge and stops checking
+  pull requests. That is an <em>instruction</em>, distinct from Auto failing to identify one — and it
+  gives the two states that previously read identically their own words: “Auto: no remote, so no forge”
+  is a conclusion, “Auto: not identified yet” is a probe still pending.
+  <br><br>
+  <strong>Provider auto-detection is already built and verified</strong> (<code>server/src/forge/detect.ts</code>).
+  It probes <code>/api/forgejo/v1/version</code>, <code>/api/v1/version</code> and <code>/api/v4/version</code>,
+  once per host, cached — correctly identifying Forgejo (self-hosted + Codeberg), Gitea, GitLab and an unrelated
+  host against live servers. So the forge row below is a <em>read-out with an override</em>, never a required
+  choice. Nothing else on this page is built.
+</div>
+<div class="danger">
+  <strong>Lifecycle scripts are the one genuinely dangerous item here</strong>, and they change what makit is.
+  They run on the host as the daemon user, which holds your <code>gh</code> token, your
+  <code>FORGEJO_ACCESS_TOKEN</code> and your SSH keys. Two decisions have to be made <em>before</em> any of this
+  is built — see card 4. Both are easy to get wrong in a way that is not recoverable by a later patch.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>1 · One Settings section per repository</h2><span class="rec">RECOMMENDED</span>
+    <p>Fixed app sections, then a <code>REPOSITORIES</code> group — the Mail/Finder idiom. Same destination from the repo card's <code>dotsThree</code> menu.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div class="col-mac">
+        <p class="cap">macOS — one sidebar section per repository</p>
+        <div class="mac">
+          <div class="strip"><span class="tl" style="background:#ff5f57"></span><span class="tl" style="background:#febc2e"></span><span class="tl" style="background:#28c840"></span></div>
+          <div class="mac-body">
+            <div class="side">
+              <div class="stitle"><svg class="g x" width="15" height="15"><use href="#g-x"/></svg>Settings</div>
+              <div class="search"><svg class="g" width="12" height="12"><use href="#g-search"/></svg>Search settings</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-sliders"/></svg>General</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-palette"/></svg>Appearance</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-robot"/></svg>Agents &amp; Chat</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-server"/></svg>Server &amp; Devices</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-bell"/></svg>Notifications</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-kbd"/></svg>Shortcuts</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-wrench"/></svg>Advanced</div>
+              <div class="navitem"><svg class="g" width="14" height="14"><use href="#g-info"/></svg>About</div>
+              <div class="navgrp">repositories</div>
+              <div class="navitem on"><span class="logo sm" style="background:#4ADE80">D</span>Diana</div>
+              <div class="navitem"><span class="logo sm" style="background:#A371F7">m</span>makit</div>
+              <div class="navitem"><span class="logo sm" style="background:#E0A72E">p</span>piano</div>
+            </div>
+            <div class="pane">
+              <div class="ptitle">Diana</div>
+              <div class="shdr">identity</div>
+              <div class="sgroup">
+                <div class="srow"><span class="logo" style="background:#38BDF8">D</span>
+                  <div class="lbl">Logo</div>
+                  <span class="reset"><svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
+                <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-folder"/></svg>
+                  <div class="lbl">Root path</div>
+                  <span class="vcol">~/Work/XDent/Diana</span>
+                  <span class="reset"><svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
+                <div class="srow"><svg class="g" width="15" height="15" style="color:#4ADE80"><use href="#g-forgejo"/></svg>
+                  <div class="lbl">Git provider<div class="sub">Auto: Forgejo · forgejo.internal.xdent.ai · token set</div></div>
+                  <span class="reset hidden"></span></div>
+                <div class="srow" style="padding-top:0"><div class="lbl"></div>
+                  <span class="seg"><b>Auto</b><i>None</i><i>Forgejo</i><i>Gitea</i><i>GitHub</i></span>
+                  <span class="reset hidden"></span></div>
+                <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-branch"/></svg>
+                  <div class="lbl">Default branch</div>
+                  <span class="vcol">main</span>
+                  <span class="reset"><svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
+              </div>
+
+              <div class="shdr">worktrees</div>
+              <div class="sgroup">
+                <div class="srow"><div class="lbl">Worktree root</div>
+                  <span class="vcol">~/.worktrees</span><span class="inh" style="margin-left:8px">inherited</span>
+                  <span class="reset hidden"></span></div>
+                <div class="srow"><div class="lbl">Worktree root <span style="color:#5c5c5c">(overridden)</span></div>
+                  <span class="vcol">~/.worktrees/makit</span><span class="ovr" style="margin-left:8px">overridden</span>
+                  <span class="reset"><svg class="g" width="14" height="14"><use href="#g-undo"/></svg></span></div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-frame">
+        <p class="cap">iOS — same page, one column</p>
+        <div class="phone">
+          <div class="island"><i></i></div>
+          <div class="sbar"><span>9:41</span><span>􀙇 􀛨</span></div>
+          <div class="navbar"><svg class="g" width="17" height="17" style="color:#4ADE80"><use href="#g-back"/></svg><div class="t">Diana</div></div>
+          <div style="padding-top:6px">
+            <div class="shdr">identity</div>
+            <div class="sgroup">
+              <div class="srow"><span class="logo" style="background:#38BDF8">D</span><div class="lbl">Logo</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+              <div class="srow"><div class="lbl">Git provider<div class="sub">Auto: Forgejo</div></div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+              <div class="srow"><div class="lbl">Default branch</div><span class="val mono">main</span><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+            </div>
+            <div class="shdr">worktrees</div>
+            <div class="sgroup">
+              <div class="srow"><div class="lbl">Worktree root</div><span class="val mono">~/.worktrees <span class="inh">inherited</span></span><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+            </div>
+            <div class="hint">Worktree root is editable on the machine running makit; a paired phone shows
+              the same values read-only (D16). Lifecycle scripts are P3 and deliberately not advertised here.</div>
+          </div>
+          <div class="composer"><div class="fake"></div></div>
+        </div>
+      </div>
+
+      <div class="col-prose">
+        <p class="cap">why a section per repo, not one “Repositories” page</p>
+        <ul>
+          <li><strong>It is bounded by what you added.</strong> Sections come from projects — three on this
+            install (<code>makit</code>, <code>Diana</code>, <code>piano</code>). Repos makit merely noticed are
+            <code>pinned:false</code> (<code>manager.ts:287</code> vs <code>:215</code>) and stay out of the
+            sidebar, so it cannot turn into a file browser.</li>
+          <li><strong>Grouped, so the taxonomy stays honest.</strong> Fixed app sections are a closed set;
+            repos are data. Interleaving them in one flat list is a smell — under a
+            <code>REPOSITORIES</code> header it is just the Mail/Finder sidebar idiom, and the monogram makes
+            the group scannable at a glance.</li>
+          <li><strong>One click, and the page gets simpler.</strong> No list-then-detail drill, and the green
+            page title becomes the repo name — the breadcrumb an “All repositories” page would have needed
+            disappears entirely.</li>
+          <li><strong>Search still reaches everything.</strong> The existing “Search settings” field is what
+            makes a longer sidebar safe: “worktree root” finds the row whichever section owns it.</li>
+        </ul>
+        <p class="cap" style="margin-top:14px">the risk worth naming</p>
+        <p>The sidebar becomes a <em>second</em> place that lists repositories, alongside the repo-centric home.
+          Two lists drift — different order, different names, different logos. Mitigation is not a rule but a
+          shared source: both render from the same <code>RepoDTO</code> and the same monogram widget, which is
+          row 6 of the deltas below.</p>
+        <p class="cap" style="margin-top:14px">if it ever grows</p>
+        <p>Past roughly ten repos, add a single <em>All repositories…</em> entry at the end of the group and
+          keep only pinned ones inline. Not worth building now — three sections is not a scrolling problem, and
+          the overflow rule is cheap to add later precisely because <code>pinned</code> already exists.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>2 · Inheritance: show the effective value and where it came from</h2><span class="rec">RECOMMENDED</span></header>
+  <div class="body">
+    <table>
+      <thead><tr><th style="width:23%">setting</th><th>resolution order (first hit wins)</th><th style="width:22%">badge shown</th></tr></thead>
+      <tbody>
+        <tr><td>Worktree root</td>
+            <td class="mono">repo override → global setting → <code>MAKIT_WORKTREE_DIR</code> → <code>~/.worktrees</code></td>
+            <td><span class="inh">inherited</span> / <span class="ovr">overridden</span></td></tr>
+        <tr><td>Git provider</td>
+            <td class="mono">repo override → detection (<code>detect.ts</code>) → unsupported</td>
+            <td>none — the subtitle says it</td></tr>
+        <tr><td>Default branch</td>
+            <td class="mono">repo override → <code>origin/HEAD</code> → <code>main</code></td>
+            <td>none — <code>main</code> is the fact</td></tr>
+        <tr><td>Logo</td>
+            <td class="mono">repo override (<code>logoHue</code>, a palette index) → deterministic monogram from the name</td>
+            <td>none — the monogram is the value</td></tr>
+        <tr><td>Access token</td>
+            <td class="mono">per <em>instance</em>, never per repo — see forge-provider-per-repo.html</td>
+            <td>—</td></tr>
+      </tbody>
+    </table>
+    <div class="col-prose" style="border:none;margin-top:14px;padding-top:0">
+      <p class="cap">three rules that keep this honest</p>
+      <ul>
+        <li><strong>Always render the effective value, never an empty field.</strong> A blank “Worktree root”
+          box that silently means <code>~/.worktrees</code> is how people end up with worktrees somewhere they
+          did not expect. Show <code>~/.worktrees</code> with <span class="inh">inherited</span> beside it.</li>
+        <li><strong>The badge names the source, and it is the undo target.</strong>
+          <span class="ovr">overridden</span> is the only state with a visible
+          <svg class="g" width="12" height="12"><use href="#g-undo"/></svg> — reverting means “inherit again”,
+          not “set to the current global value”, so a later change to the global still propagates.</li>
+        <li><strong>Env vars are a source, not a competitor.</strong> <code>MAKIT_WORKTREE_DIR</code> already
+          exists and must keep working; it slots into the chain above the built-in default and renders as
+          <span class="inh">from environment</span>, read-only, because the app cannot change the daemon's env.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>3 · The logo, without a file-picker problem</h2><span class="rec">RECOMMENDED</span></header>
+  <div class="body">
+    <div class="grid">
+      <div class="col-frame">
+        <p class="cap">default: deterministic monogram</p>
+        <div class="phone" style="padding:14px 0">
+          <div class="sgroup" style="margin-top:0">
+            <div class="srow"><span class="logo" style="background:#38BDF8">D</span><div class="lbl">Diana</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+            <div class="srow"><span class="logo" style="background:#A371F7">m</span><div class="lbl">makit</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+            <div class="srow"><span class="logo" style="background:#E0A72E">l</span><div class="lbl">legacy-tools</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+            <div class="srow"><span class="logo" style="background:#242424;border:1px solid #333"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-img"/></svg></span><div class="lbl">infra-prod</div><span class="val"><span class="ovr">custom image — not built</span></span></div>
+          </div>
+          <div class="hint">Hue is derived from the repo name, so it is stable across devices without syncing anything. What persists is <code>logoHue</code>, an index into a fixed six-colour palette (<code>RepoSettings</code> in <code>server/src/repo_settings.ts</code>) — there is no image field, and the “custom image” state above is not built.</div>
+        </div>
+      </div>
+      <div class="col-prose" style="order:0;flex:1 1 440px;min-width:430px;border:none;padding-top:0;margin-top:0">
+        <p class="cap">why a monogram first</p>
+        <ul>
+          <li><strong>Nothing to configure, and it already distinguishes.</strong> The list needs to be scannable
+            more than it needs to be branded. Deriving hue from the name means every device shows the same colour
+            with zero state.</li>
+          <li><strong>A custom image is a file that must reach the daemon.</strong> Picking one on a phone means
+            uploading bytes to the host — makit has a media route, so it is possible, but it is a real transfer
+            path with size and type validation, not a settings row. Ship the monogram, add image upload later.</li>
+          <li><strong>Do not auto-scrape the repo.</strong> Reading a favicon or the first README image is a
+            surprise: the logo would change when someone edits a file. An explicit override is predictable.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>4 · Lifecycle scripts — two decisions before any code</h2><span class="sec">SECURITY</span><span class="follow">BLOCKING</span>
+    <p>They run as the daemon user, next to your forge tokens and SSH keys.</p></header>
+  <div class="body">
+    <table>
+      <thead><tr><th style="width:30%">decision</th><th>recommended</th><th style="width:30%">what goes wrong otherwise</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Where does the script text live?</strong></td>
+          <td><span class="rec">RECOMMENDED</span> In makit's own config (<code>projects.json</code>), authored
+            on the host. <em>Never</em> read from the repository working tree.</td>
+          <td>If makit runs <code>.makit/hooks/post-worktree-create.sh</code> from the repo, then
+            <em>cloning a repository and adding it to makit is arbitrary code execution</em>. Reviewing a
+            stranger's PR branch would run their script. This is the direnv / workspace-trust trap.</td>
+        </tr>
+        <tr>
+          <td><strong>Who may set one?</strong></td>
+          <td><span class="rec">RECOMMENDED</span> The host only. A paired phone can read the row but not edit
+            it; the iOS page shows “Editable on the host only”.</td>
+          <td>makit pairs with phones. If any paired device can write a script the daemon executes, pairing
+            stops meaning “chat with an agent” and starts meaning “remote shell on my laptop”. A lost phone
+            becomes a host compromise.</td>
+        </tr>
+        <tr>
+          <td>If repo-provided hooks are ever wanted</td>
+          <td>Explicit per-repo trust, granted on the host, with the script's full text shown before the first
+            run and re-prompted whenever it changes.</td>
+          <td>Silent execution of file contents that change under version control.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="cap" style="margin-top:22px;margin-bottom:14px">and the boring parts that still matter</p>
+    <div class="grid">
+      <div class="col-mac">
+        <p class="cap">macOS — editing a hook (host only)</p>
+        <div class="mac">
+          <div class="strip"><span class="tl" style="background:#ff5f57"></span><span class="tl" style="background:#febc2e"></span><span class="tl" style="background:#28c840"></span></div>
+          <div class="mac-body" style="min-height:190px">
+            <div class="pane">
+              <div class="ptitle">Diana</div>
+              <div class="crumb"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-back"/></svg>Lifecycle scripts
+                <span style="color:#5c5c5c">›</span><svg class="g" width="13" height="13"><use href="#g-term"/></svg>After worktree create</div>
+              <div class="script">#!/bin/sh
+pnpm install --frozen-lockfile
+cp "$MAKIT_REPO_ROOT/.env.local" .</div>
+              <div class="sgroup">
+                <div class="srow"><div class="lbl">Working directory</div><span class="val mono">the new worktree</span></div>
+                <div class="srow"><div class="lbl">Environment</div><span class="val mono">MAKIT_* only <span class="auto">allowlist</span></span></div>
+                <div class="srow"><div class="lbl">Timeout</div><span class="val mono">120s</span></div>
+                <div class="srow"><div class="lbl">On failure</div><span class="val">keep the worktree, show a notice</span></div>
+              </div>
+              <div class="hint">Output is captured to the session log, so a failing hook is diagnosable rather than a worktree that “just did not work”.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-prose" style="order:0;flex:1 1 430px;min-width:420px;border:none;padding-top:0;margin-top:0">
+        <ul>
+          <li><strong>Do not hand the hook the daemon's environment.</strong> It holds
+            <code>FORGEJO_ACCESS_TOKEN</code> and whatever else launched the daemon. Pass a documented
+            allowlist (<code>MAKIT_REPO_ROOT</code>, <code>MAKIT_WORKTREE</code>, <code>MAKIT_BRANCH</code>)
+            so a hook that leaks its env leaks nothing that matters.</li>
+          <li><strong>Failure must not destroy work.</strong> A failed <em>post</em>-create hook leaves the
+            worktree and reports; a failed <em>pre</em>-prune hook cancels the prune. Prune is the destructive
+            verb, so its hook is the one with veto power.</li>
+          <li><strong>Timeout, always.</strong> A hook that waits on stdin would otherwise hang worktree
+            creation forever — the same non-tty hazard the server already guards for
+            <code>gh pr merge</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>5 · Storage: extend what already persists</h2><span class="rec">RECOMMENDED</span></header>
+  <div class="body">
+    <div class="col-prose" style="border:none;padding-top:0;margin-top:0;max-width:1000px">
+      <p><code>server/src/project-store.ts</code> already persists one record per project to
+        <code>$MAKIT_HOME/projects.json</code>, server-side, with a documented rule that a corrupt or missing
+        file degrades to an empty list so the daemon always starts. That is the right home: the daemon itself
+        needs these values (worktree root, hooks), and it is keyed by a stable id that survives restarts.</p>
+      <p><strong>Not <code>SharedPreferences</code>.</strong> Today's settings live in app-side prefs, which are
+        per-device: a worktree root set on the phone would not reach the daemon that creates the worktree, and
+        two paired devices would disagree. Per-repo settings must be server-owned, with the app as an editor.</p>
+    </div>
+    <table style="margin-top:14px">
+      <thead><tr><th style="width:34px">#</th><th>change</th><th style="width:30%">file</th><th style="width:64px">size</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td><code>PersistedProject.settings?: RepoSettings</code> — every field optional, so absent means “inherit”. Unknown keys preserved on save so an older daemon does not silently drop a newer app's field.</td><td class="mono">server/src/project-store.ts</td><td class="num">~60</td></tr>
+        <tr><td class="num">2</td><td>Resolver: effective value + its source, one pure function per setting. This is what the badges render, and it is the whole inheritance model.</td><td class="mono">server/src/repo_settings.ts <em>(new)</em></td><td class="num">~120</td></tr>
+        <tr><td class="num">3</td><td>Wire the worktree root through it — replaces the direct <code>MAKIT_WORKTREE_DIR</code> read at <code>git.ts:33</code>, which is the only consumer today.</td><td class="mono">server/src/git.ts</td><td class="num">~15</td></tr>
+        <tr><td class="num">4</td><td><code>repo.settings.get</code> / <code>repo.settings.set</code>; <code>set</code> rejects hook fields unless the caller is the host.</td><td class="mono">server/src/ws/commands/repo_settings.ts <em>(new)</em></td><td class="num">~110</td></tr>
+        <tr><td class="num">5</td><td>Settings ▸ Repositories: list + detail, built from <code>SettingsGroup</code> / <code>SettingsSectionHeader</code> / <code>SettingsResetButton</code>.</td><td class="mono">app/lib/desktop/settings/sections/<br>repositories_section.dart <em>(new)</em></td><td class="num">~260</td></tr>
+        <tr><td class="num">6</td><td>Monogram logo widget + “Settings…” entry in the repo card menu.</td><td class="mono">app/lib/ui/home/repo_logo.dart <em>(new)</em><br>app/lib/ui/home/repo_card.dart</td><td class="num">~70</td></tr>
+        <tr><td class="num">7</td><td>Hook runner: allowlisted env, cwd, timeout, output to the session log, pre-prune veto.</td><td class="mono">server/src/worktree_hooks.ts <em>(new)</em></td><td class="num">~180</td></tr>
+      </tbody>
+    </table>
+    <p class="cap" style="margin-top:16px">order I would build it</p>
+    <p style="color:var(--osv);font-size:13px;margin:0">
+      Rows 1–3 first and alone: they make the inheritance model real and immediately fix a live wart
+      (worktree root is global-only today), with no new UI and no security surface. Row 5 next, read-only, so
+      the page exists and shows detected values. Rows 4 and 6 make it editable. <strong>Row 7 last, and only
+      after card 4's two decisions are settled</strong> — it is the only irreversible one.
+    </p>
+  </div>
+</div>
+
+</body>
+</html>

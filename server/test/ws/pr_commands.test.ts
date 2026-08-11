@@ -65,6 +65,9 @@ function routerWith(manager: Partial<CommandDeps["manager"]>) {
     onPortsWatchersChanged: () => {},
     sendPortsSnapshot: () => {},
     ...docsDepsStub,
+    // Required since a settings write that acks without re-broadcasting is
+    // indistinguishable from a lost write; this harness observes neither.
+    onProjectsChanged: () => {},
     ...portsDepsStub,
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
