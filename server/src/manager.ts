@@ -15,7 +15,14 @@ import type { AskUser } from "./uicall.js";
 import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/catalog.js";
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO } from "./protocol.js";
+import {
+  DEFAULT_SESSION_TITLE,
+  type ProjectDTO,
+  type RepoDTO,
+  type RepoSettingsDTO,
+  type SessionConfigOption,
+  type SessionDTO,
+} from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
 import { buildAdapter, piAcpSpec } from "./agent_factory.js";
@@ -41,7 +48,6 @@ import {
   branchExists,
   slugify,
   slugifyBranch,
-  worktreeBaseDir,
   run,
   type OpenPr,
   type WorktreeEntry,
@@ -49,6 +55,14 @@ import {
 import type { PrMutation } from "./github/queries.js";
 import type { EventStore } from "./storage/event_store.js";
 import { log } from "./log.js";
+import {
+  parseRepoSettings,
+  resolveProvider,
+  resolveWorktreeRoot,
+  validateWorktreeRoot,
+  type RepoSettings,
+} from "./repo_settings.js";
+import type { ForgeInspector } from "./forge/router.js";
 
 /**
  * What a {@link SessionManager.wrapUpWorktree} run actually did. The base-branch
@@ -159,6 +173,12 @@ function reason(e: unknown): string {
 }
 
 interface ProjectEntry {
+  /**
+   * Persisted per-repo settings, verbatim. Held as an opaque record so a save
+   * cannot drop keys this build does not understand; typed and validated at the
+   * point of use (`repo_settings.ts`).
+   */
+  settings?: Record<string, unknown>;
   dto: ProjectDTO;
 }
 
@@ -215,6 +235,8 @@ export class SessionManager extends EventEmitter {
           pinned: true,
           lastActivityAt: Date.now(),
         },
+        // Carried verbatim so a save cannot drop keys this build does not know.
+        settings: typeof entry === "string" ? undefined : entry.settings,
       });
     }
     this.rehydrate();
@@ -263,7 +285,11 @@ export class SessionManager extends EventEmitter {
 
   /** Listing for the home screen. */
   listProjects(): ProjectDTO[] {
-    return [...this.projects.values()].map((p) => p.dto);
+    return [...this.projects.values()].map((p) => ({
+      ...p.dto,
+      // Include validated settings if present; undefined if absent (optional in DTO)
+      ...(p.settings ? { settings: p.settings as ProjectDTO['settings'] } : {}),
+    }));
   }
 
   /**
@@ -292,6 +318,34 @@ export class SessionManager extends EventEmitter {
     return dto;
   }
 
+  /**
+   * Apply a settings patch to a project and persist it. Returns false for an
+   * unknown id.
+   *
+   * A `null` value **clears** that key rather than storing null: absent means
+   * "inherit", so clearing is how the UI says "go back to inheriting" without a
+   * sentinel. Unknown keys already on disk are untouched — this merges into the
+   * stored record rather than replacing it, so a newer app's field survives an
+   * older daemon writing a neighbouring one.
+   */
+  updateProjectSettings(id: string, patch: Record<string, unknown>): boolean {
+    const entry = this.projects.get(id);
+    if (entry === undefined) return false;
+    const next: Record<string, unknown> = { ...(entry.settings ?? {}) };
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null) delete next[k];
+      else next[k] = v;
+    }
+    entry.settings = Object.keys(next).length === 0 ? undefined : next;
+    this.notifyProjectsChanged();
+    return true;
+  }
+
+  /** Persisted settings for a project id, verbatim (for the DTO + tests). */
+  projectSettings(id: string): Record<string, unknown> | undefined {
+    return this.projects.get(id)?.settings;
+  }
+
   /** Remove a project by id. Throws on an unknown id. Sessions are left as-is. */
   removeProject(id: string): void {
     if (!this.projects.has(id)) throw new Error(`unknown project: ${id}`);
@@ -301,7 +355,13 @@ export class SessionManager extends EventEmitter {
 
   private notifyProjectsChanged(): void {
     this.onProjectsChanged?.(
-      [...this.projects.values()].map((p) => ({ id: p.dto.id, path: p.dto.path })),
+      [...this.projects.values()].map((p) =>
+        // `settings` is included only when present, so an untouched project keeps
+        // its two-key shape on disk and the file stays diffable.
+        p.settings === undefined || Object.keys(p.settings).length === 0
+          ? { id: p.dto.id, path: p.dto.path }
+          : { id: p.dto.id, path: p.dto.path, settings: p.settings },
+      ),
     );
   }
 
@@ -557,6 +617,7 @@ export class SessionManager extends EventEmitter {
       // path.
       const dirName = this.uniqueWorktreeDir(repoPath, branch.replace(/\//g, "-"));
       const path = await addWorktree({
+        baseDir: this.worktreeRootFor(repoPath),
         repoPath,
         name: dirName,
         branch,
@@ -594,7 +655,12 @@ export class SessionManager extends EventEmitter {
     const prs = await listOpenPrs(this._gateway, repoPath);
     const pr = prs.find((p) => p.number === prNumber);
     if (!pr) throw new Error(`PR #${prNumber} is not an open PR of this repo`);
-    return addWorktreeForPr({ repoPath, prNumber, headRefName: pr.headRefName });
+    return addWorktreeForPr({
+      repoPath,
+      prNumber,
+      headRefName: pr.headRefName,
+      baseDir: this.worktreeRootFor(repoPath),
+    });
   }
 
   /**
@@ -996,14 +1062,48 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Find an unused worktree directory name under `<worktreeBaseDir>/<repoName>`,
-   * appending `-2`, `-3`, … on collision. Needed because two distinct branches
-   * can flatten to the same dir name (`feat/new-ui` → `feat-new-ui`), so a
-   * unique branch is not enough to guarantee `git worktree add`'s target path
-   * is free. Mirrors {@link addWorktree}'s target layout.
+   * The worktree root in force for [repoPath] — the repo's override, else
+   * `MAKIT_WORKTREE_DIR`, else `~/.worktrees` (SPEC-48 D8').
+   *
+   * Re-validated on read, not trusted from the file: `projects.json` is plain JSON
+   * a user can edit by hand, so a write-time check alone is not a guarantee. An
+   * invalid stored value falls back to the inherited root rather than failing the
+   * worktree creation, and says so once.
    */
-  private uniqueWorktreeDir(repoPath: string, base: string): string {
-    const parent = join(worktreeBaseDir(), basename(resolve(repoPath)));
+  worktreeRootFor(repoPath: string): string {
+    const settings = this.settingsForPath(repoPath);
+    const resolved = resolveWorktreeRoot(settings, process.env);
+    if (resolved.source !== "override") return resolved.value;
+    const checked = validateWorktreeRoot(resolved.value);
+    if (checked.ok) return checked.value;
+    log.warn(
+      `[makit] ignoring invalid worktree root for ${repoPath}: ${checked.error} — using the inherited root instead`,
+    );
+    return resolveWorktreeRoot(undefined, process.env).value;
+  }
+
+  /** Parsed settings for the project owning [repoPath], or `{}`. */
+  private settingsForPath(repoPath: string): RepoSettings {
+    const target = resolve(repoPath);
+    for (const p of this.projects.values()) {
+      if (resolve(p.dto.path) === target) return parseRepoSettings(p.settings);
+    }
+    return {};
+  }
+
+  /**
+   * Find an unused worktree directory name under
+   * `<worktreeRootFor(repoPath)>/<repoName>`, appending `-2`, `-3`, … on collision.
+   * Needed because two distinct branches can flatten to the same dir name
+   * (`feat/new-ui` → `feat-new-ui`), so a unique branch is not enough to guarantee
+   * `git worktree add`'s target path is free. Mirrors {@link addWorktree}'s layout.
+   *
+   * Reads the SAME per-repo root the creation paths use. If it did not, collision
+   * detection would look in one directory while `git worktree add` wrote to
+   * another — the two would disagree and a real collision would slip through.
+   */
+  uniqueWorktreeDir(repoPath: string, base: string): string {
+    const parent = join(this.worktreeRootFor(repoPath), basename(resolve(repoPath)));
     let candidate = base;
     let n = 1;
     while (existsSync(join(parent, candidate))) {
@@ -1032,7 +1132,53 @@ export class SessionManager extends EventEmitter {
     lastKnown: LastKnownPr = () => null,
   ): Promise<RepoDTO[]> {
     const includePrs = opts.includePrs ?? true;
-    return listRepos(this.listProjects(), this.allSessions(), includePrs, this._gateway, lastKnown);
+    return listRepos(
+      this.listProjects(),
+      this.allSessions(),
+      includePrs,
+      this._gateway,
+      lastKnown,
+      (p) => this.settingsDtoFor(p),
+    );
+  }
+
+  /**
+   * One project's settings as the app sees them: **effective values with their
+   * sources**, so the UI labels rather than guesses.
+   *
+   * The forge is read from the router's own decision record, which is `undefined`
+   * until that repo has actually been routed — reported as absent rather than as a
+   * guess, because "not measured yet" and "no forge" are different statements and
+   * only one of them is worth investigating.
+   */
+  private settingsDtoFor(project: ProjectDTO): RepoSettingsDTO {
+    const stored = parseRepoSettings(this.projects.get(project.id)?.settings);
+    const worktreeRoot = resolveWorktreeRoot(stored, process.env);
+    const provider = resolveProvider(stored);
+    const inspector = this._gateway as unknown as Partial<ForgeInspector>;
+    const forge = inspector.forgeFor?.(project.path);
+    return {
+      // Re-validated here too: an override read back from a hand-edited file must
+      // not be reported as in force if it would be refused on use.
+      worktreeRoot:
+        worktreeRoot.source === "override" && !validateWorktreeRoot(worktreeRoot.value).ok
+          ? { ...resolveWorktreeRoot(undefined, process.env), source: "default" as const }
+          : worktreeRoot,
+      provider,
+      // Present ONLY when overridden. Absent means "no override" — the app already
+      // has `RepoDTO.defaultBranch` from git, so repeating it here would be two
+      // sources for one fact.
+      defaultBranch:
+        stored.defaultBranch !== undefined
+          ? { value: stored.defaultBranch, source: "override" as const }
+          : undefined,
+      logoHue: stored.logoHue,
+      // The remote is what makes a forge possible at all. Derived from the
+      // router's decision when it has one, since that is the component that
+      // actually read the remote.
+      hasRemote: forge !== undefined,
+      forge,
+    };
   }
 
   /**

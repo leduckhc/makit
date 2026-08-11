@@ -13,6 +13,14 @@
 import type { ProjectDTO, PullRequestDTO, RepoDTO, WorktreeDTO } from "./protocol.js";
 import type { Session } from "./session.js";
 import type { GithubGateway } from "./github/gateway.js";
+import type { RepoSettingsDTO } from "./protocol.js";
+
+/**
+ * Supplies one project's settings DTO. Injected rather than reached for: the
+ * resolution chain lives in `repo_settings.ts` and the forge decision in the
+ * router, and `listRepos` should not know about either.
+ */
+export type RepoSettingsLookup = (project: ProjectDTO) => RepoSettingsDTO | undefined;
 import {
   isGitRepo,
   detectDefaultBranch,
@@ -65,9 +73,14 @@ export async function listRepos(
   includePrs: boolean,
   gateway: GithubGateway,
   lastKnown: LastKnownPr,
+  settingsFor?: RepoSettingsLookup,
 ): Promise<RepoDTO[]> {
   // Bounded fan-out across projects (SPEC-17 P3 × #66 concurrency cap).
-  const repos = await mapLimit(projects, PROJECT_CONCURRENCY, (p) => repoSnapshot(p, sessions));
+  const repos = await mapLimit(projects, PROJECT_CONCURRENCY, async (p) => {
+    const repo = await repoSnapshot(p, sessions);
+    const settings = settingsFor?.(p);
+    return settings === undefined ? repo : { ...repo, settings };
+  });
   return includePrs ? enrichPrs(repos, gateway, lastKnown) : repos;
 }
 

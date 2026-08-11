@@ -358,3 +358,50 @@ test("a detection failure falls back to GitHub rather than breaking the poll", a
   await router.prForBranch("/fj", "b");
   assert.deepEqual(calls, ["github.prForBranch(/fj,b)"]);
 });
+
+// ---------------------------------------------------------------------------
+// F1/F2 — the router records what it decided, because nothing else retains it:
+// `chosen` holds only the gateway promise.
+// ---------------------------------------------------------------------------
+
+test("forgeFor is undefined until a repo has been routed", () => {
+  const { router } = harness({ "/fj": "git.example" });
+  assert.equal(router.forgeFor("/fj"), undefined);
+});
+
+test("forgeFor reports the software, host and whether a credential exists", async () => {
+  const { router } = harness({ "/gt": "gitea.example" }, { "gitea.example": "gitea" });
+  await router.prForBranch("/gt", "b");
+  assert.deepEqual(router.forgeFor("/gt"), {
+    software: "gitea",
+    host: "gitea.example",
+    authed: true,
+  });
+});
+
+test("a GitHub repo reports no authed flag — gh's budget is not host auth", async () => {
+  const { router } = harness({ "/gh": "github.com" });
+  await router.prForBranch("/gh", "b");
+  assert.deepEqual(router.forgeFor("/gh"), { software: "github", host: "github.com" });
+});
+
+test("an unsupported forge is still recorded, so the UI can name it", async () => {
+  const { router } = harness({ "/gl": "gitlab.example" }, { "gitlab.example": "gitlab" });
+  await router.prForBranch("/gl", "b");
+  assert.equal(router.forgeFor("/gl")?.software, "gitlab");
+});
+
+test("a repo with no readable remote records nothing rather than guessing github.com", async () => {
+  // `forge: undefined` on the DTO means "not measured"; inventing a host here
+  // would make a local-only repo claim to be on GitHub.
+  const { router } = harness({ "/mystery": null });
+  await router.prForBranch("/mystery", "b");
+  assert.equal(router.forgeFor("/mystery"), undefined);
+});
+
+test("close() forgets the decisions", async () => {
+  const { router } = harness({ "/fj": "git.example" });
+  await router.prForBranch("/fj", "b");
+  router.close();
+  assert.equal(router.forgeFor("/fj"), undefined);
+});

@@ -143,6 +143,31 @@ function hostnameOnly(host: string): string {
   return host.toLowerCase().split(":")[0];
 }
 
+/**
+ * What routing concluded about one repo. Recorded because nothing else retains it:
+ * `chosen` holds only the gateway promise, so without this a caller asking "which
+ * forge is this repo on?" would have to re-probe.
+ */
+export interface RepoForge {
+  software: ForgeSoftwareName;
+  host: string;
+  /**
+   * Whether a credential is configured **for that host**. Never the token itself,
+   * and omitted for GitHub, where `gh`'s budget is not host-specific
+   * authentication and reporting it would be a guess dressed as a fact.
+   */
+  authed?: boolean;
+}
+
+/**
+ * The narrow port `repo_service` needs. Deliberately not part of the gateway:
+ * `listRepos` receives a `GithubGateway`, and widening that contract to carry
+ * inspection would put two responsibilities on one interface.
+ */
+export interface ForgeInspector {
+  forgeFor(repoPath: string): RepoForge | undefined;
+}
+
 export interface ForgeRouterDeps {
   github: GithubGateway;
   forgejo: ForgeGateway;
@@ -156,7 +181,7 @@ export interface ForgeRouterDeps {
   onUnsupported?: (host: string, software: ForgeSoftwareName) => void;
 }
 
-export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & ProviderMix {
+export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & ProviderMix & ForgeInspector {
   /**
    * Cache of the chosen provider per repo. Stores the PROMISE, not the resolved
    * value, so the home-screen fan-out — which hits every worktree of a repo at
@@ -170,6 +195,8 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
   const inUse = new Set<ForgeProviderId>();
   /** Hosts already reported as unsupported, so the log says it once, not per tick. */
   const warned = new Set<string>();
+  /** What routing concluded, per repo. See {@link RepoForge}. */
+  const decided = new Map<string, RepoForge>();
 
   function pick(repoPath: string): Promise<ForgeGateway> {
     const hit = chosen.get(repoPath);
@@ -181,9 +208,15 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
       // directory fails, for no gain.
       if (inst === null || isGitHubHost(inst.host)) {
         inUse.add("github");
+        if (inst !== null) decided.set(repoPath, { software: "github", host: inst.host });
         return deps.github;
       }
       const software = await deps.detect(inst.baseUrl, inst.token);
+      decided.set(repoPath, {
+        software,
+        host: inst.host,
+        authed: inst.token !== undefined && inst.token.length > 0,
+      });
       if (software === "forgejo" || software === "gitea") {
         inUse.add("forgejo");
         return deps.forgejo;
@@ -236,10 +269,12 @@ export function createForgeRouter(deps: ForgeRouterDeps): GithubGateway & Provid
       };
     },
     providersInUse: () => new Set(inUse),
+    forgeFor: (repoPath: string) => decided.get(repoPath),
     close(): void {
       chosen.clear();
       inUse.clear();
       warned.clear();
+      decided.clear();
       deps.github.close();
       deps.forgejo.close();
     },

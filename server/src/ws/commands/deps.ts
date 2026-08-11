@@ -33,6 +33,12 @@ export interface CommandDeps {
   readonly budgetWatch: BudgetWatch<WsClient>;
   /** Re-send the projects + sessions snapshots to every authed client. */
   broadcastSnapshots(): void;
+  /**
+   * Called when per-repo settings change, so every client re-renders from one
+   * source. Optional (like {@link media}) so a test fake need not supply a
+   * broadcast it does not observe.
+   */
+  onProjectsChanged?(): void;
   /** Recompute + broadcast the repo-centric snapshot (git-only then PR-enriched). */
   broadcastReposSnapshot(): Promise<void>;
   /** Broadcast the current GitHub budget to every authed client (SPEC-32). */

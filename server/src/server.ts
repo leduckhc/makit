@@ -59,6 +59,7 @@ import { register as registerSessionCommands } from "./ws/commands/session.js";
 import { register as registerProjectCommands } from "./ws/commands/project.js";
 import { register as registerWorktreeCommands } from "./ws/commands/worktree.js";
 import { register as registerRepoCommands } from "./ws/commands/repo.js";
+import { register as registerRepoSettingsCommands } from "./ws/commands/repo_settings.js";
 import { register as registerGithubCommands } from "./ws/commands/github.js";
 import { register as registerMetricsCommands } from "./ws/commands/metrics.js";
 import { register as registerDebugCommands } from "./ws/commands/debug.js";
@@ -871,12 +872,16 @@ export function startWsServer(opts: ServerOpts) {
       stopForward: (grantId: string, deviceId?: string) =>
         void forwardGrants.stop(grantId, ownerOf(deviceId)),
       rescanPorts: () => void portsService.rescanNow(),
+      // Per-repo settings changed: the repos snapshot is what carries them, so
+      // re-broadcast it rather than only the projects list.
+      onProjectsChanged: () => void broadcastReposSnapshot(),
     };
 
     registerSessionCommands(r, deps);
     registerProjectCommands(r, deps);
     registerWorktreeCommands(r, deps);
     registerRepoCommands(r, deps);
+    registerRepoSettingsCommands(r, deps);
     registerGithubCommands(r, deps);
     registerMetricsCommands(r, deps);
     registerPortsCommands(r, deps);
