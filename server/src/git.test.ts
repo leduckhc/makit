@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import {
   detectDefaultBranch,
+  resolveDefaultBranch,
   detectCurrentBranch,
   listWorktrees,
   diffStat,
@@ -558,5 +559,67 @@ test("syncBaseBranch refuses when the branch is checked out in two worktrees", a
     rmSync(repo, { recursive: true, force: true });
     rmSync(origin, { recursive: true, force: true });
     rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-48 — the default-branch override, and why it must be checked rather than
+// trusted.
+//
+// The consumer is concrete: `origin/HEAD` is genuinely absent after a
+// `--single-branch` clone or a default-branch rename, and makit then diffs and
+// bases PRs against the wrong branch. The override is the fix. But it is stored
+// after a SYNTAX check only, and a branch can be deleted after it was chosen, so
+// resolution has to confirm the ref still exists.
+// ---------------------------------------------------------------------------
+
+test("resolveDefaultBranch prefers an override that exists over detection", async () => {
+  const repo = makeRepo();
+  try {
+    execFileSync("git", ["branch", "release"], { cwd: repo });
+    assert.equal(await detectDefaultBranch(repo), "main", "detection would say main");
+    assert.equal(await resolveDefaultBranch(repo, "release"), "release");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("resolveDefaultBranch falls back to detection when the override is gone", async () => {
+  // A branch chosen months ago and since deleted must not silently break the diff
+  // numbers: a stale override is a worse base than git's own answer, not a better
+  // one, so it loses rather than winning and failing.
+  const repo = makeRepo();
+  try {
+    assert.equal(await resolveDefaultBranch(repo, "deleted-long-ago"), "main");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("resolveDefaultBranch with no override is exactly detection", async () => {
+  const repo = makeRepo();
+  try {
+    assert.equal(await resolveDefaultBranch(repo, undefined), await detectDefaultBranch(repo));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("an override rescues a repo whose origin/HEAD points at a branch that is gone", async () => {
+  // The real failure, reproduced: `origin/HEAD` still names `master` after the
+  // default branch was renamed to `trunk`, so every diff is measured against a ref
+  // that no longer resolves.
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    g("branch", "trunk");
+    g("remote", "add", "origin", "https://example.test/x/y.git");
+    // Point origin/HEAD at a remote branch that does not exist locally.
+    g("update-ref", "refs/remotes/origin/master", "HEAD");
+    g("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master");
+    assert.equal(await detectDefaultBranch(repo), "master", "git's answer, and it is wrong");
+    assert.equal(await resolveDefaultBranch(repo, "trunk"), "trunk");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });

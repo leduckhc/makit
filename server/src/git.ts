@@ -102,6 +102,34 @@ export async function detectDefaultBranch(repoPath: string): Promise<string | nu
   return detectCurrentBranch(repoPath);
 }
 
+/**
+ * The default branch in force for a repo: the user's override when it still
+ * resolves, otherwise git's own answer.
+ *
+ * The **one** place that rule lives, so the repo snapshot's diff numbers, worktree
+ * creation and wrap-up's base sync cannot disagree about what "default" means —
+ * three consumers reading `detectDefaultBranch` directly is how the override ended
+ * up affecting none of them.
+ *
+ * The override is CHECKED, not trusted. It is stored after a syntax check only
+ * (`validateBranch`), it is chosen from branches that existed at the time, and a
+ * branch can be deleted afterwards. A stale override is a worse base than
+ * detection, not a better one, so it loses rather than winning and then failing
+ * deep inside a `git diff` where the message is unrecognisable.
+ *
+ * Checking costs one `rev-parse` and REPLACES detection's one-to-three calls when
+ * the override holds, so the common case gets cheaper rather than dearer.
+ */
+export async function resolveDefaultBranch(
+  repoPath: string,
+  override: string | undefined,
+): Promise<string | null> {
+  if (override !== undefined && override.length > 0 && (await branchExists(repoPath, override))) {
+    return override;
+  }
+  return detectDefaultBranch(repoPath);
+}
+
 /** The currently checked-out branch, or null when HEAD is detached. */
 export async function detectCurrentBranch(repoPath: string): Promise<string | null> {
   const r = await git(["rev-parse", "--abbrev-ref", "HEAD"], repoPath);

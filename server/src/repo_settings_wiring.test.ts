@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 
@@ -181,4 +182,94 @@ test("a routed repo with a forge reports hasRemote true and the forge", async ()
   const [repo] = await m.listRepos({ includePrs: false });
   assert.equal(repo.settings?.hasRemote, true);
   assert.deepEqual(repo.settings?.forge, forge);
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-48 — the default-branch override reaches all THREE consumers.
+//
+// The same shape as the worktree-root fix (T2/R5): a resolver is not a feature
+// until every consumer reads from it. `detectDefaultBranch` was called directly in
+// three places, so the stored override affected none of them — the diff numbers,
+// the base a new worktree branches from, and the branch wrap-up syncs.
+// ---------------------------------------------------------------------------
+
+/**
+ * A real repo with one commit on `main`, plus each of [extra] as a branch carrying
+ * its OWN extra commit.
+ *
+ * The divergent commit is load-bearing, not decoration: a branch created from
+ * `main` without one has the same tip, so `merge-base` cannot tell which of the two
+ * a worktree forked from and the assertion would pass no matter what the production
+ * code chose.
+ */
+function repoWithBranches(extra: string[]): string {
+  const dir = mkdtempSync(join(tmpdir(), "makit-db-"));
+  const g = (...args: string[]) => execFileSync("git", args, { cwd: dir });
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", "t@t.io");
+  g("config", "user.name", "Test");
+  writeFileSync(join(dir, "README.md"), "hi\n");
+  g("add", ".");
+  g("commit", "-q", "-m", "initial");
+  for (const b of extra) {
+    g("checkout", "-q", "-b", b);
+    writeFileSync(join(dir, `${b}.txt`), `${b}\n`);
+    g("add", ".");
+    g("commit", "-q", "-m", `on ${b}`);
+    g("checkout", "-q", "main");
+  }
+  return dir;
+}
+
+test("the manager resolves a repo's default branch through the override", async () => {
+  const a = repoWithBranches(["trunk"]);
+  try {
+    const m = manager([{ id: "a", path: a, settings: { defaultBranch: "trunk" } }]);
+    assert.equal(await m.defaultBranchFor(a), "trunk");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("without an override the manager falls back to git's answer", async () => {
+  const a = repoWithBranches([]);
+  try {
+    const m = manager([{ id: "a", path: a }]);
+    assert.equal(await m.defaultBranchFor(a), "main");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("the repos snapshot reports the overridden default branch, so the diff base follows", async () => {
+  // `RepoDTO.defaultBranch` is what `diffStat` and `commitsAhead` measure against
+  // (repo_service.ts). If the snapshot ignores the override, every +/- number in the
+  // UI is measured from the wrong base while the Settings row claims otherwise.
+  const a = repoWithBranches(["trunk"]);
+  try {
+    const m = manager([{ id: "a", path: a, settings: { defaultBranch: "trunk" } }]);
+    const [repo] = await m.listRepos({ includePrs: false });
+    assert.equal(repo.defaultBranch, "trunk");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
+test("a new worktree branches from the overridden default", async () => {
+  // The base a session's branch forks from. Getting this wrong means the PR is
+  // opened against the wrong base and shows unrelated commits.
+  const a = repoWithBranches(["trunk"]);
+  const root = mkdtempSync(join(homedir(), ".makit-test-db-"));
+  try {
+    const m = manager([{ id: "a", path: a, settings: { defaultBranch: "trunk", worktreeRoot: root } }]);
+    const { path: wt } = await m.createWorktree("a", undefined, "from-trunk");
+    const mergeBase = execFileSync("git", ["merge-base", "HEAD", "trunk"], { cwd: wt })
+      .toString()
+      .trim();
+    const trunkTip = execFileSync("git", ["rev-parse", "trunk"], { cwd: a }).toString().trim();
+    assert.equal(mergeBase, trunkTip, "the new branch forked from trunk, not main");
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
 });

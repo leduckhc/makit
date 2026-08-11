@@ -35,7 +35,7 @@ import { createDefaultForgeGateway } from "./forge/router.js";
 import type { PersistedProject } from "./project-store.js";
 import {
   isGitRepo,
-  detectDefaultBranch,
+  resolveDefaultBranch,
   listWorktrees,
   addWorktree,
   addWorktreeForPr,
@@ -602,7 +602,7 @@ export class SessionManager extends EventEmitter {
     const base =
       baseBranch && (await branchExists(repoPath, baseBranch))
         ? baseBranch
-        : await detectDefaultBranch(repoPath);
+        : await this.defaultBranchFor(repoPath);
     // Unborn HEAD (no commits yet): `git worktree add -b` would fail, so run
     // the session in the repo dir instead of forking a worktree.
     if (!base) return { path: repoPath, branch: null };
@@ -880,7 +880,7 @@ export class SessionManager extends EventEmitter {
     const { repoPath, branchDeleted, branchReason } =
         await this._removeWorktreeAndBranch(projectId, worktreePath, expectBranch);
 
-    const base = baseBranch ?? (await detectDefaultBranch(repoPath));
+    const base = baseBranch ?? (await this.defaultBranchFor(repoPath));
     if (!base) {
       return {
         branchDeleted,
@@ -1116,6 +1116,20 @@ export class SessionManager extends EventEmitter {
    */
   providerFor(repoPath: string): ProviderChoice {
     return resolveProvider(this.settingsForPath(repoPath)).value;
+  }
+
+  /**
+   * The default branch in force for [repoPath] — the repo's override when it still
+   * resolves, else git's own answer (SPEC-48 D14/rev 3).
+   *
+   * The ONE place the three consumers read from: the repos snapshot (whose
+   * `defaultBranch` is what the diff +/- numbers and ahead counts are measured
+   * against), `createWorktree`'s base, and `wrapUpWorktree`'s base sync. Each used
+   * to call `detectDefaultBranch` directly, which is why storing an override changed
+   * nothing anywhere — the same mistake R5 caught for the worktree root.
+   */
+  async defaultBranchFor(repoPath: string): Promise<string | null> {
+    return resolveDefaultBranch(repoPath, this.settingsForPath(repoPath).defaultBranch);
   }
 
   /**
