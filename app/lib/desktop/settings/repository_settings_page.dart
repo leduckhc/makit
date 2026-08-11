@@ -155,7 +155,9 @@ class RepositorySettingsPage extends ConsumerWidget {
     );
     if (picked == null) return;
     if (!context.mounted) return;
-    await _write(context, ref, {'defaultBranch': picked.isEmpty ? null : picked});
+    await _write(context, ref, {
+      'defaultBranch': picked.isEmpty ? null : picked,
+    });
   }
 
   Future<void> _pickHue(

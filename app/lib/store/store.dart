@@ -818,11 +818,14 @@ class StoreController extends StateNotifier<StoreState> {
     String projectId,
     Map<String, Object?> settings,
   ) async {
-    await _ref.read(connectionControllerProvider.notifier).request(MsgType.cmd, {
-      'kind': 'repo.settings.set',
-      'projectId': projectId,
-      'settings': settings,
-    });
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'repo.settings.set',
+        'projectId': projectId,
+        'settings': settings,
+      },
+    );
   }
 
   /// Re-point a repository at a new root path (SPEC-48 D4').
