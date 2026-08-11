@@ -11,12 +11,10 @@
  * spawn and the first message, because `send.message` is what starts the turn —
  * subscribing after it could miss the whole thing.
  */
-import { connectCli, failCommand } from "./connect.js";
+import { withClient } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 import { parseNewArgs, spawnFromArgs, type NewArgs } from "./new.js";
 import { awaitOutcome, type WaitFor } from "./wait.js";
-import { WireError } from "./client.js";
-import type { MakitClient } from "./client.js";
 import { renderEvent, type RenderState } from "./render.js";
 import { stdout } from "./out.js";
 import type { SessionEvent } from "../protocol.js";
@@ -49,51 +47,35 @@ export async function runRun(argv: string[]): Promise<void> {
     return process.exit(EXIT_USAGE);
   }
 
-  const client = await connectCli(args);
-  // Both composed commands are refusable — the D9 depth/fan-out bound refuses
-  // `session.spawn`, a dead or full session refuses `send.message` — and a
-  // refusal that escapes would print a stack trace and leave the socket open,
-  // so the run would never reach an exit code at all. `new` already unwinds this
-  // way; `run` must not be the copy that forgets.
-  try {
-    await runTurn(client, args);
-  } catch (e) {
-    if (e instanceof WireError) return failCommand(e);
-    throw e;
-  } finally {
+  await withClient(args, async (client) => {
+    const { sessionId } = await spawnFromArgs(client, args);
+    if (args.json) console.log(JSON.stringify({ sessionId }));
+    else console.log(`[makit] session ${sessionId}`);
+
+    // Subscribe first (synchronously inside `awaitOutcome`), then send the message
+    // that starts the turn, then wait for the outcome.
+    let st: RenderState = {};
+    const waiting = awaitOutcome(client, sessionId, {
+      forWhat: args.forWhat,
+      timeoutMs: args.timeoutMs,
+      initialStatus: "idle",
+      onEvent: (ev: SessionEvent) => {
+        if (args.json) {
+          console.log(JSON.stringify(ev));
+          return;
+        }
+        const r = renderEvent(ev, st);
+        st = r.st;
+        if (r.out) stdout.write(r.out);
+      },
+    });
+    await client.cmd("send.message", { sessionId, text: args.message });
+    const outcome = await waiting;
+
+    // Closed explicitly: `process.exit` terminates synchronously, so the
+    // wrapper's teardown never runs on this path.
     client.close();
-  }
-}
-
-/** The spawn + subscribe + send + wait body, so one `finally` owns the socket. */
-async function runTurn(client: MakitClient, args: RunArgs): Promise<never | void> {
-  const { sessionId } = await spawnFromArgs(client, args);
-  if (args.json) console.log(JSON.stringify({ sessionId }));
-  else console.log(`[makit] session ${sessionId}`);
-
-  // Subscribe first (synchronously inside `awaitOutcome`), then send the message
-  // that starts the turn, then wait for the outcome.
-  let st: RenderState = {};
-  const waiting = awaitOutcome(client, sessionId, {
-    forWhat: args.forWhat,
-    timeoutMs: args.timeoutMs,
-    initialStatus: "idle",
-    onEvent: (ev: SessionEvent) => {
-      if (args.json) {
-        console.log(JSON.stringify(ev));
-        return;
-      }
-      const r = renderEvent(ev, st);
-      st = r.st;
-      if (r.out) stdout.write(r.out);
-    },
+    if (outcome.message) console.error(`[makit] ${outcome.message}`);
+    process.exit(outcome.code);
   });
-  await client.cmd("send.message", { sessionId, text: args.message });
-  const outcome = await waiting;
-
-  // Closed here as well as in the caller's `finally`: `process.exit` terminates
-  // the process synchronously, so the `finally` never runs on this path.
-  client.close();
-  if (outcome.message) console.error(`[makit] ${outcome.message}`);
-  process.exit(outcome.code);
 }
