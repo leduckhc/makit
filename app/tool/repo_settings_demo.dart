@@ -108,9 +108,11 @@ class _Shell extends StatefulWidget {
 }
 
 class _ShellState extends State<_Shell> {
-  // Default to the "set to None" scene: it is the newest state and the one whose
-  // wording matters most, since it must read as a decision rather than a failure.
-  String _key = _scenes.keys.elementAt(5);
+  // Keyed by NAME: `elementAt(5)` depended on the literal's insertion order, so
+  // adding or reordering a scene silently changed the default and contradicted this
+  // comment. Falls back to the first scene if the name is ever renamed.
+  static const _defaultScene = 'set to None — polling off';
+  String _key = _scenes.containsKey(_defaultScene) ? _defaultScene : _scenes.keys.first;
   final Map<String, ForgeChoice> _choice = {};
 
   @override
@@ -247,6 +249,12 @@ class _Section extends StatelessWidget {
       editable: base.editable,
       providerChoice: choice,
       branches: base.branches,
+      // Copied, not defaulted. `hasRemote` defaults to TRUE, so the "local-only"
+      // scene -- which exists to show `Auto: no remote, so no forge` -- rendered
+      // `Auto: not identified yet` instead, i.e. the harness demonstrated the exact
+      // wording it was built to check against.
+      hasRemote: base.hasRemote,
+      logoHue: base.logoHue,
     ),
     onChooseProvider: onChoose,
     onEditLogo: () {},

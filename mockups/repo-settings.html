@@ -321,7 +321,7 @@
             <td class="mono">repo override → <code>origin/HEAD</code> → <code>main</code></td>
             <td>none — <code>main</code> is the fact</td></tr>
         <tr><td>Logo</td>
-            <td class="mono">repo override (image) → deterministic monogram from the name</td>
+            <td class="mono">repo override (<code>logoHue</code>, a palette index) → deterministic monogram from the name</td>
             <td>none — the monogram is the value</td></tr>
         <tr><td>Access token</td>
             <td class="mono">per <em>instance</em>, never per repo — see forge-provider-per-repo.html</td>
@@ -358,9 +358,9 @@
             <div class="srow"><span class="logo" style="background:#38BDF8">D</span><div class="lbl">Diana</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
             <div class="srow"><span class="logo" style="background:#A371F7">m</span><div class="lbl">makit</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
             <div class="srow"><span class="logo" style="background:#E0A72E">l</span><div class="lbl">legacy-tools</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
-            <div class="srow"><span class="logo" style="background:#242424;border:1px solid #333"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-img"/></svg></span><div class="lbl">infra-prod</div><span class="val"><span class="ovr">custom image</span></span></div>
+            <div class="srow"><span class="logo" style="background:#242424;border:1px solid #333"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-img"/></svg></span><div class="lbl">infra-prod</div><span class="val"><span class="ovr">custom image — not built</span></span></div>
           </div>
-          <div class="hint">Hue is derived from the repo name, so it is stable across devices without syncing anything.</div>
+          <div class="hint">Hue is derived from the repo name, so it is stable across devices without syncing anything. What persists is <code>logoHue</code>, an index into a fixed six-colour palette (<code>RepoSettings</code> in <code>server/src/repo_settings.ts</code>) — there is no image field, and the “custom image” state above is not built.</div>
         </div>
       </div>
       <div class="col-prose" style="order:0;flex:1 1 440px;min-width:430px;border:none;padding-top:0;margin-top:0">
@@ -475,7 +475,7 @@ cp "$MAKIT_REPO_ROOT/.env.local" .</div>
         <tr><td class="num">1</td><td><code>PersistedProject.settings?: RepoSettings</code> — every field optional, so absent means “inherit”. Unknown keys preserved on save so an older daemon does not silently drop a newer app's field.</td><td class="mono">server/src/project-store.ts</td><td class="num">~60</td></tr>
         <tr><td class="num">2</td><td>Resolver: effective value + its source, one pure function per setting. This is what the badges render, and it is the whole inheritance model.</td><td class="mono">server/src/repo_settings.ts <em>(new)</em></td><td class="num">~120</td></tr>
         <tr><td class="num">3</td><td>Wire the worktree root through it — replaces the direct <code>MAKIT_WORKTREE_DIR</code> read at <code>git.ts:33</code>, which is the only consumer today.</td><td class="mono">server/src/git.ts</td><td class="num">~15</td></tr>
-        <tr><td class="num">4</td><td><code>repo.settings.get</code> / <code>repo.settings.set</code>; `set` rejects hook fields unless the caller is the host.</td><td class="mono">server/src/ws/commands/repo_settings.ts <em>(new)</em></td><td class="num">~110</td></tr>
+        <tr><td class="num">4</td><td><code>repo.settings.get</code> / <code>repo.settings.set</code>; <code>set</code> rejects hook fields unless the caller is the host.</td><td class="mono">server/src/ws/commands/repo_settings.ts <em>(new)</em></td><td class="num">~110</td></tr>
         <tr><td class="num">5</td><td>Settings ▸ Repositories: list + detail, built from <code>SettingsGroup</code> / <code>SettingsSectionHeader</code> / <code>SettingsResetButton</code>.</td><td class="mono">app/lib/desktop/settings/sections/<br>repositories_section.dart <em>(new)</em></td><td class="num">~260</td></tr>
         <tr><td class="num">6</td><td>Monogram logo widget + “Settings…” entry in the repo card menu.</td><td class="mono">app/lib/ui/home/repo_logo.dart <em>(new)</em><br>app/lib/ui/home/repo_card.dart</td><td class="num">~70</td></tr>
         <tr><td class="num">7</td><td>Hook runner: allowlisted env, cwd, timeout, output to the session log, pre-prune veto.</td><td class="mono">server/src/worktree_hooks.ts <em>(new)</em></td><td class="num">~180</td></tr>

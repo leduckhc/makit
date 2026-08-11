@@ -227,13 +227,13 @@
   </div>
 
   <div class="note" style="background: rgba(255, 107, 107, 0.05); border-left-color: var(--error);">
-    <strong>Timeout after 10s.</strong> All three probes run in parallel. If none succeed (or all time out), the forge is <strong>Unknown</strong> and PR features are hidden. This is safe — if a probe takes >10s, polling every 5s would be a DoS anyway.
+    <strong>Probes run in SEQUENCE, each with its own timeout.</strong> <code>classify</code> tries them in order and returns on the first decisive answer, so an instance that identifies itself on the first probe costs one request. If none is decisive the forge is <strong>Unknown</strong> and PR features are hidden — and because <code>unknown</code> is cached only briefly, a host that was merely unreachable is re-probed rather than written off. <em>(This page described parallel probes with a single 10s budget; the shipped detector in <code>server/src/forge/detect.ts</code> does not.)</em>
   </div>
 
   <h2 style="font-size: 18px; margin: 32px 0 16px;">UI affordances (future)</h2>
 
   <div class="note">
-    <strong>Right now: silent detection.</strong> The app shows the forge glyph + name in the PR detail sheet, but there's no settings UI. If you need to override the detection (e.g., a repo uses Forgejo but the host doesn't advertise it), the server's <code>FORGEJO_BASE_URL</code> env var will do it.
+    <strong>Superseded: there is a settings UI now.</strong> This page recorded the design before per-repo settings landed. Each repository has a <strong>Git provider</strong> row (<code>Auto | None | Forgejo | Gitea | GitHub</code>) in its own Settings section, and a non-<code>Auto</code> choice picks the provider <em>without probing</em> — which is the recourse for exactly the case named here, a repo whose host does not advertise what it runs. <code>MAKIT_FORGEJO_BASE_URL</code> still supplies the instance URL and scopes the token to it. See <code>docs/specs/2026-08-10-SPEC-48-per-repo-settings.md</code>.
   </div>
 
   <h2 style="font-size: 18px; margin: 32px 0 16px;">Performance</h2>
@@ -249,12 +249,12 @@
     </div>
     <div class="tile">
       <div class="tile-key">Caching</div>
-      <div class="tile-value">Per-worktree (not invalidated)</div>
+      <div class="tile-value">Per host; unknown re-probed</div>
     </div>
   </div>
 
   <div style="margin-top: 24px; padding: 12px; background: var(--container); border-radius: 8px; font-size: 13px; color: var(--muted);">
-    <strong>Why cache?</strong> The repo's forge provider doesn't change mid-session. If you need to refresh it (e.g., migrated repos), restart the app.
+    <strong>Why cache?</strong> A decisive answer does not change mid-session, and it is keyed by the instance's normalised base URL, so every repo on one host shares a single probe. An <code>unknown</code> answer is cached for only 60s and then re-probed, so a briefly unreachable instance is not written off until restart — and re-pointing a project discards its routing decision outright.
   </div>
 
 </div>

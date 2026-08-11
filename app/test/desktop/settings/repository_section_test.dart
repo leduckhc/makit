@@ -7,6 +7,8 @@
 // `"effect":"unverifiable"` and left the UI unchanged — so the real-app pass covers
 // appearance only and these tests cover behaviour. That split is a stated coverage
 // gap, not an accident.
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/app/theme.dart';
@@ -14,15 +16,20 @@ import 'package:makit/desktop/settings/sections/repository_section.dart';
 import 'package:makit/ui/home/repo_monogram.dart';
 import 'package:makit/ui/widgets/forge_glyph.dart';
 
-const _base = RepoSettingsView(
+/// The real home directory, because `_tilde` reads `HOME` at runtime. Hardcoding
+/// `/Users/le` made every abbreviation assertion pass only on one machine -- and this
+/// suite runs on the Linux VM, where `HOME` is never that.
+final String _home = Platform.environment['HOME'] ?? '/root';
+
+final _base = RepoSettingsView(
   name: 'Diana',
-  path: '/Users/le/Work/XDent/Diana',
-  worktreeRoot: '/Users/le/.worktrees',
+  path: '$_home/Work/XDent/Diana',
+  worktreeRoot: '$_home/.worktrees',
   defaultBranch: 'main',
   forge: ForgeKind.forgejo,
   forgeHost: 'forgejo.internal.xdent.ai',
   forgeAuthed: true,
-  branches: ['main', 'develop'],
+  branches: const ['main', 'develop'],
 );
 
 RepoSettingsView _view({
@@ -36,9 +43,10 @@ RepoSettingsView _view({
   String? defaultBranch = 'main',
   bool hasRemote = true,
   int? logoHue,
+  String? path,
 }) => RepoSettingsView(
   name: _base.name,
-  path: _base.path,
+  path: path ?? _base.path,
   worktreeRoot: _base.worktreeRoot,
   defaultBranch: defaultBranch,
   forge: forge,
@@ -109,7 +117,7 @@ void main() {
       (t) async {
         await _pump(t, _view());
         expect(find.text('~/Work/XDent/Diana'), findsOneWidget);
-        expect(find.text('/Users/le/Work/XDent/Diana'), findsNothing);
+        expect(find.text('$_home/Work/XDent/Diana'), findsNothing);
       },
     );
 
@@ -357,6 +365,60 @@ void main() {
       await _pump(t, _view());
       expect(t.widget<RepoMonogram>(find.byType(RepoMonogram)).hue, isNull);
       expect(_paintedHue(t), RepoMonogram.hueFor(_base.name));
+    });
+  });
+
+  group('the default-branch row survives the case it exists for', () {
+    testWidgets('an unresolved default branch still offers the picker', (t) async {
+      // The row was rendered only when `defaultBranch != null`, but that is exactly
+      // null when git reported no `origin/HEAD` and no override has been set -- the
+      // `--single-branch` clone and the renamed-default case the row was built for.
+      // The user could not reach the picker precisely when they needed it.
+      await _pump(t, _view(defaultBranch: null));
+      expect(find.text('Default branch'), findsOneWidget);
+    });
+
+    testWidgets('...and says so rather than showing a blank value', (t) async {
+      await _pump(t, _view(defaultBranch: null));
+      expect(find.text('Not detected'), findsOneWidget);
+    });
+
+    testWidgets('it is tappable in that state, since branches are known', (t) async {
+      var taps = 0;
+      await _pump(t, _view(defaultBranch: null), onBranch: () => taps++);
+      await t.tap(find.text('Default branch'));
+      await t.pumpAndSettle();
+      expect(taps, 1);
+    });
+
+    testWidgets('with neither a branch nor anything to pick, it stays read-only', (t) async {
+      var taps = 0;
+      await _pump(
+        t,
+        _view(defaultBranch: null, branches: const []),
+        onBranch: () => taps++,
+      );
+      await t.tap(find.text('Default branch'));
+      await t.pumpAndSettle();
+      expect(taps, 0);
+    });
+  });
+
+  group('home abbreviation', () {
+    testWidgets('a sibling directory sharing the home prefix is NOT abbreviated', (t) async {
+      // `path.startsWith(home)` matched `/Users/leduck/x` when HOME was `/Users/le`,
+      // rendering `~duck/x` -- not a valid path, and the wrong repository.
+      final sibling = '${_home}x/Work/Thing';
+      await _pump(t, _view(path: sibling));
+      expect(find.text(sibling), findsOneWidget, reason: 'shown in full');
+      // The specific corruption, not any tilde: the worktree-root row legitimately
+      // shows `~/.worktrees`, so a blanket "no tilde anywhere" assertion was wrong.
+      expect(find.text('~x/Work/Thing'), findsNothing);
+    });
+
+    testWidgets('the home directory itself abbreviates to ~', (t) async {
+      await _pump(t, _view(path: _home));
+      expect(find.text('~'), findsOneWidget);
     });
   });
 

@@ -156,6 +156,11 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
       (s) => s.id == _selectedId,
       orElse: () => sections.first,
     );
+    // The nav pane is told which section is ACTUALLY shown, not what was requested.
+    // When a stored `repo:<id>` is no longer available the detail pane falls back to
+    // the first section while `_selectedId` still held the missing id, so the sidebar
+    // highlighted nothing and the window looked like it had lost its place.
+    final effectiveSelectedId = section.id;
     // A modal focus scope: traps tab traversal inside Settings, binds Escape to
     // close, and marks the subtree as a route for assistive tech.
     return FocusScope(
@@ -177,7 +182,7 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
                     width: _navWidth,
                     child: SettingsNavPane(
                       sections: sections,
-                      selectedId: _selectedId,
+                      selectedId: effectiveSelectedId,
                       query: _query,
                       controller: _searchController,
                       onQueryChanged: (q) => setState(() => _query = q),

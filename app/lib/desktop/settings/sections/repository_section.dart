@@ -254,25 +254,29 @@ class RepositorySettingsSection extends StatelessWidget {
               view: view,
               onChoose: view.editable ? onChooseProvider : null,
             ),
-            if (view.defaultBranch != null)
-              _SettingsValueRow(
-                leading: Icon(
-                  PhosphorIconsLight.gitBranch,
-                  size: 20,
-                  color: cs.outline,
-                ),
-                title: 'Default branch',
-                // Pickable from the repo's own branches, never free text: a typo
-                // here silently breaks diff-vs-default and the PR base. Needed
-                // because `origin/HEAD` is genuinely absent after a
-                // `--single-branch` clone or a default-branch rename.
+            // Rendered even when nothing is resolved. Gating on
+            // `defaultBranch != null` hid the row in exactly the state it exists for:
+            // git reports no `origin/HEAD` after a `--single-branch` clone or a
+            // default-branch rename, and no override has been set yet -- so the user
+            // could not reach the picker precisely when they needed it.
+            _SettingsValueRow(
+              leading: Icon(
+                PhosphorIconsLight.gitBranch,
+                size: 20,
+                color: cs.outline,
+              ),
+              title: 'Default branch',
+              // Pickable from the repo's own branches, never free text: a typo
+              // here silently breaks diff-vs-default and the PR base.
+              enabled: view.editable && view.branches.isNotEmpty,
+              onTap: onChooseDefaultBranch,
+              // A stated absence, not a blank cell: "Not detected" says the probe
+              // finished and found nothing, which is what makes the row worth tapping.
+              value: view.defaultBranch ?? 'Not detected',
+              mono: view.defaultBranch != null,
+              action: _Chevron(
                 enabled: view.editable && view.branches.isNotEmpty,
-                onTap: onChooseDefaultBranch,
-                value: view.defaultBranch,
-                mono: true,
-                action: _Chevron(
-                  enabled: view.editable && view.branches.isNotEmpty,
-                ),
+              ),
               ),
           ],
         ),
@@ -314,10 +318,18 @@ class RepositorySettingsSection extends StatelessWidget {
 
   /// `/Users/le/x` -> `~/x`. A settings row is not the place to spend 40pt of the
   /// value column on a home directory the reader already knows.
+  /// `$HOME/x` as `~/x`, leaving anything else alone.
+  ///
+  /// The boundary check is load-bearing: a bare `startsWith` matched
+  /// `/Users/leduck/x` when `HOME` was `/Users/le` and rendered `~duck/x` -- not a
+  /// valid path, and a different repository from the one on screen.
   static String _tilde(String path) {
     final home = Platform.environment['HOME'];
-    if (home == null || home.isEmpty || !path.startsWith(home)) return path;
-    return '~${path.substring(home.length)}';
+    if (home == null || home.isEmpty) return path;
+    final trimmed = home.endsWith('/') ? home.substring(0, home.length - 1) : home;
+    if (path == trimmed) return '~';
+    if (!path.startsWith('$trimmed/')) return path;
+    return '~/${path.substring(trimmed.length + 1)}';
   }
 
   /// Visible for [_ProviderRow].

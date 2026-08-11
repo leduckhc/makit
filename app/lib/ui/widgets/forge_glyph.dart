@@ -18,19 +18,25 @@ const kGiteaAsset = 'assets/icons/gitea-light.svg';
 /// Which forge hosts a pull request.
 enum ForgeKind { github, forgejo, gitea }
 
-/// Classify the forge from a pull-request URL, or null when there is nothing to
-/// classify.
+/// Classify the forge for a pull-request URL, or null when nothing proves one.
 ///
-/// Null rather than a default: putting a GitHub mark beside a PR we never
-/// identified would be a claim we cannot support, the same null-versus-zero rule
-/// the PR lookup follows on the server.
+/// [detected] is the server's own answer (`RepoDTO.settings.forge.software`), and it
+/// WINS when supplied: the daemon asks the instance what software it runs, which is
+/// the only way to know. Pass it wherever the repo is in scope.
 ///
-/// Anything that is not GitHub or gitea.com is reported as Forgejo. That is a
-/// guess — a hostname cannot tell you which software a server runs — but it is
-/// deliberately the SAME guess the server's forge router makes when it picks a
-/// provider, so the glyph always agrees with whichever provider actually served
-/// the data. If the router's rule changes, change this with it.
-ForgeKind? forgeKindForUrl(String? url) {
+/// Without it, only a host that is decisive on its own is claimed — `github.com` and
+/// `gitea.com`. A self-hosted host is left unnamed rather than guessed.
+///
+/// This used to report every other host as Forgejo. That agreed with the router while
+/// the router also guessed by hostname, but the router now probes the instance, so the
+/// guess could contradict the provider that actually served the data — labelling a
+/// self-hosted Gitea, or a GitLab remote, with Forgejo's name and mark. Null is the
+/// same null-versus-zero rule the PR lookup follows on the server, and it is what this
+/// widget's own contract already asked for: naming the wrong forge is worse than
+/// naming none.
+ForgeKind? forgeKindForUrl(String? url, {String? detected}) {
+  final fromServer = _kindFromSoftware(detected);
+  if (fromServer != null) return fromServer;
   if (url == null || url.isEmpty) return null;
   final uri = Uri.tryParse(url);
   final host = uri?.host.toLowerCase();
@@ -41,8 +47,17 @@ ForgeKind? forgeKindForUrl(String? url) {
   if (host == 'gitea.com' || host.endsWith('.gitea.com')) {
     return ForgeKind.gitea;
   }
-  return ForgeKind.forgejo;
+  return null;
 }
+
+/// The server's `forge.software` string as a [ForgeKind]; null for anything the app
+/// has no mark for (`gitlab`, `unknown`, or an absent value).
+ForgeKind? _kindFromSoftware(String? software) => switch (software) {
+  'github' => ForgeKind.github,
+  'forgejo' => ForgeKind.forgejo,
+  'gitea' => ForgeKind.gitea,
+  _ => null,
+};
 
 /// The glyph for [kind]. GitHub's mark ships in Phosphor; the other two do not.
 IconGlyph forgeGlyphFor(ForgeKind kind) => switch (kind) {

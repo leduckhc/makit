@@ -171,8 +171,18 @@ says so on a button press, instead of being polled against an API that is not
 there and failing as "unknown" (which looked identical to an outage). The host is
 logged once, not once per poll.
 
-A failed probe is retried after a minute rather than cached, so an instance that
-was briefly down is not pinned as unsupported until the server restarts.
+Caching, precisely: a decisive answer (`forgejo`, `gitea`, `gitlab`) is cached for
+the process lifetime, keyed by the normalised base URL. An **`unknown`** result --
+whether the host is unidentifiable or the probe failed to connect -- is cached for
+60 seconds and then re-probed, so an instance that was briefly down is not pinned as
+unsupported until the server restarts. Routing treats `unknown` as undecided too, so
+the repo is re-routed rather than left on the fallback provider.
+
+A repo's **provider setting** short-circuits all of this: `Forgejo`, `Gitea` or
+`GitHub` picks the gateway with no probe at all, and `None` reaches no forge. That is
+the recourse for an instance the probe cannot classify -- one that answers 401 to an
+anonymous request, or sits behind a proxy that hides the version endpoints. See
+`docs/specs/2026-08-10-SPEC-48-per-repo-settings.md`.
 
 No `gh`-style login is involved; the provider talks REST with a token.
 
@@ -196,10 +206,12 @@ never does.
 
 ### Differences you will see versus GitHub
 
-- **No quota panel.** Forgejo has no request rate limiting at all: no
-  `/api/v1/rate_limit`, no rate-limit response headers, and no limiter anywhere in
-  its configuration (its `quota` feature meters *storage* — repo/LFS/package
-  bytes — not requests). So there is nothing to ration or display, and the budget
+- **No quota panel.** Forgejo exposes no request quota to read: no
+  `/api/v1/rate_limit` endpoint and no rate-limit response headers, and its
+  configuration has no instance-wide request limiter (the `quota` feature meters
+  *storage* — repo/LFS/package bytes — not requests). Rate limiting on a Forgejo
+  instance therefore comes from whatever sits in front of it, not from Forgejo
+  itself. So there is nothing to ration or display, and the budget
   footer keeps showing GitHub's quota only. A Forgejo-only setup therefore polls
   at the fast 5s rung rather than being throttled by GitHub's ladder.
   In a **mixed** setup GitHub's ladder still governs the shared poll timer for

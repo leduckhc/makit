@@ -21,6 +21,8 @@
 // Run: app/tool/e2e-desktop-settings.sh
 //
 // ignore_for_file: depend_on_referenced_packages
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,18 +48,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// everything. The difference is the point: the section has to report each repo's
 /// own state, and a bug that reads the wrong repo's settings passes any fixture
 /// where both repos look the same.
+/// The real home, because the section abbreviates paths against `HOME` at runtime.
+/// Hardcoding `/Users/le` made the `~/trees/diana` and `~/.worktrees` assertions hold
+/// on exactly one machine.
+final String _home = Platform.environment['HOME'] ?? '/root';
+
 final _repos = <RepoInfo>[
   RepoInfo.fromJson({
     'id': 'p-diana',
     'name': 'Diana',
-    'path': '/Users/le/Work/XDent/Diana',
+    'path': '$_home/Work/XDent/Diana',
     'pinned': true,
     'isGitRepo': true,
     'defaultBranch': 'main',
     'currentBranch': 'main',
     'worktrees': const <Map<String, dynamic>>[],
     'settings': {
-      'worktreeRoot': {'value': '/Users/le/trees/diana', 'source': 'override'},
+      'worktreeRoot': {'value': '$_home/trees/diana', 'source': 'override'},
       'provider': {'value': 'forgejo', 'source': 'override'},
       'defaultBranch': {'value': 'trunk', 'source': 'override'},
       'logoHue': 2,
@@ -72,14 +79,14 @@ final _repos = <RepoInfo>[
   RepoInfo.fromJson({
     'id': 'p-makit',
     'name': 'makit',
-    'path': '/Users/le/Work/makit',
+    'path': '$_home/Work/makit',
     'pinned': true,
     'isGitRepo': true,
     'defaultBranch': 'main',
     'currentBranch': 'main',
     'worktrees': const <Map<String, dynamic>>[],
     'settings': {
-      'worktreeRoot': {'value': '/Users/le/.worktrees', 'source': 'default'},
+      'worktreeRoot': {'value': '$_home/.worktrees', 'source': 'default'},
       'provider': {'value': 'auto', 'source': 'default'},
       'hasRemote': true,
     },
