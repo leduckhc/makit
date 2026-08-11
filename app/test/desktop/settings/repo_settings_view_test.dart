@@ -33,6 +33,32 @@ void main() {
     expect(repoSettingsViewFor(repo), isNull);
   });
 
+  group('the chosen logo hue (SPEC-48 D14\u2032)', () {
+    test('a stored hue reaches the view, so the choice is not dropped in mapping', () {
+      // Without this the whole row is ornamental: the write reaches the server, the
+      // server stores it, the DTO returns it \u2014 and the mapping throws it away, so the
+      // mark renders name-derived and identical to before the user chose.
+      final v = repoSettingsViewFor(_repo({
+        'worktreeRoot': _root,
+        'provider': {'value': 'auto', 'source': 'default'},
+        'hasRemote': true,
+        'logoHue': 3,
+      }))!;
+      expect(v.logoHue, 3);
+    });
+
+    test('no stored hue leaves it null, so the name still derives it', () {
+      // Null rather than 0: index 0 is a real palette entry, so defaulting to it would
+      // silently repaint every repo that has never chosen.
+      final v = repoSettingsViewFor(_repo({
+        'worktreeRoot': _root,
+        'provider': {'value': 'auto', 'source': 'default'},
+        'hasRemote': true,
+      }))!;
+      expect(v.logoHue, isNull);
+    });
+  });
+
   test('the effective worktree root and its source come across', () {
     final v = repoSettingsViewFor(_repo({
       'worktreeRoot': {'value': '/Users/le/trees', 'source': 'override'},

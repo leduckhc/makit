@@ -18,6 +18,7 @@ import '../sections/notifications_section.dart';
 import '../sections/server_devices_section.dart';
 import '../sections/shortcuts_section.dart';
 import '../../../store/models.dart';
+import '../../../ui/home/repo_monogram.dart';
 import '../repository_settings_page.dart';
 import 'settings_item.dart';
 import 'settings_section.dart';
@@ -323,6 +324,11 @@ List<SettingsSection> sectionsFor(List<RepoInfo> repos) {
         id: repoSectionId(repo.id),
         title: repo.name,
         icon: PhosphorIconsLight.folder,
+        // The repo's own mark, so the sidebar rows are distinguishable — which is
+        // the place the "two repos look identical" problem actually bites, and the
+        // place the user looks to confirm a chosen colour took effect (D15/D14′).
+        // `icon` stays as the fallback for any renderer that ignores `leading`.
+        leading: RepoMonogram(name: repo.name, hue: repo.settings?.logoHue, size: 20),
         builder: (_) => RepositorySettingsPage(repoId: repo.id),
         // Generated per repo so the existing search field reaches these rows too;
         // without them "worktree root" would find nothing.

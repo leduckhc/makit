@@ -3,14 +3,22 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/settings/registry/settings_registry.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/ui/home/repo_monogram.dart';
 
-RepoInfo _repo(String id, String name, {bool pinned = true}) => RepoInfo.fromJson({
+RepoInfo _repo(String id, String name, {bool pinned = true, int? logoHue}) => RepoInfo.fromJson({
   'id': id,
   'name': name,
   'path': '/p/$name',
   'pinned': pinned,
   'isGitRepo': true,
   'worktrees': const <Map<String, dynamic>>[],
+  if (logoHue != null)
+    'settings': {
+      'worktreeRoot': {'value': '/w', 'source': 'default'},
+      'provider': {'value': 'auto', 'source': 'default'},
+      'hasRemote': true,
+      'logoHue': logoHue,
+    },
 })!;
 
 void main() {
@@ -64,6 +72,28 @@ void main() {
       searchSettings('worktree root', sections: kSettingsSections),
       isEmpty,
     );
+  });
+
+  group('the sidebar tells the repos apart (SPEC-48 D15)', () {
+    test('a repo section leads with its own mark, not a folder every repo shares', () {
+      // A folder glyph on every row makes the sections indistinguishable in exactly
+      // the place the monogram exists to disambiguate \u2014 and it is where the user
+      // looks after choosing a colour, so the choice appears to have done nothing.
+      final section = sectionsFor([_repo('a', 'Diana')]).firstWhere((x) => x.id == 'repo:a');
+      expect(section.leading, isA<RepoMonogram>());
+      expect((section.leading! as RepoMonogram).name, 'Diana');
+    });
+
+    test('the mark carries the chosen hue, so the sidebar shows the choice', () {
+      final section = sectionsFor([
+        _repo('a', 'Diana', logoHue: 2),
+      ]).firstWhere((x) => x.id == 'repo:a');
+      expect((section.leading! as RepoMonogram).hue, 2);
+    });
+
+    test('an app section has no mark, so the icon still renders', () {
+      expect(sectionsFor(const []).first.leading, isNull);
+    });
   });
 
   test('isRepoSection distinguishes repo ids from app ones', () {

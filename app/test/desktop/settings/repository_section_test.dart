@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/app/theme.dart';
 import 'package:makit/desktop/settings/sections/repository_section.dart';
+import 'package:makit/ui/home/repo_monogram.dart';
 import 'package:makit/ui/widgets/forge_glyph.dart';
 
 const _base = RepoSettingsView(
@@ -34,6 +35,7 @@ RepoSettingsView _view({
   List<String> branches = const ['main', 'develop'],
   String? defaultBranch = 'main',
   bool hasRemote = true,
+  int? logoHue,
 }) => RepoSettingsView(
   name: _base.name,
   path: _base.path,
@@ -47,6 +49,7 @@ RepoSettingsView _view({
   providerChoice: providerChoice,
   branches: branches,
   hasRemote: hasRemote,
+  logoHue: logoHue,
 );
 
 Future<void> _pump(
@@ -246,6 +249,30 @@ void main() {
         find.textContaining('editable on the machine running makit'),
         findsOneWidget,
       );
+    });
+  });
+
+  group('the chosen logo is actually drawn (SPEC-48 D14\u2032)', () {
+    // The reason the row exists: two repos whose names hash to the same hue are
+    // indistinguishable, which defeats the one job the monogram has. A choice that
+    // does not change the mark leaves that defeat in place AND adds a control that
+    // lies about having fixed it.
+    testWidgets('a chosen hue overrides the name-derived one', (t) async {
+      // The index is DERIVED, not hardcoded: 'Diana' happens to hash to 3, so a
+      // hardcoded 3 asserted nothing. Picking the first index that differs keeps the
+      // test honest if either the palette or the hash changes.
+      final derived = RepoMonogram.hueFor(_base.name);
+      final chosen = List.generate(RepoMonogram.paletteLength, (i) => i)
+          .firstWhere((i) => RepoMonogram.paletteAt(i) != derived);
+      await _pump(t, _view(logoHue: chosen));
+      final mark = t.widget<RepoMonogram>(find.byType(RepoMonogram));
+      expect(mark.hue, chosen);
+      expect(RepoMonogram.paletteAt(mark.hue!), isNot(derived));
+    });
+
+    testWidgets('with no choice the mark stays name-derived', (t) async {
+      await _pump(t, _view());
+      expect(t.widget<RepoMonogram>(find.byType(RepoMonogram)).hue, isNull);
     });
   });
 

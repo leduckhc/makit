@@ -138,7 +138,9 @@ class _SectionList extends StatelessWidget {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kRadius8),
             ),
-            leading: Icon(section.icon),
+            // A section with a mark of its own draws it; everything else keeps its
+            // glyph. See SettingsSection.leading (SPEC-48 D15).
+            leading: section.leading ?? Icon(section.icon),
             title: Text(section.title),
             onTap: () => onSelect(section.id),
           ),

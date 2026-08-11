@@ -36,6 +36,7 @@ class RepoSettingsView {
     this.providerChoice = ForgeChoice.auto,
     this.branches = const [],
     this.hasRemote = true,
+    this.logoHue,
   });
 
   final String name;
@@ -82,6 +83,13 @@ class RepoSettingsView {
   /// only from a loopback connection (SPEC-48 D16), so a paired phone shows the
   /// same values read-only rather than offering a control that would be refused.
   final bool editable;
+
+  /// The palette index the user chose for this repo's mark, or null to derive it
+  /// from the name.
+  ///
+  /// Null rather than a default index, because index 0 is a real palette entry: a
+  /// numeric default would silently repaint every repo that never chose one.
+  final int? logoHue;
 }
 
 /// Build the section's view from a real [RepoInfo].
@@ -114,6 +122,7 @@ RepoSettingsView? repoSettingsViewFor(RepoInfo repo, {bool editable = true}) {
       if (repo.defaultBranch != null) repo.defaultBranch!,
     }.toList()..sort(),
     editable: editable,
+    logoHue: st.logoHue,
   );
 }
 
@@ -208,7 +217,7 @@ class RepositorySettingsSection extends StatelessWidget {
         SettingsGroup(
           children: [
             _SettingsValueRow(
-              leading: RepoMonogram(name: view.name),
+              leading: RepoMonogram(name: view.name, hue: view.logoHue),
               title: 'Logo',
               enabled: view.editable,
               onTap: onEditLogo,
