@@ -120,7 +120,12 @@ function adoptLivePrTargets(
     if (current === base) continue;
     // Reflect the adoption in the returned map ONLY if it actually persisted, so a
     // full/read-only store cannot make this snapshot report a base it never saved.
-    if (!putTarget(file, e.path, base, current ? { retargetedFrom: current } : {})) continue;
+    // `expect` guards the window between `loadTargets` (once, in `listRepos`) and
+    // this write: the git reads above are async, so a user's `worktree.setTarget`
+    // can land in between — and their explicit choice must not be overwritten by a
+    // decision made from the stale map.
+    if (!putTarget(file, e.path, base, { ...(current ? { retargetedFrom: current } : {}), expect: current ?? null }))
+      continue;
     out ??= { ...persisted };
     out[e.path] = current ? { target: base, retargetedFrom: current } : { target: base };
   }
@@ -234,8 +239,15 @@ async function repairVanishedTargets(
   for (const w of writes) {
     // Reflect the repair in the returned map ONLY when it persisted, so a
     // full/read-only store cannot make this snapshot report a repair that the
-    // next read will contradict.
-    if (!putTarget(file, w.path, w.target, { retargetedFrom: w.retargetedFrom })) continue;
+    // next read will contradict. `expect` is the vanished target the decision was
+    // based on, so a user's `setTarget` landing during the git reads above wins.
+    if (
+      !putTarget(file, w.path, w.target, {
+        retargetedFrom: w.retargetedFrom,
+        expect: w.retargetedFrom,
+      })
+    )
+      continue;
     out[w.path] = { target: w.target, retargetedFrom: w.retargetedFrom };
   }
   return out;

@@ -27,7 +27,7 @@ import {
   branchExists,
   listLocalBranches,
   listRemoteBranchNames,
-  hasAnyRemote,
+  hasOriginRemote,
   closestAncestorBranch,
 } from "./git.js";
 
@@ -765,15 +765,25 @@ test("listRemoteBranchNames strips the remote prefix and skips HEAD", async () =
   }
 });
 
-test("hasAnyRemote distinguishes a plain init from a clone", async () => {
-  // Gates the whole "a PR base must exist on the remote" rule in the picker; the
-  // no-remote regression it guards was found only by driving the real app.
+test("hasOriginRemote is true only for an actual `origin`", async () => {
+  // Gates the whole "a PR base must exist on the remote" rule in the picker, and
+  // is origin-scoped to match `listRemoteBranchNames`. A repo whose only remote is
+  // `upstream` must read as NO origin: otherwise the gate switches on against an
+  // empty origin branch set and every candidate is disabled.
   const origin = makeRepo();
   const clone = mkdtempSync(join(tmpdir(), "makit-clone-"));
   try {
-    assert.equal(await hasAnyRemote(origin), false, "a plain `git init` has no remote");
+    assert.equal(await hasOriginRemote(origin), false, "a plain `git init` has no remote");
+    execFileSync("git", ["remote", "add", "upstream", "https://example.test/x/y.git"], {
+      cwd: origin,
+    });
+    assert.equal(
+      await hasOriginRemote(origin),
+      false,
+      "an upstream-only repo has a remote, but not origin",
+    );
     execFileSync("git", ["clone", "-q", origin, clone]);
-    assert.equal(await hasAnyRemote(clone), true);
+    assert.equal(await hasOriginRemote(clone), true);
   } finally {
     rmSync(origin, { recursive: true, force: true });
     rmSync(clone, { recursive: true, force: true });

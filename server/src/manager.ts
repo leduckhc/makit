@@ -1294,12 +1294,16 @@ export class SessionManager extends EventEmitter {
     });
     if (!resolved) return;
     for (const [path] of affected) {
-      if (!putTarget(file, path, resolved, { retargetedFrom: goneBranch })) {
+      // `expect: goneBranch` — only hand down a worktree that is STILL aiming at the
+      // branch we just tidied away. The git reads above are async, so a user's
+      // `worktree.setTarget` can land in between; their explicit choice wins.
+      if (!putTarget(file, path, resolved, { retargetedFrom: goneBranch, expect: goneBranch })) {
         // Best-effort: the branch is already gone, so we cannot fail the wrap-up.
-        // Log so a full/read-only store is observable rather than leaving the
-        // child silently aimed at the deleted branch with no trace.
+        // Either the store is not writable or the target moved under us; log so the
+        // former is observable instead of leaving the child silently aimed at the
+        // deleted branch with no trace.
         log.warn(
-          `[makit] handing ${path} down to ${resolved} could not be persisted (target store not writable)`,
+          `[makit] handing ${path} down to ${resolved} was not persisted (store not writable, or its target changed meanwhile)`,
         );
       }
     }
@@ -1739,11 +1743,14 @@ export class SessionManager extends EventEmitter {
    * runs this native session/thread id.
    */
   private toSessionListItem(info: AgentSessionInfo, agent: string): AgentSessionListItem {
-    // A CLOSED session keeps its `agentSessionId` but holds a `DetachedAdapter`
-    // with no live process (SPEC-29), so it must NOT report `attached` — doing so
-    // would suppress the attach/resume affordance for a session that is not live.
+    // `cold` (== holds a `DetachedAdapter`) is the honest predicate for "no live
+    // agent", and it is the only one that covers every case: a CLOSED session
+    // (SPEC-29) and a REHYDRATED one after a server restart both keep their
+    // `agentSessionId` but hold a `DetachedAdapter` — and rehydration leaves
+    // `closed === false`, so a `!closed` check would still report a process-less
+    // session as attached and suppress the attach/resume affordance for it.
     const attached = [...this.sessions.values()].some(
-      (s) => s.agentSessionId === info.id && !s.closed,
+      (s) => s.agentSessionId === info.id && !s.cold,
     );
     return {
       piSessionId: info.id,
@@ -1776,7 +1783,12 @@ export class SessionManager extends EventEmitter {
         // back live first.
         if (existing.closed) {
           await this.reopenSession(existingId);
-          await this.ensureLive(existingId);
+          // `reattachSession`, NOT `ensureLive`: `ensureLive` deliberately swallows
+          // a failed resume (it is called speculatively on subscribe), which would
+          // let this method hand back a cold `DetachedAdapter` session as though it
+          // had resumed live — the caller only finds out on the next message. An
+          // explicit attach request owns its failure.
+          await this.reattachSession(existingId);
         }
         return existing;
       }

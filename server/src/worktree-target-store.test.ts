@@ -345,3 +345,60 @@ test("saveTargets/putTarget return true on a successful write", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// putTarget's compare-and-set. Background reconciliation (adopt / repair /
+// hand-down) decides what to write from a map read BEFORE its own async git
+// reads, so a user's `worktree.setTarget` can land in that window. The user's
+// explicit choice must win over the stale automatic one.
+
+test("putTarget with `expect` refuses the write when the target moved under it", () => {
+  const { dir, file } = tmpFile();
+  try {
+    putTarget(file, "/wt", "feat/parent");
+    // The user retargets while a reconciliation is mid-flight.
+    putTarget(file, "/wt", "main");
+    // The reconciliation now tries to write a decision based on the OLD value.
+    const ok = putTarget(file, "/wt", "release/1.4", { expect: "feat/parent" });
+    assert.equal(ok, false, "a stale decision must not be applied");
+    assert.equal(targetOf(file, "/wt"), "main", "the user's choice survives");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("putTarget with a matching `expect` applies the write", () => {
+  const { dir, file } = tmpFile();
+  try {
+    putTarget(file, "/wt", "feat/parent");
+    assert.equal(putTarget(file, "/wt", "main", { expect: "feat/parent" }), true);
+    assert.equal(targetOf(file, "/wt"), "main");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("putTarget with `expect: null` means `there must be no entry yet`", () => {
+  const { dir, file } = tmpFile();
+  try {
+    assert.equal(putTarget(file, "/wt", "main", { expect: null }), true, "absent as expected");
+    assert.equal(
+      putTarget(file, "/wt", "other", { expect: null }),
+      false,
+      "an entry appeared, so the decision is stale",
+    );
+    assert.equal(targetOf(file, "/wt"), "main");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("putTarget without `expect` is an unconditional write (interactive path)", () => {
+  const { dir, file } = tmpFile();
+  try {
+    putTarget(file, "/wt", "feat/parent");
+    assert.equal(putTarget(file, "/wt", "main"), true, "setWorktreeTarget must not be gated");
+    assert.equal(targetOf(file, "/wt"), "main");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

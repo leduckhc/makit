@@ -14,7 +14,7 @@
 import { mapLimit } from "./concurrency.js";
 import {
   closestAncestorBranch,
-  hasAnyRemote,
+  hasOriginRemote,
   detectDefaultBranch,
   diffStat,
   listLocalBranches,
@@ -114,12 +114,12 @@ export async function targetCandidates(
   repoPath: string,
   worktreePath: string,
 ): Promise<TargetCandidate[]> {
-  const [locals, onRemote, defaultBranch, trees, anyRemote] = await Promise.all([
+  const [locals, onRemote, defaultBranch, trees, originExists] = await Promise.all([
     listLocalBranches(repoPath),
     listRemoteBranchNames(repoPath),
     detectDefaultBranch(repoPath),
     listWorktrees(repoPath),
-    hasAnyRemote(repoPath),
+    hasOriginRemote(repoPath),
   ]);
   if (locals.length === 0) return [];
 
@@ -156,12 +156,17 @@ export async function targetCandidates(
     branch,
     group: groupOf(branch),
     // The push-state gate exists because a PULL REQUEST base must live on the
-    // remote. With NO remote configured there is no pull request for it to
-    // constrain, while the target still drives the diff and the merge
-    // destination — so the rule is vacuous and enforcing it would disable every
-    // row and leave the picker unusable. (Found by driving the real app against a
-    // plain `git init` repo: every candidate read "not pushed yet".)
-    onRemote: anyRemote ? onRemote.has(branch) : true,
+    // remote. With no `origin` there is no pull request for it to constrain, while
+    // the target still drives the diff and the merge destination — so the rule is
+    // vacuous and enforcing it would disable every row and leave the picker
+    // unusable. (Found by driving the real app against a plain `git init` repo:
+    // every candidate read "not pushed yet".)
+    //
+    // Gated on `origin` specifically, matching `listRemoteBranchNames`' scope: a
+    // repo whose only remote is `upstream` has a remote but no origin branches, so
+    // an "any remote" gate would switch the rule ON against an EMPTY set and
+    // disable every candidate.
+    onRemote: originExists ? onRemote.has(branch) : true,
     isSelf: branch === self,
   }));
 

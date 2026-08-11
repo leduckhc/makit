@@ -364,10 +364,22 @@ export async function listRemoteBranchNames(repoPath: string): Promise<Set<strin
   return out;
 }
 
-/** True when the repo has at least one remote configured. */
-export async function hasAnyRemote(repoPath: string): Promise<boolean> {
+/**
+ * True when the repo has an **`origin`** remote.
+ *
+ * Deliberately origin-specific, not "any remote": it gates the "a PR base must
+ * exist on the remote" rule, and {@link listRemoteBranchNames} only reads
+ * `refs/remotes/origin`. A repo whose only remote is `upstream` would otherwise
+ * turn the gate ON while the branch set came back EMPTY, disabling every
+ * candidate and making the picker unusable.
+ */
+export async function hasOriginRemote(repoPath: string): Promise<boolean> {
   const r = await git(["remote"], repoPath);
-  return r.code === 0 && r.stdout.trim().length > 0;
+  if (r.code !== 0) return false;
+  return r.stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .includes("origin");
 }
 
 /**

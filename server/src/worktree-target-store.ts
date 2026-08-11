@@ -137,16 +137,26 @@ export function targetOf(file: string, worktreePath: string): string | null {
  * user choice should do: they have taken ownership of the value, so there is no
  * longer an automatic change to announce.
  *
- * Returns whether the write persisted, so an interactive caller can surface a
- * failure instead of falsely acking success.
+ * `expect` makes the write a **compare-and-set**: it is the target the caller's
+ * decision was based on, and the write is skipped when the store has since moved
+ * on. Background reconciliation (adopt / repair / hand-down) decides what to
+ * write from a map it read BEFORE its own async git reads, so a user's
+ * `worktree.setTarget` can land in that window — and the user's explicit choice
+ * must win over a stale automatic one. Pass `null` to mean "expected no entry".
+ *
+ * Returns whether the value is now stored as asked. `false` means either the
+ * write failed or the CAS was refused; both mean "do not treat this as applied".
  */
 export function putTarget(
   file: string,
   worktreePath: string,
   branch: string,
-  opts: { retargetedFrom?: string } = {},
+  opts: { retargetedFrom?: string; expect?: string | null } = {},
 ): boolean {
   const all = loadTargets(file);
+  if (opts.expect !== undefined && (all[worktreePath]?.target ?? null) !== opts.expect) {
+    return false;
+  }
   all[worktreePath] = opts.retargetedFrom
     ? { target: branch, retargetedFrom: opts.retargetedFrom }
     : { target: branch };

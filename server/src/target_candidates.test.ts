@@ -240,6 +240,29 @@ test("with no remote configured, every branch is selectable", async () => {
 // resolveThroughChain — rule 3's recursion, plus rule 4's fallback.
 // ─────────────────────────────────────────────────────────────────────────────
 
+test("a repo whose only remote is `upstream` still offers selectable candidates", async () => {
+  // Regression: the push-state gate is origin-scoped (as `listRemoteBranchNames`
+  // is). An "any remote" gate switched ON here while the origin branch set came
+  // back EMPTY, so every candidate read "not pushed yet" and the picker was
+  // unusable in a fork-style checkout.
+  const s = await makeStack();
+  try {
+    execFileSync("git", ["remote", "add", "upstream", "https://example.test/x/y.git"], {
+      cwd: s.repo,
+    });
+    const cands = await targetCandidates(s.repo, s.child);
+    assert.equal(cands.length > 0, true);
+    const blocked = cands.filter((c) => !c.isSelf && !c.onRemote);
+    assert.deepEqual(
+      blocked.map((c) => c.branch),
+      [],
+      "no origin means the PR-base rule is vacuous, so nothing is gated",
+    );
+  } finally {
+    s.cleanup();
+  }
+});
+
 test("resolveThroughChain returns a live branch unchanged", () => {
   assert.equal(
     resolveThroughChain("feat/parent", {
