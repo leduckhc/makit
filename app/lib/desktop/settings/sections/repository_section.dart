@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../app/theme.dart';
+import '../../../store/models.dart';
 import '../../../ui/home/repo_chips.dart';
 import '../../../ui/home/repo_monogram.dart';
 import '../../../ui/widgets/forge_glyph.dart';
@@ -82,6 +83,56 @@ class RepoSettingsView {
   /// same values read-only rather than offering a control that would be refused.
   final bool editable;
 }
+
+/// Build the section's view from a real [RepoInfo].
+///
+/// One place, so the section stays pure presentation and the mapping from wire
+/// facts to rendered facts is testable on its own. Returns null when the server
+/// sent no settings — an older server, where rendering fabricated defaults would
+/// be worse than rendering nothing.
+RepoSettingsView? repoSettingsViewFor(RepoInfo repo, {bool editable = true}) {
+  final st = repo.settings;
+  if (st == null) return null;
+  final forge = st.forge;
+  return RepoSettingsView(
+    name: repo.name,
+    path: repo.path,
+    worktreeRoot: st.worktreeRoot.value,
+    worktreeRootOverridden: st.worktreeRoot.isOverride,
+    // The override wins; otherwise git's own answer, which the DTO already carries
+    // rather than duplicating into settings.
+    defaultBranch: st.defaultBranch?.value ?? repo.defaultBranch,
+    forge: forge == null ? null : _forgeKindFor(forge.software),
+    forgeHost: forge?.host,
+    forgeAuthed: forge?.authed ?? false,
+    providerChoice: _choiceFor(st.provider.value),
+    hasRemote: st.hasRemote,
+    // Offered from what the repo actually has, so a pick cannot be a typo.
+    branches: <String>{
+      for (final w in repo.worktrees)
+        if (w.branch != null && w.branch!.isNotEmpty) w.branch!,
+      if (repo.defaultBranch != null) repo.defaultBranch!,
+    }.toList()..sort(),
+    editable: editable,
+  );
+}
+
+/// `gitlab` and `unknown` map to null: the app has no glyph for a forge it cannot
+/// talk to, and the row's subtitle carries the name instead.
+ForgeKind? _forgeKindFor(String software) => switch (software) {
+  'github' => ForgeKind.github,
+  'forgejo' => ForgeKind.forgejo,
+  'gitea' => ForgeKind.gitea,
+  _ => null,
+};
+
+ForgeChoice _choiceFor(String wire) => switch (wire) {
+  'none' => ForgeChoice.none,
+  'forgejo' => ForgeChoice.forgejo,
+  'gitea' => ForgeChoice.gitea,
+  'github' => ForgeChoice.github,
+  _ => ForgeChoice.auto,
+};
 
 /// The provider the user chose, or [auto] to believe detection.
 enum ForgeChoice {

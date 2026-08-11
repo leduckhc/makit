@@ -907,6 +907,104 @@ class Worktree {
 
 /// A repo on the home screen: a [Project] enriched with git intelligence —
 /// its default/current branch and live worktrees.
+/// Where an effective per-repo value came from. Drives the badge; the app is told
+/// this rather than deriving it, so one rule lives on the server.
+enum SettingSource { override, environment, defaultValue }
+
+SettingSource _sourceFrom(Object? raw) => switch (raw) {
+  'override' => SettingSource.override,
+  'environment' => SettingSource.environment,
+  // Anything unrecognised reads as the default rather than throwing: a newer
+  // server adding a source must not crash an older app.
+  _ => SettingSource.defaultValue,
+};
+
+/// An effective value and its source.
+class Resolved<T> {
+  const Resolved(this.value, this.source);
+  final T value;
+  final SettingSource source;
+
+  /// True when a repo-level value replaces the inherited one — the only state that
+  /// earns a reset affordance.
+  bool get isOverride => source == SettingSource.override;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Resolved<T> && other.value == value && other.source == source;
+  @override
+  int get hashCode => Object.hash(value, source);
+}
+
+/// What detection concluded about a repo's forge.
+class RepoForge {
+  const RepoForge({required this.software, required this.host, this.authed});
+  final String software;
+  final String host;
+  /// Whether a credential is configured for that host. Absent for GitHub, where
+  /// `gh`'s budget is not host-specific authentication.
+  final bool? authed;
+
+  static RepoForge? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final j = Map<String, dynamic>.from(raw);
+    final software = j['software'];
+    final host = j['host'];
+    if (software is! String || host is! String) return null;
+    return RepoForge(
+      software: software,
+      host: host,
+      authed: j['authed'] is bool ? j['authed'] as bool : null,
+    );
+  }
+}
+
+/// Per-repo settings as the server resolved them.
+class RepoSettings {
+  const RepoSettings({
+    required this.worktreeRoot,
+    required this.provider,
+    required this.hasRemote,
+    this.defaultBranch,
+    this.logoHue,
+    this.forge,
+  });
+
+  final Resolved<String> worktreeRoot;
+  final Resolved<String> provider;
+  /// False = no `origin`, so no forge is possible. A different statement from
+  /// "not identified yet", which is [forge] being null.
+  final bool hasRemote;
+  /// Present ONLY when overridden; otherwise read `RepoInfo.defaultBranch`.
+  final Resolved<String>? defaultBranch;
+  final int? logoHue;
+  /// Null means detection has not run for this repo yet, never "no forge".
+  final RepoForge? forge;
+
+  static RepoSettings? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final j = Map<String, dynamic>.from(raw);
+    final root = _resolvedString(j['worktreeRoot']);
+    if (root == null) return null;
+    return RepoSettings(
+      worktreeRoot: root,
+      provider: _resolvedString(j['provider']) ??
+          const Resolved('auto', SettingSource.defaultValue),
+      hasRemote: j['hasRemote'] == true,
+      defaultBranch: _resolvedString(j['defaultBranch']),
+      logoHue: j['logoHue'] is num ? (j['logoHue'] as num).toInt() : null,
+      forge: RepoForge.fromJson(j['forge']),
+    );
+  }
+
+  static Resolved<String>? _resolvedString(Object? raw) {
+    if (raw is! Map) return null;
+    final v = raw['value'];
+    if (v is! String) return null;
+    return Resolved(v, _sourceFrom(raw['source']));
+  }
+}
+
 class RepoInfo {
   const RepoInfo({
     required this.id,
@@ -918,6 +1016,7 @@ class RepoInfo {
     required this.defaultBranch,
     required this.currentBranch,
     required this.worktrees,
+    this.settings,
   });
 
   final String id;
@@ -929,6 +1028,11 @@ class RepoInfo {
   final String? defaultBranch;
   final String? currentBranch;
   final List<Worktree> worktrees;
+
+  /// Per-repo settings, or null when the server did not send any — an older
+  /// server, in which case the settings section renders nothing rather than
+  /// fabricating defaults.
+  final RepoSettings? settings;
 
   /// Total added/removed lines across every worktree.
   int get totalInsertions => worktrees.fold(0, (a, w) => a + w.insertions);
@@ -960,6 +1064,7 @@ class RepoInfo {
       currentBranch: j['currentBranch'] is String
           ? j['currentBranch'] as String
           : null,
+      settings: RepoSettings.fromJson(j['settings']),
       worktrees: ((j['worktrees'] as List?) ?? const [])
           .whereType<Map<dynamic, dynamic>>()
           .map((m) => Worktree.fromJson(Map<String, dynamic>.from(m)))
