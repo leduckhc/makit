@@ -112,6 +112,17 @@ class _PublishSheetState extends ConsumerState<_PublishSheet> {
     if (mounted) navigator.maybePop();
   }
 
+  /// Copy + confirm. Lives here, not in the panel: the panel is documented as
+  /// pure (data in, callbacks out) so it stays directly pumpable, and reading a
+  /// provider from it would need a ProviderScope in every widget test.
+  Future<void> _copy() async {
+    final url = _grant?.url;
+    if (url == null) return;
+    final status = ref.status;
+    await Clipboard.setData(ClipboardData(text: url));
+    status.success('Link copied', source: 'docs', detail: url);
+  }
+
   Future<void> _open() async {
     final url = _grant?.url;
     if (url == null) return;
@@ -165,6 +176,7 @@ class _PublishSheetState extends ConsumerState<_PublishSheet> {
     nowMs: _nowMs,
     onStop: _stop,
     onOpen: _open,
+    onCopy: _copy,
   );
 }
 
@@ -181,6 +193,7 @@ class PublishSheetBody extends StatelessWidget {
     required this.nowMs,
     required this.onStop,
     required this.onOpen,
+    required this.onCopy,
   });
 
   final String title;
@@ -192,6 +205,7 @@ class PublishSheetBody extends StatelessWidget {
   final int nowMs;
   final VoidCallback onStop;
   final VoidCallback onOpen;
+  final VoidCallback onCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -233,6 +247,7 @@ class PublishSheetBody extends StatelessWidget {
       nowMs: nowMs,
       onStop: onStop,
       onOpen: onOpen,
+      onCopy: onCopy,
     );
   }
 }
@@ -243,19 +258,14 @@ class _GrantPanel extends StatelessWidget {
     required this.nowMs,
     required this.onStop,
     required this.onOpen,
+    required this.onCopy,
   });
 
   final DocGrant grant;
   final int nowMs;
   final VoidCallback onStop;
   final VoidCallback onOpen;
-
-  Future<void> _copy(BuildContext context) async {
-    // A plain widget with no `ref`, hence `statusOf` (SPEC-48).
-    final status = statusOf(context);
-    await Clipboard.setData(ClipboardData(text: grant.url));
-    status.success('Link copied', source: 'docs', detail: grant.url);
-  }
+  final VoidCallback onCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -319,7 +329,7 @@ class _GrantPanel extends StatelessWidget {
           Row(
             children: [
               FilledButton.icon(
-                onPressed: () => _copy(context),
+                onPressed: onCopy,
                 icon: const Icon(PhosphorIconsLight.copy, size: 16),
                 label: const Text('Copy link'),
               ),

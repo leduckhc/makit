@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/docs.dart';
 import 'package:makit/ui/docs/publish_sheet.dart';
@@ -23,6 +22,7 @@ Future<void> _pump(
   String? error,
   VoidCallback? onStop,
   VoidCallback? onOpen,
+  VoidCallback? onCopy,
 }) => tester.pumpWidget(
   MaterialApp(
     home: Scaffold(
@@ -34,6 +34,7 @@ Future<void> _pump(
         nowMs: 0,
         onStop: onStop ?? () {},
         onOpen: onOpen ?? () {},
+        onCopy: onCopy ?? () {},
       ),
     ),
   ),
@@ -64,29 +65,16 @@ void main() {
     expect(stopped, isTrue);
   });
 
-  testWidgets('Copy link copies the URL to the clipboard', (tester) async {
-    // Clipboard.getData/setData has NO default mock in flutter_test; install a
-    // handler so the call completes rather than hanging.
-    final copied = <String>[];
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied.add((call.arguments as Map)['text'] as String);
-        }
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      ),
-    );
-    await _pump(tester, grant: _grant());
+  // The body is pure (data in, callbacks out), so it is responsible for firing
+  // the action — not for performing it. The clipboard write and the "Link copied"
+  // status post live in _PublishSheetState, which has a `ref`; doing them here
+  // would have required a ProviderScope in every widget test of this body.
+  testWidgets('Copy link fires onCopy', (tester) async {
+    var copies = 0;
+    await _pump(tester, grant: _grant(), onCopy: () => copies++);
     await tester.tap(find.text('Copy link'));
     await tester.pump();
-    expect(copied.single, contains('mac.tail.ts.net/docs/7f3a'));
+    expect(copies, 1);
   });
 
   group('D15 — degrade loudly', () {
