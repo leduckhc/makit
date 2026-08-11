@@ -40,6 +40,9 @@ class FakeTransport implements Transport {
   /// and re-establishing (used to exercise reconnect re-registration).
   void emit(WsState s) => _state.add(s);
 
+  /// Push an inbound frame, as the real server would.
+  void emitFrame(Envelope env) => _frames.add(env);
+
   @override
   Future<void> connect(
     String url, {
@@ -294,6 +297,79 @@ void main() {
       expect(reported as int, greaterThan(0));
       expect(reported, io.pid, reason: 'our OWN pid, not an arbitrary number');
 
+      controller.dispose();
+    });
+  });
+
+  // D8 rev 2: locality is whatever the SERVER says in hello.ack. The app must
+  // not infer it from the stored host — mDNS rediscovery rewrites that behind us
+  // (see the rediscovery group above), so a host-based guess goes stale silently.
+  group('serverIsLocal comes from hello.ack (SPEC-46 D8 rev 2)', () {
+    Future<(ConnectionController, FakeTransport)> boot() async {
+      final transports = <FakeTransport>[];
+      final controller = ConnectionController(
+        _seededStorage(),
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: true);
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const <DiscoveredServer>[]),
+        rediscoverStall: Duration.zero,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      return (controller, transports.first);
+    }
+
+    test('defaults to false, so publish is the fallback', () async {
+      final (controller, _) = await boot();
+      expect(controller.state.serverIsLocal, isFalse);
+      controller.dispose();
+    });
+
+    test('isLocal:true in hello.ack marks the connection local', () async {
+      final (controller, t) = await boot();
+      t.emitFrame(
+        Envelope(
+          v: 1,
+          t: MsgType.helloAck,
+          id: 'h1',
+          body: {'ok': true, 'isLocal': true},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(controller.state.serverIsLocal, isTrue);
+      controller.dispose();
+    });
+
+    test('an older server that omits isLocal is treated as remote', () async {
+      final (controller, t) = await boot();
+      t.emitFrame(
+        Envelope(v: 1, t: MsgType.helloAck, id: 'h1', body: {'ok': true}),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        controller.state.serverIsLocal,
+        isFalse,
+        reason: 'absent must not be read as local; publishing works everywhere',
+      );
+      controller.dispose();
+    });
+
+    test('a non-bool isLocal is treated as remote, never as truthy', () async {
+      final (controller, t) = await boot();
+      t.emitFrame(
+        Envelope(
+          v: 1,
+          t: MsgType.helloAck,
+          id: 'h1',
+          // Off the wire, so it may be anything. A truthiness bug on a string
+          // or number must not mark a remote server local (D8 rev 2).
+          body: {'ok': true, 'isLocal': 'true'},
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(controller.state.serverIsLocal, isFalse);
       controller.dispose();
     });
   });

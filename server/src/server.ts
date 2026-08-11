@@ -765,6 +765,9 @@ export function startWsServer(opts: ServerOpts) {
       sendMetricsHistory,
       onPortsWatchersChanged: recomputePortsWatchers,
       sendPortsSnapshot,
+      onDocsWatchersChanged: recomputeDocsWatchers,
+      sendDocsSnapshot,
+      docs: docsService,
       killPort: (target: PortKillTarget, deviceId?: string) =>
         portsService.killPort(target, { deviceId }),
       killOrphans: (deviceId?: string) => portsService.killOrphans({ deviceId }),

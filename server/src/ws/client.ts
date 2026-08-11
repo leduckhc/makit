@@ -50,6 +50,13 @@ export interface WsClient {
    */
   watchingPorts: boolean;
   /**
+   * True while this client is watching docs (`docs.watch {on:true}`, SPEC-46).
+   * Required (like {@link watchingPorts}): every `WsClient` initialises it to
+   * `false`. Cleared on socket close so a killed window cannot keep the doc
+   * index re-walking on every tree change forever.
+   */
+  watchingDocs: boolean;
+  /**
    * True when the socket's remote address is loopback. Gates acceptance of the
    * app's reported pid in `hello` (SPEC-37 decision 6) — a non-loopback client
    * must connect normally but may not ask us to sample an arbitrary pid.

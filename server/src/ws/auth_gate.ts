@@ -81,7 +81,7 @@ export class AuthGate {
 
     if (client.authed) {
       // Already trusted (localhost dev mode).
-      client.send({ t: "hello.ack", id: env.id, ok: true });
+      client.send({ t: "hello.ack", id: env.id, ok: true, isLocal: client.isLocal });
       this.deps.onAuthenticated(client);
       return;
     }
@@ -124,14 +124,14 @@ export class AuthGate {
       client.deviceLabel = agent.label;
       client.deviceId = agent.deviceId;
       client.principal = agent;
-      client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: agent.deviceId });
+      client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: agent.deviceId, isLocal: client.isLocal });
       log.info(`[makit] hello: authed agent-scoped token for session ${agent.sessionId}`);
       this.deps.onAuthenticated(client);
       return;
     }
 
     log.warn("[makit] hello: unknown bearer (rejected)");
-    this.reject(client, env, "unknown device");
+    this.reject(client, env, "unknown device")
   }
 
   private handlePair(
@@ -155,6 +155,7 @@ export class AuthGate {
       ok: true,
       deviceId: device.id,
       bearer: device.bearer,
+      isLocal: client.isLocal,
     });
     this.deps.onAuthenticated(client);
   }
