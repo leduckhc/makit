@@ -94,8 +94,12 @@ void main() {
       // entirely — and a firstWhere() added later would then wait for a second
       // snapshot that never comes.
       final snapshots = <List<Session>>[];
+      final repoSnaps = <List<Map<String, dynamic>>>[];
       final acks = <String, Envelope>{};
       final sub = server.outgoing.listen((e) {
+        if (e.body['kind'] == 'repos.snapshot') {
+          repoSnaps.add((e.body['repos'] as List).cast<Map<String, dynamic>>());
+        }
         if (e.body['kind'] == 'sessions.snapshot') {
           snapshots.add(
             WireCodec.decodeSessions(e.body['sessions']) ?? const [],
@@ -162,6 +166,45 @@ void main() {
         snapshots.last.map((s) => s.id),
         contains(target),
         reason: 'reopen puts it back in the active snapshot',
+      );
+
+      // A closed session must leave the REPO snapshot too, as the real server
+      // does (`repo_service.ts` skips `s.closed`) — otherwise the demo keeps
+      // counting it against its worktree.
+      server.send(
+        Envelope(
+          t: MsgType.cmd,
+          id: 'c-close-2',
+          body: {'kind': 'session.close', 'sessionId': target},
+        ),
+      );
+      await settle();
+      final repoSessionIds = [
+        for (final r in repoSnaps.last)
+          for (final w in (r['worktrees'] as List? ?? const []))
+            for (final id in (w['sessionIds'] as List? ?? const []))
+              id as String,
+      ];
+      expect(
+        repoSessionIds,
+        isNot(contains(target)),
+        reason: 'a closed session leaves the repo snapshot too',
+      );
+
+      // A session seeded as closed must be reopenable, not inert: as a separate
+      // literal, reopen acked and did nothing.
+      server.send(
+        Envelope(
+          t: MsgType.cmd,
+          id: 'c-reopen-seeded',
+          body: const {'kind': 'session.reopen', 'sessionId': 's-closed-1'},
+        ),
+      );
+      await settle();
+      expect(
+        snapshots.last.map((s) => s.id),
+        contains('s-closed-1'),
+        reason: 'a seeded closed fixture can be reopened',
       );
     },
   );

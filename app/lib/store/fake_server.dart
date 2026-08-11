@@ -90,6 +90,34 @@ class FakeServer {
       status: 'running',
       branch: 'fix-tab-drag-and-drop',
     )..events.addAll(_scriptClaude('s-claude-1'));
+
+    // Cold-start content for the Closed view (SPEC-29). These live in
+    // [_sessions] like every other session: as separate literals they could be
+    // listed but never reopened, and never appeared in any snapshot.
+    _sessions['s-closed-1'] = _FakeSession(
+      id: 's-closed-1',
+      projectId: p1,
+      projectName: 'makit',
+      projectPath: '/Users/le/Work/Vibe/makit',
+      agent: 'pi',
+      title: 'draft release notes',
+      preview: 'Wrote CHANGELOG.md for 0.4.0.',
+      status: 'exited',
+      branch: 'draft-release-notes',
+    )..closed = true;
+    // No worktree for this one in [_pushRepos], which is what makes it render
+    // the "worktree removed" chip.
+    _sessions['s-closed-2'] = _FakeSession(
+      id: 's-closed-2',
+      projectId: p2,
+      projectName: 'cmux',
+      projectPath: '/Users/le/Work/Vibe/cmux',
+      agent: 'claude',
+      title: 'investigate tab flicker',
+      preview: 'Traced it to the snapshot boundary.',
+      status: 'exited',
+      branch: 'investigate-tab-flicker',
+    )..closed = true;
   }
 
   void _pushInitialState() {
@@ -101,7 +129,7 @@ class FakeServer {
 
   void _pushProjects() {
     final projects = <String, Map<String, dynamic>>{};
-    for (final s in _sessions.values) {
+    for (final s in _sessions.values.where((s) => !s.closed)) {
       projects.putIfAbsent(
         s.projectId,
         () => {
@@ -144,7 +172,7 @@ class FakeServer {
   /// ages.
   void _pushRepos() {
     final byProject = <String, List<_FakeSession>>{};
-    for (final s in _sessions.values) {
+    for (final s in _sessions.values.where((s) => !s.closed)) {
       byProject.putIfAbsent(s.projectId, () => []).add(s);
     }
     for (final entry in _addedProjects.entries) {
@@ -298,36 +326,6 @@ class FakeServer {
     ];
   }
 
-  /// Sessions the demo reports as closed (SPEC-29). Fixed ids so restoring one
-  /// twice in a demo behaves consistently; `orphaned` on the last one exercises
-  /// the "worktree removed" chip.
-  List<Map<String, dynamic>> _closedSessions() => [
-    {
-      'id': 's-closed-1',
-      'projectId': 'proj-makit',
-      'agent': 'pi',
-      'title': 'draft release notes',
-      'status': 'exited',
-      'policy': 'ask-on-risky',
-      'lastActivityAt': _agoMs(const Duration(days: 1)),
-      'lastPreview': 'Wrote CHANGELOG.md for 0.4.0.',
-      'branch': 'draft-release-notes',
-      'closed': true,
-    },
-    {
-      'id': 's-closed-2',
-      'projectId': 'proj-cmux',
-      'agent': 'claude',
-      'title': 'investigate tab flicker',
-      'status': 'exited',
-      'policy': 'ask-on-risky',
-      'lastActivityAt': _agoMs(const Duration(days: 6)),
-      'lastPreview': 'Traced it to the snapshot boundary.',
-      'branch': 'investigate-tab-flicker',
-      'closed': true,
-      'orphaned': true,
-    },
-  ];
 
   void _pushSessions() {
     _emit(
@@ -814,8 +812,10 @@ class FakeServer {
                     'lastPreview': c.preview,
                     if (c.branch != null) 'branch': c.branch,
                     'closed': true,
+                    // The demo's repo list carries no worktree for this one, so
+                    // the "worktree removed" chip has something to render.
+                    if (c.id == 's-closed-2') 'orphaned': true,
                   },
-                ..._closedSessions(),
               ],
             },
           ),

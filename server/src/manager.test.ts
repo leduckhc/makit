@@ -2606,3 +2606,84 @@ test("closeSession drops queued mid-turn messages instead of flushing them into 
     store.close();
   }
 });
+
+/**
+ * A reopen racing an in-flight close must not be lost. Teardown sets
+ * `closed = true` only after awaiting the agent, so a reopen that slips in
+ * between clears a flag the close is about to set again — leaving the session
+ * closed although the user asked for it back. Mirrors the `ensureLiveForInput`
+ * guard; `session.reopen` is reachable straight from the wire.
+ */
+test("a reopen racing an in-flight close still leaves the session open", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-reopen-race-"));
+  try {
+    let releaseClose = () => {};
+    const gate = new Promise<void>((r) => {
+      releaseClose = r;
+    });
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a: any = stubAdapter([]);
+        a.close = async () => {
+          await gate;
+        };
+        return a;
+      },
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "reopen-racer", "pi");
+
+    const closing = mgr.closeSession(s.id); // teardown in flight, not awaited
+    await new Promise((r) => setTimeout(r, 10));
+    const reopening = mgr.reopenSession(s.id);
+
+    releaseClose();
+    await Promise.all([closing, reopening]);
+
+    assert.equal(mgr.getSession(s.id)!.closed, false, "the reopen must win, not be overwritten");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+/**
+ * `reopenSession` is documented as idempotent, but it ran unconditionally: on an
+ * already-open session it shelled out to `git worktree list` and, when the
+ * session's recorded worktree no longer matched a live one, called
+ * `detachToRoot()` — clearing a LIVE session's worktree binding. Reachable from
+ * the wire with any session id.
+ */
+test("reopenSession on an already-open session is a no-op", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-reopen-noop-"));
+  try {
+    execFileSync("git", ["init", "-q"], { cwd });
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "already-open", "pi");
+    // A recorded worktree that is not a live worktree of the project — the exact
+    // shape `isOrphaned` reports true for, so the unguarded path would detach it.
+    s.markStarted({ branch: "gone", worktreePath: join(cwd, ".wt", "gone") });
+    let detached = false;
+    (s as unknown as { detachToRoot: () => void }).detachToRoot = () => {
+      detached = true;
+    };
+
+    assert.equal(s.closed, false, "precondition: the session is open");
+    await mgr.reopenSession(s.id);
+
+    assert.equal(detached, false, "must not touch the worktree binding of a live session");
+    assert.equal(s.closed, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});

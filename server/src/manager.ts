@@ -1262,6 +1262,15 @@ export class SessionManager extends EventEmitter {
   async reopenSession(id: string): Promise<void> {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
+    // Teardown sets `closed = true` only after awaiting the agent, so clearing
+    // the flag now would be overwritten moments later and the session would stay
+    // closed although the user asked for it back. Wait the close out first.
+    const closing = this.closeInFlight.get(id);
+    if (closing) await closing.catch(() => {});
+    // Idempotent, as documented: on an already-open session the work below is not
+    // just wasted (a `git worktree list` shell-out) but harmful — `detachToRoot()`
+    // would clear a LIVE session's worktree binding.
+    if (!session.closed) return;
     // If the worktree was deleted while closed, restoring must detach the
     // session to the repo root (SPEC-29) — otherwise its stale path matches no
     // live worktree and it renders in no view. Uses the same orphaned predicate

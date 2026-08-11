@@ -166,6 +166,13 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
   // Pending SIGTERM→SIGKILL escalation, cleared the moment the child settles.
   const graceMs = opts.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
   let killTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Set once the escalation has fired. Tracked separately from `killTimer`, which
+   * the timer callback clears: without it a later `dispose()` (documented as safe
+   * to call repeatedly) would send a second SIGTERM and schedule a second SIGKILL
+   * at a process already being force-killed.
+   */
+  let sigkilled = false;
   const settle = (info: ChildExitInfo) => {
     if (settled) return;
     settled = true;
@@ -287,6 +294,8 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
       // Already reaped by the OS — nothing to signal, and SIGKILLing a pid that
       // has been recycled would hit an unrelated process.
       if (settled) return;
+      // Force-kill already sent; the child is on its way out either way.
+      if (sigkilled) return;
       // `kill()` returns false when the signal was NOT delivered (the child is
       // already gone). Escalating on that would schedule a SIGKILL against a pid
       // the OS may have recycled by then — a signal to an unrelated process.
@@ -303,6 +312,7 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
       killTimer = setTimeout(() => {
         killTimer = undefined;
         if (settled) return;
+        sigkilled = true;
         process.stderr.write(
           `[${opts.label}] did not exit ${graceMs}ms after SIGTERM — sending SIGKILL\n`,
         );

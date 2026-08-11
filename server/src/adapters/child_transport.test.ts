@@ -367,3 +367,26 @@ test("dispose does not escalate when the SIGTERM was not delivered", async () =>
   await new Promise((r) => setTimeout(r, 25));
   assert.deepEqual(children[0]!.signals, ["SIGTERM"], "but no SIGKILL follows an undelivered signal");
 });
+
+/**
+ * `dispose()` is documented as safe to call repeatedly. Once the escalation has
+ * fired, the timer handle is cleared — so a later call before the child settles
+ * used to send a second SIGTERM and schedule a second SIGKILL at a process that
+ * is already being force-killed.
+ */
+test("dispose after the SIGKILL, before exit, does not signal again", async () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn, killGraceMs: 5 });
+
+  t.dispose();
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(children[0]!.signals, ["SIGTERM", "SIGKILL"], "escalated once");
+
+  t.dispose(); // the child has not emitted `exit` yet
+  await new Promise((r) => setTimeout(r, 25));
+  assert.deepEqual(
+    children[0]!.signals,
+    ["SIGTERM", "SIGKILL"],
+    "no second SIGTERM and exactly one SIGKILL",
+  );
+});
