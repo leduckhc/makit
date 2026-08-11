@@ -139,7 +139,7 @@ void main() {
     );
   });
 
-  testWidgets('Endpoint bind-mode picker drives the unified ServerConfig', (
+  testWidgets('Reachability picker drives the unified ServerConfig', (
     tester,
   ) async {
     expect(
@@ -187,16 +187,32 @@ void main() {
       reason: 'lifecycle never showed a running daemon',
     );
 
-    // Ships defaulting to Auto (the new secure default) with no host field.
-    expect(config.current.bindMode, ServerBindMode.auto);
+    // The real daemon is up (the active-profile row reads "Running").
+    await _pumpUntil(
+      tester,
+      find.text('Running'),
+      reason: 'active-profile row never showed a running daemon',
+    );
+
+    // Ships defaulting to "My devices" (the secure default), no host field.
+    expect(config.current.reachability, Reachability.myDevices);
     expect(
       find.ancestor(of: find.text('Host'), matching: find.byType(TextField)),
       findsNothing,
     );
 
-    // Selecting Custom reveals a host field and persists the mode.
-    await _scrollAndTap(tester, find.text('Custom'));
-    expect(config.current.bindMode, ServerBindMode.custom);
+    // Selecting "Just this Mac" pins loopback in serveArgs.
+    await _scrollAndTap(tester, find.text('Just this Mac'));
+    await tester.pumpAndSettle();
+    expect(config.current.reachability, Reachability.thisMacOnly);
+    expect(
+      config.current.serveArgs(),
+      containsAllInOrder(['--host', '127.0.0.1']),
+    );
+
+    // The custom-host escape hatch lives under Diagnostics → Advanced.
+    await _scrollAndTap(tester, find.text('Diagnostics'));
+    await _scrollAndTap(tester, find.text('Advanced'));
     final host = find.ancestor(
       of: find.text('Host'),
       matching: find.byType(TextField),
@@ -212,9 +228,5 @@ void main() {
       config.current.serveArgs(),
       containsAllInOrder(['--host', '0.0.0.0']),
     );
-
-    // Switching to Loopback persists too (no daemon restart is triggered).
-    await _scrollAndTap(tester, find.text('Loopback'));
-    expect(config.current.bindMode, ServerBindMode.loopback);
   });
 }

@@ -1,0 +1,248 @@
+// Unit tests for [ProfileDeleter] (SPEC-50 P3, D8).
+// Co-located with the code under test (per SPEC-03 desktop layout).
+// ignore_for_file: depend_on_referenced_packages
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
+import 'package:makit/desktop/daemon/profile_deleter.dart';
+import 'package:makit/desktop/daemon/profile_lifecycle.dart';
+import 'package:makit/desktop/daemon/profile_registry.dart';
+import 'package:makit/desktop/daemon/server_profile.dart';
+
+const String _homeDir = '/Users/tester';
+
+/// In-memory [ProfileFileSystem]: `paths` maps an existing path to its byte
+/// size; every delete is recorded so tests can assert what was unlinked.
+class _FakeFs implements ProfileFileSystem {
+  _FakeFs(this.paths);
+  final Map<String, int> paths;
+  final List<String> deleted = [];
+
+  @override
+  bool exists(String path) => paths.containsKey(path);
+
+  @override
+  Future<int> sizeOf(String path) async => paths[path] ?? 0;
+
+  @override
+  Future<void> deleteDirectory(String path) async {
+    deleted.add(path);
+    paths.remove(path);
+  }
+
+  @override
+  Future<void> deleteFile(String path) async {
+    deleted.add(path);
+    paths.remove(path);
+  }
+}
+
+MakitCliResolver _resolver() => MakitCliResolver(
+  candidatePaths: const [],
+  exists: (_) => false,
+  shellLookup: () async => '/usr/local/bin/makit',
+);
+
+/// A lifecycle whose daemon is [running] or not; `stopAndConfirm` returns
+/// `!running` without spawning anything real.
+///
+/// Both the socket check and the liveness probe are driven by [running], because
+/// "still running" now means *still answering* — a socket file left behind by a
+/// SIGKILLed daemon must NOT count as running, or an orphaned profile could never
+/// be deleted (see `stopAndConfirm`).
+ProfileLifecycle _lifecycle({required bool running}) => ProfileLifecycle(
+  resolver: _resolver(),
+  run: (exe, args, {environment}) async => ProcessResult(0, 0, '', ''),
+  socketExists: (_) => running,
+  statusProbe: (_) async => running,
+  sleep: (_) async {},
+);
+
+ServerProfile _profile({
+  String id = 'work',
+  String home = '$_homeDir/.makit/profiles/work',
+  ProfileStorage storage = ProfileStorage.namespaced,
+}) => ServerProfile(
+  id: id,
+  name: 'Work',
+  kind: ProfileKind.user,
+  home: home,
+  port: 7801,
+  storage: storage,
+);
+
+String _securePath(String namespace) =>
+    '$_homeDir/Library/Application Support/dev.getmakit.app/'
+    'secure_store.$namespace.json';
+
+late Directory _tempRoot;
+
+ProfileRegistry _registry(List<ServerProfile> profiles) =>
+    ProfileRegistry(makitRoot: _tempRoot.path, profiles: profiles);
+
+ProfileDeleter _deleter({
+  required ProfileRegistry registry,
+  required ProfileLifecycle lifecycle,
+  required _FakeFs fs,
+  String activeProfileId = 'other',
+}) => ProfileDeleter(
+  registry: registry,
+  lifecycle: lifecycle,
+  activeProfileId: activeProfileId,
+  homeDir: _homeDir,
+  fs: fs,
+  isMacOS: true,
+);
+
+void main() {
+  setUp(() {
+    _tempRoot = Directory.systemTemp.createTempSync('profile_deleter_test');
+  });
+  tearDown(() {
+    if (_tempRoot.existsSync()) _tempRoot.deleteSync(recursive: true);
+  });
+
+  group('ProfileDeleter guards', () {
+    test('refuses the protected legacy profile', () async {
+      final profile = _profile(id: 'default', storage: ProfileStorage.legacy);
+      final fs = _FakeFs({profile.home: 100});
+      final result = await _deleter(
+        registry: _registry([profile]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+      ).delete(profile);
+
+      expect(result.outcome, ProfileDeletionOutcome.refusedProtected);
+      expect(fs.deleted, isEmpty);
+    });
+
+    test('refuses the currently active profile', () async {
+      final profile = _profile();
+      final fs = _FakeFs({profile.home: 100});
+      final result = await _deleter(
+        registry: _registry([profile]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+        activeProfileId: 'work',
+      ).delete(profile);
+
+      expect(result.outcome, ProfileDeletionOutcome.refusedActive);
+      expect(fs.deleted, isEmpty);
+    });
+
+    test('refuses a home outside ~/.makit* — the disk-safety guard', () async {
+      final profile = _profile(id: 'corrupt', home: '/');
+      final fs = _FakeFs({'/': 999999});
+      final result = await _deleter(
+        registry: _registry([profile]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+      ).delete(profile);
+
+      expect(result.outcome, ProfileDeletionOutcome.refusedUnsafePath);
+      expect(fs.deleted, isEmpty);
+    });
+
+    test('refuses a home outside ~/.makit* even under the home dir', () async {
+      final profile = _profile(id: 'evil', home: '$_homeDir/Documents');
+      final fs = _FakeFs({'$_homeDir/Documents': 100});
+      final result = await _deleter(
+        registry: _registry([profile]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+      ).delete(profile);
+
+      expect(result.outcome, ProfileDeletionOutcome.refusedUnsafePath);
+      expect(fs.deleted, isEmpty);
+    });
+
+    test(
+      'refuses when the daemon will not stop — never unlinks live',
+      () async {
+        final profile = _profile();
+        final fs = _FakeFs({profile.home: 100});
+        final result = await _deleter(
+          registry: _registry([profile]),
+          lifecycle: _lifecycle(running: true),
+          fs: fs,
+        ).delete(profile);
+
+        expect(result.outcome, ProfileDeletionOutcome.refusedDaemonRunning);
+        expect(fs.deleted, isEmpty);
+      },
+    );
+  });
+
+  group('ProfileDeleter.delete happy path', () {
+    test(
+      'erases home + secure store + registry entry, reports bytes',
+      () async {
+        final profile = _profile();
+        final securePath = _securePath('work');
+        final fs = _FakeFs({profile.home: 4096, securePath: 32});
+        final registry = _registry([profile]);
+        final deleter = _deleter(
+          registry: registry,
+          lifecycle: _lifecycle(running: false),
+          fs: fs,
+        );
+
+        final result = await deleter.delete(profile);
+
+        expect(result.outcome, ProfileDeletionOutcome.deleted);
+        expect(result.bytesFreed, 4096 + 32);
+        expect(fs.deleted, containsAll([profile.home, securePath]));
+        expect(registry.byId('work'), isNull);
+        expect(result.removed, contains('registry entry work'));
+      },
+    );
+
+    test(
+      'reports NSUserDefaults keys as skipped — the honest prefs limit',
+      () async {
+        final profile = _profile();
+        final fs = _FakeFs({profile.home: 10});
+        final result = await _deleter(
+          registry: _registry([profile]),
+          lifecycle: _lifecycle(running: false),
+          fs: fs,
+        ).delete(profile);
+
+        expect(
+          result.skipped.any((s) => s.contains('NSUserDefaults')),
+          isTrue,
+          reason: 'prefs must be reported as skipped, never silently dropped',
+        );
+      },
+    );
+
+    test('persists the registry removal to disk', () async {
+      final profile = _profile();
+      final fs = _FakeFs({profile.home: 10});
+      final registry = _registry([profile]);
+      await _deleter(
+        registry: registry,
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+      ).delete(profile);
+
+      final reloaded = ProfileRegistry.load(makitRoot: _tempRoot.path);
+      expect(reloaded.byId('work'), isNull);
+    });
+  });
+
+  group('ProfileDeleter.diskUsage', () {
+    test('returns the recursive byte sum of the profile home', () async {
+      final profile = _profile();
+      final fs = _FakeFs({profile.home: 123456});
+      final usage = await _deleter(
+        registry: _registry([profile]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+      ).diskUsage(profile);
+
+      expect(usage, 123456);
+    });
+  });
+}

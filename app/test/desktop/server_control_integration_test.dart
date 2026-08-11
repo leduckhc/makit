@@ -75,7 +75,7 @@ void main() {
 
   test('LAN mode forwards --lan', () async {
     final config = await makeConfig();
-    await config.setBindMode(ServerBindMode.lan);
+    await config.setAllowLanFallback(true);
     final controller = build(config);
     addTearDown(controller.dispose);
 
@@ -86,7 +86,7 @@ void main() {
 
   test('loopback mode pins --host 127.0.0.1', () async {
     final config = await makeConfig();
-    await config.setBindMode(ServerBindMode.loopback);
+    await config.setReachability(Reachability.thisMacOnly);
     final controller = build(config);
     addTearDown(controller.dispose);
 
@@ -104,7 +104,6 @@ void main() {
 
   test('custom mode forwards the explicit host and port on restart', () async {
     final config = await makeConfig();
-    await config.setBindMode(ServerBindMode.custom);
     await config.setCustomHost('0.0.0.0');
     await config.setPort(7788);
     final controller = build(config);
@@ -146,7 +145,7 @@ void main() {
       // Change the bind mode after the controller was built; the serveArgs
       // closure reads live config, so the next start reflects it.
       calls.clear();
-      await config.setBindMode(ServerBindMode.lan);
+      await config.setAllowLanFallback(true);
       await controller.start();
       expect(calls.single, [_cliPath, 'start', '--lan', '--port', '7777']);
     },

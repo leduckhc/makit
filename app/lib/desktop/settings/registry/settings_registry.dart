@@ -15,6 +15,7 @@ import '../sections/agents_chat_section.dart';
 import '../sections/appearance_section.dart';
 import '../sections/general_section.dart';
 import '../sections/notifications_section.dart';
+import '../sections/profiles_section.dart';
 import '../sections/server_devices_section.dart';
 import '../sections/shortcuts_section.dart';
 import 'settings_item.dart';
@@ -196,6 +197,53 @@ final List<SettingsSection> kSettingsSections = [
         title: 'Unpair this device',
         help: 'Remove this device\'s pairing (danger).',
         keywords: ['unpair', 'remove', 'danger'],
+      ),
+    ],
+  ),
+  SettingsSection(
+    id: 'profiles',
+    title: 'Profiles',
+    icon: PhosphorIconsLight.cube,
+    builder: (_) => const ProfilesSection(),
+    items: const [
+      SettingsItem(
+        id: 'profiles.list',
+        title: 'Profiles',
+        help:
+            'Every server profile: name, home, size, running state, and '
+            'per-profile Start/Stop/Rename/Delete.',
+        keywords: [
+          'profile',
+          'profiles',
+          'work',
+          'personal',
+          'dev build',
+          'server instance',
+          'start',
+          'stop',
+          'rename',
+        ],
+      ),
+      SettingsItem(
+        id: 'profiles.new',
+        title: 'New profile',
+        help: 'Create a new named server profile with its own home and port.',
+        keywords: ['new profile', 'create profile', 'add profile'],
+      ),
+      SettingsItem(
+        id: 'profiles.delete',
+        title: 'Delete profile',
+        help:
+            'Erase a profile across all four of its stores; your worktrees, '
+            'repos and other profiles are never touched.',
+        keywords: ['delete profile', 'remove profile', 'danger', 'erase'],
+      ),
+      SettingsItem(
+        id: 'profiles.reclaim',
+        title: 'Stale profiles',
+        help:
+            'Review and bulk-delete dev profiles whose source folder is gone.',
+        keywords: ['stale', 'orphan', 'orphaned', 'reclaim', 'cleanup'],
       ),
     ],
   ),

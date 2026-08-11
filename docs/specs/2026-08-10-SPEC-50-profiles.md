@@ -140,13 +140,41 @@ carries `host`, `port` and `fp` (`pairing/url.ts`).
 
 ## Phases
 
-| Phase | Content | Deltas (mockup card 12) |
-|---|---|---|
-| **P0** | Surface daemon failures | 1 — **already shipped** |
-| **P1** | `ProfileRegistry`, profile model split (D2/D3), port allocation + retry (D4) | 2–5 |
-| **P2** | `ProfileScopedPrefs` (D11), `ProfileRuntime`, in-place switch (D10), badge switcher | 8–11 |
-| **P3** | Server section rewrite (D5/D6), Profiles section + detail + delete + reclaim (D7/D8/D9) | 6, 7, 12–16 |
-| **P4** | Pair-URL params (D12), `Install CLI` → General | 18, 20 |
+| Phase | Content | Deltas (mockup card 12) | Status |
+|---|---|---|---|
+| **P0** | Surface daemon failures | 1 | **Implemented** |
+| **P1** | `ProfileRegistry`, profile model split (D2/D3), port allocation + retry (D4) | 2–5 | **Implemented** |
+| **P2** | `ProfileScopedPrefs` (D11), per-profile lifecycle + deleter (D7/D8) | 8 | **Implemented** |
+| **P3** | Server section rewrite (D5/D6), Profiles section + detail + delete + reclaim (D7/D8/D9) | 6, 7, 12–16 | **Implemented** |
+| **P4** | Pair-URL params (D12) | 18 | **Implemented** |
+| **P5** | In-place switching (D10) + `ProfileRuntime` | 9–11 | **Deferred — see below** |
+
+## D10 is deferred, and why
+
+Everything D10 *depends* on now exists: `ProfileScopedPrefs` is written and tested,
+the registry can resolve and persist any profile, and `ProfileLifecycle` can start
+a target and confirm it is answering. What is missing is the last mechanical step
+— moving the three **server-bound** preference controllers off the global
+`SharedPreferences.setPrefix` and onto a scoped view, so a rebuilt
+`ProviderScope` reads the *target* profile's keys instead of the old one's.
+
+That refactor is not hard, but it is not small either, and its size is uneven.
+Files referencing each controller (`grep -rl <name> lib test`, measured
+2026-08-10):
+
+| Controller | lib | test | total files | references | Consequence if left unscoped after a switch |
+|---|---|---|---|---|---|
+| `ServerConfigController` | 3 | 4 | 7 | 20 | reads the previous profile's port and reachability — **wrong server** |
+| `GroupsController` | 5 | 13 | 18 | 46 | shows the previous profile's groups |
+| `WorkspaceController` | 6 | 14 | **20** | **154** | shows panes for sessions that do not exist in the target |
+
+A partial adoption would switch the *server* correctly while the window still
+showed another profile's groups and panes. That is a subtler failure than not
+switching at all, so the honest move is to land the mechanism in one piece rather
+than ship a half-switch. Until then the badge **names** the active profile (which
+it previously hid) but does not offer to change it, and the active profile cannot
+be deleted — `ProfileDeleter` refuses it by design (D8), and the "switch away and
+delete" path it mentions arrives with D10.
 
 ## What this spec does not do
 
@@ -158,7 +186,8 @@ carries `host`, `port` and `fp` (`pairing/url.ts`).
   renders the *current* bind host read-only until then.
 - **Mobile profile management.** The phone gains labels/colours from D12 only; it does not create,
   stop or delete profiles.
-- **Auto-reaping orphans** (D9), **changing `chooseBindHost`** (D5), **relaunch-based switching** (D10).
+- **Auto-reaping orphans** (D9), **changing `chooseBindHost`** (D5).
+- **In-place profile switching** (D10) — deferred with a stated reason above, not abandoned.
 - **Migrating the 27 existing orphans automatically.** They are listed and offered; the user decides.
 
 ## Verification
