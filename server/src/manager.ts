@@ -673,8 +673,12 @@ export class SessionManager extends EventEmitter {
     // Rule 2: every worktree that LANDS IN this branch must follow the rename.
     // Targets are stored by name, so without this the rename leaves each of them
     // aiming at a name that no longer resolves -- their diff becomes unmeasurable
-    // and they look broken, for a rename that was none of their business.
-    renameTargetBranch(worktreeTargetsFile(), oldName, newName);
+    // and they look broken, for a rename that was none of their business. Scoped
+    // to THIS repo's worktree paths: the store is global and branch names are not
+    // unique across repos, so an unscoped rewrite would drag along a same-named
+    // target in an unrelated repo.
+    const scope = new Set(trees.map((t) => resolve(t.path)));
+    renameTargetBranch(worktreeTargetsFile(), oldName, newName, scope);
   }
 
   /**
@@ -960,14 +964,24 @@ export class SessionManager extends EventEmitter {
   ): Promise<void> {
     const file = worktreeTargetsFile();
     const all = loadTargets(file);
-    const affected = Object.entries(all).filter(([, e]) => e.target === goneBranch);
-    if (affected.length === 0) return;
+    // Cheap pre-check on the GLOBAL store: skip the git work when nothing anywhere
+    // lands in the gone branch.
+    if (!Object.values(all).some((e) => e.target === goneBranch)) return;
     const [locals, remotes, trees, defaultBranch] = await Promise.all([
       listLocalBranches(repoPath),
       listRemoteBranchNames(repoPath),
       listWorktrees(repoPath),
       detectDefaultBranch(repoPath),
     ]);
+    // `all` spans every project the server knows; only THIS repo's worktrees may
+    // be handed down. Branch names are not unique across repos, so without this a
+    // wrap-up of `develop` here would silently retarget a `develop`-bound worktree
+    // in an unrelated repo. `trees` is exactly this repo's worktree set.
+    const here = new Set(trees.map((t) => resolve(t.path)));
+    const affected = Object.entries(all).filter(
+      ([path, e]) => e.target === goneBranch && here.has(path),
+    );
+    if (affected.length === 0) return;
     // Liveness is local refs ∪ `origin`: when a wrap-up's fetch did not land
     // (offline, transient failure), `landedIn` exists only as a remote ref, and a
     // local-only check would treat it as gone and hand every child down to the

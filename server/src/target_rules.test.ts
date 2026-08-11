@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { SessionManager } from "./manager.js";
-import { loadTargets, worktreeTargetsFile } from "./worktree-target-store.js";
+import { loadTargets, worktreeTargetsFile, putTarget } from "./worktree-target-store.js";
 
 interface Fixture {
   repo: string;
@@ -468,6 +468,64 @@ test("B7: adopting a base that already matches announces nothing", async () => {
     assert.equal(stored?.retargetedFrom, undefined, "agreement is not news");
   } finally {
     branchCache = {};
+    f.cleanup();
+  }
+});
+
+// Cross-repo isolation: the target store is GLOBAL across every project, and
+// branch names are not unique across repos. A wrap-up or rename in one repo must
+// never rewrite a same-named target belonging to another repo.
+
+test("rule 3: a wrap-up does not hand down a same-named target in another repo", async () => {
+  const f = await fixture();
+  try {
+    const parent = await branchWorktree(f, "parent", "main");
+    const repos1 = await f.manager.listRepos({ includePrs: false });
+    const parentBranch = repos1[0]!.worktrees.find((w) => w.path === parent)!.branch!;
+    const child = await branchWorktree(f, "child", parentBranch);
+
+    // A worktree in a DIFFERENT repo that happens to land in a branch with the
+    // same name as the one we are about to wrap up.
+    const foreign = "/some/other/repo/wt-foreign";
+    putTarget(worktreeTargetsFile(), foreign, parentBranch);
+
+    await f.manager.wrapUpWorktree(f.projectId, parent, "main");
+
+    const all = loadTargets(worktreeTargetsFile());
+    assert.equal(all[child]?.target, "main", "our own child follows the wrap-up");
+    assert.equal(
+      all[foreign]?.target,
+      parentBranch,
+      "the foreign repo's worktree must be left exactly as it was",
+    );
+    assert.equal(all[foreign]?.retargetedFrom, undefined, "and not marked as moved");
+  } finally {
+    f.cleanup();
+  }
+});
+
+test("rule 2: a rename does not rewrite a same-named target in another repo", async () => {
+  const f = await fixture();
+  try {
+    const parent = await branchWorktree(f, "parent", "main");
+    const repos1 = await f.manager.listRepos({ includePrs: false });
+    const parentBranch = repos1[0]!.worktrees.find((w) => w.path === parent)!.branch!;
+    const child = await branchWorktree(f, "child", parentBranch);
+
+    // Another repo's worktree targeting a branch with the same name.
+    const foreign = "/some/other/repo/wt-foreign";
+    putTarget(worktreeTargetsFile(), foreign, parentBranch);
+
+    await f.manager.renameWorktreeBranch(f.projectId, parent, "parent-renamed");
+
+    const all = loadTargets(worktreeTargetsFile());
+    assert.equal(all[child]?.target, "parent-renamed", "our own child follows the rename");
+    assert.equal(
+      all[foreign]?.target,
+      parentBranch,
+      "the foreign repo's target with the same branch name is untouched",
+    );
+  } finally {
     f.cleanup();
   }
 });

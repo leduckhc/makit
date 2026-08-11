@@ -165,13 +165,24 @@ export function putTarget(
  *
  * Writes only when something changed, so a rename of an untargeted branch does
  * not churn the file.
+ *
+ * [scope], when given, restricts the rewrite to those worktree paths. The store
+ * is GLOBAL across every project, and branch names are not unique across repos,
+ * so a caller renaming a branch in one repo must pass its own worktree paths or
+ * it would silently rewrite a same-named target in an unrelated repo.
  */
-export function renameTargetBranch(file: string, oldName: string, newName: string): number {
+export function renameTargetBranch(
+  file: string,
+  oldName: string,
+  newName: string,
+  scope?: ReadonlySet<string>,
+): number {
   if (!oldName || !newName || oldName === newName) return 0;
   const all = loadTargets(file);
   let moved = 0;
   for (const [path, entry] of Object.entries(all)) {
     if (entry.target !== oldName) continue;
+    if (scope && !scope.has(path)) continue;
     all[path] = { ...entry, target: newName };
     moved++;
   }
