@@ -7,7 +7,7 @@
  * agent process; the CLI just names which one.
  */
 import { withClient } from "./connect.js";
-import { EXIT_USAGE } from "./exit-codes.js";
+import { parseFlags, str, int , failUsage } from "./flags.js";
 
 export interface ResumeArgs {
   host: string;
@@ -16,19 +16,11 @@ export interface ResumeArgs {
 }
 
 export function parseResumeArgs(argv: string[]): ResumeArgs {
-  const a: ResumeArgs = { host: "127.0.0.1", port: 7777 };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (!t.startsWith("-") && a.sessionId === undefined) a.sessionId = t;
-  }
-  return a;
-}
-
-function failUsage(message: string): never {
-  console.error(`[makit] ${message}`);
-  return process.exit(EXIT_USAGE);
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+  });
+  return { host: str(p, "host")!, port: int(p, "port")!, sessionId: p.positionals[0] };
 }
 
 export async function runResume(argv: string[]): Promise<void> {

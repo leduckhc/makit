@@ -15,7 +15,7 @@
  * opt-out for "run in the tree I'm standing in".
  */
 import { withClient } from "./connect.js";
-import { EXIT_USAGE } from "./exit-codes.js";
+import { parseFlags, str, int, bool, list, type Spec, type Parsed , failUsage } from "./flags.js";
 import type { MakitClient } from "./client.js";
 import type { ProjectDTO } from "../protocol.js";
 
@@ -37,31 +37,41 @@ export interface NewArgs {
   configOptions: ConfigPick[];
 }
 
+export const NEW_FLAGS: Spec = {
+  host: { type: "string", def: "127.0.0.1" },
+  port: { type: "int", def: 7777 },
+  message: { type: "string", alias: "-m" },
+  agent: { type: "string" },
+  project: { type: "string" },
+  branch: { type: "string" },
+  base: { type: "string" },
+  here: { type: "bool" },
+  json: { type: "bool" },
+  config: { type: "list" },
+};
+
 export function parseNewArgs(argv: string[]): NewArgs {
-  const a: NewArgs = { host: "127.0.0.1", port: 7777, here: false, json: false, configOptions: [] };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "-m" || t === "--message") a.message = String(argv[++i]);
-    else if (t === "--agent") a.agent = String(argv[++i]);
-    else if (t === "--project") a.projectId = String(argv[++i]);
-    else if (t === "--branch") a.branch = String(argv[++i]);
-    else if (t === "--base") a.base = String(argv[++i]);
-    else if (t === "--here") a.here = true;
-    else if (t === "--json") a.json = true;
-    else if (t === "--config") {
-      const raw = String(argv[++i] ?? "");
-      const eq = raw.indexOf("=");
-      if (eq > 0) a.configOptions.push({ id: raw.slice(0, eq), value: raw.slice(eq + 1) });
-    }
-  }
-  return a;
+  return newArgsFrom(parseFlags(argv, NEW_FLAGS));
 }
 
-function failUsage(message: string): never {
-  console.error(`[makit] ${message}`);
-  return process.exit(EXIT_USAGE);
+/** Shared with `run`, which parses one argv against this spec and `wait`'s. */
+export function newArgsFrom(p: Parsed): NewArgs {
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    message: str(p, "message"),
+    agent: str(p, "agent"),
+    projectId: str(p, "project"),
+    branch: str(p, "branch"),
+    base: str(p, "base"),
+    here: bool(p, "here"),
+    json: bool(p, "json"),
+    // `--config id=value`; a pick with no `=` is dropped, as before.
+    configOptions: list(p, "config").flatMap((raw) => {
+      const eq = raw.indexOf("=");
+      return eq > 0 ? [{ id: raw.slice(0, eq), value: raw.slice(eq + 1) }] : [];
+    }),
+  };
 }
 
 /**

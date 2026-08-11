@@ -16,6 +16,7 @@
 import { withClient } from "./connect.js";
 import { renderSessionLine } from "./render.js";
 import type { SessionDTO } from "../protocol.js";
+import { parseFlags, str, int, bool } from "./flags.js";
 
 export interface LsArgs {
   host: string;
@@ -26,16 +27,20 @@ export interface LsArgs {
 }
 
 export function parseLsArgs(argv: string[]): LsArgs {
-  const a: LsArgs = { host: "127.0.0.1", port: 7777, json: false, closed: false };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "--json") a.json = true;
-    else if (t === "--closed") a.closed = true;
-    else if (t === "--project") a.projectId = String(argv[++i]);
-  }
-  return a;
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+    json: { type: "bool" },
+    closed: { type: "bool" },
+    project: { type: "string" },
+  });
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    json: bool(p, "json"),
+    closed: bool(p, "closed"),
+    projectId: str(p, "project"),
+  };
 }
 
 export async function runLs(argv: string[]): Promise<void> {

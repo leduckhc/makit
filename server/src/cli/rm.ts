@@ -7,7 +7,7 @@
  * verb would be the wrong way round, so close is the default and kill opts in.
  */
 import { withClient } from "./connect.js";
-import { EXIT_USAGE } from "./exit-codes.js";
+import { parseFlags, str, int, bool , failUsage } from "./flags.js";
 
 export interface RmArgs {
   host: string;
@@ -17,20 +17,17 @@ export interface RmArgs {
 }
 
 export function parseRmArgs(argv: string[]): RmArgs {
-  const a: RmArgs = { host: "127.0.0.1", port: 7777, kill: false };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "--kill") a.kill = true;
-    else if (!t.startsWith("-") && a.sessionId === undefined) a.sessionId = t;
-  }
-  return a;
-}
-
-function failUsage(message: string): never {
-  console.error(`[makit] ${message}`);
-  return process.exit(EXIT_USAGE);
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+    kill: { type: "bool" },
+  });
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    sessionId: p.positionals[0],
+    kill: bool(p, "kill"),
+  };
 }
 
 export async function runRm(argv: string[]): Promise<void> {

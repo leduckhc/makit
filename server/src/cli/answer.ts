@@ -8,6 +8,7 @@
  */
 import { respondToPrompt } from "./respond.js";
 import { EXIT_USAGE } from "./exit-codes.js";
+import { parseFlags, str, int } from "./flags.js";
 
 export interface AnswerArgs {
   host: string;
@@ -17,18 +18,17 @@ export interface AnswerArgs {
 }
 
 export function parseAnswerArgs(argv: string[]): AnswerArgs {
-  const a: AnswerArgs = { host: "127.0.0.1", port: 7777 };
-  const positionals: string[] = [];
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (!t.startsWith("-")) positionals.push(t);
-  }
-  a.sessionId = positionals[0];
-  // Join the rest so an unquoted multi-word answer still arrives intact.
-  if (positionals.length > 1) a.text = positionals.slice(1).join(" ");
-  return a;
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+  });
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    sessionId: p.positionals[0],
+    // Joined so an unquoted multi-word answer still arrives intact.
+    text: p.positionals.length > 1 ? p.positionals.slice(1).join(" ") : undefined,
+  };
 }
 
 export async function runAnswer(argv: string[]): Promise<void> {

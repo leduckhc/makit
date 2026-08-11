@@ -12,8 +12,8 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { withClient } from "./connect.js";
-import { EXIT_USAGE } from "./exit-codes.js";
 import { ATTACHABLE, mimeForPath, uploadMedia } from "./media_upload.js";
+import { parseFlags, str, int, list , failUsage } from "./flags.js";
 
 export interface SendArgs {
   host: string;
@@ -24,21 +24,19 @@ export interface SendArgs {
 }
 
 export function parseSendArgs(argv: string[]): SendArgs {
-  const a: SendArgs = { host: "127.0.0.1", port: 7777, attach: [] };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "-m" || t === "--message") a.message = String(argv[++i]);
-    else if (t === "--attach") a.attach.push(String(argv[++i]));
-    else if (!t.startsWith("-") && a.sessionId === undefined) a.sessionId = t;
-  }
-  return a;
-}
-
-function failUsage(message: string): never {
-  console.error(`[makit] ${message}`);
-  return process.exit(EXIT_USAGE);
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+    message: { type: "string", alias: "-m" },
+    attach: { type: "list" },
+  });
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    sessionId: p.positionals[0],
+    message: str(p, "message"),
+    attach: list(p, "attach"),
+  };
 }
 
 export async function runSend(argv: string[]): Promise<void> {

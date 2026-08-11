@@ -13,8 +13,8 @@
 import { renderEvent, type RenderState } from "./render.js";
 import { stdout } from "./out.js";
 import { connectCli } from "./connect.js";
-import { EXIT_USAGE } from "./exit-codes.js";
 import type { SessionEvent } from "../protocol.js";
+import { parseFlags, str, int, bool , failUsage } from "./flags.js";
 
 const SUB_ID = "sub";
 
@@ -28,22 +28,21 @@ export interface TailArgs {
 }
 
 export function parseTailArgs(argv: string[]): TailArgs {
-  const a: TailArgs = { host: "127.0.0.1", port: 7777, follow: false, json: false };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "-f" || t === "--follow") a.follow = true;
-    else if (t === "--since") a.since = Number(argv[++i]);
-    else if (t === "--json") a.json = true;
-    else if (!t.startsWith("-") && a.sessionId === undefined) a.sessionId = t;
-  }
-  return a;
-}
-
-function failUsage(message: string): never {
-  console.error(`[makit] ${message}`);
-  return process.exit(EXIT_USAGE);
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+    follow: { type: "bool", alias: "-f" },
+    since: { type: "int" },
+    json: { type: "bool" },
+  });
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    sessionId: p.positionals[0],
+    follow: bool(p, "follow"),
+    since: int(p, "since"),
+    json: bool(p, "json"),
+  };
 }
 
 export async function runTail(argv: string[]): Promise<void> {

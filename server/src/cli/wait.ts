@@ -23,9 +23,9 @@
  * and pretending otherwise would hang a script on a question it cannot see.
  */
 import { withClient } from "./connect.js";
-import { EXIT_USAGE } from "./exit-codes.js";
 import type { MakitClient } from "./client.js";
 import type { SessionEvent } from "../protocol.js";
+import { parseFlags, str, int, type Spec, type Parsed , failUsage } from "./flags.js";
 
 /** Blocked on a tool permission (D8). */
 export const EXIT_APPROVAL = 10;
@@ -55,30 +55,26 @@ export interface WaitArgs {
   timeoutMs?: number;
 }
 
-export function parseWaitArgs(argv: string[]): WaitArgs {
-  const a: WaitArgs = { host: "127.0.0.1", port: 7777, forWhat: "any" };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "--for") {
-      const v = String(argv[++i]);
-      if (v === "idle" || v === "approval" || v === "input" || v === "any") a.forWhat = v;
-      // Never widen a misspelling to the default: `--for aproval` would then
-      // exit 0 on a completed turn, sailing past the block it was written to
-      // wait for. D8 makes a usage error exit 2 instead.
-      else failUsage(`unknown --for value: ${v} (expected idle|approval|input|any)`);
-    } else if (t === "--timeout") {
-      const s = Number(argv[++i]);
-      if (Number.isFinite(s) && s > 0) a.timeoutMs = s * 1000;
-    } else if (!t.startsWith("-") && a.sessionId === undefined) a.sessionId = t;
-  }
-  return a;
+/** The two knobs `run` and `ask` share with `wait`; `--for` is validated by the parser. */
+export const WAIT_FLAGS: Spec = {
+  host: { type: "string", def: "127.0.0.1" },
+  port: { type: "int", def: 7777 },
+  for: { type: "enum", values: ["idle", "approval", "input", "any"], def: "any" },
+  timeout: { type: "int" },
+};
+
+/** Seconds on the command line, milliseconds internally. A non-positive value is ignored. */
+export function waitKnobsFrom(p: Parsed): { forWhat: WaitFor; timeoutMs?: number } {
+  const secs = int(p, "timeout");
+  return {
+    forWhat: (str(p, "for") ?? "any") as WaitFor,
+    timeoutMs: secs !== undefined && secs > 0 ? secs * 1000 : undefined,
+  };
 }
 
-function failUsage(message: string): never {
-  console.error(`[makit] ${message}`);
-  return process.exit(EXIT_USAGE);
+export function parseWaitArgs(argv: string[]): WaitArgs {
+  const p = parseFlags(argv, WAIT_FLAGS);
+  return { ...waitKnobsFrom(p), host: str(p, "host")!, port: int(p, "port")!, sessionId: p.positionals[0] };
 }
 
 /**

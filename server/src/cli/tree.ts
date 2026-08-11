@@ -14,6 +14,7 @@
 import { withClient } from "./connect.js";
 import { stdout } from "./out.js";
 import type { SessionDTO } from "../protocol.js";
+import { parseFlags, str, int, bool } from "./flags.js";
 
 export interface TreeArgs {
   host: string;
@@ -23,15 +24,18 @@ export interface TreeArgs {
 }
 
 export function parseTreeArgs(argv: string[]): TreeArgs {
-  const a: TreeArgs = { host: "127.0.0.1", port: 7777, json: false };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "--json") a.json = true;
-    else if (t === "--project") a.projectId = String(argv[++i]);
-  }
-  return a;
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+    json: { type: "bool" },
+    project: { type: "string" },
+  });
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    json: bool(p, "json"),
+    projectId: str(p, "project"),
+  };
 }
 
 /** One line: the session, plus why it exists when that is not "a human asked". */

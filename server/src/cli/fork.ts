@@ -18,8 +18,8 @@
  * first message to write): `makit fork <id>`.
  */
 import { withClient } from "./connect.js";
-import { EXIT_USAGE } from "./exit-codes.js";
 import type { SessionDTO } from "../protocol.js";
+import { parseFlags, str, int, bool, failUsage } from "./flags.js";
 
 export interface ForkArgs {
   host: string;
@@ -33,25 +33,27 @@ export interface ForkArgs {
 }
 
 export function parseForkArgs(argv: string[]): ForkArgs {
-  const a: ForkArgs = { host: "127.0.0.1", port: 7777, freshWorktree: false, json: false };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "--agent") a.agent = String(argv[++i]);
-    else if (t === "--worktree") a.freshWorktree = true;
-    else if (t === "--branch") a.branch = String(argv[++i]);
-    else if (t === "--base") a.base = String(argv[++i]);
-    else if (t === "--json") a.json = true;
-    else if (!t.startsWith("-") && a.sessionId === undefined) a.sessionId = t;
-  }
-  return a;
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+    agent: { type: "string" },
+    worktree: { type: "bool" },
+    branch: { type: "string" },
+    base: { type: "string" },
+    json: { type: "bool" },
+  });
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    sessionId: p.positionals[0],
+    agent: str(p, "agent"),
+    freshWorktree: bool(p, "worktree"),
+    branch: str(p, "branch"),
+    base: str(p, "base"),
+    json: bool(p, "json"),
+  };
 }
 
-function failUsage(message: string): never {
-  console.error(`[makit] ${message}`);
-  process.exit(EXIT_USAGE);
-}
 
 export async function runFork(argv: string[]): Promise<void> {
   const args = parseForkArgs(argv);

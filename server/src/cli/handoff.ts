@@ -27,7 +27,7 @@
  */
 import { readFileSync } from "node:fs";
 import { withClient } from "./connect.js";
-import { EXIT_USAGE } from "./exit-codes.js";
+import { parseFlags, str, int, bool, list , failUsage } from "./flags.js";
 import { parseManifest, renderManifest, renderTranscriptExcerpt, type HandoffManifest } from "./handoff_manifest.js";
 import type { SessionDTO, SessionEvent } from "../protocol.js";
 
@@ -48,34 +48,38 @@ export interface HandoffArgs {
 }
 
 export function parseHandoffArgs(argv: string[]): HandoffArgs {
-  const a: HandoffArgs = { host: "127.0.0.1", port: 7777, next: [], freshWorktree: false, json: false };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "--to") a.to = String(argv[++i]);
-    else if (t === "--goal") a.goal = String(argv[++i]);
-    else if (t === "--next") a.next.push(String(argv[++i]));
-    else if (t === "--file") a.file = String(argv[++i]);
-    else if (t === "-") a.file = "-";
-    else if (t === "--worktree") a.freshWorktree = true;
-    else if (t === "--branch") a.branch = String(argv[++i]);
-    else if (t === "--base") a.base = String(argv[++i]);
-    else if (t === "--json") a.json = true;
-    else if (t === "--carry") {
-      // `last:5` is the documented spelling; a bare count is accepted because an
-      // agent writing the command from memory will try it.
-      const raw = String(argv[++i] ?? "");
-      const n = Number.parseInt(raw.replace(/^last:/, ""), 10);
-      if (Number.isFinite(n) && n > 0) a.carry = n;
-    }
-  }
-  return a;
-}
-
-function failUsage(message: string): never {
-  console.error(`[makit] ${message}`);
-  return process.exit(EXIT_USAGE);
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+    to: { type: "string" },
+    goal: { type: "string" },
+    next: { type: "list" },
+    file: { type: "string" },
+    worktree: { type: "bool" },
+    branch: { type: "string" },
+    base: { type: "string" },
+    json: { type: "bool" },
+    carry: { type: "string" },
+  });
+  // `last:5` is the documented spelling; a bare count is accepted because an
+  // agent writing the command from memory will try it. The seconds/`last:`
+  // meanings stay here rather than in the parser, which knows no verbs.
+  const rawCarry = str(p, "carry");
+  const carry = rawCarry === undefined ? NaN : Number.parseInt(rawCarry.replace(/^last:/, ""), 10);
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    to: str(p, "to"),
+    goal: str(p, "goal"),
+    next: list(p, "next"),
+    // A bare `-` still means stdin, and is a positional rather than a flag.
+    file: argv.includes("-") ? "-" : str(p, "file"),
+    freshWorktree: bool(p, "worktree"),
+    branch: str(p, "branch"),
+    base: str(p, "base"),
+    json: bool(p, "json"),
+    carry: Number.isFinite(carry) && carry > 0 ? carry : undefined,
+  };
 }
 
 /**

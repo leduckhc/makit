@@ -17,6 +17,7 @@ import { EXIT_USAGE } from "./exit-codes.js";
 import { awaitOutcome, codeForStatus } from "./wait.js";
 import type { MakitClient } from "./client.js";
 import type { SessionEvent } from "../protocol.js";
+import { parseFlags, str, int, bool } from "./flags.js";
 
 export interface AskArgs {
   host: string;
@@ -28,23 +29,24 @@ export interface AskArgs {
 }
 
 export function parseAskArgs(argv: string[]): AskArgs {
-  const a: AskArgs = { host: "127.0.0.1", port: 7777, json: false };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "-m" || t === "--message") a.message = String(argv[++i]);
-    else if (t === "--json") a.json = true;
-    else if (t === "--timeout") {
-      const s = Number(argv[++i]);
-      if (Number.isFinite(s) && s > 0) a.timeoutMs = s * 1000;
-    } else if (!t.startsWith("-")) {
-      // `makit ask <id> "the question"` — the spelling an agent reaches for first.
-      if (a.sessionId === undefined) a.sessionId = t;
-      else if (a.message === undefined) a.message = t;
-    }
-  }
-  return a;
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+    message: { type: "string", alias: "-m" },
+    json: { type: "bool" },
+    timeout: { type: "int" },
+  });
+  const secs = int(p, "timeout");
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    // `makit ask <id> "the question"` — the spelling an agent reaches for first,
+    // with `-m` as the explicit alternative.
+    sessionId: p.positionals[0],
+    message: str(p, "message") ?? p.positionals[1],
+    json: bool(p, "json"),
+    timeoutMs: secs !== undefined && secs > 0 ? secs * 1000 : undefined,
+  };
 }
 
 export async function runAsk(argv: string[]): Promise<void> {

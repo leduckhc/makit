@@ -13,11 +13,12 @@
  */
 import { withClient } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
-import { parseNewArgs, spawnFromArgs, type NewArgs } from "./new.js";
-import { awaitOutcome, type WaitFor } from "./wait.js";
+import { NEW_FLAGS, newArgsFrom, spawnFromArgs, type NewArgs } from "./new.js";
+import { awaitOutcome, WAIT_FLAGS, waitKnobsFrom, type WaitFor } from "./wait.js";
 import { renderEvent, type RenderState } from "./render.js";
 import { stdout } from "./out.js";
 import type { SessionEvent } from "../protocol.js";
+import { parseFlags } from "./flags.js";
 
 export interface RunArgs extends NewArgs {
   forWhat: WaitFor;
@@ -25,19 +26,8 @@ export interface RunArgs extends NewArgs {
 }
 
 export function parseRunArgs(argv: string[]): RunArgs {
-  const base = parseNewArgs(argv);
-  const a: RunArgs = { ...base, forWhat: "any" };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--for") {
-      const v = String(argv[++i]);
-      if (v === "idle" || v === "approval" || v === "input" || v === "any") a.forWhat = v;
-    } else if (t === "--timeout") {
-      const s = Number(argv[++i]);
-      if (Number.isFinite(s) && s > 0) a.timeoutMs = s * 1000;
-    }
-  }
-  return a;
+  const p = parseFlags(argv, { ...NEW_FLAGS, ...WAIT_FLAGS });
+  return { ...newArgsFrom(p), ...waitKnobsFrom(p) };
 }
 
 export async function runRun(argv: string[]): Promise<void> {
