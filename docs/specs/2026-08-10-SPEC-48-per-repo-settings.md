@@ -1,6 +1,6 @@
 # SPEC-48 — Per-repo settings: one Settings section per repository
 
-**Status:** P1 Implemented (rev 3.2) · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
+**Status:** P2 Implemented (rev 3.2) · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
 **Depends on:** SPEC-11 (repo-centric home — `RepoDTO`, `repos.snapshot`, the repo card and its
 `dotsThree` menu), SPEC-19 (`SettingsResetButton` as the one shared "reset to default" widget, and
 `SettingsGroup` as the grouped-list idiom), and the forge-detection work already on this branch
@@ -387,3 +387,121 @@ can establish. The probe was deleted; its temp repos and roots were removed.
 **Limitation it exposed:** the probe reloaded settings from the file rather than restarting the process.
 Reload is what a restart does, but a true restart would also re-run detection, so the `forge` field's
 behaviour across a restart is still unproven.
+
+
+---
+
+# P2 implemented — the settings stop being ornamental
+
+P1 shipped five writes; **three of them changed no behaviour anywhere**, which is
+precisely the failure round 1 named and rev 3 accepted as a risk. P2 closes that,
+plus the one row that was missing entirely.
+
+| Setting | After P1 | After P2 |
+| --- | --- | --- |
+| Worktree root | ✅ three consumers | unchanged |
+| **Git provider** | stored, served, displayed — router ignored it | **routes**: picks the gateway, skips the probe, `None` reaches no forge |
+| **Default branch** | stored, served, displayed — nothing read it | **resolved**: diff base, worktree base, wrap-up sync |
+| **Logo hue** | stored, served, parsed — dropped in mapping | **drawn**, in the section and the sidebar |
+| **Root path** | a notice: "not supported yet" | **re-pointable**, id and settings preserved |
+
+## What the provider override does now (D3″ satisfied)
+
+`forgejo`/`gitea` route to the REST gateway **without probing**, `github` to the
+`gh` gateway (the only way to reach `gh` for a GitHub Enterprise host), and `none`
+to a new gateway that reads no remote and makes no request.
+
+Two decisions worth recording:
+
+**The probe is skipped, not merely ignored.** The cases the override exists for are
+exactly the ones where the probe cannot answer — a private instance that 401s an
+anonymous request, one behind a proxy hiding `/api/forgejo/v1/version`. Spending it
+anyway would delay every poll to learn nothing.
+
+**`none` is not `unsupported`.** Unsupported means *we cannot talk to this forge*
+and answers `unknown`; `None` means *do not talk to any forge here* and answers
+`none`. `unknown` would make the app hold a stale PR pill and keep retrying
+(SPEC-32 §6.5) — the exact chatter `None` exists to stop. Pinned by a test
+asserting the two gateways do not report the same thing.
+
+**The routing cache keys on the choice.** Without that the setting would apply only
+after a daemon restart, which is indistinguishable from a broken feature. An
+unchanged choice still shares one `git remote` read, so the fan-out stays cheap.
+
+## Two bugs found while wiring it
+
+- **`hasRemote` was derived from `forge !== undefined`.** Those two facts have three
+  states between them — *not measured*, *no remote*, *a forge* — and one boolean
+  cannot hold three. Every un-polled repo claimed to have no origin, which made the
+  app's `Auto: not identified yet` branch **unreachable** and sent the reader
+  hunting for a remote that was never missing. rev 3.2 pinned that these must read
+  differently; the server could not produce the distinction. The router now records
+  the remote as its own fact.
+- **The re-point duplicate check compared paths at different canonicality.** On
+  macOS `/tmp/x` and `/private/tmp/x` are one directory, so two projects could
+  occupy one path — where settings and the forge decision, both keyed BY PATH, would
+  answer for each other.
+
+## Two tests that were vacuous until they were fixed
+
+Recorded because both passed while proving nothing, which is worse than failing:
+
+- a worktree-base test whose fixture branched from `main` with no commit of its own,
+  so `merge-base` could not tell which branch was forked;
+- a logo test asserting a chosen hue of `3` differed from the derived one — `Diana`
+  hashes to 3.
+
+## Verification
+
+**Server 1496/1496, typecheck clean. `flutter analyze` clean.** Every group has a
+bite proven by reverting one production line: the cache re-check, the override
+branch, each new default-branch consumer, the loopback gate on `repo.path.set`, the
+canonical duplicate check, and `sectionsFor`.
+
+`app/integration_test/desktop/settings_repo_test.dart` (T6.2, the last undone P1
+task) mounts the real `SettingsWindow` on a **real macOS build** and drives
+`reposProvider → sectionsFor → nav pane → page → rows`. All five tests fail when
+`sectionsFor` ignores the repo list.
+
+### The live proof, over a real daemon
+
+A throwaway probe — real git repos, a real `SessionManager`, the real command
+router, a real `projects.json`, persistence wired exactly as `serve.ts` wires it —
+**21/21**:
+
+```
+detection cannot identify the instance -> unsupported      PASS
+the override RE-ROUTES with no restart          served=forgejo
+and spends no probe -- the probe is what failed            PASS
+repo B still routes on its own host              served=github
+None reaches no provider at all                       served=
+None answers 'none', not 'unknown'                        PASS
+the snapshot's default branch follows the override   got=trunk
+an un-routed repo reports hasRemote true                  PASS
+a paired phone CANNOT re-point                            PASS
+a non-git directory is refused with a reason              PASS
+re-pointing onto another project's path is refused        PASS
+the project KEEPS its id ...and its settings              PASS
+the moved path survives the reload                        PASS
+no token appears in the repos snapshot                    PASS
+```
+
+The first four are the point: the setting **changes which provider serves the
+repo**, which no unit test can establish. The probe was deleted.
+
+## What P2 does not do
+
+- **Lifecycle scripts** remain P3, still gated on D13(a)/(b).
+- **Branch prefix** has no source and is still not rendered (D9).
+- **A repo-card entry point on mobile** — repo sections are reachable from the
+  desktop sidebar; the mobile destination and the `repo:<id>` deep link (F5/T5) are
+  not built. Nothing is unreachable as a result.
+- **Sessions already bound to a worktree keep their recorded paths** across a
+  re-point. For the case D4′ exists for, worktrees live under the worktree root and
+  are unaffected; a session whose worktree was the repo directory itself still
+  points at the old location. Stated in the code, not only here.
+- **Interaction on the real app is still verified by test, not by clicking.**
+  `cua-driver`'s synthesized clicks do not land in this Flutter app
+  (`"effect":"unverifiable"` on three builds), so the macOS integration test is the
+  substitute — it is a real build, driven by the Flutter harness rather than by the
+  window server.
