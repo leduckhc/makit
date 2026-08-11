@@ -16,6 +16,7 @@ function fakeClient(overrides: Partial<WsClient> = {}): WsClient & { sent: Outgo
     authed: true,
     watchingMetrics: false,
     watchingPorts: false,
+    watchingDocs: false,
     isLocal: true,
     ...overrides,
   };

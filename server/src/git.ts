@@ -102,6 +102,58 @@ export async function detectDefaultBranch(repoPath: string): Promise<string | nu
   return detectCurrentBranch(repoPath);
 }
 
+/**
+ * The default branch in force for a repo: the user's override when it still
+ * resolves, otherwise git's own answer.
+ *
+ * The **one** place that rule lives, so the repo snapshot's diff numbers, worktree
+ * creation and wrap-up's base sync cannot disagree about what "default" means —
+ * three consumers reading `detectDefaultBranch` directly is how the override ended
+ * up affecting none of them.
+ *
+ * The override is CHECKED, not trusted. It is stored after a syntax check only
+ * (`validateBranch`), it is chosen from branches that existed at the time, and a
+ * branch can be deleted afterwards. A stale override is a worse base than
+ * detection, not a better one, so it loses rather than winning and then failing
+ * deep inside a `git diff` where the message is unrecognisable.
+ *
+ * "Known" includes `origin/<branch>`, and the RETURNED FORM differs by which ref
+ * exists: a local branch comes back bare (the sync path fast-forwards a local
+ * branch), a remote-only one comes back as `origin/<branch>` (so every `git`
+ * invocation can resolve it). Callers must therefore treat the result as a REV, and
+ * only `syncBaseBranch` cares about the distinction -- which it checks.
+ *
+ * Checking costs one `rev-parse` and REPLACES detection's one-to-three calls when
+ * the override holds, so the common case gets cheaper rather than dearer.
+ */
+export async function resolveDefaultBranch(
+  repoPath: string,
+  override: string | undefined,
+): Promise<string | null> {
+  if (override !== undefined && override.length > 0) {
+    // A local branch is returned BARE, because `syncBaseBranch` fetches and
+    // fast-forwards a local branch and a qualified name would break it.
+    if (await branchExists(repoPath, override)) return override;
+    // Known only on the remote: returned QUALIFIED, because git's revision rules never
+    // resolve a bare name against `refs/remotes/origin/` (`gitrevisions` checks
+    // `refs/<name>`, `refs/tags/<name>`, `refs/heads/<name>`, `refs/remotes/<name>` --
+    // not `refs/remotes/origin/<name>`). Returning the bare name handed `diffStat`,
+    // `commitsAhead` and `git worktree add` a base that resolves nowhere: silent zero
+    // diffs, zero counts, and failed worktree creation.
+    if (await remoteBranchExists(repoPath, override)) return `origin/${override}`;
+  }
+  return detectDefaultBranch(repoPath);
+}
+
+/** Whether `refs/remotes/origin/<branch>` exists. */
+async function remoteBranchExists(repoPath: string, branch: string): Promise<boolean> {
+  const r = await git(
+    ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`],
+    repoPath,
+  );
+  return r.code === 0;
+}
+
 /** The currently checked-out branch, or null when HEAD is detached. */
 export async function detectCurrentBranch(repoPath: string): Promise<string | null> {
   const r = await git(["rev-parse", "--abbrev-ref", "HEAD"], repoPath);
@@ -597,17 +649,38 @@ export function listOpenPrs(
 }
 
 /**
+ * How a PR's head is fetched into a worktree.
+ *
+ * Two strategies rather than one, because neither generalises:
+ *
+ *   `gh`        — `gh pr checkout`. Kept for GitHub because it already handles the
+ *                 fork case and sets up push tracking, and replacing a working path
+ *                 with a hand-rolled equivalent would be a regression risk taken for
+ *                 tidiness.
+ *   `pull-ref`  — plain git against `refs/pull/<n>/head`, which is how Gitea and
+ *                 Forgejo publish PR heads. `gh` cannot be used here at all: it
+ *                 speaks only to GitHub, so on a Forgejo remote the picker listed the
+ *                 PRs and the checkout then failed.
+ */
+export type PrCheckoutStrategy = "gh" | "pull-ref";
+
+/**
  * Create a worktree that checks out an existing PR's head branch. A fresh
- * detached worktree is added first, then `gh pr checkout` fetches the PR head
- * (handling same-repo and fork PRs) and switches the worktree to it. Returns
- * the canonical worktree path + the checked-out branch name. Throws on
- * failure — this is a user-initiated mutation whose error must surface.
+ * detached worktree is added first, then the PR head is fetched into it and a
+ * PR-unique local branch is created. Returns the canonical worktree path + the
+ * checked-out branch name. Throws on failure — this is a user-initiated mutation
+ * whose error must surface.
+ *
+ * [checkout] selects the provider strategy; see {@link PrCheckoutStrategy}. It
+ * defaults to `gh` so GitHub's behaviour is unchanged for any caller that does not
+ * pass one.
  */
 export async function addWorktreeForPr(opts: {
   repoPath: string;
   prNumber: number;
   headRefName: string;
   baseDir?: string;
+  checkout?: PrCheckoutStrategy;
 }): Promise<{ path: string; branch: string }> {
   const base = opts.baseDir ?? worktreeBaseDir();
   const repoName = basename(resolve(opts.repoPath));
@@ -616,36 +689,102 @@ export async function addWorktreeForPr(opts: {
   const slug = slugify(opts.headRefName);
   const name = slug ? `pr-${opts.prNumber}-${slug}` : `pr-${opts.prNumber}`;
   const target = join(base, repoName, name);
-  // Detached checkout of HEAD so the worktree dir exists; gh then moves it to
-  // the PR head. No timeout: populating a worktree can take a while.
+  // Detached checkout of HEAD so the worktree dir exists; the strategy then moves
+  // it to the PR head. No timeout: populating a worktree can take a while.
   const add = await run("git", ["worktree", "add", "--detach", target], opts.repoPath);
   if (add.code !== 0) {
     throw new Error(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim() || `exit ${add.code}`}`);
   }
-  // Always check out onto a PR-unique local branch (`name`). gh's default
-  // reuses the PR head-ref as the branch name, which git rejects when that
-  // branch is already checked out in another worktree of this repo (commonly
-  // the primary checkout sits on it), breaking the flow. A dedicated per-PR
-  // branch avoids the collision entirely; `--branch` still tracks the PR head,
-  // so pushes update the PR.
-  const checkout = await run(
-    "gh",
-    ["pr", "checkout", String(opts.prNumber), "--branch", name],
-    target,
-  );
-  if (checkout.code !== 0) {
+
+  const failed =
+    (opts.checkout ?? "gh") === "pull-ref"
+      ? await checkoutViaPullRef(target, opts.prNumber, opts.headRefName, name)
+      : await checkoutViaGh(target, opts.prNumber, name);
+  if (failed !== null) {
     // Roll back the empty detached worktree so we don't leave litter behind.
     // Best-effort: don't let a rollback failure mask the real checkout error.
     await removeWorktree(opts.repoPath, target, true).catch(() => {});
-    throw new Error(`gh pr checkout ${opts.prNumber} failed: ${checkout.stderr.trim() || `exit ${checkout.code}`}`);
+    throw new Error(failed);
   }
-  // Report the actual checked-out branch (`name`, from --branch above) by
-  // reading HEAD, falling back to headRefName only if the read fails. Callers
-  // use this to highlight the worktree's row.
+
+  // Report the actual checked-out branch (`name`) by reading HEAD, falling back to
+  // `name` only if the read fails. Callers use this to highlight the worktree's row.
   const head = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], target);
   const actual = head.code === 0 ? head.stdout.trim() : "";
   const branch = actual && actual !== "HEAD" ? actual : name;
   return { path: realpathSync(target), branch };
+}
+
+/** GitHub: `gh` does the work. Returns an error message, or null on success. */
+async function checkoutViaGh(
+  target: string,
+  prNumber: number,
+  branchName: string,
+): Promise<string | null> {
+  // Always check out onto a PR-unique local branch. gh's default reuses the PR
+  // head-ref as the branch name, which git rejects when that branch is already
+  // checked out in another worktree of this repo (commonly the primary checkout sits
+  // on it), breaking the flow. A dedicated per-PR branch avoids the collision
+  // entirely; `--branch` still tracks the PR head, so pushes update the PR.
+  const r = await run("gh", ["pr", "checkout", String(prNumber), "--branch", branchName], target);
+  return r.code === 0
+    ? null
+    : `gh pr checkout ${prNumber} failed: ${r.stderr.trim() || `exit ${r.code}`}`;
+}
+
+/**
+ * Forgejo / Gitea: fetch `refs/pull/<n>/head` and branch from it.
+ *
+ * That ref is created by the forge for **every** PR including forks', which is why
+ * it is used instead of the head branch name — a fork's branch does not exist on
+ * `origin` at all.
+ *
+ * Upstream tracking is set only when the head branch really is on `origin` (a
+ * same-repo PR), so a push updates the PR. For a fork it is deliberately left
+ * unset: pointing it anywhere would aim a push at a branch that is not the PR's,
+ * and pushing to a contributor's fork was never possible from here anyway.
+ */
+async function checkoutViaPullRef(
+  target: string,
+  prNumber: number,
+  headRefName: string,
+  branchName: string,
+): Promise<string | null> {
+  const ref = `refs/pull/${prNumber}/head`;
+  const fetched = await run("git", ["fetch", "--quiet", "origin", ref], target);
+  if (fetched.code !== 0) {
+    return `fetching ${ref} failed: ${fetched.stderr.trim() || `exit ${fetched.code}`}. The forge may not publish this pull request, or it may be closed.`;
+  }
+  const checkout = await run("git", ["checkout", "-q", "-b", branchName, "FETCH_HEAD"], target);
+  if (checkout.code !== 0) {
+    return `checking out PR #${prNumber} failed: ${checkout.stderr.trim() || `exit ${checkout.code}`}`;
+  }
+  // Best-effort, and only when the branch genuinely exists on origin. `--` is not
+  // available here, so the ref is checked first rather than trusted.
+  if (headRefName.length > 0) {
+    const onOrigin = await run(
+      "git",
+      ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${headRefName}`],
+      target,
+    );
+    if (onOrigin.code === 0) {
+      const upstream = await run(
+        "git",
+        ["branch", `--set-upstream-to=origin/${headRefName}`, branchName],
+        target,
+      );
+      // Best-effort, but not silent: without an upstream a later `git push` in this
+      // worktree does not update the PR, and "my push did nothing" is unanswerable
+      // if the reason was never recorded. Not fatal -- the worktree is the point,
+      // and it is checked out correctly either way.
+      if (upstream.code !== 0) {
+        log.warn(
+          `[makit] PR #${prNumber}: could not track origin/${headRefName}, so pushing from this worktree will not update the pull request: ${upstream.stderr.trim() || `exit ${upstream.code}`}`,
+        );
+      }
+    }
+  }
+  return null;
 }
 
 /**
@@ -796,6 +935,17 @@ export interface BaseSyncResult {
  * a total failure.
  */
 export async function syncBaseBranch(repoPath: string, branch: string): Promise<BaseSyncResult> {
+  // A remote-tracking base (`origin/trunk`) has no local branch to fast-forward, so
+  // there is nothing to catch up -- and running the local path on it would issue
+  // `git fetch origin origin/trunk` and compare `origin/trunk..origin/origin/trunk`,
+  // both nonsense. `resolveDefaultBranch` returns this form when the default exists
+  // only on the remote.
+  //
+  // BUT: a local branch can be *literally* named `origin/release` (i.e.
+  // `refs/heads/origin/release`). Check if it's actually local before refusing.
+  if (branch.startsWith("origin/") && !(await branchExists(repoPath, branch))) {
+    return { updated: false, reason: `${branch} has no local branch to catch up` };
+  }
   // `run` without a cap, not `git`: this talks to the network inside a
   // user-initiated action, and a large or slow repo can legitimately outlast the
   // 15s read cap (see GIT_READ_TIMEOUT_MS — mutations are deliberately uncapped).

@@ -20,4 +20,26 @@ uses a neutral Phosphor glyph for those rather than a fabricated mark.
 | File(s) | Role | Source | License |
 |---------|------|--------|---------|
 | `repo-push.png`, `repo-pull.png` | Composer PR actions | [VS Code codicons](https://github.com/microsoft/vscode-codicons) | CC BY 4.0 |
-| `git-pull-request-closed-{thin,light,regular,bold,fill}.svg` | Closed-PR state marker | Original, drawn to match [Phosphor](https://phosphoricons.com) metrics (five weights: light is default) | MIT (this repo) |
+| `git-pull-request-closed-{thin,light,regular,bold,fill}.svg` | Closed-PR state marker | Original — [`phosphor_extras`](../../phosphor_extras) | MIT |
+| `forgejo-light.svg` | Forgejo forge marker | Original reduction of Forgejo's mark to [Phosphor](https://phosphoricons.com) metrics — [`phosphor_extras`](../../phosphor_extras) | MIT (drawing); Forgejo's mark belongs to the Forgejo project |
+| `gitea-light.svg` | Gitea forge marker | Original reduction of Gitea's mark to Phosphor metrics — [`phosphor_extras`](../../phosphor_extras) | MIT (drawing); Gitea's mark belongs to the Gitea project |
+
+Glyphs marked *Original* are authored in the **`phosphor_extras`** repo, which is
+the source of truth for their geometry and holds the generator and the invariant
+checks. `scripts/sync-icons.sh` vendors the built SVGs here (rather than adding a
+dependency) so a fresh clone builds without network access to another repo;
+`scripts/sync-icons.sh --check` fails if a vendored copy has drifted.
+
+The Forgejo and Gitea glyphs identify those projects' software in the UI —
+nominative use. The MIT grant covers our drawings, not the underlying marks.
+
+## Agent logos in [`assets/agents/`](assets/agents/)
+
+Used to identify which coding agent backs a session. Each is the property of its
+project and is included for identification only.
+
+| File | Agent | Owner |
+|------|-------|-------|
+| `claude.svg` | Claude Code | Anthropic |
+| `codex.svg` | Codex | OpenAI |
+| `pi.svg` | pi | Earendil Works |

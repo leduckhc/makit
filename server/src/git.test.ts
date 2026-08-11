@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import {
   detectDefaultBranch,
+  resolveDefaultBranch,
   detectCurrentBranch,
   listWorktrees,
   diffStat,
@@ -660,6 +661,68 @@ test("listLocalBranches returns every local branch, sorted", async () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// SPEC-48 — the default-branch override, and why it must be checked rather than
+// trusted.
+//
+// The consumer is concrete: `origin/HEAD` is genuinely absent after a
+// `--single-branch` clone or a default-branch rename, and makit then diffs and
+// bases PRs against the wrong branch. The override is the fix. But it is stored
+// after a SYNTAX check only, and a branch can be deleted after it was chosen, so
+// resolution has to confirm the ref still exists.
+// ---------------------------------------------------------------------------
+
+test("resolveDefaultBranch prefers an override that exists over detection", async () => {
+  const repo = makeRepo();
+  try {
+    execFileSync("git", ["branch", "release"], { cwd: repo });
+    assert.equal(await detectDefaultBranch(repo), "main", "detection would say main");
+    assert.equal(await resolveDefaultBranch(repo, "release"), "release");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("resolveDefaultBranch falls back to detection when the override is gone", async () => {
+  // A branch chosen months ago and since deleted must not silently break the diff
+  // numbers: a stale override is a worse base than git's own answer, not a better
+  // one, so it loses rather than winning and failing.
+  const repo = makeRepo();
+  try {
+    assert.equal(await resolveDefaultBranch(repo, "deleted-long-ago"), "main");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("resolveDefaultBranch with no override is exactly detection", async () => {
+  const repo = makeRepo();
+  try {
+    assert.equal(await resolveDefaultBranch(repo, undefined), await detectDefaultBranch(repo));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("an override rescues a repo whose origin/HEAD points at a branch that is gone", async () => {
+  // The real failure, reproduced: `origin/HEAD` still names `master` after the
+  // default branch was renamed to `trunk`, so every diff is measured against a ref
+  // that no longer resolves.
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    g("branch", "trunk");
+    g("remote", "add", "origin", "https://example.test/x/y.git");
+    // Point origin/HEAD at a remote branch that does not exist locally.
+    g("update-ref", "refs/remotes/origin/master", "HEAD");
+    g("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master");
+    assert.equal(await detectDefaultBranch(repo), "master", "git's answer, and it is wrong");
+    assert.equal(await resolveDefaultBranch(repo, "trunk"), "trunk");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test("listLocalBranches is empty for a non-repo", async () => {
   const plain = mkdtempSync(join(tmpdir(), "makit-plain-"));
   try {
@@ -820,5 +883,116 @@ test("closestAncestorBranch breaks a distance tie by candidate order", async () 
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a default-branch override naming a remote-only branch is honoured", async () => {
+  // Review finding: `branchExists` checks `refs/heads/<b>` only, so an override naming
+  // a branch that exists on the remote but is not checked out locally was treated as
+  // stale and silently dropped. That is the normal state after a `--single-branch`
+  // clone -- the very case the override exists for: `trunk` is visible as
+  // `origin/trunk` and nothing else.
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    g("remote", "add", "origin", "https://example.test/x/y.git");
+    g("update-ref", "refs/remotes/origin/trunk", "HEAD");
+    assert.equal(await branchExists(repo, "trunk"), false, "not a local branch");
+    assert.equal(
+      await resolveDefaultBranch(repo, "trunk"),
+      "origin/trunk",
+      "the remote knows it, so the override stands -- qualified so it resolves",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("an override naming nothing at all is still dropped", async () => {
+  // The guard must not become "accept anything": a branch deleted from both sides is
+  // a worse base than git's own answer.
+  const repo = makeRepo();
+  try {
+    execFileSync("git", ["remote", "add", "origin", "https://example.test/x/y.git"], { cwd: repo });
+    assert.equal(await resolveDefaultBranch(repo, "never-existed"), "main");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("a remote-only override is returned in a form git can actually resolve", async () => {
+  // Review finding, and a bug the previous round introduced: accepting an override that
+  // exists only as `refs/remotes/origin/<b>` and then returning the BARE name yields a
+  // ref git cannot resolve. `gitrevisions` checks `refs/<name>`, `refs/tags/<name>`,
+  // `refs/heads/<name>` and `refs/remotes/<name>` -- never `refs/remotes/origin/<name>`
+  // -- so `diffStat`, `commitsAhead` and `git worktree add` all received a base that
+  // resolves nowhere: silent zero diffs, zero counts, failed worktree creation.
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    g("remote", "add", "origin", "https://example.test/x/y.git");
+    g("update-ref", "refs/remotes/origin/trunk", "HEAD");
+
+    const base = await resolveDefaultBranch(repo, "trunk");
+    assert.equal(base, "origin/trunk", "qualified, so it resolves");
+    // Proven against git rather than asserted by shape.
+    const resolved = execFileSync("git", ["rev-parse", "--verify", "--quiet", base!], {
+      cwd: repo,
+    })
+      .toString()
+      .trim();
+    assert.ok(resolved.length > 0, "git resolves what we returned");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("a LOCAL override is returned bare, so the sync path still works", async () => {
+  // `syncBaseBranch` fetches and fast-forwards a LOCAL branch (`git fetch origin <b>`,
+  // then `<b>..origin/<b>`), so a qualified name would break it. The two consumers want
+  // different things, and which refs exist is exactly what distinguishes them.
+  const repo = makeRepo();
+  try {
+    execFileSync("git", ["branch", "trunk"], { cwd: repo });
+    assert.equal(await resolveDefaultBranch(repo, "trunk"), "trunk");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("syncBaseBranch refuses a remote-tracking base instead of mangling it", async () => {
+  // The other half of the fix. Without this guard the local path runs on
+  // `origin/trunk`: `git fetch origin origin/trunk`, then
+  // `origin/trunk..origin/origin/trunk` -- both nonsense, and the reported reason would
+  // blame the fetch rather than say there is nothing to catch up.
+  const repo = makeRepo();
+  try {
+    const r = await syncBaseBranch(repo, "origin/trunk");
+    assert.equal(r.updated, false);
+    assert.match(r.reason ?? "", /no local branch/i);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("a LOCAL branch named origin/... is still synced, not mistaken for a remote ref", async () => {
+  // Review finding on the previous fix: the guard matched the `origin/` PREFIX, but
+  // `refs/heads/origin/release` is a legal local branch, and `resolveDefaultBranch`
+  // returns such a name bare. The prefix test then refused to fast-forward a perfectly
+  // ordinary local base. The discriminator has to be which ref actually exists, not how
+  // the name is spelled.
+  const repo = makeRepo();
+  try {
+    execFileSync("git", ["branch", "origin/release"], { cwd: repo });
+    const r = await syncBaseBranch(repo, "origin/release");
+    // It reaches the real sync path, so it fails on the ABSENT REMOTE rather than being
+    // waved through as "nothing to catch up".
+    assert.doesNotMatch(
+      r.reason ?? "",
+      /no local branch/i,
+      "a local branch must not be skipped as remote-tracking",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });

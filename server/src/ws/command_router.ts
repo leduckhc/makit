@@ -14,6 +14,7 @@
 import type { Envelope } from "../protocol.js";
 import { WireErrorCode } from "../protocol/codec.js";
 import type { WsClient } from "./client.js";
+import { canDispatch } from "./capabilities.js";
 
 export interface CommandContext {
   readonly client: WsClient;
@@ -40,9 +41,27 @@ export class CommandRouter {
     return this.handlers.has(kind);
   }
 
+  /**
+   * Every registered command kind. Exists so the capability map's completeness
+   * can be a test (SPEC-46 C1): a kind added without a map entry is caught, not
+   * silently left agent-reachable.
+   */
+  kinds(): string[] {
+    return [...this.handlers.keys()];
+  }
+
   async dispatch(client: WsClient, env: Envelope): Promise<void> {
     const kind = String(env.kind ?? "");
     const ctx = this.contextFor(client, env);
+
+    // SPEC-46 D17: the capability check is HERE, before handler lookup, so a
+    // refused command never enters a handler. This is the single enforcement
+    // point the principal exists for; a per-handler check would spread the rule
+    // and still miss the non-command paths (fanout, srv.response).
+    if (!canDispatch(kind, client.principal)) {
+      ctx.err(WireErrorCode.Unauthorized, `not permitted: ${kind}`);
+      return;
+    }
 
     const handler = this.handlers.get(kind);
     if (!handler) {

@@ -10,9 +10,11 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
+
+import type { DeviceCap } from "../protocol.js";
 
 function makitHome(): string {
   return process.env.MAKIT_HOME || join(homedir(), ".makit");
@@ -40,6 +42,13 @@ export interface PairedDevice {
   pushPlatform?: string;
   /** APNs environment for the token: "sandbox" | "production". */
   pushEnv?: string;
+  /**
+   * SPEC-46 (D2): what this device may do. **Absent means full access**, which
+   * is what every device paired before SPEC-46 is — the field is additive and
+   * must never retroactively restrict an existing phone. `cli@<host>` is minted
+   * with `["client"]` so it is a separately revocable subject.
+   */
+  caps?: DeviceCap[];
 }
 
 export class DeviceRegistry {
@@ -94,6 +103,43 @@ export class DeviceRegistry {
     this.byBearer.set(device.bearer, device);
     this.persist();
     return device;
+  }
+
+  /**
+   * SPEC-46 (D2): mint (or return) the CLI's own device — label `cli@<hostname>`
+   * with `caps: ["client"]`, so it is a subject that is revocable separately
+   * from the user's phone. Idempotent by label: a second call returns the SAME
+   * device with `created: false`, so a CLI whose `~/.makit/cli.json` cache was
+   * lost does not mint a second row that would clutter `makit devices`.
+   */
+  grantCli(): { device: PairedDevice; created: boolean } {
+    const label = `cli@${hostname()}`;
+    for (const d of this.devices.values()) {
+      if (d.label !== label) continue;
+      // Idempotent in SHAPE as well as identity. This device is the subject every
+      // capability gate reads, and an absent `caps` is FULL access by the
+      // protocol's own rule (D2) — so a row that reached devices.json without one
+      // (a hand edit, a pair token crafted with this label) would silently hand
+      // the CLI more authority than D2 ever grants it. Repaired and persisted,
+      // because otherwise the next process reads full access again.
+      if (!d.caps) {
+        d.caps = ["client"];
+        this.persist();
+      }
+      return { device: d, created: false };
+    }
+    const device: PairedDevice = {
+      id: randomUUID(),
+      label,
+      bearer: randomBytes(32).toString("hex"),
+      pairedAt: Date.now(),
+      lastSeenAt: Date.now(),
+      caps: ["client"],
+    };
+    this.devices.set(device.id, device);
+    this.byBearer.set(device.bearer, device);
+    this.persist();
+    return { device, created: true };
   }
 
   /** Look up a paired device by its bearer token. */

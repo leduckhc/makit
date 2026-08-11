@@ -29,6 +29,12 @@ Future<PreferencesController> _pump(WidgetTester tester) async {
   return controller;
 }
 
+/// The [Switch] inside the settings row titled [rowTitle].
+Finder _switchIn(String rowTitle) => find.descendant(
+  of: find.widgetWithText(ListTile, rowTitle),
+  matching: find.byType(Switch),
+);
+
 void main() {
   testWidgets('the auto-split threshold row writes the preference', (
     tester,
@@ -72,11 +78,38 @@ void main() {
     final controller = await _pump(tester);
     expect(controller.isModified(sidebarStartCollapsedPreference), isFalse);
 
-    await tester.tap(find.byType(Switch));
+    // Addressed by its row: Layout has more than one switch since SPEC-51.
+    await tester.tap(_switchIn('Start with sidebar collapsed'));
     await tester.pump();
 
     expect(controller.get(sidebarStartCollapsedPreference), isTrue);
     expect(controller.isModified(sidebarStartCollapsedPreference), isTrue);
+  });
+
+  testWidgets('the preview-groups switch is off by default and writes', (
+    tester,
+  ) async {
+    // SPEC-51 decision 9: opt-in, because the mode trades a browsed group's
+    // arrangement for a rail that stays short.
+    final controller = await _pump(tester);
+
+    expect(find.text('Preview tabs for worktrees'), findsOneWidget);
+    expect(controller.get(previewGroupsPreference), isFalse);
+
+    await tester.tap(_switchIn('Preview tabs for worktrees'));
+    await tester.pump();
+
+    expect(controller.get(previewGroupsPreference), isTrue);
+    expect(controller.isModified(previewGroupsPreference), isTrue);
+
+    await tester.tap(
+      find.descendant(
+        of: find.widgetWithText(ListTile, 'Preview tabs for worktrees'),
+        matching: find.byTooltip('Reset to default'),
+      ),
+    );
+    await tester.pump();
+    expect(controller.isModified(previewGroupsPreference), isFalse);
   });
 
   testWidgets('changing the text scale writes and can be reset', (

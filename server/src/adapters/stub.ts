@@ -4,6 +4,7 @@ import { sharedMediaStore } from "../media/store.js";
 import { prepareTurnOrFail } from "../media/attach.js";
 import type { SessionConfigOption } from "../protocol.js";
 import type { UIResponse } from "../uicall.js";
+import { TurnStatusTracker } from "./turn-status.js";
 
 export interface StubAdapterOptions {
   askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
@@ -28,6 +29,11 @@ const MARKDOWN_SAMPLE = [
 ///   - "ASK_MULTI"     → multi-question / multi-select askUserQuestion round-trip
 ///   - "ASK_QUESTION"  → single-question askUserQuestion round-trip
 ///   - "MARKDOWN"      → a markdown reply (heading, link, fenced dart code block)
+///   - "AWAIT_APPROVAL"→ raise a real `confirmAction` prompt and park the turn on
+///                       the tool-permission gate until it is answered
+///   - "AWAIT_INPUT"   → raise a real `input` prompt and park on the elicitation
+///                       gate until it is answered
+///   - "FAIL_TURN"     → a terminal `session.error`, then settle IDLE (not "error")
 ///   - anything else   → `echo: <text>` after 50ms
 export class StubAdapter extends EventEmitter implements AgentAdapter {
   readonly agent = "stub";
@@ -41,11 +47,17 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   /** Session cwd — attachments are materialised here, as on a real adapter. */
   private workspaceRoot = "";
   private askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
-  /** Timeout handle for SLOW turns, cleared by cancel/kill to prevent late events. */
-  private slowTimeout?: ReturnType<typeof setTimeout>;
+  /**
+   * The pending completion of a **deferred turn** — SLOW's late reply or
+   * FAIL_TURN's error — cleared by `cancel()`/`kill()` so a cancelled or dead
+   * adapter never emits afterwards. `turnKey` is present only when the deferral
+   * entered a *tracked* turn (FAIL_TURN), so cancelling can leave that turn
+   * instead of stranding the tracker in `running` forever.
+   */
+  private pendingTurn?: { handle: ReturnType<typeof setTimeout>; turnKey?: string };
   /**
    * The TOOLS script's pending wait and its abort flag. Same hazard as
-   * `slowTimeout` but larger: an uncancelled script keeps emitting six starts,
+   * the deferred turn above but larger: an uncancelled script keeps emitting six starts,
    * six ends, a reply and a second `idle` for the rest of its ~5.5 s — after a
    * `kill()` those land on an adapter that already reported `exit`.
    */
@@ -78,8 +90,30 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   /** Set by {@link close} — lets tests assert the graceful path was taken. */
   closed = false;
 
+
   /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
   private turnCount = 0;
+
+  /**
+   * SPEC-46 (T15): the same turns/gates state machine the real subprocess
+   * adapters use, so a parked stub turn is indistinguishable on the wire from a
+   * parked codex or pi turn. Hand-rolling it here is what the tracker exists to
+   * prevent: the coarse `status` channel only carries `"idle" | "running"`, so
+   * `awaiting-approval` is a `session.status` EVENT, and two spellings of that
+   * is precisely the drift that produced stuck-spinner bugs in acp/codex.
+   */
+  private readonly turns = new TurnStatusTracker({
+    emitStatus: (s) => this.emit("status", s),
+    emitSessionStatus: (status) =>
+      this.emitEvent({ ts: Date.now(), kind: "session.status", payload: { status } }),
+    isExited: () => this.exited,
+  });
+
+  /** True once killed — suppresses any further transition (tracker contract). */
+  private exited = false;
+
+  /** Key of the turn parked on a gate, so cancel can release it. */
+  private gatedTurn?: string;
 
   constructor(options: StubAdapterOptions = {}) {
     super();
@@ -146,6 +180,67 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       return;
     }
 
+    // SPEC-46 (T15) — the two states `makit wait` must be able to observe, and
+    // the one it must NOT confuse with a status. Placed before SLOW/STREAM so a
+    // prompt naming a gate is never swallowed by another trigger.
+    //
+    // AWAIT_APPROVAL / AWAIT_INPUT: a turn genuinely in flight, then blocked on
+    // the user. The gate never clears itself — `makit wait --for approval` exiting
+    // 10 is only meaningful if it persists — but it IS released by an answer,
+    // because production adapters go `awaiting-*` *because* they asked something.
+    // Parking the status without asking made the flow the CLI exists for
+    // (`run` → exit 10 → `makit approve` → the turn finishes) impossible to
+    // exercise, and made `approve` look broken against a session that plainly
+    // reported `[awaiting-approval]`.
+    if (prompt.includes("AWAIT_APPROVAL") || prompt.includes("AWAIT_INPUT")) {
+      const approval = prompt.includes("AWAIT_APPROVAL");
+      const gate = approval ? "awaiting-approval" : "awaiting-input";
+      this.gatedTurn = this.turns.enterTurn();
+      this.turns.enterApproval(gate);
+      // No bridge (a unit test constructing the adapter bare) → the gate simply
+      // persists, which is the older behaviour and still what those tests assert.
+      if (!this.askUser) return;
+      // `sessionId` is not decoration: the server strips it to attribute the
+      // prompt, which is what D13's ladder routes on and what `makit approve <id>`
+      // matches. Without it the question is unroutable and unanswerable.
+      const body: Record<string, unknown> = approval
+        ? {
+            sessionId: this.sessionId,
+            kind: "confirmAction",
+            title: "Run `rm -rf build`?",
+            message: "the stub was asked to request approval",
+            action: "bash",
+            preview: "rm -rf build",
+          }
+        : { sessionId: this.sessionId, kind: "input", title: "What should the stub use?", prefill: "" };
+      void this.askUser(body)
+        .then(() => this.releaseGate())
+        .catch(() => this.releaseGate());
+      return;
+    }
+
+    // FAIL_TURN: a turn that fails. The status settles **idle**, not "error" —
+    // nothing in makit ever emits `status: "error"` (the real adapters emit
+    // `session.error` and then settle), which is exactly why `makit wait` keys
+    // its failure exit code off the EVENT. Encoded here so the stub cannot
+    // quietly acquire an "error" status and invalidate that design.
+    if (prompt.includes("FAIL_TURN")) {
+      const key = this.turns.enterTurn();
+      const handle = setTimeout(() => {
+        this.pendingTurn = undefined;
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: `FAIL_TURN: the stub was asked to fail this turn (${prompt})` },
+        });
+        this.turns.leaveTurn(key);
+      }, echoDelayMs);
+      // Tracked, so `kill()` cannot let a terminal error land after the exit and
+      // `cancel()` cannot leave the turn wedged running.
+      this.pendingTurn = { handle, turnKey: key };
+      return;
+    }
+
     // "SLOW [ms]" → a turn that OUTLIVES a keystroke: running now, reply after
     // `ms` (default 12s), then idle. The queue (SPEC-35/36) only exists while the
     // agent is busy, so without this the keyless loop — and the demo — has no
@@ -154,7 +249,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       const ms = Number(/SLOW\s+(\d+)/.exec(prompt)?.[1] ?? 12_000);
       this.emit("status", "running");
       const handle = setTimeout(() => {
-        this.slowTimeout = undefined;
+        this.pendingTurn = undefined;
         this.emitEvent({
           ts: Date.now(),
           kind: "agent.message",
@@ -162,7 +257,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
         });
         this.emit("status", "idle");
       }, ms);
-      this.slowTimeout = handle;
+      this.pendingTurn = { handle };
       return;
     }
 
@@ -393,12 +488,52 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async cancel(): Promise<void> {
-    if (this.slowTimeout !== undefined) {
-      clearTimeout(this.slowTimeout);
-      this.slowTimeout = undefined;
-    }
+    // Both kinds of deferred work are cancelled: a SLOW/FAIL_TURN completion and
+    // a TOOLS script mid-flight. Either left running would emit into the turn
+    // that replaces this one.
+    const settled = this.clearPendingTurn();
     this.abortToolScript();
-    this.emit("status", "idle");
+    if (this.releaseGate()) return;
+    // A tracked deferral already settled via `leaveTurn`; an untracked one (SLOW
+    // drives the status directly) still needs the idle.
+    if (!settled) this.emit("status", "idle");
+  }
+
+  /**
+   * Cancel a deferred turn completion. Returns true when doing so already
+   * settled the status (a tracked turn was left), false otherwise.
+   */
+  private clearPendingTurn(): boolean {
+    const pending = this.pendingTurn;
+    if (pending === undefined) return false;
+    this.pendingTurn = undefined;
+    clearTimeout(pending.handle);
+    if (pending.turnKey === undefined) return false;
+    this.turns.leaveTurn(pending.turnKey);
+    return true;
+  }
+
+  /**
+   * Release a parked gate (SPEC-46 T15) without emitting the intermediate
+   * "running" that `leaveApproval` would otherwise produce: drop the TURN first
+   * so the tracker has nothing to resume to, then the gate. A cancel that left
+   * the gate counted would wedge the session for good — `settleIdle` could never
+   * fire again, so every later turn would look stuck.
+   *
+   * The settle is `leaveApproval`'s own job as of SPEC-29: it now settles to
+   * `idle` when the last gate closes and no turn remains (it used to only resume
+   * `running`, which pinned a session whose turn ended before its gate). So this
+   * must NOT settle again — doing so emitted `idle` twice for one cancel.
+   *
+   * Returns whether there was a gate to release. Called both by `cancel` and when
+   * the user *answers* the prompt that raised the gate.
+   */
+  private releaseGate(): boolean {
+    if (this.gatedTurn === undefined) return false;
+    this.turns.leaveTurn(this.gatedTurn);
+    this.gatedTurn = undefined;
+    this.turns.leaveApproval();
+    return true;
   }
 
   /** Stop an in-flight TOOLS script: clear its pending wait, block the rest. */
@@ -532,10 +667,10 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async kill(): Promise<void> {
-    if (this.slowTimeout !== undefined) {
-      clearTimeout(this.slowTimeout);
-      this.slowTimeout = undefined;
-    }
+    // Exited FIRST: `settleIdle` is suppressed once `isExited()`, so cancelling
+    // the deferred turn below cannot emit a status for an adapter already gone.
+    this.exited = true;
+    this.clearPendingTurn();
     this.abortToolScript();
     this.emit("exit", null);
   }

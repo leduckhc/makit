@@ -12,6 +12,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'forge_glyph.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -347,13 +348,13 @@ class PrDetailBody extends ConsumerWidget {
                   const SizedBox(height: kSpace8),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () => _open(context, pr!.url),
-                      icon: const Icon(
-                        PhosphorIconsLight.arrowSquareOut,
-                        size: 16,
-                      ),
-                      label: Text('Open ${status.identity} on GitHub'),
+                    child: _OpenOnForgeButton(
+                      identity: status.identity,
+                      url: pr!.url,
+                      // Open the LIVE url (from the re-derived `pr`), not the
+                      // stale widget field — `_open` takes it explicitly so a
+                      // closed/removed PR cannot null-assert here.
+                      onPressed: () => _open(context, pr.url),
                     ),
                   ),
                 ],
@@ -368,6 +369,40 @@ class PrDetailBody extends ConsumerWidget {
   void _open(BuildContext context, String url) {
     Navigator.of(context).maybePop();
     openPrUrl(context, url);
+  }
+}
+
+/// "Open #42 on Forgejo" — the forge is named and badged from the PR's own URL.
+///
+/// Before Forgejo support this said "on GitHub" unconditionally, which is now
+/// simply wrong for a self-hosted PR. When the URL cannot be parsed the forge is
+/// left unnamed rather than guessed, and the button falls back to the generic
+/// external-link mark: naming the wrong forge is worse than naming none.
+class _OpenOnForgeButton extends StatelessWidget {
+  const _OpenOnForgeButton({
+    required this.identity,
+    required this.url,
+    required this.onPressed,
+  });
+
+  final String identity;
+  final String url;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final kind = forgeKindForUrl(url);
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: kind == null
+          ? const Icon(PhosphorIconsLight.arrowSquareOut, size: 16)
+          : forgeGlyphFor(kind).build(size: 16),
+      label: Text(
+        kind == null
+            ? 'Open $identity'
+            : 'Open $identity on ${forgeNameFor(kind)}',
+      ),
+    );
   }
 }
 

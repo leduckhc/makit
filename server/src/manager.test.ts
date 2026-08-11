@@ -15,6 +15,8 @@ import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { SessionEvent, SessionConfigOption, SessionDTO } from "./protocol.js";
 import { SqliteEventStore } from "./storage/sqlite_event_store.js";
+import { sessionTokens } from "./ws/session_tokens.js";
+import { MAX_LIVE_CHILDREN } from "./lineage.js";
 import type { AgentAdapter, SpawnOpts } from "./adapters/adapter.js";
 
 /** A stub adapter that records the SpawnOpts it was started with. */
@@ -599,6 +601,33 @@ test("spawnPendingSession is a draft: no worktree, no agent started", async () =
     assert.equal(started.length, 0, "no adapter should start for a draft");
     assert.equal(s.toDTO().pending, true);
     assert.equal(s.toDTO().branch, undefined);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// SPEC-46 U4 — the promotion trap. A forked draft carries the forked thread id
+// as `resumeAgentSessionId`; when the first message promotes it, that id MUST
+// reach the adapter's start() so the child continues the forked conversation
+// (codex `thread/resume`). If promotion started a fresh thread instead, the
+// fork would be silently discarded and the user would get a new conversation
+// that merely looked forked — so this asserts the id survives promotion.
+test("a forked draft resumes the forked thread on promotion, never starts fresh (U4)", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    const draft = await manager.spawnPendingSession(
+      projectId, "codex", undefined, undefined, undefined, undefined, undefined, "th-forked",
+    );
+    await manager.promotePendingSession(draft, "continue the fork");
+    assert.equal(started.length, 1, "the fork promotes to exactly one live agent");
+    assert.equal(
+      started[0].resumeAgentSessionId, "th-forked",
+      "promotion must resume the forked thread, not start a fresh one",
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -2423,6 +2452,167 @@ test("a replaced adapter can no longer feed the session it was swapped out of", 
     assert.equal(session.events.length >= before, true);
     assert.equal(session.queuedMessages.length, 1, "queue survived the re-attach");
   } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("SPEC-46 D9: MAKIT_SPAWN_DEPTH reports the session's real depth (display only)", async () => {
+  // D9 makes the *guard* recompute depth server-side and ignore this variable,
+  // precisely because an agent can forge it. That is exactly why it must still be
+  // honest: an agent reads it to decide whether to hand off again, and a value
+  // hardcoded to 0 tells every descendant it is a root.
+  const cwd = process.cwd();
+  const started: SpawnOpts[] = [];
+  const manager = new SessionManager({
+    projects: [cwd],
+    adapterFactory: () => stubAdapter(started),
+  });
+  // env is only injected once a bridge exists (it carries the agent's credentials).
+  manager.setBridge({ url: "http://127.0.0.1:1", token: "bridge-token", extensionPaths: [] });
+  const projectId = manager.listProjects()[0].id;
+
+  const root = await manager.spawnPendingSession(projectId, "stub", cwd, undefined, undefined, {
+    origin: "cli",
+  });
+  await manager.promotePendingSession(root, "root");
+
+  const child = await manager.spawnPendingSession(projectId, "stub", cwd, undefined, undefined, {
+    parentId: root.id,
+    origin: "agent",
+  });
+  await manager.promotePendingSession(child, "child");
+
+  const grandchild = await manager.spawnPendingSession(projectId, "stub", cwd, undefined, undefined, {
+    parentId: child.id,
+    origin: "agent",
+  });
+  await manager.promotePendingSession(grandchild, "grandchild");
+
+  const envOf = (sessionId: string) => started.find((o) => o.sessionId === sessionId)?.env;
+  assert.equal(envOf(root.id)?.MAKIT_SPAWN_DEPTH, "0", "a root session is at depth 0");
+  assert.equal(envOf(child.id)?.MAKIT_SPAWN_DEPTH, "1");
+  assert.equal(envOf(grandchild.id)?.MAKIT_SPAWN_DEPTH, "2");
+
+  // The same launch path owes the agent the rest of its context (D3). This is
+  // the *draft promotion* path — the one every app and CLI session takes — so an
+  // empty MAKIT_PROJECT_ID here means `makit handoff` cannot resolve its own
+  // project from the environment at all.
+  assert.equal(envOf(child.id)?.MAKIT_PROJECT_ID, projectId);
+  assert.equal(envOf(child.id)?.MAKIT_WORKTREE, cwd);
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-46 D3 — an agent's token dies with its session
+//
+// `startOpts` mints a MAKIT_CLI_TOKEN per session and re-attach drops the old
+// one, but D3 says the token is "revoked when it ends" — and kill/close end a
+// session without a restart. A store comment claimed in-memory made this "true
+// by construction"; it does not. Within one daemon lifetime a killed session's
+// token kept authenticating, so an agent process that outlived its kill() — or
+// a token read out of a log — still held spawn/send/read.
+// ---------------------------------------------------------------------------
+
+/** The token `startOpts` injected for `sessionId`, via a real authenticate(). */
+function tokenWorks(token: string): boolean {
+  return sessionTokens.authenticate(token) !== null;
+}
+
+async function withTokenedSession(
+  fn: (mgr: SessionManager, sessionId: string, token: string) => Promise<void>,
+): Promise<void> {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    await withAgentDir(cwd, async () => {
+      const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+      const projectId = manager.listProjects()[0].id;
+      const session = await manager.spawnPiSession(projectId);
+      const token = sessionTokens.mint(session.id); // as startOpts does
+      assert.ok(tokenWorks(token), "precondition: the token authenticates while the session lives");
+      await fn(manager, session.id, token);
+    });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+test("D3: killSession revokes the session's agent token", async () => {
+  await withTokenedSession(async (mgr, sessionId, token) => {
+    await mgr.killSession(sessionId);
+    assert.equal(tokenWorks(token), false, "a killed session's token must stop authenticating");
+  });
+});
+
+test("D3: closeSession revokes the session's agent token", async () => {
+  await withTokenedSession(async (mgr, sessionId, token) => {
+    await mgr.closeSession(sessionId);
+    assert.equal(tokenWorks(token), false, "a closed session's token must stop authenticating");
+  });
+});
+
+test("D3: the token authenticates as its OWN session, so revocation is attributable", async () => {
+  await withTokenedSession(async (mgr, sessionId, token) => {
+    assert.equal(sessionTokens.authenticate(token)?.sessionId, sessionId);
+    await mgr.killSession(sessionId);
+    assert.equal(sessionTokens.authenticate(token), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-46 D9 — the fan-out bound holds against concurrent spawns
+//
+// The command layer checks the bound and `spawnPendingSession` then awaits
+// (listWorktrees) before registering the session, so the count the check read is
+// stale by the time the row lands. Two spawns fired together from one parent
+// therefore both passed a check that each saw as "one slot left". The caller this
+// bound was written for is an agent in a retry loop, which is precisely the thing
+// that fires concurrent spawns — so an advisory bound is no bound.
+// ---------------------------------------------------------------------------
+
+test("D9: concurrent spawns from one parent cannot both take the last child slot", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    await withAgentDir(cwd, async () => {
+      const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+      const projectId = manager.listProjects()[0].id;
+      const parent = await manager.spawnPiSession(projectId);
+
+      // Fill the bound to one slot short of MAX_LIVE_CHILDREN.
+      for (let i = 0; i < MAX_LIVE_CHILDREN - 1; i++) {
+        await manager.spawnPendingSession(projectId, undefined, undefined, undefined, undefined, {
+          parentId: parent.id,
+        });
+      }
+      assert.equal(manager.checkSpawnBounds(parent.id), null, "precondition: one slot is free");
+
+      const results = await Promise.allSettled([
+        manager.spawnPendingSession(projectId, undefined, undefined, undefined, undefined, { parentId: parent.id }),
+        manager.spawnPendingSession(projectId, undefined, undefined, undefined, undefined, { parentId: parent.id }),
+      ]);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const live = manager.listSessions().filter((s) => s.parentId === parent.id).length;
+
+      assert.equal(ok, 1, "exactly one of two concurrent spawns may take the last slot");
+      assert.equal(live, MAX_LIVE_CHILDREN, `the bound must hold (found ${live} children)`);
+      const refused = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+      assert.match(String(refused.reason.message), new RegExp(String(MAX_LIVE_CHILDREN)));
+    });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("D9: a spawn with no parent is never subject to the fan-out bound", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    await withAgentDir(cwd, async () => {
+      const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+      const projectId = manager.listProjects()[0].id;
+      // Well past MAX_LIVE_CHILDREN: root sessions are the user's own, unbounded.
+      for (let i = 0; i < MAX_LIVE_CHILDREN + 2; i++) await manager.spawnPendingSession(projectId);
+      assert.equal(manager.listSessions().length, MAX_LIVE_CHILDREN + 2);
+    });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
   }
 });

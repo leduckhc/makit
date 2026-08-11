@@ -25,6 +25,7 @@ import { route, type RequestPlan, type RouteChoice } from "./router.js";
 import { allow, decide } from "./policy.js";
 import { normalizeChecks, rollupChecks } from "../git.js";
 import type { OpenPr, PullRequestInfo } from "../git.js";
+import type { ForgeGateway, GatewayStats, PrLookup } from "../forge/types.js";
 import {
   OPEN_PRS_PLAN,
   OPEN_PRS_TIMEOUT_MS,
@@ -38,7 +39,6 @@ import {
   combinedStatusRestArgv,
   openPrsArgv,
   prMutationArgv,
-  type PrMutation,
   openPrsRestArgv,
   originRemoteArgv,
   parsePrUrl,
@@ -53,11 +53,13 @@ import {
   unresolvedThreadsArgv,
 } from "./queries.js";
 
-/** Three-way PR lookup result — a failed lookup is never `none` (§6.5). */
-export type PrLookup =
-  | { kind: "pr"; pr: PullRequestInfo }
-  | { kind: "none" }
-  | { kind: "unknown"; reason: "throttled" | "error" };
+/**
+ * Three-way PR lookup result — a failed lookup is never `none` (§6.5).
+ *
+ * Re-exported from the provider-neutral contract so both providers and every
+ * existing importer keep one definition.
+ */
+export type { PrLookup, GatewayStats } from "../forge/types.js";
 
 /** Result of a `gh` invocation. Matches git.ts's private `run` — never rejects. */
 export interface ExecResult {
@@ -75,54 +77,20 @@ export interface TimerHandle {
 }
 
 /** Exec/cache counters — spec §10 success criterion 1 (measure the ≥80% cut). */
-export interface GatewayStats {
-  /**
-   * `gh` calls that SPENT quota. Excludes the exempt `/rate_limit` read (see
-   * {@link exemptExecs}) and the local `git remote` lookup, so this is the number
-   * the >=80% call-reduction claim is measured against without arithmetic.
-   */
-  execs: number;
-  /** Quota-exempt `gh api rate_limit` reads. Free, but still subprocesses. */
-  exemptExecs: number;
-  /** Reads served from cache without an exec. */
-  cacheHits: number;
-}
+export type { GatewayStats as GithubGatewayStats } from "../forge/types.js";
 
-export interface GithubGateway {
-  prForBranch(repoPath: string, branch: string, opts?: { interactive?: boolean }): Promise<PrLookup>;
+export interface GithubGateway extends ForgeGateway {
   /**
-   * All open PRs for a repo (the "New worktree from PR" picker).
-   *
-   * Pass `interactive: true` for a user-initiated call: the picker is a click,
-   * not a poller, so it must draw on the reserve rather than silently return an
-   * empty list — which the user would read as "this repo has no open PRs"
-   * (spec §6.3).
+   * GitHub's quota, which only this provider has: Forgejo exposes no
+   * `rate_limit` endpoint and sends no rate-limit headers. Hence these live here
+   * rather than on {@link ForgeGateway} — see `../forge/types.ts`.
    */
-  openPrs(repoPath: string, limit: number, opts?: { interactive?: boolean }): Promise<OpenPr[]>;
-  /**
-   * Run a state-changing `gh pr` verb on the user's behalf (`ready` to take a PR
-   * out of draft, `update-branch` to merge the base into it).
-   *
-   * Always interactive — it is a button press, never a poller — so it spends from
-   * the reserve rather than being shed. Invalidates the cached lookup for
-   * [branch] on success, otherwise the UI would keep reporting the state the
-   * mutation just changed until the TTL expired.
-   */
-  mutatePr(
-    repoPath: string,
-    branch: string,
-    number: number,
-    verb: PrMutation,
-  ): Promise<{ ok: boolean; error?: string }>;
   budget(): BudgetSnapshot;
   /** 60-slot per-minute `{mine, others}` ring for the sparkline (spec §6.6). */
   history(): Array<{ mine: number; others: number }>;
   refresh(): Promise<BudgetSnapshot>;
   setPaused(paused: boolean): void;
   onBudgetChange(fn: (s: BudgetSnapshot) => void): () => void;
-  close(): void;
-  /** Exec vs. cache-hit counters (T6 surfaces this for the ≥80% claim). */
-  stats(): GatewayStats;
 }
 
 export interface GatewayDeps {

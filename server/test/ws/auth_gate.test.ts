@@ -28,7 +28,7 @@ interface FakeClient extends WsClient {
   closed: { code: number; reason: string } | null;
 }
 
-function fakeClient(authed = false): FakeClient {
+function fakeClient(authed = false, isLocal = true): FakeClient {
   const sent: OutgoingFrame[] = [];
   const client: FakeClient = {
     sent,
@@ -37,7 +37,8 @@ function fakeClient(authed = false): FakeClient {
     subscribed: new Set<string>(),
     watchingMetrics: false,
     watchingPorts: false,
-    isLocal: true,
+    watchingDocs: false,
+    isLocal,
     send: (frame) => sent.push(frame),
     close: (code, reason) => {
       client.closed = { code, reason };
@@ -182,4 +183,65 @@ test("hello {pid} on a non-loopback client is ignored, appPid stays unset (SPEC-
 
   assert.equal(client.authed, true, "a non-loopback client still authenticates");
   assert.equal(client.appPid, undefined, "its reported pid is ignored");
+});
+
+// D8 rev 2: the app must not infer locality from its own stored host — mDNS
+// rediscovery can rewrite that behind it (see connection.dart), so the server
+// states it, per client, at the one moment the app is guaranteed to be listening.
+test("hello.ack carries isLocal so the client never has to guess", () => {
+  const device = { id: "dev-1", label: "phone", bearer: "good-bearer" };
+  const gate = () =>
+    new AuthGate({
+      registry: fakeRegistry({ bearers: { "good-bearer": device } }),
+      onAuthenticated: () => {},
+    });
+
+  const local = fakeClient();
+  gate().handleHello(local, hello({ bearer: "good-bearer" }));
+  assert.equal(local.sent.find((f) => f.t === "hello.ack")?.isLocal, true);
+
+  const remote = fakeClient(false, false);
+  gate().handleHello(remote, hello({ bearer: "good-bearer" }));
+  assert.equal(remote.sent.find((f) => f.t === "hello.ack")?.isLocal, false);
+});
+
+// There are THREE hello.ack sends (already-trusted, bearer, pair) and the first
+// pass patched two. A device that pairs would then never learn it is local, and
+// would silently publish instead of opening — the feature quietly off.
+test("every hello.ack path states isLocal, including the pairing one", () => {
+  const registry = fakeRegistry({ pairTokens: { "pair-1": { id: "d1", label: "mac", bearer: "b1" } } });
+  const client = fakeClient();
+  new AuthGate({ registry, onAuthenticated: () => {} }).handleHello(
+    client,
+    hello({ pair: "pair-1", label: "mac" }),
+  );
+  const ack = client.sent.find((f) => f.t === "hello.ack");
+  assert.ok(ack, "pairing must ack");
+  assert.equal(ack?.isLocal, true, "the pairing ack must carry isLocal too");
+});
+
+// The two remaining hello.ack paths: the already-trusted (bearer-less loopback)
+// ack, and a REMOTE pairing client which must learn it is NOT local so it
+// publishes rather than trying to open on a host it is not on.
+test("the already-trusted (loopback) hello.ack states isLocal: true", () => {
+  const client = fakeClient(true); // authed, no token, local
+  new AuthGate({ registry: fakeRegistry({}), onAuthenticated: () => {} }).handleHello(
+    client,
+    hello({}),
+  );
+  const ack = client.sent.find((f) => f.t === "hello.ack");
+  assert.ok(ack, "an already-trusted client must ack");
+  assert.equal(ack?.isLocal, true);
+});
+
+test("a remote pairing client's hello.ack states isLocal: false", () => {
+  const registry = fakeRegistry({ pairTokens: { "pair-2": { id: "d2", label: "phone", bearer: "b2" } } });
+  const client = fakeClient(false, false); // unauthed, remote
+  new AuthGate({ registry, onAuthenticated: () => {} }).handleHello(
+    client,
+    hello({ pair: "pair-2", label: "phone" }),
+  );
+  const ack = client.sent.find((f) => f.t === "hello.ack");
+  assert.ok(ack, "pairing must ack");
+  assert.equal(ack?.isLocal, false, "a remote pairing client must learn it is not local");
 });

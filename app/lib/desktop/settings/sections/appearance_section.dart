@@ -39,6 +39,7 @@ class AppearanceSection extends StatelessWidget {
             _SidebarWidthRow(),
             _StartCollapsedRow(),
             _AutoSplitThresholdRow(),
+            _PreviewGroupsRow(),
           ],
         ),
         SettingsSectionHeader(title: 'Text'),
@@ -209,6 +210,43 @@ class _AutoSplitThresholdRow extends ConsumerWidget {
           SettingsResetButton(
             visible: modified,
             onPressed: () => controller.reset(autoSplitThresholdPreference),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// SPEC-51 — preview (disposable) worktree tabs, VSCode-style. Opt-in: it trades
+/// a browsed group's split/tab arrangement for a group bar that stays short.
+class _PreviewGroupsRow extends ConsumerWidget {
+  const _PreviewGroupsRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.preference(previewGroupsPreference);
+    final modified = ref.preferenceModified(previewGroupsPreference);
+    final controller = ref.read(preferencesControllerProvider.notifier);
+
+    return ListTile(
+      title: const Text('Preview tabs for worktrees'),
+      subtitle: const Text(
+        'Clicking a branch opens it in one reusable tab, so browsing worktrees '
+        'stops filling the group bar. Click the branch again — or right-click '
+        'the tab → Keep this view — to keep it. Agents keep running either way.',
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Switch(
+            value: enabled,
+            onChanged: (value) =>
+                controller.set(previewGroupsPreference, value),
+          ),
+          const SizedBox(width: kSpace8),
+          SettingsResetButton(
+            visible: modified,
+            onPressed: () => controller.reset(previewGroupsPreference),
           ),
         ],
       ),

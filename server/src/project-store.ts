@@ -28,6 +28,15 @@ import { log } from "./log.js";
 export interface PersistedProject {
   id: string;
   path: string;
+  /**
+   * Per-repo settings, as persisted. Kept as an opaque record rather than a typed
+   * `RepoSettings` so that **unknown keys survive a round trip**: an older daemon
+   * paired with a newer app must not silently drop a field it does not
+   * understand, and a hand-edited file must not lose its siblings when one key is
+   * rewritten. Typing and validation happen in `repo_settings.ts`, at the point of
+   * use.
+   */
+  settings?: Record<string, unknown>;
 }
 
 /** Absolute path of the projects persistence file. */
@@ -79,7 +88,15 @@ export function loadProjects(file: string): PersistedProject[] {
         typeof (entry as { path?: unknown }).path === "string"
       ) {
         const { id, path } = entry as PersistedProject;
-        if (isDirectory(path)) out.push({ id, path });
+        if (!isDirectory(path)) continue;
+        const rawSettings = (entry as { settings?: unknown }).settings;
+        // Carried through verbatim. A malformed value is dropped here rather than
+        // rejected, so one bad repo cannot stop the daemon starting.
+        const settings =
+          typeof rawSettings === "object" && rawSettings !== null && !Array.isArray(rawSettings)
+            ? (rawSettings as Record<string, unknown>)
+            : undefined;
+        out.push(settings === undefined ? { id, path } : { id, path, settings });
       }
     }
     return out;
@@ -96,7 +113,13 @@ export function loadProjects(file: string): PersistedProject[] {
 export function saveProjects(file: string, projects: PersistedProject[]): void {
   try {
     mkdirSync(dirname(file), { recursive: true });
-    const rows = projects.map((p) => ({ id: p.id, path: p.path }));
+    // `settings` is written only when present, so an untouched project keeps the
+    // exact two-key shape it has always had and the file stays diffable.
+    const rows = projects.map((p) =>
+      p.settings === undefined || Object.keys(p.settings).length === 0
+        ? { id: p.id, path: p.path }
+        : { id: p.id, path: p.path, settings: p.settings },
+    );
     writeFileSync(file, JSON.stringify({ projects: rows }, null, 2) + "\n");
   } catch (e) {
     log.warn(`[makit] failed to write projects file ${file}: ${(e as Error).message}`);

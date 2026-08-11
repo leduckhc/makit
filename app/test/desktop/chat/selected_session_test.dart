@@ -11,6 +11,9 @@ import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/store/prefs/preference_entries.dart';
+import 'package:makit/store/prefs/preferences_controller.dart';
+import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/secure_store.dart';
@@ -56,6 +59,21 @@ Session _session(
 );
 
 const _wtA = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-a', branch: 'a');
+const _wtB = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-b', branch: 'b');
+const _wtC = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-c', branch: 'c');
+
+/// A container with no sessions and [previewGroupsPreference] set to [enabled].
+ProviderContainer _previewContainer({required bool enabled}) =>
+    ProviderContainer(
+      overrides: [
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+        preferencesControllerProvider.overrideWith(
+          (ref) => PreferencesController(null, {
+            previewGroupsPreference.id: enabled,
+          }),
+        ),
+      ],
+    );
 
 WorkspaceController _workspace(ProviderContainer c) =>
     c.read(workspaceControllerProvider.notifier);
@@ -248,6 +266,88 @@ void main() {
       expect(tab.worktree, _wtA);
       expect(container.read(selectedWorktreeProvider), _wtA);
       expect(container.read(selectedSessionProvider), isNull);
+    });
+
+    testWidgets('mints a permanent group while the preview pref is off', (
+      tester,
+    ) async {
+      final container = _previewContainer(enabled: false);
+      addTearDown(container.dispose);
+
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
+      expect(container.read(groupsControllerProvider).previewGroupId, isNull);
+    });
+
+    testWidgets('mints a preview group when the pref is on (SPEC-51)', (
+      tester,
+    ) async {
+      final container = _previewContainer(enabled: true);
+      addTearDown(container.dispose);
+
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
+      final groups = container.read(groupsControllerProvider);
+      expect(groups.previewGroupId, groups.activeGroupId);
+      expect(groups.previewGroup!.worktreePath, _wtA.path);
+    });
+
+    testWidgets('browsing branches never grows the rail past one preview', (
+      tester,
+    ) async {
+      final container = _previewContainer(enabled: true);
+      addTearDown(container.dispose);
+
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
+      final before = container.read(groupsControllerProvider).groups.length;
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtB));
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtC));
+
+      final groups = container.read(groupsControllerProvider);
+      expect(groups.groups, hasLength(before));
+      expect(groups.previewGroup!.worktreePath, _wtC.path);
+    });
+
+    testWidgets('keep: true promotes the preview group in place', (
+      tester,
+    ) async {
+      final container = _previewContainer(enabled: true);
+      addTearDown(container.dispose);
+
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
+      final previewId = container.read(groupsControllerProvider).previewGroupId;
+      // The double-click arrives as a second gesture on the same row, after the
+      // single tap already opened it in preview.
+      await _invoke(
+        tester,
+        container,
+        (ref) => selectWorktree(ref, _wtA, keep: true),
+      );
+
+      final groups = container.read(groupsControllerProvider);
+      expect(groups.previewGroupId, isNull, reason: 'promoted');
+      expect(groups.activeGroupId, previewId, reason: 'same group, kept');
+      expect(
+        groups.groups.where((g) => g.worktreePath == _wtA.path),
+        hasLength(1),
+        reason: 'no duplicate group for the same scope',
+      );
+    });
+
+    testWidgets('a kept group survives the next branch click', (tester) async {
+      final container = _previewContainer(enabled: true);
+      addTearDown(container.dispose);
+
+      await _invoke(
+        tester,
+        container,
+        (ref) => selectWorktree(ref, _wtA, keep: true),
+      );
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtB));
+
+      final paths = container
+          .read(groupsControllerProvider)
+          .groups
+          .map((g) => g.worktreePath);
+      expect(paths, containsAll([_wtA.path, _wtB.path]));
     });
   });
 

@@ -8,6 +8,7 @@
 library;
 
 import '../diagnostics/app_log.dart';
+import '../store/docs.dart';
 import '../store/metrics.dart';
 import '../store/models.dart';
 import '../store/ports.dart';
@@ -57,6 +58,13 @@ class MetricsSampleFrame extends Decoded {
 class PortsSnapshotFrame extends Decoded {
   const PortsSnapshotFrame(this.snapshot);
   final PortsSnapshot snapshot;
+}
+
+/// A decoded `docs.snapshot` frame (SPEC-46 D11). A host-wide broadcast, like
+/// `ports.snapshot` — never a session event.
+class DocsSnapshotFrame extends Decoded {
+  const DocsSnapshotFrame(this.snapshot);
+  final DocsSnapshot snapshot;
 }
 
 /// Stateless decoder. All methods return `null` on malformed input.
@@ -163,6 +171,23 @@ class WireCodec {
           return null;
         }
         return PortsSnapshotFrame(snapshot);
+      case 'docs.snapshot':
+        // Tolerant like `ports.snapshot`: a malformed payload `_warn`s + drops
+        // rather than throwing into the socket. Bad doc entries inside a good
+        // snapshot are dropped by `DocsSnapshot.fromJson`, not fatal here.
+        final rawDocs = env.body['snapshot'];
+        if (rawDocs is! Map) {
+          _warn('docs.snapshot');
+          return null;
+        }
+        final docsSnapshot = DocsSnapshot.fromJson(
+          Map<String, dynamic>.from(rawDocs),
+        );
+        if (docsSnapshot == null) {
+          _warn('docs.snapshot');
+          return null;
+        }
+        return DocsSnapshotFrame(docsSnapshot);
       default:
         return null;
     }
@@ -244,6 +269,11 @@ class WireCodec {
           resumable: j['resumable'] == true,
           closed: j['closed'] == true,
           orphaned: j['orphaned'] == true,
+          parentId: j['parentId'] is String ? j['parentId'] as String : null,
+          handoffReason: j['handoffReason'] is String
+              ? j['handoffReason'] as String
+              : null,
+          origin: j['origin'] is String ? j['origin'] as String : null,
           queued: decodeQueued(j['queued']),
         ),
       );

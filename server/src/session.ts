@@ -14,6 +14,7 @@ import type {
   QueuedMessageDTO,
   SessionDTO,
   SessionEvent,
+  SessionOrigin,
   SessionStatus,
   SessionUsageDTO,
 } from "./protocol.js";
@@ -84,6 +85,13 @@ export type SessionLifecycle =
        * session/thread starts and before the first prompt.
        */
       configPicks?: { id: string; value: string | boolean }[];
+      /**
+       * SPEC-46 U4: a forked thread's native id. When set, promotion resumes
+       * this thread (the adapter's `thread/resume`) instead of starting a fresh
+       * one, so the child continues the forked conversation rather than a new
+       * one that merely looks forked.
+       */
+      resumeAgentSessionId?: string;
     }
   | { phase: "started"; branch?: string; worktreePath?: string };
 
@@ -116,6 +124,14 @@ export interface SessionInit {
   /** Restore the started-session branch/worktree on rehydration. */
   branch?: string;
   worktreePath?: string;
+  /**
+   * SPEC-46 lineage (D10), restored on rehydration so a cold session still
+   * reports who it was handed off from. Set once at construction — lineage is
+   * immutable for a session's life.
+   */
+  parentId?: string;
+  handoffReason?: string;
+  origin?: SessionOrigin;
   /**
    * Lazy history source for rehydrated sessions. When present, the persisted
    * event log is NOT loaded at construction — it is read once, on first
@@ -171,6 +187,17 @@ export class Session extends EventEmitter {
    */
   closed = false;
 
+  /**
+   * SPEC-46 lineage (D10): the session this one was handed off / spawned from,
+   * why, and which client created it. Immutable for the session's life, set at
+   * construction and persisted so the app can caption "handed off from …" and
+   * D9's depth/fan-out guard has something to count. Undefined for a session
+   * with no parent (every pre-SPEC-46 row, and every app-spawned session).
+   */
+  readonly parentId?: string;
+  readonly handoffReason?: string;
+  readonly origin?: SessionOrigin;
+
   /** Pending lazy history loader — consumed (set to undefined) on first use. */
   private hydrateFrom?: () => SessionEvent[];
 
@@ -219,6 +246,9 @@ export class Session extends EventEmitter {
     this.resumeSessionPath = init.resumeSessionPath;
     this.agentSessionId = init.agentSessionId;
     this.closed = init.closed ?? false;
+    this.parentId = init.parentId;
+    this.handoffReason = init.handoffReason;
+    this.origin = init.origin;
     if (init.branch !== undefined || init.worktreePath !== undefined) {
       this._lifecycle = { phase: "started", branch: init.branch, worktreePath: init.worktreePath };
     }
@@ -321,6 +351,9 @@ export class Session extends EventEmitter {
       // infers phase "started" from these fields on rehydration).
       branch: this._lifecycle.phase === "started" ? this._lifecycle.branch : undefined,
       worktreePath: this.worktreePath,
+      parentId: this.parentId,
+      handoffReason: this.handoffReason,
+      origin: this.origin,
     };
   }
 
@@ -535,6 +568,7 @@ export class Session extends EventEmitter {
     pendingWorktreePath?: string;
     branch?: string;
     configPicks?: { id: string; value: string | boolean }[];
+    resumeAgentSessionId?: string;
   }): void {
     this._lifecycle = { phase: "draft", ...opts };
   }
@@ -600,6 +634,12 @@ export class Session extends EventEmitter {
       // to a live agent after a server restart (cold ones are auto-attached).
       resumable: this.resumable,
       closed: this.closed,
+      // SPEC-46 lineage (D10): carried on the DTO so the app can caption
+      // "handed off from …" without a second lookup. Undefined for a session
+      // with no parent.
+      parentId: this.parentId,
+      handoffReason: this.handoffReason,
+      origin: this.origin,
       queued: this.queued.map(
         (q): QueuedMessageDTO => ({
           id: q.id,

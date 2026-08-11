@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/routes.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../../store/docs.dart';
 import '../../store/ports.dart';
+import '../docs/doc_glyph.dart';
 import '../ports/ports_glyph.dart';
 import '../ports/worktree_ports_sheet.dart';
 import 'repo_chips.dart';
@@ -56,15 +60,24 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
   // The ref-count collapses N rows to a single `ports.watch {on:true}`.
   late final PortsWatch _portsWatch = ref.read(portsWatchProvider);
 
+  // Same for the doc index (SPEC-46 D11). This is not optional polish: the
+  // phone reaches the Docs screen from this row's glyph, and that glyph hides
+  // when the worktree owns no docs — so without a watch held here no snapshot
+  // ever arrives, the glyph never appears, and the Docs screen is unreachable
+  // on mobile.
+  late final DocsWatch _docsWatch = ref.read(docsWatchProvider);
+
   @override
   void initState() {
     super.initState();
     _portsWatch.watch();
+    _docsWatch.watch();
   }
 
   @override
   void dispose() {
     _portsWatch.release();
+    _docsWatch.release();
     super.dispose();
   }
 
@@ -193,6 +206,7 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
                     // stays the last child so its column stays aligned down the
                     // card; the glyph renders nothing when no ports listen.
                     _WorktreePortsGlyph(worktree: worktree),
+                    _WorktreeDocsGlyph(worktree: worktree),
                     // Start a session on *this* branch. Without it the only way
                     // in was the card-level "New session", which reopens the
                     // worktree picker — asking again for the branch the user is
@@ -353,6 +367,33 @@ class _WorktreePortsGlyph extends ConsumerWidget {
         child: Center(
           child: PortsGlyph(state: state, count: count),
         ),
+      ),
+    );
+  }
+}
+
+/// The worktree row's docs glyph (SPEC-46), phone form. Sits beside the ports
+/// plug and opens the global Docs screen on tap. Renders nothing when the
+/// worktree owns no docs, so a quiet branch adds no weight (and the 320 pt row
+/// stays within budget) — the same discipline as [_WorktreePortsGlyph].
+class _WorktreeDocsGlyph extends ConsumerWidget {
+  const _WorktreeDocsGlyph({required this.worktree});
+
+  final Worktree worktree;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final docs = ref.watch(docsForWorktreeProvider(worktree.path));
+    if (docs.isEmpty) return const SizedBox.shrink();
+    return InkWell(
+      borderRadius: BorderRadius.circular(kRadius8),
+      onTap: () => context.go(kRouteDocs),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: kTrailingControl,
+          minHeight: kTouchRow,
+        ),
+        child: Center(child: DocsGlyph(count: docs.length)),
       ),
     );
   }
