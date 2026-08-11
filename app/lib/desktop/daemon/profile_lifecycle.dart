@@ -70,10 +70,14 @@ class ProfileLifecycle {
     bool Function(String path)? socketExists,
     Future<bool> Function(ServerProfile profile)? statusProbe,
     Future<void> Function(Duration duration)? sleep,
+    int? Function(ServerProfile profile)? readPid,
+    bool Function(int pid)? processAlive,
   }) : run = run ?? _defaultRun,
        _socketExists = socketExists ?? _fileExists,
        _statusProbe = statusProbe ?? _connectProbe,
-       _sleep = sleep ?? Future<void>.delayed;
+       _sleep = sleep ?? Future<void>.delayed,
+       _readPid = readPid ?? _readPidFile,
+       _processAlive = processAlive ?? _posixProcessAlive;
 
   /// Locates the `makit` executable.
   final MakitCliResolver resolver;
@@ -84,6 +88,8 @@ class ProfileLifecycle {
   final bool Function(String path) _socketExists;
   final Future<bool> Function(ServerProfile profile) _statusProbe;
   final Future<void> Function(Duration duration) _sleep;
+  final int? Function(ServerProfile profile) _readPid;
+  final bool Function(int pid) _processAlive;
 
   /// Runs `MAKIT_HOME=<profile.home> makit start`.
   Future<DaemonActionResult> start(ServerProfile profile) =>
@@ -104,34 +110,48 @@ class ProfileLifecycle {
     return _statusProbe(profile);
   }
 
-  /// Stops [profile]'s daemon, then polls until it is no longer *listening*.
+  /// Stops [profile]'s daemon, then polls until the daemon **process** has
+  /// exited.
   ///
   /// Deleting a profile must not unlink files under a live daemon holding
-  /// `makit.db-wal` (SPEC-50 D8). The CLI already escalates SIGTERM→SIGKILL, so
-  /// this only *confirms* the outcome: it returns `true` once the daemon stops
-  /// answering within [timeout], and `false` if it is still answering when time
-  /// runs out — the caller must then abort the delete.
+  /// `makit.db-wal` (SPEC-50 D8). Confirming only that the control socket
+  /// stopped answering is not enough: the daemon's SIGTERM handler closes the
+  /// socket *first* and calls `process.exit(0)` ~100 ms later, so there is a
+  /// window where the socket is gone but the process is still alive and may
+  /// still be writing the database. `makit stop` itself returns the instant it
+  /// signals (it does not wait for exit) and removes the pid file, so this reads
+  /// the pid **before** stopping and then polls the OS for the process itself.
   ///
-  /// Liveness is [isRunning], **not** the presence of the socket file. A daemon
-  /// killed with SIGKILL never unlinks its socket (it is removed only on
-  /// graceful shutdown in `control-server.ts`), and `makit stop` on an
-  /// already-dead daemon removes just the pid file. Verified against the real
-  /// binary: after SIGKILL, `makit stop` prints "not running" and `control.sock`
-  /// remains. Polling the file therefore reported every *crashed* profile as
-  /// running forever — which made exactly the orphaned profiles that D9 exists to
-  /// reclaim permanently undeletable.
+  /// Returns `true` once the process is confirmed gone within [timeout], and
+  /// `false` if it is still alive when time runs out — the caller must then abort
+  /// the delete. When the pid cannot be read (older daemon, race), it falls back
+  /// to the socket-liveness check ([isRunning]) so a profile is never made
+  /// permanently undeletable.
   Future<bool> stopAndConfirm(
     ServerProfile profile, {
     Duration timeout = _kDefaultStopTimeout,
   }) async {
+    final pid = _readPid(profile);
     await stop(profile);
     var elapsed = Duration.zero;
+
+    // Phase 1: wait for the control socket to stop answering.
     while (elapsed < timeout) {
-      if (!await isRunning(profile)) return true;
+      if (!await isRunning(profile)) break;
       await _sleep(_kSocketPollInterval);
       elapsed += _kSocketPollInterval;
     }
-    return !await isRunning(profile);
+    if (await isRunning(profile)) return false;
+
+    // Phase 2: wait for the process itself to exit. Without a pid the socket
+    // check above is all we have.
+    if (pid == null) return true;
+    while (elapsed < timeout) {
+      if (!_processAlive(pid)) return true;
+      await _sleep(_kSocketPollInterval);
+      elapsed += _kSocketPollInterval;
+    }
+    return !_processAlive(pid);
   }
 
   Future<DaemonActionResult> _invoke(
@@ -169,6 +189,30 @@ class ProfileLifecycle {
   }) => Process.run(exe, args, environment: environment);
 
   static bool _fileExists(String path) => File(path).existsSync();
+
+  /// Reads the daemon pid from `$MAKIT_HOME/makit.pid`, or `null` when the file
+  /// is absent or unparseable. Read before `makit stop`, which deletes it.
+  static int? _readPidFile(ServerProfile profile) {
+    try {
+      final file = File(profile.pidFilePath);
+      if (!file.existsSync()) return null;
+      return int.tryParse(file.readAsStringSync().trim());
+    } on FileSystemException {
+      return null;
+    }
+  }
+
+  /// Whether an OS process [pid] is still alive, via POSIX `kill -0` (which only
+  /// probes; it delivers no signal). Returns `false` off POSIX, where the pid
+  /// wait is skipped and socket-liveness stands in.
+  static bool _posixProcessAlive(int pid) {
+    if (Platform.isWindows) return false;
+    try {
+      return Process.runSync('/bin/kill', ['-0', '$pid']).exitCode == 0;
+    } on ProcessException {
+      return false;
+    }
+  }
 
   /// Connects to the unix control socket and immediately closes it. A daemon
   /// listening there accepts the connection; a stale socket file refuses it.

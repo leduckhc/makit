@@ -41,12 +41,19 @@ Future<void> showProfileReclaimSheet(
   var bytesFreed = 0;
   final refusals = <String>[];
   for (final profile in chosen) {
-    final result = await deleter.delete(profile);
-    if (result.ok) {
-      deleted++;
-      bytesFreed += result.bytesFreed;
-    } else {
-      refusals.add('${profile.name}: ${result.skipped.join(' — ')}');
+    // Guard each deletion: one profile's filesystem/registry failure must not
+    // abort the loop and leave the remaining selected profiles unprocessed with
+    // no combined outcome reported.
+    try {
+      final result = await deleter.delete(profile);
+      if (result.ok) {
+        deleted++;
+        bytesFreed += result.bytesFreed;
+      } else {
+        refusals.add('${profile.name}: ${result.skipped.join(' — ')}');
+      }
+    } catch (error) {
+      refusals.add('${profile.name}: $error');
     }
   }
   await controller.refresh();

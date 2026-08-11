@@ -299,6 +299,29 @@ void main() {
     expect(find.text('Switch away & delete…'), findsOneWidget);
   });
 
+  testWidgets('the active profile menu offers no Start/Stop', (tester) async {
+    // Stopping the daemon this window talks to is self-defeating (D7): the
+    // menu must omit the toggle for the active profile.
+    final w = _wiring(
+      profiles: [_dev(id: 'active-dev', origin: null)],
+      activeId: 'active-dev',
+      running: const {'active-dev': true},
+    );
+    await _pump(
+      tester,
+      controller: w.controller,
+      deleter: w.deleter,
+      lifecycle: w.lifecycle,
+    );
+
+    await tester.tap(find.byType(PopupMenuButton<String>).first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rename…'), findsOneWidget);
+    expect(find.widgetWithText(PopupMenuItem<String>, 'Stop'), findsNothing);
+    expect(find.widgetWithText(PopupMenuItem<String>, 'Start'), findsNothing);
+  });
+
   testWidgets('delete sheet names both what goes and what stays', (
     tester,
   ) async {

@@ -38,6 +38,31 @@ class _FakeFs implements ProfileFileSystem {
   }
 }
 
+/// A [ProfileFileSystem] that throws a [FileSystemException] on a chosen store
+/// operation, to prove [ProfileDeleter.delete] stays best-effort.
+class _ThrowingFs implements ProfileFileSystem {
+  _ThrowingFs(this.paths, {this.throwOnDeleteDirectory = false});
+  final Map<String, int> paths;
+  final bool throwOnDeleteDirectory;
+
+  @override
+  bool exists(String path) => paths.containsKey(path);
+
+  @override
+  Future<int> sizeOf(String path) async => paths[path] ?? 0;
+
+  @override
+  Future<void> deleteDirectory(String path) async {
+    if (throwOnDeleteDirectory) {
+      throw const FileSystemException('permission denied');
+    }
+    paths.remove(path);
+  }
+
+  @override
+  Future<void> deleteFile(String path) async => paths.remove(path);
+}
+
 MakitCliResolver _resolver() => MakitCliResolver(
   candidatePaths: const [],
   exists: (_) => false,
@@ -243,6 +268,73 @@ void main() {
       ).diskUsage(profile);
 
       expect(usage, 123456);
+    });
+
+    test(
+      'refuses to measure a home outside ~/.makit* (corrupt registry)',
+      () async {
+        // A hand-edited `home: "/"` must never trigger a recursive walk of the
+        // whole filesystem.
+        final rogue = _profile(home: '/');
+        final fs = _FakeFs({'/': 999999999});
+        final usage = await _deleter(
+          registry: _registry([rogue]),
+          lifecycle: _lifecycle(running: false),
+          fs: fs,
+        ).diskUsage(rogue);
+
+        expect(
+          usage,
+          0,
+          reason: 'the disk root is not a measurable profile home',
+        );
+      },
+    );
+
+    test('still measures the protected legacy home (~/.makit)', () async {
+      // The legacy home has no child segment so deletion refuses it, but its
+      // size must still show in the list.
+      final legacy = _profile(
+        id: 'default',
+        home: '$_homeDir/.makit',
+        storage: ProfileStorage.legacy,
+      );
+      final fs = _FakeFs({legacy.home: 4242});
+      final usage = await _deleter(
+        registry: _registry([legacy]),
+        lifecycle: _lifecycle(running: false),
+        fs: fs,
+      ).diskUsage(legacy);
+
+      expect(usage, 4242);
+    });
+  });
+
+  group('ProfileDeleter.delete is best-effort under filesystem failure', () {
+    test('records a store failure and still returns a result', () async {
+      // A filesystem error mid-delete must not throw out of the method (leaving
+      // the caller with no outcome and a half-deleted profile): the failure is
+      // recorded and the registry entry is still removed.
+      final profile = _profile();
+      final fs = _ThrowingFs({profile.home: 10}, throwOnDeleteDirectory: true);
+      final registry = _registry([profile]);
+      final result = await ProfileDeleter(
+        registry: registry,
+        lifecycle: _lifecycle(running: false),
+        activeProfileId: 'other',
+        homeDir: _homeDir,
+        fs: fs,
+        isMacOS: true,
+      ).delete(profile);
+
+      expect(result.outcome, ProfileDeletionOutcome.deleted);
+      expect(
+        result.skipped.any((s) => s.contains('MAKIT_HOME')),
+        isTrue,
+        reason: 'the home-delete failure must be reported, not swallowed',
+      );
+      // Step (4) still ran: the registry entry is gone.
+      expect(registry.byId('work'), isNull);
     });
   });
 }

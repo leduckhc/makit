@@ -434,6 +434,14 @@ class _ProfileHostState extends State<_ProfileHost> {
 
   ProfileRuntime get _runtime => holder.runtime;
 
+  /// True while a [switchTo] is mid-flight, so a second switch cannot start
+  /// before the first resolves. Both the title-bar badge and the Profiles
+  /// section call `switchTo` through `profileSwitcherProvider`, so guarding here
+  /// serialises every entry point: two interleaved switches could otherwise each
+  /// replace the shared runtime and write `lastActive`, leaving the window on
+  /// one profile while persistence and the title name another.
+  bool _switching = false;
+
   /// Switches to [target], verifying it is reachable BEFORE tearing anything
   /// down (SPEC-50 D10 step 2).
   ///
@@ -453,6 +461,22 @@ class _ProfileHostState extends State<_ProfileHost> {
   /// host survives that rebuild, so it runs the delete afterwards through the NEW
   /// runtime's deleter, which correctly sees the old profile as inactive.
   Future<String?> switchTo(
+    ServerProfile target, {
+    ServerProfile? deleteAfter,
+  }) async {
+    if (target.id == _runtime.profile.id) return null;
+    if (_switching) {
+      return 'a profile switch is already in progress — wait for it to finish';
+    }
+    _switching = true;
+    try {
+      return await _switchTo(target, deleteAfter: deleteAfter);
+    } finally {
+      _switching = false;
+    }
+  }
+
+  Future<String?> _switchTo(
     ServerProfile target, {
     ServerProfile? deleteAfter,
   }) async {

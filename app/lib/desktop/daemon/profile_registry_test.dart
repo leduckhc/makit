@@ -20,6 +20,8 @@ class _MemoryFs extends FileSystemAdapter {
 
   @override
   void writeAtomic(String path, String contents) => written[path] = contents;
+  @override
+  T withLock<T>(String path, T Function() body) => body();
 }
 
 /// Every port is free.
@@ -133,6 +135,30 @@ void main() {
       expect(p.port, kFallbackServerPort);
       expect(p.storage, ProfileStorage.namespaced);
       expect(p.kind, ProfileKind.user);
+    });
+
+    test('fromJson falls back for an out-of-range port', () {
+      // A hand-edited `{"port": 70000}` cannot be bound; it must fall back the
+      // same way a missing/non-positive port does, not wedge the profile.
+      final tooHigh = ServerProfile.fromJson({
+        'id': 'x',
+        'home': '/h',
+        'port': 70000,
+      })!;
+      expect(tooHigh.port, kFallbackServerPort);
+      final zero = ServerProfile.fromJson({
+        'id': 'x',
+        'home': '/h',
+        'port': 0,
+      })!;
+      expect(zero.port, kFallbackServerPort);
+      // A valid port is kept.
+      final ok = ServerProfile.fromJson({
+        'id': 'x',
+        'home': '/h',
+        'port': 8123,
+      })!;
+      expect(ok.port, 8123);
     });
 
     test('copyWith cannot change frozen identity fields', () {
@@ -595,6 +621,43 @@ void main() {
       (await seeded(fs)).save();
       expect(fs.written['$kRoot/profiles.json'], isNot(contains('lastActive')));
     });
+
+    test(
+      'save() preserves a newer on-disk lastActive it did not set itself',
+      () async {
+        // Shared "disk": both registries read and write the same map.
+        final fs = _MemoryFs();
+        final regA = ProfileRegistry(
+          makitRoot: kRoot,
+          probe: _allFree,
+          fs: fs,
+          profiles: const [_legacy],
+        );
+        await regA.createUserProfile(name: 'Personal');
+        regA.save(); // disk: [legacy, personal], no lastActive
+
+        // Another window loads the same disk and switches the active profile.
+        final regB = ProfileRegistry.load(
+          makitRoot: kRoot,
+          fs: fs,
+          probe: _allFree,
+        );
+        expect(regB.setLastActive('personal'), isTrue);
+        regB.save(); // disk lastActive = personal
+
+        // regA (loaded before that, never touched lastActive) saves an
+        // unrelated rename. It must NOT clobber the newer selection.
+        expect(regA.rename('personal', 'Personal 2'), isTrue);
+        regA.save();
+
+        final reloaded = ProfileRegistry.load(
+          makitRoot: kRoot,
+          fs: fs,
+          probe: _allFree,
+        );
+        expect(reloaded.lastActiveId, 'personal');
+      },
+    );
   });
 
   group('ProfileRegistry.staleProfiles', () {

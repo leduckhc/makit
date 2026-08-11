@@ -98,7 +98,13 @@ class ServerProfile {
       name: (name is String && name.isNotEmpty) ? name : id,
       kind: json['kind'] == 'dev' ? ProfileKind.dev : ProfileKind.user,
       home: home,
-      port: (port is int && port > 0) ? port : kFallbackServerPort,
+      // Reject out-of-range ports the same way missing/non-positive ones are
+      // rejected: a hand-edited `{"port": 70000}` cannot be bound, so falling
+      // back keeps the profile startable instead of silently wedging it. Mirrors
+      // ProfileRegistry.setPort's own `> 65535` guard.
+      port: (port is int && port > 0 && port <= 65535)
+          ? port
+          : kFallbackServerPort,
       storage: json['storage'] == 'legacy'
           ? ProfileStorage.legacy
           : ProfileStorage.namespaced,
@@ -182,6 +188,11 @@ class ServerProfile {
 
   /// Where this profile's daemon exposes its control socket.
   String get controlSocketPath => '$home/control.sock';
+
+  /// Where this profile's daemon records its OS process id, mirroring the
+  /// server's `pidFilePath()` (`$MAKIT_HOME/makit.pid`). Read *before* stopping
+  /// a daemon, because `makit stop` removes this file the instant it signals.
+  String get pidFilePath => '$home/makit.pid';
 
   /// The prefix this profile's **own** preference keys carry.
   ///

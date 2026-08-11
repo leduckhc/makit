@@ -158,5 +158,45 @@ void main() {
         expect(connected, [0, 1]);
       },
     );
+
+    test(
+      'close() disposes a client whose connect was still in flight',
+      () async {
+        // Regression: close() used to only null `_current`, so a connect still
+        // in flight would complete afterwards, install a live socket into
+        // `_current`, and leak it — the old profile's runtime kept polling after
+        // teardown.
+        final localCreated = <_FakeClient>[];
+        final localDisposed = <int>[];
+        final gate = Completer<void>();
+        var seq = 0;
+        final client = ReconnectingControlClient(
+          create: () {
+            final c = _FakeClient(seq++);
+            localCreated.add(c);
+            return c;
+          },
+          connect: (_) async => gate.future, // stays in flight until released
+          dispose: (c) async => localDisposed.add((c as _FakeClient).id),
+        );
+
+        // Trigger connect but do not await the call yet.
+        final pending = client.status();
+        await Future<void>.delayed(Duration.zero);
+        expect(localCreated, hasLength(1));
+
+        // Close while the connect is in flight, then let the connect complete.
+        final closing = client.close();
+        gate.complete();
+        await closing;
+        await pending.then((_) {}, onError: (_) {});
+
+        // The in-flight client must have been disposed, not retained.
+        expect(localDisposed, contains(0));
+        // And it is not reused: the next call connects a fresh client.
+        await client.status();
+        expect(localCreated, hasLength(2));
+      },
+    );
   });
 }

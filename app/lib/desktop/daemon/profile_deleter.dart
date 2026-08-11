@@ -102,17 +102,23 @@ class RealProfileFileSystem implements ProfileFileSystem {
     final dir = Directory(path);
     if (dir.existsSync()) {
       var total = 0;
-      await for (final entity in dir.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is File) {
-          try {
-            total += await entity.length();
-          } on FileSystemException {
-            // Skip an entry that vanished mid-walk rather than aborting the sum.
+      try {
+        await for (final entity in dir.list(
+          recursive: true,
+          followLinks: false,
+        )) {
+          if (entity is File) {
+            try {
+              total += await entity.length();
+            } on FileSystemException {
+              // Skip an entry that vanished mid-walk rather than aborting the
+              // sum.
+            }
           }
         }
+      } on FileSystemException {
+        // An unreadable directory (permissions) must not throw out of a size
+        // probe: report what was measured so far rather than failing the UI.
       }
       return total;
     }
@@ -179,7 +185,29 @@ class ProfileDeleter {
   /// Recursive byte sum of [profile]'s `MAKIT_HOME`, for the Profiles UI size
   /// column. `0` when the home is gone. Does not include the tiny secure-store
   /// file, which is not part of the profile's disk footprint the user cares about.
-  Future<int> diskUsage(ServerProfile profile) => fs.sizeOf(profile.home);
+  ///
+  /// Refuses to measure a home the deleter would refuse to delete for being
+  /// outside `~/.makit*` (a corrupt `profiles.json` with `home: "/"` would
+  /// otherwise walk the whole disk). Unlike deletion, the protected legacy home
+  /// (`~/.makit` itself, which has no child segment) is measurable, so this uses
+  /// a containment check rather than the stricter delete guard.
+  Future<int> diskUsage(ServerProfile profile) async {
+    if (!_isMeasurableHome(profile)) return 0;
+    return fs.sizeOf(profile.home);
+  }
+
+  /// Whether [profile]'s home is a concrete path at or under `~/.makit*`, so it
+  /// is safe to recursively measure. Broader than [_unsafeHomeReason] by design:
+  /// it admits the legacy `~/.makit` home, which is measurable but not deletable.
+  bool _isMeasurableHome(ServerProfile profile) {
+    final home = _canonical(profile.home);
+    if (home == null) return false;
+    final base = _canonical(homeDir);
+    if (base == null) return false;
+    return home == '$base/.makit' ||
+        home.startsWith('$base/.makit/') ||
+        home.startsWith('$base/.makit-dev/');
+  }
 
   /// Erases [profile] across its four stores, or refuses.
   ///
@@ -229,12 +257,21 @@ class ProfileDeleter {
     var bytesFreed = 0;
 
     // (1) $MAKIT_HOME/
-    if (fs.exists(profile.home)) {
-      bytesFreed += await fs.sizeOf(profile.home);
-      await fs.deleteDirectory(profile.home);
-      removed.add('MAKIT_HOME ${profile.home}');
-    } else {
-      skipped.add('MAKIT_HOME ${profile.home}: already absent');
+    //
+    // Every store operation below is best-effort: a failure after the home is
+    // erased must not throw out of the method, or the caller gets no result and
+    // the registry entry survives to resurrect an empty home next launch. Each
+    // failure is recorded in `skipped` and a result is always returned.
+    try {
+      if (fs.exists(profile.home)) {
+        bytesFreed += await fs.sizeOf(profile.home);
+        await fs.deleteDirectory(profile.home);
+        removed.add('MAKIT_HOME ${profile.home}');
+      } else {
+        skipped.add('MAKIT_HOME ${profile.home}: already absent');
+      }
+    } on FileSystemException catch (e) {
+      skipped.add('MAKIT_HOME ${profile.home}: $e');
     }
 
     // (2) secure-store namespace file
@@ -243,12 +280,18 @@ class ProfileDeleter {
       skipped.add(
         'secure store: no namespaced file to delete on this platform/profile',
       );
-    } else if (fs.exists(securePath)) {
-      bytesFreed += await fs.sizeOf(securePath);
-      await fs.deleteFile(securePath);
-      removed.add('secure store $securePath');
     } else {
-      skipped.add('secure store $securePath: already absent');
+      try {
+        if (fs.exists(securePath)) {
+          bytesFreed += await fs.sizeOf(securePath);
+          await fs.deleteFile(securePath);
+          removed.add('secure store $securePath');
+        } else {
+          skipped.add('secure store $securePath: already absent');
+        }
+      } on FileSystemException catch (e) {
+        skipped.add('secure store $securePath: $e');
+      }
     }
 
     // (3) NSUserDefaults keys — see the doc comment: unreachable from this
@@ -260,11 +303,17 @@ class ProfileDeleter {
     );
 
     // (4) registry entry, LAST
-    if (registry.remove(profile.id)) {
-      registry.save();
-      removed.add('registry entry ${profile.id}');
-    } else {
-      skipped.add('registry entry ${profile.id}: not present');
+    try {
+      if (registry.remove(profile.id)) {
+        registry.save();
+        removed.add('registry entry ${profile.id}');
+      } else {
+        skipped.add('registry entry ${profile.id}: not present');
+      }
+    } on FileSystemException catch (e) {
+      skipped.add(
+        'registry entry ${profile.id}: could not persist removal: $e',
+      );
     }
 
     return ProfileDeletionResult(

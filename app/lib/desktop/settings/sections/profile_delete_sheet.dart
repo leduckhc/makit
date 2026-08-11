@@ -52,23 +52,35 @@ Future<void> showProfileDeleteSheet(
   );
   if (confirmed != true) return;
 
-  final result = await deleter.delete(profile);
-  if (result.ok) {
+  // `ProfileDeleter.delete` is best-effort and reports store failures in its
+  // result, but an unexpected throw must still surface an outcome rather than
+  // vanish into an unhandled async gap that leaves the list stale.
+  try {
+    final result = await deleter.delete(profile);
+    if (result.ok) {
+      await controller.refresh();
+      final freed = formatProfileBytes(result.bytesFreed);
+      final skipped = result.skipped.isEmpty
+          ? null
+          : 'Freed $freed. Not purged: ${result.skipped.join(' — ')}';
+      statusCenter.success(
+        'Deleted ${profile.name}',
+        source: StatusSources.settings,
+        detail: skipped ?? 'Freed $freed.',
+      );
+    } else {
+      statusCenter.failure(
+        'Could not delete ${profile.name}',
+        source: StatusSources.settings,
+        detail: result.skipped.join(' — '),
+      );
+    }
+  } catch (error) {
     await controller.refresh();
-    final freed = formatProfileBytes(result.bytesFreed);
-    final skipped = result.skipped.isEmpty
-        ? null
-        : 'Freed $freed. Not purged: ${result.skipped.join(' — ')}';
-    statusCenter.success(
-      'Deleted ${profile.name}',
-      source: StatusSources.settings,
-      detail: skipped ?? 'Freed $freed.',
-    );
-  } else {
     statusCenter.failure(
       'Could not delete ${profile.name}',
       source: StatusSources.settings,
-      detail: result.skipped.join(' — '),
+      detail: error.toString(),
     );
   }
 }
@@ -115,7 +127,6 @@ class _ProfileDeleteDialog extends StatelessWidget {
                 'server.crt / .key',
                 'this profile’s TLS identity',
               ),
-              _DeletedItem('prefs', 'flutter.$prefsKeyPrefix* keys'),
               const _DeletedItem('keychain / secure store', 'pairing bearer'),
               const _DeletedItem('profiles.json', 'registry entry'),
               const SizedBox(height: kSpace16),
@@ -127,6 +138,18 @@ class _ProfileDeleteDialog extends StatelessWidget {
               const _KeptItem(
                 'other profiles',
                 'every other profile is unaffected',
+              ),
+              const SizedBox(height: kSpace12),
+              // Honest caveat: prefs cannot be purged from this process while
+              // another profile's prefix is pinned (SPEC-50 D11), so the sheet
+              // must not list them under "Will be deleted" — the deletion reports
+              // them as skipped.
+              Text(
+                'A few app preferences (flutter.$prefsKeyPrefix*) are left '
+                'behind for now — they can’t be purged from another profile.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.outline),
               ),
               if (running) ...[
                 const SizedBox(height: kSpace12),

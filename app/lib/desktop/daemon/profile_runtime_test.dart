@@ -22,6 +22,8 @@ class _NoWriteFs extends FileSystemAdapter {
   String? readOrNull(String path) => null;
   @override
   void writeAtomic(String path, String contents) {}
+  @override
+  T withLock<T>(String path, T Function() body) => body();
 }
 
 ProfileRegistry _registry() => ProfileRegistry(

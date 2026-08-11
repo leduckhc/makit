@@ -161,35 +161,56 @@ class ProfileRegistry {
   /// unknown ids preserved. Deletions are still honoured: [remove] records the
   /// id in [_deleted] so a merge cannot resurrect it.
   ///
+  /// The whole read-merge-write runs under an inter-process advisory lock
+  /// ([FileSystemAdapter.withLock]). Union-by-id alone loses an update when two
+  /// instances *both* read the same on-disk state before either writes: each
+  /// merges in only its own new profile and the second rename drops the first's.
+  /// The lock serialises the sequence so the second instance always reads the
+  /// first's write.
+  ///
+  /// `lastActive` is preserved from disk unless *this* instance explicitly set it
+  /// via [setLastActive]. A window that loaded before another changed the active
+  /// profile would otherwise write its stale (or null) id back on an unrelated
+  /// rename/create, silently reopening the wrong profile next launch.
+  ///
   /// The temp file is per-process, because two instances sharing one
   /// `profiles.json.tmp` would race and the loser's `renameSync` would throw out
   /// of `save()`.
   void save() {
-    final merged = <String, ServerProfile>{};
-    for (final p in _readFromDisk()) {
-      if (_deleted.contains(p.id)) continue;
-      merged[p.id] = p;
-    }
-    for (final p in _profiles) {
-      merged[p.id] = p;
-    }
-    // Preserve this instance's order for the profiles it knows, then append any
-    // it learned about from disk, so the list does not shuffle under the user.
-    final ordered = <ServerProfile>[
-      for (final p in _profiles)
-        if (merged.containsKey(p.id)) merged[p.id]!,
-      for (final entry in merged.entries)
-        if (!_profiles.any((p) => p.id == entry.key)) entry.value,
-    ];
-    _profiles
-      ..clear()
-      ..addAll(ordered);
+    _fs.withLock(filePath, () {
+      final merged = <String, ServerProfile>{};
+      for (final p in _readFromDisk()) {
+        if (_deleted.contains(p.id)) continue;
+        merged[p.id] = p;
+      }
+      for (final p in _profiles) {
+        merged[p.id] = p;
+      }
+      // Preserve this instance's order for the profiles it knows, then append
+      // any it learned about from disk, so the list does not shuffle under the
+      // user.
+      final ordered = <ServerProfile>[
+        for (final p in _profiles)
+          if (merged.containsKey(p.id)) merged[p.id]!,
+        for (final entry in merged.entries)
+          if (!_profiles.any((p) => p.id == entry.key)) entry.value,
+      ];
+      _profiles
+        ..clear()
+        ..addAll(ordered);
 
-    final body = const JsonEncoder.withIndent('  ').convert({
-      'profiles': [for (final p in _profiles) p.toJson()],
-      if (_lastActiveId != null) 'lastActive': _lastActiveId,
+      // Keep the newer on-disk selection unless this instance changed it.
+      if (!_lastActiveTouched) {
+        _lastActiveId =
+            _parseLastActive(_fs.readOrNull(filePath)) ?? _lastActiveId;
+      }
+
+      final body = const JsonEncoder.withIndent('  ').convert({
+        'profiles': [for (final p in _profiles) p.toJson()],
+        if (_lastActiveId != null) 'lastActive': _lastActiveId,
+      });
+      _fs.writeAtomic(filePath, '$body\n');
     });
-    _fs.writeAtomic(filePath, '$body\n');
   }
 
   /// Re-parses `profiles.json`, or an empty list when it is absent or corrupt.
@@ -320,11 +341,17 @@ class ProfileRegistry {
   String? get lastActiveId => _lastActiveId;
   String? _lastActiveId;
 
+  /// Whether *this* instance explicitly chose the last-active profile. Guards
+  /// [save] from writing a stale in-memory id over a newer on-disk one another
+  /// window persisted.
+  bool _lastActiveTouched = false;
+
   /// Records [id] as the last profile the user chose. Returns false for an
   /// unknown id, so a stale value can never be written.
   bool setLastActive(String id) {
     if (byId(id) == null) return false;
     _lastActiveId = id;
+    _lastActiveTouched = true;
     return true;
   }
 
@@ -437,6 +464,43 @@ class FileSystemAdapter {
 
   /// File mode for registry data, matching the server's `MAKIT_FILE_MODE`.
   static const int fileMode = 0x180; // 0600
+
+  /// Runs [body] while holding an exclusive, inter-process advisory lock keyed
+  /// on [path].
+  ///
+  /// Serialises the registry's read-merge-write across the several app instances
+  /// that run at once (SPEC-50 D1). Without it, two instances can each read the
+  /// same `profiles.json`, merge in only their own new profile, and have the
+  /// second atomic rename silently drop the first's — orphaning a `user`
+  /// profile's home, pairings and prefs, since it has no `origin` to re-bind by.
+  /// The lock file (`<path>.lock`) is a separate sentinel so the data file's
+  /// atomic replace is never itself the locked handle.
+  T withLock<T>(String path, T Function() body) {
+    final lockFile = File('$path.lock');
+    RandomAccessFile? raf;
+    try {
+      lockFile.parent.createSync(recursive: true);
+      raf = lockFile.openSync(mode: FileMode.write);
+      raf.lockSync(FileLock.blockingExclusive);
+      return body();
+    } on FileSystemException {
+      // If the lock cannot be taken (e.g. a filesystem that does not support
+      // advisory locks), fall back to running unlocked rather than refusing to
+      // persist — the union-by-id merge still protects the common case.
+      return body();
+    } finally {
+      try {
+        raf?.unlockSync();
+      } on FileSystemException {
+        // Best effort: the handle is closed next regardless.
+      }
+      try {
+        raf?.closeSync();
+      } on FileSystemException {
+        // Nothing more to do.
+      }
+    }
+  }
 
   /// Returns the contents of [path], or `null` when it does not exist or cannot
   /// be read.

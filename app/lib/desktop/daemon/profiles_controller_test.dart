@@ -11,6 +11,8 @@ class _MemoryFs extends FileSystemAdapter {
   String? readOrNull(String path) => written[path];
   @override
   void writeAtomic(String path, String contents) => written[path] = contents;
+  @override
+  T withLock<T>(String path, T Function() body) => body();
 }
 
 Future<bool> _allFree(int port) async => true;

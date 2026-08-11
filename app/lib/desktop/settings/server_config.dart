@@ -234,9 +234,17 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
   }
 
   /// Persists the reachability answer and updates state.
+  ///
+  /// Clears any custom host at the same time: [ServerConfig.serveArgs] gives a
+  /// non-empty [ServerConfig.customHost] precedence over the reachability
+  /// choice, so leaving a stale `0.0.0.0` in place would keep the server
+  /// network-reachable after the user explicitly picked “Just this Mac” — the
+  /// UI would say “nothing else can connect” while the bind said otherwise. An
+  /// explicit reachability choice is the newer intent and wins.
   Future<void> setReachability(Reachability reachability) async {
-    state = state.copyWith(reachability: reachability);
+    state = state.copyWith(reachability: reachability, customHost: '');
     await _prefs.setString(_kReachabilityKey, reachability.name);
+    await _prefs.setString(_kCustomHostKey, '');
   }
 
   /// Persists the LAN-fallback preference and updates state.

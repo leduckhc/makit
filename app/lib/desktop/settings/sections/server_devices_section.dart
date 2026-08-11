@@ -56,24 +56,52 @@ Future<void> _restartAndReport(WidgetRef ref) async {
 
 /// Server & Devices section body: the single home for endpoint config, daemon
 /// lifecycle, the CLI, device pairing/management, sessions, and TLS trust.
-class ServerDevicesSection extends StatefulWidget {
+class ServerDevicesSection extends ConsumerStatefulWidget {
   /// Creates the Server & Devices section body.
   const ServerDevicesSection({super.key});
 
   @override
-  State<ServerDevicesSection> createState() => _ServerDevicesSectionState();
+  ConsumerState<ServerDevicesSection> createState() =>
+      _ServerDevicesSectionState();
 }
 
-class _ServerDevicesSectionState extends State<ServerDevicesSection> {
+class _ServerDevicesSectionState extends ConsumerState<ServerDevicesSection> {
   /// Id of the single expanded disclosure row, or null when all are collapsed.
   /// Kept here (not per-row) so the rows behave as an accordion.
   String? _openRow;
 
+  /// The deep-link target this section has already auto-expanded for, so a
+  /// rebuild while still targeted does not fight the user re-collapsing the row.
+  String? _autoExpandedForTarget;
+
   void _toggle(String id) =>
       setState(() => _openRow = _openRow == id ? null : id);
 
+  /// The disclosure row that must be open for [target]'s anchor to exist in the
+  /// tree, or null when the target lives at the top level. `_ExpandableRow`
+  /// mounts its child only when expanded, so a deep-link to a Diagnostics row
+  /// would otherwise never resolve.
+  static String? _disclosureOwning(String? target) => switch (target) {
+    'server_devices.lifecycle' ||
+    'server_devices.cli' ||
+    'server_devices.fingerprint' => 'diagnostics',
+    _ => null,
+  };
+
   @override
   Widget build(BuildContext context) {
+    final target = ref.watch(settingsTargetItemProvider);
+    if (target != _autoExpandedForTarget) {
+      _autoExpandedForTarget = target;
+      final owner = _disclosureOwning(target);
+      if (owner != null && _openRow != owner) {
+        // Defer past this build: the anchor's own reveal runs in a post-frame
+        // callback, so the row must be mounted by then.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _openRow = owner);
+        });
+      }
+    }
     return ListView(
       children: [
         const SettingsSectionHeader(title: 'Server & Devices'),
@@ -208,12 +236,17 @@ class _ReachabilityRow extends ConsumerWidget {
   }
 
   /// The current bind address, read-only. The detected-address dropdown is
-  /// deferred (SPEC-50 "does not do"); this renders what the server is bound to
-  /// now, or the effective intent when it is not connected.
-  String _currentAddress(WidgetRef ref, ServerConfig cfg) {
-    final host = ref.watch(connectionProvider).server?.host;
-    if (host != null && host.isNotEmpty) return host;
-    if (cfg.customHost.trim().isNotEmpty) return cfg.customHost.trim();
+  /// deferred (SPEC-50 "does not do"); this renders the *effective* bind the
+  /// daemon is configured for.
+  ///
+  /// Deliberately derived from [ServerConfig], not from the client connection:
+  /// the desktop app always talks to its own daemon over loopback, so
+  /// `connectionProvider.server.host` is `127.0.0.1` whenever connected — which
+  /// would misreport a server reachable over Tailscale/LAN as loopback exactly
+  /// when it is running.
+  String _currentAddress(ServerConfig cfg) {
+    final host = cfg.customHost.trim();
+    if (host.isNotEmpty) return host;
     return switch (cfg.reachability) {
       Reachability.thisMacOnly => '127.0.0.1',
       Reachability.myDevices => 'Your devices via Tailscale',
@@ -289,7 +322,7 @@ class _ReachabilityRow extends ConsumerWidget {
                 const SizedBox(width: kSpace12),
                 Expanded(
                   child: Text(
-                    _currentAddress(ref, cfg),
+                    _currentAddress(cfg),
                     style: const TextStyle(
                       fontFeatures: [FontFeature.tabularFigures()],
                     ),

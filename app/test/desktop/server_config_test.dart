@@ -210,4 +210,30 @@ void main() {
     expect(controller.state.port, 7842);
     expect(prefs.getInt('desktop_server_port'), 7842);
   });
+
+  test('setReachability clears a custom host so the choice takes effect', () async {
+    // serveArgs gives a non-empty customHost precedence, so a stale 0.0.0.0 left
+    // over from Advanced would keep the server network-reachable after the user
+    // picks “Just this Mac”. The explicit reachability choice must win.
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final controller = ServerConfigController(
+      ProfileScopedPrefs.unscoped(prefs),
+      const ServerConfig(),
+    );
+
+    await controller.setCustomHost('0.0.0.0');
+    expect(controller.state.customHost, '0.0.0.0');
+
+    await controller.setReachability(Reachability.thisMacOnly);
+
+    expect(controller.state.customHost, '');
+    expect(prefs.getString('desktop_server_custom_host'), '');
+    expect(controller.state.serveArgs(), [
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '7777',
+    ]);
+  });
 }

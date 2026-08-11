@@ -25,6 +25,7 @@ import '../../../status/status_providers.dart';
 import '../../chat/server_profile_badge.dart' show hueForProfileId;
 import '../../daemon/profiles_controller.dart';
 import '../../daemon/server_profile.dart';
+import '../settings_item_anchor.dart';
 import 'profile_delete_sheet.dart';
 import 'profile_reclaim_sheet.dart';
 import 'profiles_format.dart';
@@ -69,24 +70,40 @@ class _ProfilesSectionState extends ConsumerState<ProfilesSection> {
         return ListView(
           children: [
             const SettingsSectionHeaderLike(title: 'Profiles'),
-            _ProfilesGroup(
-              children: [
-                for (final row in rows)
-                  _ProfileRow(
-                    status: row,
-                    activeProfileId: controller.activeProfileId,
-                    expanded: _expanded == row.profile.id,
-                    onToggle: () => setState(
-                      () => _expanded = _expanded == row.profile.id
-                          ? null
-                          : row.profile.id,
+            // Anchors so a settings-search hit (profiles.list / .new / .delete)
+            // scrolls to and highlights the list rather than merely opening the
+            // section. Deletion has no standalone control — it lives in each
+            // row's menu — so `profiles.delete` reveals the list it acts on.
+            SettingsItemAnchor(
+              itemId: 'profiles.delete',
+              child: SettingsItemAnchor(
+                itemId: 'profiles.list',
+                child: _ProfilesGroup(
+                  children: [
+                    for (final row in rows)
+                      _ProfileRow(
+                        status: row,
+                        activeProfileId: controller.activeProfileId,
+                        expanded: _expanded == row.profile.id,
+                        onToggle: () => setState(
+                          () => _expanded = _expanded == row.profile.id
+                              ? null
+                              : row.profile.id,
+                        ),
+                      ),
+                    const SettingsItemAnchor(
+                      itemId: 'profiles.new',
+                      child: _NewProfileRow(),
                     ),
-                  ),
-                const _NewProfileRow(),
-              ],
+                  ],
+                ),
+              ),
             ),
             if (stale.rows.isNotEmpty)
-              _StaleGroup(rows: stale.rows, bytes: stale.bytes),
+              SettingsItemAnchor(
+                itemId: 'profiles.reclaim',
+                child: _StaleGroup(rows: stale.rows, bytes: stale.bytes),
+              ),
           ],
         );
       },
@@ -258,10 +275,14 @@ class _ProfileMenu extends ConsumerWidget {
       icon: const Icon(PhosphorIconsLight.dotsThree, size: 20),
       itemBuilder: (context) => [
         const PopupMenuItem(value: 'rename', child: Text('Rename…')),
-        PopupMenuItem(
-          value: 'toggle',
-          child: Text(status.running ? 'Stop' : 'Start'),
-        ),
+        // Omitted for the active profile: stopping the daemon this window is
+        // connected to would disconnect the UI (the file's own D7 contract),
+        // and starting it is meaningless — it is already running.
+        if (!isActive)
+          PopupMenuItem(
+            value: 'toggle',
+            child: Text(status.running ? 'Stop' : 'Start'),
+          ),
         const PopupMenuItem(value: 'reveal', child: Text('Reveal in Finder')),
         if (!profile.isProtected)
           // The active profile is refused by ProfileDeleter by design (D8), so
@@ -329,7 +350,11 @@ class _ProfileDetail extends ConsumerWidget {
             style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
           ),
           trailing: OutlinedButton.icon(
-            onPressed: () => toggleProfileRunning(ref, status),
+            // Disabled for the active profile: you never stop the server this
+            // window talks to (D7), and it is already running.
+            onPressed: isActive
+                ? null
+                : () => toggleProfileRunning(ref, status),
             icon: Icon(
               status.running
                   ? PhosphorIconsLight.stop

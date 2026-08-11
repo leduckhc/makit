@@ -227,5 +227,61 @@ void main() {
       // And it must not have burned the whole timeout to work that out.
       expect(probes, lessThanOrEqualTo(2));
     });
+
+    test(
+      'waits for the daemon PID to exit, not just the control socket',
+      () async {
+        // The SIGTERM handler closes the socket ~100ms before the process
+        // actually exits. Confirming on the socket alone would greenlight a
+        // delete while the daemon is still alive and may still be writing
+        // makit.db-wal (SPEC-50 D8).
+        var aliveChecks = 0;
+        final lifecycle = ProfileLifecycle(
+          resolver: _resolver(),
+          run: _RecordingRunner().run,
+          socketExists: (_) => false, // socket already gone
+          readPid: (_) => 4242,
+          // Alive for the first two polls, then the process exits.
+          processAlive: (pid) {
+            expect(pid, 4242);
+            return aliveChecks++ < 2;
+          },
+          sleep: (_) async {},
+        );
+
+        final ok = await lifecycle.stopAndConfirm(
+          _profile(),
+          timeout: const Duration(seconds: 5),
+        );
+
+        expect(ok, isTrue);
+        expect(
+          aliveChecks,
+          greaterThanOrEqualTo(3),
+          reason: 'must poll the process, not stop at the socket',
+        );
+      },
+    );
+
+    test(
+      'returns false when the process is still alive at the timeout',
+      () async {
+        final lifecycle = ProfileLifecycle(
+          resolver: _resolver(),
+          run: _RecordingRunner().run,
+          socketExists: (_) => false, // socket gone...
+          readPid: (_) => 99,
+          processAlive: (_) => true, // ...but the process never exits
+          sleep: (_) async {},
+        );
+
+        final ok = await lifecycle.stopAndConfirm(
+          _profile(),
+          timeout: const Duration(milliseconds: 100),
+        );
+
+        expect(ok, isFalse, reason: 'must not unlink under a live process');
+      },
+    );
   });
 }
