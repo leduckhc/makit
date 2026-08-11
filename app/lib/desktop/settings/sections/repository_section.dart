@@ -32,6 +32,7 @@ class RepoSettingsView {
     this.forgeHost,
     this.forgeAuthed = false,
     this.worktreeRootOverridden = false,
+    this.defaultBranchOverridden = false,
     this.editable = true,
     this.providerChoice = ForgeChoice.auto,
     this.branches = const [],
@@ -63,6 +64,13 @@ class RepoSettingsView {
   /// True when a repo-level value replaces the inherited one — the only state
   /// that earns a reset button.
   final bool worktreeRootOverridden;
+
+  /// Whether [defaultBranch] came from a stored override rather than from git.
+  ///
+  /// Needed so the row stays reachable when there is nothing to PICK but something to
+  /// CLEAR: a control that can set a value must be able to unset it, or a repo whose
+  /// branches cannot be enumerated keeps an override forever.
+  final bool defaultBranchOverridden;
 
   /// What the user picked for the provider. [ForgeChoice.auto] means "believe
   /// detection", and is the default — an override exists for the case detection
@@ -107,6 +115,7 @@ RepoSettingsView? repoSettingsViewFor(RepoInfo repo, {bool editable = true}) {
     path: repo.path,
     worktreeRoot: st.worktreeRoot.value,
     worktreeRootOverridden: st.worktreeRoot.isOverride,
+    defaultBranchOverridden: st.defaultBranch != null,
     // The override wins; otherwise git's own answer, which the DTO already carries
     // rather than duplicating into settings.
     defaultBranch: st.defaultBranch?.value ?? repo.defaultBranch,
@@ -268,14 +277,19 @@ class RepositorySettingsSection extends StatelessWidget {
               title: 'Default branch',
               // Pickable from the repo's own branches, never free text: a typo
               // here silently breaks diff-vs-default and the PR base.
-              enabled: view.editable && view.branches.isNotEmpty,
+              // Reachable when there is something to pick OR something to clear.
+              enabled:
+                  view.editable &&
+                  (view.branches.isNotEmpty || view.defaultBranchOverridden),
               onTap: onChooseDefaultBranch,
               // A stated absence, not a blank cell: "Not detected" says the probe
               // finished and found nothing, which is what makes the row worth tapping.
               value: view.defaultBranch ?? 'Not detected',
               mono: view.defaultBranch != null,
               action: _Chevron(
-                enabled: view.editable && view.branches.isNotEmpty,
+                enabled:
+                    view.editable &&
+                    (view.branches.isNotEmpty || view.defaultBranchOverridden),
               ),
             ),
           ],

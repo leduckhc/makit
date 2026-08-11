@@ -44,6 +44,7 @@ RepoSettingsView _view({
   bool hasRemote = true,
   int? logoHue,
   String? path,
+  bool defaultBranchOverridden = false,
 }) => RepoSettingsView(
   name: _base.name,
   path: path ?? _base.path,
@@ -58,6 +59,7 @@ RepoSettingsView _view({
   branches: branches,
   hasRemote: hasRemote,
   logoHue: logoHue,
+  defaultBranchOverridden: defaultBranchOverridden,
 );
 
 Future<void> _pump(
@@ -474,7 +476,7 @@ void main() {
     });
 
     testWidgets(
-      'with no branches known the row does not open an empty picker',
+      'with nothing to pick and nothing to clear, it stays read-only',
       (t) async {
         var taps = 0;
         await _pump(t, _view(branches: const []), onBranch: () => taps++);
@@ -483,5 +485,23 @@ void main() {
         expect(taps, 0);
       },
     );
+
+    testWidgets('an override with no branches listed can still be CLEARED', (
+      t,
+    ) async {
+      // Otherwise the override is permanent: the row was disabled AND the picker
+      // returned early, so a repo whose branches cannot be enumerated -- an empty
+      // repo, or one whose branch went away -- kept a stored override with no way
+      // back. A control that can set a value must be able to unset it.
+      var taps = 0;
+      await _pump(
+        t,
+        _view(branches: const [], defaultBranchOverridden: true),
+        onBranch: () => taps++,
+      );
+      await t.tap(find.text('Default branch'));
+      await t.pumpAndSettle();
+      expect(taps, 1);
+    });
   });
 }

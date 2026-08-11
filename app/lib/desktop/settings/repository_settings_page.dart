@@ -144,7 +144,11 @@ class RepositorySettingsPage extends ConsumerWidget {
     WidgetRef ref,
     RepoSettingsView view,
   ) async {
-    if (view.branches.isEmpty) return;
+    // Not `branches.isEmpty` alone: the "Use the branch git reports" option clears a
+    // stored override and is valid whatever the branch list holds. Returning early on
+    // an empty list left an override stuck on any repo whose branches cannot be
+    // enumerated — an empty repo, or one whose branch went away.
+    if (view.branches.isEmpty && !view.defaultBranchOverridden) return;
     final picked = await showDialog<String>(
       context: context,
       builder: (ctx) => SimpleDialog(
