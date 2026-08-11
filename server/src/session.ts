@@ -8,6 +8,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
+import { DetachedAdapter } from "./adapters/detached.js";
 import type {
   ApprovalPolicy,
   QueuedMessageDTO,
@@ -110,8 +111,8 @@ export interface SessionInit {
   resumeSessionPath?: string;
   /** Native agent session/thread id, restored on rehydration for resume (SPEC-29). */
   agentSessionId?: string;
-  /** Archived on rehydration (SPEC-29): hidden from the active list, still resumable. */
-  archived?: boolean;
+  /** Closed on rehydration (SPEC-29): hidden from the active list, still resumable. */
+  closed?: boolean;
   /** Restore the started-session branch/worktree on rehydration. */
   branch?: string;
   worktreePath?: string;
@@ -162,12 +163,13 @@ export class Session extends EventEmitter {
   agentSessionId?: string;
 
   /**
-   * Archived (SPEC-29): a soft, recoverable hide. An archived session is
-   * excluded from the active session list (`SessionManager.listSessions`) but
-   * keeps its full event log + resume handle and can be restored. Persisted so
-   * it stays archived across a restart.
+   * Closed (SPEC-29): the agent has been released and its process reclaimed.
+   * A closed session is excluded from the active session list
+   * (`SessionManager.listSessions`) but keeps its full event log + resume
+   * handle, so `session.reopen` — or simply sending a message — resumes it.
+   * Persisted so it stays closed across a restart.
    */
-  archived = false;
+  closed = false;
 
   /** Pending lazy history loader — consumed (set to undefined) on first use. */
   private hydrateFrom?: () => SessionEvent[];
@@ -216,7 +218,7 @@ export class Session extends EventEmitter {
     if (typeof init.lastPreview === "string") this.lastPreview = init.lastPreview;
     this.resumeSessionPath = init.resumeSessionPath;
     this.agentSessionId = init.agentSessionId;
-    this.archived = init.archived ?? false;
+    this.closed = init.closed ?? false;
     if (init.branch !== undefined || init.worktreePath !== undefined) {
       this._lifecycle = { phase: "started", branch: init.branch, worktreePath: init.worktreePath };
     }
@@ -313,7 +315,7 @@ export class Session extends EventEmitter {
       lastPreview: this.lastPreview,
       resumeSessionPath: this.resumeSessionPath,
       agentSessionId: this.agentSessionId,
-      archived: this.archived,
+      closed: this.closed,
       // Only a STARTED session's location is persisted: a draft's bound branch
       // must not survive a restart as "started on that branch" (the constructor
       // infers phase "started" from these fields on rehydration).
@@ -389,13 +391,13 @@ export class Session extends EventEmitter {
   }
 
   /**
-   * Set the archived flag (SPEC-29) and persist it. Emits `metaChanged` so the
-   * server re-broadcasts the active session list (which now excludes archived
+   * Set the closed flag (SPEC-29) and persist it. Emits `metaChanged` so the
+   * server re-broadcasts the active session list (which now excludes closed
    * sessions). Returns whether the flag actually changed.
    */
-  setArchived(archived: boolean): boolean {
-    if (this.archived === archived) return false;
-    this.archived = archived;
+  setClosed(closed: boolean): boolean {
+    if (this.closed === closed) return false;
+    this.closed = closed;
     this.persistMeta();
     this.emit("metaChanged");
     return true;
@@ -550,6 +552,18 @@ export class Session extends EventEmitter {
    * path. Mirrors exactly what {@link SessionManager.reattachSession} accepts —
    * one predicate, so the DTO can never advertise less than the server will do.
    */
+  /**
+   * No live agent process backs this session: it holds the detached placeholder
+   * (rehydrated after a restart, closed, or a draft awaiting promotion).
+   *
+   * The honest signal, and the canonical one — an agent that merely exited keeps
+   * its real adapter, so `status` alone cannot tell the two apart. Callers ask
+   * here rather than each re-deriving it from the adapter's class.
+   */
+  get cold(): boolean {
+    return this.adapter instanceof DetachedAdapter;
+  }
+
   get resumable(): boolean {
     return this.agentSessionId != null || this.resumeSessionPath != null;
   }
@@ -585,7 +599,7 @@ export class Session extends EventEmitter {
       // SPEC-29: a session with a persisted resume handle can be brought back
       // to a live agent after a server restart (cold ones are auto-attached).
       resumable: this.resumable,
-      archived: this.archived,
+      closed: this.closed,
       queued: this.queued.map(
         (q): QueuedMessageDTO => ({
           id: q.id,

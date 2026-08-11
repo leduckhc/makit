@@ -90,8 +90,8 @@ void main() {
 
     test('leaves path-free text untouched', () {
       expect(
-        compactPathsIn('Ran git commit -m "feat(app): archived list"'),
-        'Ran git commit -m "feat(app): archived list"',
+        compactPathsIn('Ran git commit -m "feat(app): closed list"'),
+        'Ran git commit -m "feat(app): closed list"',
       );
     });
   });

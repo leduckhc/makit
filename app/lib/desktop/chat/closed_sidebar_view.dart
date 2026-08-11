@@ -8,43 +8,57 @@ import '../../store/store.dart';
 import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
 
-/// Whether the sidebar shows the Active tree or the Archived list (SPEC-29).
-final sidebarArchivedProvider = StateProvider<bool>((_) => false);
+/// Whether the sidebar shows the Active tree or the Closed list (SPEC-29).
+final sidebarClosedProvider = StateProvider<bool>((_) => false);
 
-/// How the archived list is grouped.
-enum ArchiveGroupBy { repo, branch, age, harness }
+/// How the closed list is grouped.
+enum ClosedGroupBy { repo, branch, age, harness }
 
-extension on ArchiveGroupBy {
+extension on ClosedGroupBy {
   String get label => switch (this) {
-    ArchiveGroupBy.repo => 'Repo',
-    ArchiveGroupBy.branch => 'Branch',
-    ArchiveGroupBy.age => 'Age',
-    ArchiveGroupBy.harness => 'Harness',
+    ClosedGroupBy.repo => 'Repo',
+    ClosedGroupBy.branch => 'Branch',
+    ClosedGroupBy.age => 'Age',
+    ClosedGroupBy.harness => 'Harness',
   };
 }
 
-/// The Archived view that replaces the repo tree when the sidebar is in
-/// archived mode. Loads archived sessions on demand and groups them by the
+/// The Closed view that replaces the repo tree when the sidebar is in
+/// closed mode. Loads closed sessions on demand and groups them by the
 /// chosen dimension; each row restores back to the active list.
-class ArchivedSidebarView extends ConsumerStatefulWidget {
-  const ArchivedSidebarView({super.key});
+class ClosedSidebarView extends ConsumerStatefulWidget {
+  const ClosedSidebarView({super.key});
 
   @override
-  ConsumerState<ArchivedSidebarView> createState() =>
-      _ArchivedSidebarViewState();
+  ConsumerState<ClosedSidebarView> createState() => _ClosedSidebarViewState();
 }
 
-class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
-  ArchiveGroupBy _by = ArchiveGroupBy.repo;
+class _ClosedSidebarViewState extends ConsumerState<ClosedSidebarView> {
+  ClosedGroupBy _by = ClosedGroupBy.repo;
   late Future<List<Session>> _future = _load();
 
   Future<List<Session>> _load() =>
-      ref.read(storeControllerProvider.notifier).listArchivedSessions();
+      ref.read(storeControllerProvider.notifier).listClosedSessions();
 
   // Guard for the live-sync listener below: the set of active session ids the
   // last snapshot carried, so routine activity/status churn doesn't trigger a
-  // reload — only an actual archive/restore (which adds/removes an id) does.
-  Set<String>? _lastActiveIds;
+  // reload — only an actual close/reopen (which adds/removes an id) does.
+  //
+  // Seeded in [initState] rather than left null, for the same reason the mobile
+  // ClosedScreen seeds it: the listener only fires on a *change*, so an unseeded
+  // baseline swallows the FIRST one — close a session from a chat pane with this
+  // view open and the list stayed stale until a manual toggle. Seeding it *empty*
+  // is not enough either, or the next snapshot always looks like a change and
+  // reloads for nothing, so it starts from what the store already holds.
+  late Set<String> _lastActiveIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastActiveIds = {
+      for (final s in ref.read(sessionsProvider).sessions) s.id,
+    };
+  }
 
   void _refresh() {
     if (!mounted) return;
@@ -53,10 +67,10 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
     });
   }
 
-  Future<void> _restore(String id) async {
+  Future<void> _reopen(String id) async {
     final status = ref.status;
     try {
-      await ref.read(storeControllerProvider.notifier).unarchiveSession(id);
+      await ref.read(storeControllerProvider.notifier).reopenSession(id);
       if (!mounted) return;
       // Refresh immediately for snappy local feedback. The sessionsProvider
       // listener in build() also fires once the server re-broadcasts the active
@@ -65,7 +79,7 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
       _refresh();
     } catch (e) {
       status.failure(
-        'Could not restore the session',
+        'Could not reopen the session',
         error: e,
         source: StatusSources.session,
         sessionId: id,
@@ -75,17 +89,16 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
 
   @override
   Widget build(BuildContext context) {
-    // Live-sync: archiving/restoring a session elsewhere (e.g. from a chat
+    // Live-sync: closing/reopening a session elsewhere (e.g. from a chat
     // pane) changes the ACTIVE session set the server broadcasts. Reload the
-    // archived list on that transition so it stays fresh without the user
+    // closed list on that transition so it stays fresh without the user
     // toggling the view. Keyed on the id SET (order-independent, no sort/join)
     // so this stays allocation-light under frequent broadcasts from many live
     // sessions and only fires on a real add/remove, not activity/status churn.
     ref.listen<SessionsState>(sessionsProvider, (_, next) {
       final ids = {for (final s in next.sessions) s.id};
       final prev = _lastActiveIds;
-      if (prev != null &&
-          (ids.length != prev.length || !ids.containsAll(prev))) {
+      if (ids.length != prev.length || !ids.containsAll(prev)) {
         _refresh();
       }
       _lastActiveIds = ids;
@@ -129,11 +142,11 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(
         children: [
-          Icon(PhosphorIconsLight.archiveBox, size: 15, color: cs.outline),
+          Icon(PhosphorIconsLight.moon, size: 15, color: cs.outline),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'ARCHIVED',
+              'CLOSED',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -156,7 +169,7 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
       child: Padding(
         padding: const EdgeInsets.all(28),
         child: Text(
-          'No archived sessions.',
+          'No closed sessions.',
           style: TextStyle(color: cs.outline, fontSize: 12.5),
         ),
       ),
@@ -174,7 +187,7 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
             Icon(PhosphorIconsLight.warningCircle, size: 20, color: cs.error),
             const SizedBox(height: 8),
             Text(
-              "Couldn't load archived sessions.",
+              "Couldn't load closed sessions.",
               textAlign: TextAlign.center,
               style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12.5),
             ),
@@ -202,10 +215,10 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
               count: g.items.length,
             ),
             for (final s in g.items)
-              _ArchivedRow(
+              _ClosedRow(
                 session: s,
                 groupBy: _by,
-                onRestore: () => _restore(s.id),
+                onReopen: () => _reopen(s.id),
               ),
           ],
         );
@@ -223,27 +236,27 @@ class _Group {
   final List<Session> items = [];
 }
 
-List<_Group> _group(List<Session> sessions, ArchiveGroupBy by, WidgetRef ref) {
+List<_Group> _group(List<Session> sessions, ClosedGroupBy by, WidgetRef ref) {
   final repos = ref.read(reposProvider);
   String repoName(String pid) => repos.byId(pid)?.name ?? pid;
 
   ({String key, String title, String? sub}) keyOf(Session s) => switch (by) {
-    ArchiveGroupBy.repo => (
+    ClosedGroupBy.repo => (
       key: s.projectId,
       title: repoName(s.projectId),
       sub: null,
     ),
-    ArchiveGroupBy.branch => (
+    ClosedGroupBy.branch => (
       key: '${s.projectId}/${s.branch ?? '∅'}',
       title: s.branch ?? 'detached',
       sub: repoName(s.projectId),
     ),
-    ArchiveGroupBy.age => (
+    ClosedGroupBy.age => (
       key: _ageBucket(s).$1,
       title: _ageBucket(s).$2,
       sub: null,
     ),
-    ArchiveGroupBy.harness => (
+    ClosedGroupBy.harness => (
       key: s.agent,
       title: s.agent == 'pi' ? 'Pi' : (s.agent == 'codex' ? 'Codex' : s.agent),
       sub: null,
@@ -263,7 +276,7 @@ List<_Group> _group(List<Session> sessions, ArchiveGroupBy by, WidgetRef ref) {
 
   // Age groups get a fixed chronological order; others keep first-seen (the
   // server already sorts newest-first), which reads well for repo/branch/harness.
-  if (by == ArchiveGroupBy.age) {
+  if (by == ClosedGroupBy.age) {
     const rank = {'today': 0, 'week': 1, 'month': 2, 'older': 3};
     order.sort((a, b) => (rank[a] ?? 9).compareTo(rank[b] ?? 9));
   }
@@ -352,21 +365,21 @@ class _GroupHeader extends StatelessWidget {
   }
 }
 
-class _ArchivedRow extends StatefulWidget {
-  const _ArchivedRow({
+class _ClosedRow extends StatefulWidget {
+  const _ClosedRow({
     required this.session,
     required this.groupBy,
-    required this.onRestore,
+    required this.onReopen,
   });
   final Session session;
-  final ArchiveGroupBy groupBy;
-  final VoidCallback onRestore;
+  final ClosedGroupBy groupBy;
+  final VoidCallback onReopen;
 
   @override
-  State<_ArchivedRow> createState() => _ArchivedRowState();
+  State<_ClosedRow> createState() => _ClosedRowState();
 }
 
-class _ArchivedRowState extends State<_ArchivedRow> {
+class _ClosedRowState extends State<_ClosedRow> {
   bool _hover = false;
 
   @override
@@ -378,8 +391,8 @@ class _ArchivedRowState extends State<_ArchivedRow> {
         ? const Color(0xFF7AA2F7)
         : cs.primary;
     final showBranch =
-        widget.groupBy != ArchiveGroupBy.branch && s.branch != null;
-    final showHarness = widget.groupBy != ArchiveGroupBy.harness;
+        widget.groupBy != ClosedGroupBy.branch && s.branch != null;
+    final showHarness = widget.groupBy != ClosedGroupBy.harness;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
@@ -432,13 +445,13 @@ class _ArchivedRowState extends State<_ArchivedRow> {
             // Always present (not hover-gated) so keyboard-only users can focus
             // and restore. Dimmed until the row is hovered/focused.
             IconButton(
-              tooltip: 'Restore',
+              tooltip: 'Reopen',
               iconSize: 15,
               visualDensity: VisualDensity.compact,
               constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
               icon: const Icon(PhosphorIconsLight.arrowCounterClockwise),
               color: _hover ? cs.primary : cs.outline,
-              onPressed: widget.onRestore,
+              onPressed: widget.onReopen,
             ),
           ],
         ),
@@ -479,19 +492,19 @@ class _Chip extends StatelessWidget {
 
 class _GroupByMenu extends StatelessWidget {
   const _GroupByMenu({required this.value, required this.onChanged});
-  final ArchiveGroupBy value;
-  final ValueChanged<ArchiveGroupBy> onChanged;
+  final ClosedGroupBy value;
+  final ValueChanged<ClosedGroupBy> onChanged;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return PopupMenuButton<ArchiveGroupBy>(
+    return PopupMenuButton<ClosedGroupBy>(
       tooltip: 'Group by',
       initialValue: value,
       onSelected: onChanged,
       position: PopupMenuPosition.under,
       itemBuilder: (context) => [
-        for (final v in ArchiveGroupBy.values)
+        for (final v in ClosedGroupBy.values)
           PopupMenuItem(
             value: v,
             height: 36,

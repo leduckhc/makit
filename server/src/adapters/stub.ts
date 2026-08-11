@@ -34,7 +34,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   /** Resume-capable so keyless e2e can exercise the server-restart resume path
    *  (SPEC-29): the manager persists {@link agentSessionId} and re-attaches by it. */
-  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false };
+  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false, close: true };
   agentSessionId?: string;
 
   private sessionId = "";
@@ -75,6 +75,8 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
    * invisible from the event stream alone.
    */
   toolScript?: Promise<void>;
+  /** Set by {@link close} — lets tests assert the graceful path was taken. */
+  closed = false;
 
   /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
   private turnCount = 0;
@@ -412,6 +414,16 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     // this it never runs again and its frame is never released.
     this.toolWaitResolve?.();
     this.toolWaitResolve = undefined;
+  }
+
+  /**
+   * Graceful close. The stub has no agent-side state to release, but it records
+   * the call and cancels like the real thing so the keyless e2e loop can prove
+   * the close path runs end-to-end (`test/e2e-server.ts --mode stub`).
+   */
+  async close(): Promise<void> {
+    this.closed = true;
+    await this.cancel();
   }
 
   /**

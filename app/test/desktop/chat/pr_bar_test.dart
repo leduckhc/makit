@@ -622,10 +622,8 @@ void main() {
       expect(find.textContaining('Delete the local branch'), findsNothing);
     });
 
-    testWidgets('says sessions are archived, after the removal', (
-      tester,
-    ) async {
-      // The server removes the worktree first and *archives* live sessions
+    testWidgets('says sessions are closed, after the removal', (tester) async {
+      // The server removes the worktree first and *closes* live sessions
       // (SPEC-29) rather than stopping them; the dialog claimed the reverse order
       // and the wrong verb.
       await tester.pumpWidget(
@@ -642,7 +640,7 @@ void main() {
       // of the other three drift.
       final ys = [
         tester.getTopLeft(find.textContaining('Remove the worktree')).dy,
-        tester.getTopLeft(find.textContaining('Archive the sessions')).dy,
+        tester.getTopLeft(find.textContaining('Close the sessions')).dy,
         tester.getTopLeft(find.textContaining('Delete the local branch')).dy,
         tester.getTopLeft(find.textContaining('Fast-forward')).dy,
       ];

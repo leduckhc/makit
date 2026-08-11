@@ -242,7 +242,7 @@ class WireCodec {
               ? j['worktreePath'] as String
               : null,
           resumable: j['resumable'] == true,
-          archived: j['archived'] == true,
+          closed: j['closed'] == true,
           orphaned: j['orphaned'] == true,
           queued: decodeQueued(j['queued']),
         ),

@@ -834,7 +834,7 @@ void main() {
         'merged',
         '2 files uncommitted',
         'worktree still here',
-        '1 session to archive',
+        '1 session to close',
         'main is 6 commits behind',
       ]);
       expect(
@@ -1227,7 +1227,7 @@ void main() {
       expect(
         s.signals.map((x) => x.label),
         containsAll(<String>[
-          '2 sessions to archive',
+          '2 sessions to close',
           'main is 6 commits behind',
         ]),
       );

@@ -90,6 +90,34 @@ class FakeServer {
       status: 'running',
       branch: 'fix-tab-drag-and-drop',
     )..events.addAll(_scriptClaude('s-claude-1'));
+
+    // Cold-start content for the Closed view (SPEC-29). These live in
+    // [_sessions] like every other session: as separate literals they could be
+    // listed but never reopened, and never appeared in any snapshot.
+    _sessions['s-closed-1'] = _FakeSession(
+      id: 's-closed-1',
+      projectId: p1,
+      projectName: 'makit',
+      projectPath: '/Users/le/Work/Vibe/makit',
+      agent: 'pi',
+      title: 'draft release notes',
+      preview: 'Wrote CHANGELOG.md for 0.4.0.',
+      status: 'exited',
+      branch: 'draft-release-notes',
+    )..closed = true;
+    // No worktree for this one in [_pushRepos], which is what makes it render
+    // the "worktree removed" chip.
+    _sessions['s-closed-2'] = _FakeSession(
+      id: 's-closed-2',
+      projectId: p2,
+      projectName: 'cmux',
+      projectPath: '/Users/le/Work/Vibe/cmux',
+      agent: 'claude',
+      title: 'investigate tab flicker',
+      preview: 'Traced it to the snapshot boundary.',
+      status: 'exited',
+      branch: 'investigate-tab-flicker',
+    )..closed = true;
   }
 
   void _pushInitialState() {
@@ -144,7 +172,7 @@ class FakeServer {
   /// ages.
   void _pushRepos() {
     final byProject = <String, List<_FakeSession>>{};
-    for (final s in _sessions.values) {
+    for (final s in _sessions.values.where((s) => !s.closed)) {
       byProject.putIfAbsent(s.projectId, () => []).add(s);
     }
     for (final entry in _addedProjects.entries) {
@@ -298,37 +326,6 @@ class FakeServer {
     ];
   }
 
-  /// Sessions the demo reports as archived (SPEC-29). Fixed ids so restoring one
-  /// twice in a demo behaves consistently; `orphaned` on the last one exercises
-  /// the "worktree removed" chip.
-  List<Map<String, dynamic>> _archivedSessions() => [
-    {
-      'id': 's-archived-1',
-      'projectId': 'proj-makit',
-      'agent': 'pi',
-      'title': 'draft release notes',
-      'status': 'exited',
-      'policy': 'ask-on-risky',
-      'lastActivityAt': _agoMs(const Duration(days: 1)),
-      'lastPreview': 'Wrote CHANGELOG.md for 0.4.0.',
-      'branch': 'draft-release-notes',
-      'archived': true,
-    },
-    {
-      'id': 's-archived-2',
-      'projectId': 'proj-cmux',
-      'agent': 'claude',
-      'title': 'investigate tab flicker',
-      'status': 'exited',
-      'policy': 'ask-on-risky',
-      'lastActivityAt': _agoMs(const Duration(days: 6)),
-      'lastPreview': 'Traced it to the snapshot boundary.',
-      'branch': 'investigate-tab-flicker',
-      'archived': true,
-      'orphaned': true,
-    },
-  ];
-
   void _pushSessions() {
     _emit(
       Envelope(
@@ -337,6 +334,7 @@ class FakeServer {
         body: {
           'kind': 'sessions.snapshot',
           'sessions': _sessions.values
+              .where((s) => !s.closed)
               .map(
                 (s) => {
                   'id': s.id,
@@ -779,12 +777,46 @@ class FakeServer {
       case 'ports.forward.stop':
         _emit(Envelope(t: MsgType.ack, id: env.id));
         return;
-      case 'session.listArchived':
+      case 'session.close':
+      case 'session.reopen':
+        {
+          // Mirror the real server: flip the flag, then re-broadcast, so the
+          // sidebar/board drop or restore the row exactly as they would live.
+          final id = env.body['sessionId'] as String?;
+          final target = id == null ? null : _sessions[id];
+          if (target != null) target.closed = kind == 'session.close';
+          _emit(Envelope(t: MsgType.ack, id: env.id));
+          _pushSessions();
+          _pushRepos();
+          return;
+        }
+      case 'session.listClosed':
         _emit(
           Envelope(
             t: MsgType.ack,
             id: env.id,
-            body: {'sessions': _archivedSessions()},
+            body: {
+              'sessions': [
+                // Sessions closed during this run, plus the static fixtures that
+                // give the demo something to look at on a cold start.
+                for (final c in _sessions.values.where((c) => c.closed))
+                  {
+                    'id': c.id,
+                    'projectId': c.projectId,
+                    'agent': c.agent,
+                    'title': c.title,
+                    'status': 'exited',
+                    'policy': 'ask-on-risky',
+                    'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
+                    'lastPreview': c.preview,
+                    if (c.branch != null) 'branch': c.branch,
+                    'closed': true,
+                    // The demo's repo list carries no worktree for this one, so
+                    // the "worktree removed" chip has something to render.
+                    if (c.id == 's-closed-2') 'orphaned': true,
+                  },
+              ],
+            },
           ),
         );
         return;
@@ -1077,6 +1109,11 @@ class _FakeSession {
   /// Feature-branch worktree this session runs in; null = primary checkout.
   String? branch;
   bool pending;
+
+  /// Closed (SPEC-29): the agent was released. Excluded from the active
+  /// snapshot, reported by `session.listClosed`, restored by `session.reopen`.
+  /// Always starts live — the demo's cold-start closed rows are static fixtures.
+  bool closed = false;
   final List<SessionEvent> events = [];
 }
 

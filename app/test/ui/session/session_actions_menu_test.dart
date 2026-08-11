@@ -114,11 +114,11 @@ void main() {
   });
 
   group('session actions menu', () {
-    testWidgets('always offers rename and archive', (tester) async {
+    testWidgets('always offers rename and close', (tester) async {
       await _pumpMenu(tester, null);
 
       expect(find.text('Rename session'), findsOneWidget);
-      expect(find.text('Archive session'), findsOneWidget);
+      expect(find.text('Close session'), findsOneWidget);
     });
 
     testWidgets('hides model and thinking when the agent has neither', (
@@ -179,10 +179,10 @@ void main() {
     ) async {
       await _pumpMenu(tester, null);
 
-      // The divider exists only to separate the config actions from Archive;
+      // The divider exists only to separate the config actions from Close;
       // with no config actions it would be a rule under nothing.
       expect(find.byType(PopupMenuDivider), findsNothing);
-      expect(find.byIcon(PhosphorIconsLight.archiveBox), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.moon), findsOneWidget);
     });
   });
 }

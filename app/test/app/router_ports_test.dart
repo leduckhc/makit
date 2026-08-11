@@ -1,4 +1,4 @@
-// SPEC-42 P2a T1 — the global Ports screen is a real route beside Archived.
+// SPEC-42 P2a T1 — the global Ports screen is a real route beside Closed.
 // `kRoutePorts` builds a `PortsScreen`; `?repo=<id>` is readable by the screen.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

@@ -1,4 +1,4 @@
-// Mobile archived-sessions view (SPEC-29): lists the archived sessions the
+// Mobile closed-sessions view (SPEC-29): lists the closed sessions the
 // server holds, grouped by repo, and restores one back to the active list.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +8,7 @@ import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
-import 'package:makit/ui/home/archived_screen.dart';
+import 'package:makit/ui/home/closed_screen.dart';
 
 class _EmptyStorage implements SecureStore {
   const _EmptyStorage();
@@ -20,27 +20,33 @@ class _EmptyStorage implements SecureStore {
   Future<void> delete({required String key}) async {}
 }
 
-/// Serves a fixed archived list and records restores.
+/// Serves a fixed closed list and records restores.
 class _FakeStore extends StoreController {
-  _FakeStore(super.ref, this.archived, {this.throws = false});
+  _FakeStore(super.ref, this.closed, {this.throws = false});
 
-  final List<Session> archived;
+  final List<Session> closed;
   final bool throws;
   final List<String> restored = [];
   int loadCount = 0;
 
   @override
-  Future<List<Session>> listArchivedSessions() async {
+  Future<List<Session>> listClosedSessions() async {
     loadCount++;
     // The real store awaits a server round-trip; yield so a failure reaches the
     // FutureBuilder as a future error rather than before it can subscribe.
     await Future<void>.delayed(Duration.zero);
     if (throws) throw StateError('offline');
-    return archived;
+    // Behave like the server: a reopened session is no longer closed, so it must
+    // leave this list. Returning `closed` verbatim let the reopen test pass even
+    // if the row never disappeared.
+    return [
+      for (final session in closed)
+        if (!restored.contains(session.id)) session,
+    ];
   }
 
   @override
-  Future<void> unarchiveSession(String id) async {
+  Future<void> reopenSession(String id) async {
     restored.add(id);
   }
 }
@@ -60,13 +66,13 @@ Session _session(
   policy: ApprovalPolicy.askOnRisky,
   branch: branch,
   resumable: true,
-  archived: true,
+  closed: true,
   orphaned: orphaned,
 );
 
 Future<_FakeStore> _pump(
   WidgetTester tester,
-  List<Session> archived, {
+  List<Session> closed, {
   bool throws = false,
 }) async {
   late _FakeStore store;
@@ -76,7 +82,7 @@ Future<_FakeStore> _pump(
         (ref) => ConnectionController(const _EmptyStorage()),
       ),
       storeControllerProvider.overrideWith((ref) {
-        store = _FakeStore(ref, archived, throws: throws);
+        store = _FakeStore(ref, closed, throws: throws);
         return store;
       }),
     ],
@@ -86,7 +92,7 @@ Future<_FakeStore> _pump(
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: ArchivedScreen()),
+      child: const MaterialApp(home: ClosedScreen()),
     ),
   );
   await tester.pumpAndSettle();
@@ -94,17 +100,17 @@ Future<_FakeStore> _pump(
 }
 
 void main() {
-  testWidgets('lists archived sessions', (tester) async {
+  testWidgets('lists closed sessions', (tester) async {
     await _pump(tester, [_session('a'), _session('b')]);
 
     expect(find.text('sess-a'), findsOneWidget);
     expect(find.text('sess-b'), findsOneWidget);
   });
 
-  testWidgets('shows an empty state when nothing is archived', (tester) async {
+  testWidgets('shows an empty state when nothing is closed', (tester) async {
     await _pump(tester, const []);
 
-    expect(find.text('No archived sessions.'), findsOneWidget);
+    expect(find.text('No closed sessions.'), findsOneWidget);
   });
 
   testWidgets('shows a retryable error when the load fails', (tester) async {
@@ -124,11 +130,16 @@ void main() {
     final store = await _pump(tester, [_session('a')]);
     expect(store.loadCount, 1);
 
-    await tester.tap(find.widgetWithText(TextButton, 'Restore'));
+    await tester.tap(find.widgetWithText(TextButton, 'Reopen'));
     await tester.pumpAndSettle();
 
     expect(store.restored, ['a']);
-    // Reloaded so the restored row leaves the archive list.
+    expect(
+      find.text('sess-a'),
+      findsNothing,
+      reason: 'the reopened row must leave the list',
+    );
+    // Reloaded so the restored row leaves the closed list.
     expect(store.loadCount, 2);
   });
 

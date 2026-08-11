@@ -25,7 +25,7 @@ import 'package:makit/transport/protocol.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// A connection that answers every request instantly — so the fire-and-forget
-/// archive on tab close leaves no pending timeout Timer in widget tests.
+/// close on tab close leaves no pending timeout Timer in widget tests.
 class _FastConn extends ConnectionController {
   _FastConn() : super(const _NoStore());
   @override

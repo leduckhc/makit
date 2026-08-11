@@ -45,6 +45,13 @@ const STDERR_TAIL_BYTES = 8192;
  */
 const DEFAULT_MAX_FRAME_BYTES = 32 * 1024 * 1024;
 
+/**
+ * How long a child gets to honour SIGTERM before `dispose()` escalates to
+ * SIGKILL. Long enough for an agent to flush a final frame and unwind its own
+ * children, short enough that closing a session feels immediate.
+ */
+const DEFAULT_KILL_GRACE_MS = 3000;
+
 /** Invoke each listener defensively — a throwing consumer must never escape
  *  into a stream/exit event handler and take the whole daemon down. */
 function safeInvoke<T extends unknown[]>(
@@ -79,6 +86,11 @@ export interface SpawnLineOptions {
    * the daemon.
    */
   maxFrameBytes?: number;
+  /**
+   * Grace period between the SIGTERM and the SIGKILL that `dispose()` sends.
+   * Defaults to {@link DEFAULT_KILL_GRACE_MS}; tests shorten it.
+   */
+  killGraceMs?: number;
 }
 
 /** Extra context handed to `onExit` listeners (adapters may ignore it). */
@@ -125,7 +137,8 @@ export interface ChildLineTransport {
    * always fires eventually. Late registrants are replayed.
    */
   onStreamEnd(cb: () => void): void;
-  /** Terminate the child (SIGTERM); safe to call repeatedly. */
+  /** Terminate the child: SIGTERM, then SIGKILL if it outlives the grace
+   *  period. Safe to call repeatedly — escalation is scheduled at most once. */
   dispose(): void;
 }
 
@@ -150,9 +163,25 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
   const exitCbs: Array<(code: number | null, info: ChildExitInfo) => void> = [];
   let settled = false;
   let bufferedInfo: ChildExitInfo | undefined;
+  // Pending SIGTERM→SIGKILL escalation, cleared the moment the child settles.
+  const graceMs = opts.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Set once the escalation has fired. Tracked separately from `killTimer`, which
+   * the timer callback clears: without it a later `dispose()` (documented as safe
+   * to call repeatedly) would send a second SIGTERM and schedule a second SIGKILL
+   * at a process already being force-killed.
+   */
+  let sigkilled = false;
   const settle = (info: ChildExitInfo) => {
     if (settled) return;
     settled = true;
+    // The child is gone; a queued SIGKILL now has no target (and its pid may be
+    // recycled), so drop it.
+    if (killTimer) {
+      clearTimeout(killTimer);
+      killTimer = undefined;
+    }
     bufferedInfo = info;
     safeInvoke(opts.label, "exit", exitCbs, info.code, info);
   };
@@ -262,11 +291,39 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
       if (streamEnded) safeInvoke(opts.label, "stream-end", [cb]); // replay
     },
     dispose: () => {
+      // Already reaped by the OS — nothing to signal, and SIGKILLing a pid that
+      // has been recycled would hit an unrelated process.
+      if (settled) return;
+      // Force-kill already sent; the child is on its way out either way.
+      if (sigkilled) return;
+      // `kill()` returns false when the signal was NOT delivered (the child is
+      // already gone). Escalating on that would schedule a SIGKILL against a pid
+      // the OS may have recycled by then — a signal to an unrelated process.
+      let termed = false;
       try {
-        child.kill("SIGTERM");
+        termed = child.kill("SIGTERM");
       } catch {
         /* ignore */
       }
+      if (!termed) return;
+      // Escalate once. An agent that ignores SIGTERM (or is wedged mid-turn)
+      // would otherwise stay resident indefinitely, holding its whole RSS.
+      if (killTimer) return;
+      killTimer = setTimeout(() => {
+        killTimer = undefined;
+        if (settled) return;
+        sigkilled = true;
+        process.stderr.write(
+          `[${opts.label}] did not exit ${graceMs}ms after SIGTERM — sending SIGKILL\n`,
+        );
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* ignore */
+        }
+      }, graceMs);
+      // Never hold the event loop open just to escalate a kill.
+      killTimer.unref?.();
     },
   };
 }

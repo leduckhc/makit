@@ -538,7 +538,7 @@ void main() {
     testWidgets('a session that vanished mid-drag is not given a tab', (
       tester,
     ) async {
-      // Decision 6 forbids dead tiles. The session can be archived between the
+      // Decision 6 forbids dead tiles. The session can be closed between the
       // drag starting and the drop landing, in which case there is nothing to
       // add and nothing to show.
       final c = await pump(
