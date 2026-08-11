@@ -2,8 +2,8 @@
  * The agent capability surface (SPEC-46 D17 / contract C1).
  *
  * Default-deny: every command kind is forbidden to agent tokens unless
- * explicitly listed here. The map is indexed by agent cap (`send`, `spawn`,
- * `read`) and lists the command kinds that cap grants.
+ * explicitly listed in AGENT_COMMANDS. An agent cap grants only the
+ * command kinds listed for it; all others are client/full-access only.
  *
  * A full-access principal (phone, no caps) and a `client` principal
  * (`cli@<host>`) may dispatch everything; the three agent caps carve out the
@@ -17,9 +17,9 @@
  * `ports.*`, `pr.*`, `worktree.wrapUp`/`discard`, `devices.*` — are
  * client/full-access only.
  *
- * Completeness is enforced by a test over `router.kinds()`: a command added
- * later without an entry here is caught as unmapped, and `canDispatch` denies
- * it for agent tokens, not silently permits it.
+ * Completeness is enforced by a test over `router.kinds()`: a command
+ * registered later uses `canDispatch` without error, and is denied for agent
+ * tokens unless explicitly added to AGENT_COMMANDS.
  */
 
 import type { DeviceCap } from "../protocol.js";
