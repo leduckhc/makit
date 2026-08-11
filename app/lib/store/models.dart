@@ -1124,6 +1124,9 @@ class Session {
     this.resumable = false,
     this.closed = false,
     this.orphaned = false,
+    this.parentId,
+    this.handoffReason,
+    this.origin,
     this.queued = const [],
   });
 
@@ -1171,6 +1174,18 @@ class Session {
   /// repo root (no recreate-worktree path).
   final bool orphaned;
 
+  /// SPEC-46 lineage (D10): the session this one was handed off / spawned from,
+  /// so the app can caption "handed off from …". Null for a session with no
+  /// parent (every session created before SPEC-46, and every app-spawned one).
+  final String? parentId;
+
+  /// SPEC-46 (D10): why the handoff happened, as written by the outgoing agent.
+  final String? handoffReason;
+
+  /// SPEC-46 (D10): which client created this session ("app"/"cli"/"agent").
+  /// Null on pre-SPEC-46 rows; a plain string so an unknown value never throws.
+  final String? origin;
+
   /// Messages submitted while the agent was busy that could not be steered into
   /// the running turn (SPEC-35), oldest first. They are delivered one per idle
   /// transition and can be cancelled until then.
@@ -1191,6 +1206,9 @@ class Session {
     bool? resumable,
     bool? closed,
     bool? orphaned,
+    String? parentId,
+    String? handoffReason,
+    String? origin,
     List<QueuedMessage>? queued,
   }) => Session(
     id: id,
@@ -1210,6 +1228,9 @@ class Session {
     resumable: resumable ?? this.resumable,
     closed: closed ?? this.closed,
     orphaned: orphaned ?? this.orphaned,
+    parentId: parentId ?? this.parentId,
+    handoffReason: handoffReason ?? this.handoffReason,
+    origin: origin ?? this.origin,
     queued: queued ?? this.queued,
   );
 }

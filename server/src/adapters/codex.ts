@@ -13,6 +13,7 @@
  */
 
 import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities } from "./adapter.js";
+import { ForkPreconditionError } from "./adapter.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -202,6 +203,38 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     await this.captureModelCatalog();
     this.emit("status", "idle");
     this.emitConfigOptions();
+  }
+
+  /**
+   * SPEC-46 U4: fork this thread at its head via `thread/fork`. Returns the
+   * NEW thread's id (codex's response also carries `forkedFromId`, its own
+   * ancestry record, which makit does not need — lineage is tracked by the
+   * session's `parentId`). A `thread/fork` on a thread with no persisted
+   * rollout fails `-32600 no rollout found for thread id <id>`; that one case
+   * is surfaced as a {@link ForkPreconditionError} so the command can refuse it
+   * in plain words rather than relay the JSON-RPC string, while any other
+   * failure keeps its message and reads as a real bug.
+   */
+  async forkSession(): Promise<{ agentSessionId: string }> {
+    if (!this.threadId) throw new Error("CodexAppServerAdapter: forkSession before start");
+    let res: { thread?: { id?: string } };
+    try {
+      res = (await this.request("thread/fork", { threadId: this.threadId })) as { thread?: { id?: string } };
+    } catch (e) {
+      const message = (e as Error).message;
+      if (/no rollout found/i.test(message)) throw new ForkPreconditionError(message);
+      throw e;
+    }
+    const id = res?.thread?.id;
+    if (!id) throw new Error("codex app-server: thread/fork returned no thread id");
+    // The forking process keeps the new thread loaded as its **active writer**, so
+    // the child's own codex process is then refused with "thread <id> already has
+    // an active writer" — every fork produced a session that could never start.
+    // The fork is created here but belongs to the child, so let go of it at once.
+    // Best-effort: if the release fails the child's resume will report it, and
+    // failing the fork itself would be worse (the thread already exists).
+    await this.request("thread/unsubscribe", { threadId: id }).catch(() => {});
+    return { agentSessionId: id };
   }
 
   async send(input: UserInput): Promise<void> {

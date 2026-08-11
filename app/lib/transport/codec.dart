@@ -269,6 +269,11 @@ class WireCodec {
           resumable: j['resumable'] == true,
           closed: j['closed'] == true,
           orphaned: j['orphaned'] == true,
+          parentId: j['parentId'] is String ? j['parentId'] as String : null,
+          handoffReason: j['handoffReason'] is String
+              ? j['handoffReason'] as String
+              : null,
+          origin: j['origin'] is String ? j['origin'] as String : null,
           queued: decodeQueued(j['queued']),
         ),
       );

@@ -131,6 +131,28 @@ class SessionTile extends ConsumerWidget {
                             ],
                           ),
                           const SizedBox(height: kSpace2),
+                          if (_handoffCaption(session) case final caption?) ...[
+                            Row(
+                              children: [
+                                Icon(
+                                  PhosphorIconsLight.arrowBendUpRight,
+                                  size: 12,
+                                  color: cs.outline,
+                                ),
+                                const SizedBox(width: kSpace4),
+                                Expanded(
+                                  child: Text(
+                                    caption,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(color: cs.outline),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: kSpace2),
+                          ],
                           Text(
                             session.pending
                                 ? 'Send a message to create a branch'
@@ -167,6 +189,24 @@ class SessionTile extends ConsumerWidget {
       s == SessionStatus.awaitingInput ||
       s == SessionStatus.awaitingApproval ||
       s == SessionStatus.error;
+
+  /// SPEC-46 D10: a session with lineage was handed off from another session,
+  /// so the row explains itself rather than appearing as a mystery title. The
+  /// caption renders whenever [Session.parentId] is set and never depends on
+  /// resolving the parent — which may be closed or simply not cached — and
+  /// carries the outgoing agent's reason when one was written.
+  static String? _handoffCaption(Session session) {
+    if (session.parentId == null) return null;
+    final reason = session.handoffReason?.trim();
+    // Lineage with no reason is not necessarily a handoff: `makit fork` (U4)
+    // branches a conversation natively and deliberately writes no reason, because
+    // a fork is not a handoff (D6). "Continued from" is true of both; claiming a
+    // handoff would mislabel every forked session in the one place the user meets
+    // it.
+    return reason == null || reason.isEmpty
+        ? 'Continued from another session'
+        : 'Handed off — $reason';
+  }
 
   /// Confirms the close, then requests it and only reports the row as
   /// dismissed once the server acknowledges. Returning false on failure keeps

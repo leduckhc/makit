@@ -104,9 +104,9 @@ test("runQr --url-only prints exactly the URL", async () => {
 // fmtAge / fmtUptime are internal; exercise indirectly via imported modules
 // ---------------------------------------------------------------------------
 
-test("sessions module exports runSessions", async () => {
-  const mod = await import("./sessions.js");
-  assert.equal(typeof mod.runSessions, "function");
+test("ls module exports runLs", async () => {
+  const mod = await import("./ls.js");
+  assert.equal(typeof mod.runLs, "function");
 });
 
 test("status module exports runStatus", async () => {

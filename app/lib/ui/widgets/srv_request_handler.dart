@@ -334,11 +334,18 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
+        // D14 made this dialog open-ended: the caption carries a whole handoff
+        // reason and the message is whatever the agent wrote. Unscrollable, a
+        // long prompt is text the user can neither finish reading nor scroll
+        // past to reach Deny/Approve — which trains them to answer without
+        // reading, the very thing captioning them was meant to prevent.
+        scrollable: true,
         title: Text(body['title']?.toString() ?? 'Confirm'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _PromptCaption(session: body['session']),
             Text(body['message']?.toString() ?? ''),
             if (body['preview'] != null) ...[
               const SizedBox(height: kSpace8),
@@ -387,15 +394,28 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
+        // Scrollable for the same reason as the permission prompt, and more so:
+        // an 8-line field sits under the caption here, with the keyboard up.
+        scrollable: true,
         title: Text(body['title']?.toString() ?? 'Input'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          minLines: multiline ? 3 : 1,
-          maxLines: multiline ? 8 : 1,
-          decoration: InputDecoration(
-            hintText: body['placeholder']?.toString(),
-          ),
+        // Captioned like a permission prompt (D14): D13 routes an elicitation up
+        // the same ladder, so this dialog can equally reach a phone that has
+        // never opened the session asking the question.
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _PromptCaption(session: body['session']),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              minLines: multiline ? 3 : 1,
+              maxLines: multiline ? 8 : 1,
+              decoration: InputDecoration(
+                hintText: body['placeholder']?.toString(),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -492,4 +512,60 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+/// SPEC-46 D14 — a self-describing header for a prompt whose session the phone
+/// may never have subscribed to. Sourced entirely from the `srv.request`
+/// envelope's `session` block (title, agent/harness, handoff origin), never
+/// from cached store state, so a stranded prompt reached at rung 3 of the D13
+/// ladder is still attributable. Renders nothing when the block is absent
+/// (existing prompts are unchanged).
+class _PromptCaption extends StatelessWidget {
+  const _PromptCaption({required this.session});
+
+  final Object? session;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = session;
+    if (s is! Map) return const SizedBox.shrink();
+    final title = s['title']?.toString();
+    final agent = s['agent']?.toString();
+    final handoffReason = s['handoffReason']?.toString();
+    if ((title == null || title.isEmpty) &&
+        (agent == null || agent.isEmpty) &&
+        (handoffReason == null || handoffReason.isEmpty)) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+    final heading = [
+      if (title != null && title.isNotEmpty) title,
+      if (agent != null && agent.isNotEmpty) agent,
+    ].join('  ·  ');
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: kSpace12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (heading.isNotEmpty)
+            Text(
+              heading,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          if (handoffReason != null && handoffReason.isNotEmpty)
+            Text(
+              'Handed off: $handoffReason',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

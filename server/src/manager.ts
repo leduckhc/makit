@@ -15,7 +15,9 @@ import type { AskUser } from "./uicall.js";
 import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/catalog.js";
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO } from "./protocol.js";
+import { sessionTokens } from "./ws/session_tokens.js";
+import { DEFAULT_SESSION_TITLE, type ApprovalPolicy, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO, type SessionEvent, type SessionOrigin } from "./protocol.js";
+import { spawnBoundError, spawnDepth, type LineageNode } from "./lineage.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
 import { withDeadline } from "./adapters/deadline.js";
@@ -386,6 +388,46 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(id);
   }
 
+  /**
+   * SPEC-46 D9/T11: the reason a new child of `parentId` may not be spawned, or
+   * null when it may. Depth and live-child count are recomputed here from the
+   * persisted `parentId` links of every session (closed ones stay in the map,
+   * killed ones are gone) — never from the forgeable `MAKIT_SPAWN_DEPTH`.
+   */
+  checkSpawnBounds(parentId: string): string | null {
+    return spawnBoundError(parentId, this.lineageNodes());
+  }
+
+  /**
+   * How deep a session sits in the spawn tree: 0 for one nobody handed off, +1
+   * per ancestor link. Display only (D9) — the guard above is the enforcement.
+   */
+  private sessionDepth(sessionId: string): number {
+    const parentId = this.sessions.get(sessionId)?.parentId;
+    return parentId ? spawnDepth(parentId, this.lineageNodes()) : 0;
+  }
+
+  /** Every session's lineage fact, for the depth/fan-out walks. */
+  private lineageNodes(): Map<string, LineageNode> {
+    const nodes = new Map<string, LineageNode>();
+    for (const s of this.sessions.values()) {
+      nodes.set(s.id, { id: s.id, parentId: s.parentId, closed: s.closed });
+    }
+    return nodes;
+  }
+
+  /**
+   * SPEC-46 C3: a session's persisted events, read from the event store rather
+   * than the session's in-memory cache, so a bounded tail (session.transcript)
+   * never hydrates the whole log just to return its last few lines (D5). The
+   * `limit` is pushed all the way down to the SQL; falls back to the in-memory
+   * events when there is no store (M0 / tests).
+   */
+  readTranscript(sessionId: string, limit: number): SessionEvent[] {
+    if (this.store) return this.store.readTail(sessionId, limit);
+    return (this.sessions.get(sessionId)?.events ?? []).slice(-limit);
+  }
+
   /** Set the loopback bridge + askUser wiring so subsequently-spawned
    *  sessions can transport interactive prompts (`ctx.ui.*` / ACP
    *  permission/elicitation) to the app. */
@@ -469,7 +511,7 @@ export class SessionManager extends EventEmitter {
    * dir (non-git project / unborn HEAD). Uses a {@link DetachedAdapter}
    * placeholder so the session wires + shows in snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[]): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[], lineage?: { parentId?: string; handoffReason?: string; origin?: SessionOrigin }, policy?: ApprovalPolicy, resumeAgentSessionId?: string): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
@@ -512,13 +554,34 @@ export class SessionManager extends EventEmitter {
       title: DEFAULT_SESSION_TITLE,
       adapter: new DetachedAdapter(agentId),
       store: this.store,
+      // SPEC-46 D10: lineage derived by the caller (session.spawn) from the
+      // credential, never the wire. Set once at construction.
+      parentId: lineage?.parentId,
+      handoffReason: lineage?.handoffReason,
+      origin: lineage?.origin,
+      // SPEC-46 D13: a relaxed approval policy is human-gated at the command
+      // layer; undefined falls back to the Session default (`ask-on-risky`).
+      policy,
     });
     session.beginDraft({
       agent: agentId,
       pendingWorktreePath: boundPath,
       branch: boundBranch,
       configPicks,
+      // SPEC-46 U4: a fork rides the draft as a resume handle, adopted by the
+      // adapter's resume path at promotion (see startPendingSession).
+      resumeAgentSessionId,
     });
+    // SPEC-46 D9: the bound is re-checked HERE, in the same synchronous step as
+    // the registration below. The command layer checks it too, but that check
+    // happens before the `await listWorktrees` above, so the count it read is
+    // stale — two spawns fired together from one parent both saw a free slot and
+    // both landed. Nothing may await between this check and `sessions.set`, which
+    // is what makes it a reservation rather than a second advisory read.
+    if (lineage?.parentId) {
+      const boundError = spawnBoundError(lineage.parentId, this.lineageNodes());
+      if (boundError) throw new Error(boundError);
+    }
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
     return session;
@@ -920,7 +983,10 @@ export class SessionManager extends EventEmitter {
       this.adapterFactory?.({ projectPath: worktreePath, sessionId: session.id, agent: agentId }) ??
       built.adapter;
     session.replaceAdapter(adapter);
-    await adapter.start(this.startOpts(worktreePath, session.id));
+    // SPEC-46 U4: a forked draft resumes the forked thread here — the same
+    // resume path a cold session takes — rather than launching a fresh one,
+    // which would discard the fork.
+    await adapter.start(this.startOpts(worktreePath, session.id, undefined, lc.resumeAgentSessionId));
     // Apply pre-spawn config picks now: AFTER the real session/thread exists
     // and BEFORE the first prompt (SPEC-27). Best-effort per transport — ACP
     // routes to session/set_config_option, codex caches model/effort for the
@@ -1226,6 +1292,12 @@ export class SessionManager extends EventEmitter {
 
   /** The teardown itself; {@link closeSession} owns de-duplication. */
   private async runClose(id: string, session: Session): Promise<void> {
+    // SPEC-46 D3: the session is ending, so its agent credential must stop
+    // authenticating now — and before the teardown below, every step of which is
+    // deliberately best-effort. A token that outlives a close whose kill() gave
+    // up is the exact case that matters, because that agent process may still be
+    // alive to use it.
+    sessionTokens.drop(id);
     // Stop means stop (SPEC-35), as with `cancel`: drop pending mid-turn input
     // before the agent is asked to close. Otherwise the `idle` an adapter emits
     // while cancelling its turn triggers `flushNext()` and a queued message is
@@ -1316,6 +1388,9 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
 
+    // SPEC-46 D3: revoked when the session ends, and before the kill — an agent
+    // that outlives its kill() signal must not still hold spawn/send/read.
+    sessionTokens.drop(id);
     await session.adapter.kill();
     this.sessions.delete(id);
     // Drop any attach mapping so the underlying pi session can be re-attached.
@@ -1355,7 +1430,9 @@ export class SessionManager extends EventEmitter {
     // Seed history BEFORE the adapter goes live so it precedes new events.
     if (opts.backfill && opts.backfill.length > 0) session.backfill(opts.backfill);
 
-    await activeAdapter.start(this.startOpts(project.dto.path, session.id, opts.resumeSessionPath));
+    await activeAdapter.start(
+      this.startOpts(project.dto.path, session.id, opts.resumeSessionPath),
+    );
     // Persist the live adapter's native session/thread id for restart-resume.
     session.captureAgentSessionId();
     this.sessions.set(session.id, session);
@@ -1373,6 +1450,20 @@ export class SessionManager extends EventEmitter {
     resumeSessionPath?: string,
     resumeAgentSessionId?: string,
   ): import("./adapters/adapter.js").SpawnOpts {
+    // Lineage is read from the session, not passed in: three call sites launch an
+    // adapter (draft promotion, spawn-with-backfill, re-attach) and the one that
+    // every app and CLI session actually takes used to pass nothing, so the agent
+    // got an empty MAKIT_PROJECT_ID and a depth of 0 however deep it really was.
+    const session = this.sessions.get(sessionId);
+    // SPEC-46 D3: the agent's environment carries a per-session scoped credential
+    // plus its lineage context. The token is minted here (and re-minted on
+    // re-attach, which drops the old one first) because env is a spawn-time
+    // snapshot — it cannot be rotated in a running process, so its lifecycle is
+    // tied to the adapter's. `MAKIT_SESSION_ID` was already injected; the rest
+    // is additive. `MAKIT_SPAWN_DEPTH` is display-only (D9: the guard recomputes
+    // depth from persisted lineage and ignores a forged value) — which is exactly
+    // why the value handed out must still be honest: an agent reads it to decide
+    // whether handing off again is reasonable.
     return {
       cwd: projectPath,
       sessionId,
@@ -1384,6 +1475,10 @@ export class SessionManager extends EventEmitter {
             MAKIT_BRIDGE_URL: this.bridge.url,
             MAKIT_BRIDGE_TOKEN: this.bridge.token,
             MAKIT_SESSION_ID: sessionId,
+            MAKIT_CLI_TOKEN: sessionTokens.mint(sessionId),
+            MAKIT_PROJECT_ID: session?.projectId ?? "",
+            MAKIT_WORKTREE: session?.worktreePath ?? projectPath,
+            MAKIT_SPAWN_DEPTH: String(this.sessionDepth(sessionId)),
           }
         : undefined,
       extensions: this.bridge ? this.bridge.extensionPaths : [],
@@ -1502,7 +1597,14 @@ export class SessionManager extends EventEmitter {
       );
     }
     try {
-      await adapter.start(this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId));
+      // SPEC-46 D3: re-attach restarts the adapter, which is the only moment an
+      // env-delivered token can change. Drop the pre-restart token and mint a
+      // fresh one in the same step (startOpts mints), so the resumed agent's
+      // old credential stops authenticating the instant it is superseded.
+      sessionTokens.drop(session.id);
+      await adapter.start(
+        this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId),
+      );
     } catch (e) {
       // Roll back to the cold placeholder. Leaving a never-started adapter in
       // place would make the session look live while silently swallowing input,
