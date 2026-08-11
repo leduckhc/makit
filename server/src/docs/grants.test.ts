@@ -5,6 +5,7 @@ import {
   DocGrantStore,
   DOC_GRANT_TTL_MS,
   DOC_GRANT_IDLE_MS,
+  MAX_LIVE_GRANTS,
 } from "./grants.js";
 
 function mint(store: DocGrantStore, relPath = "mockups/board.html") {
@@ -100,4 +101,35 @@ test("list enumerates the live grants as DTOs and omits reaped ones", () => {
     "url",
     "worktreePath",
   ]);
+});
+
+// Reaping is lazy (inside resolve/list), so between reads a publish loop could
+// grow the map without bound — each entry pinning a path and keeping the doc
+// listener alive. mint() now reaps first, then caps.
+test("the live grant set is capped, evicting the least recently used", () => {
+  let clock = 1_000;
+  const store = new DocGrantStore({ now: () => clock });
+  const mint = (n: number) =>
+    store.mint({
+      worktreePath: "/wt",
+      relPath: `mockups/${n}.html`,
+      reach: "tailnet",
+      buildUrl: (id) => `http://h/docs/${id}/mockups/${n}.html`,
+    });
+
+  const first = mint(0);
+  for (let i = 1; i < MAX_LIVE_GRANTS; i++) {
+    clock += 1; // each subsequent grant is more recently seen than `first`
+    mint(i);
+  }
+  assert.equal(store.list().length, MAX_LIVE_GRANTS);
+
+  clock += 1;
+  mint(9999);
+  assert.equal(store.list().length, MAX_LIVE_GRANTS, "the cap holds");
+  assert.equal(
+    store.resolve(first.grantId),
+    undefined,
+    "the least recently seen grant is the one evicted",
+  );
 });

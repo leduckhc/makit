@@ -27,6 +27,13 @@ export const DOC_GRANT_TTL_MS = 30 * 60_000;
  * published in the last half hour. Shorter than the TTL so the two are distinct
  * reasons a grant can end.
  */
+/**
+ * Ceiling on simultaneously-published documents. Generous for the human use case
+ * ("3 docs are currently shared") and small enough that a runaway publish loop
+ * cannot grow the map without bound.
+ */
+export const MAX_LIVE_GRANTS = 64;
+
 export const DOC_GRANT_IDLE_MS = 10 * 60_000;
 
 interface DocGrant extends DocGrantDTO {
@@ -58,9 +65,25 @@ export class DocGrantStore {
     this.randomBytes = deps.randomBytes ?? cryptoRandomBytes;
   }
 
-  /** Mint a grant for one document and return its public DTO. */
+  /**
+   * Mint a grant for one document and return its public DTO.
+   *
+   * Reaps expired grants first, then enforces {@link MAX_LIVE_GRANTS}. Reaping is
+   * otherwise lazy (it happens inside `resolve`/`list`), so without this a
+   * publish loop could grow the map unboundedly between reads — each entry
+   * holding a path and keeping the doc listener alive.
+   */
   mint(input: MintInput): DocGrantDTO {
     const now = this.now();
+    this.reap(now);
+    if (this.grants.size >= MAX_LIVE_GRANTS) {
+      // Evict the least recently used: a share nobody has fetched in the longest
+      // time is the one whose loss is least surprising.
+      const oldest = [...this.grants.values()].reduce((a, b) =>
+        a.lastSeenAt <= b.lastSeenAt ? a : b,
+      );
+      this.grants.delete(oldest.grantId);
+    }
     const grantId = this.randomBytes(32).toString("hex");
     const grant: DocGrant = {
       grantId,
@@ -101,12 +124,15 @@ export class DocGrantStore {
   /** The live grants as DTOs, reaping expired/idle ones on the way through. */
   list(): DocGrantDTO[] {
     const now = this.now();
-    const out: DocGrantDTO[] = [];
+    this.reap(now);
+    return [...this.grants.values()].map(toDto);
+  }
+
+  /** Drop every expired or idle-reaped grant. Shared by `list` and `mint`. */
+  private reap(now: number): void {
     for (const [grantId, grant] of this.grants) {
       if (this.reapable(grant, now)) this.grants.delete(grantId);
-      else out.push(toDto(grant));
     }
-    return out;
   }
 
   private reapable(grant: DocGrant, now: number): boolean {

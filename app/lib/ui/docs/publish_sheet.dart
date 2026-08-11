@@ -7,6 +7,8 @@
 /// worse than a disabled one.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -63,6 +65,8 @@ class _PublishSheet extends ConsumerStatefulWidget {
 class _PublishSheetState extends ConsumerState<_PublishSheet> {
   DocGrant? _grant;
   String? _error;
+  Timer? _tick;
+  int _nowMs = DateTime.now().millisecondsSinceEpoch;
 
   @override
   void initState() {
@@ -79,7 +83,9 @@ class _PublishSheetState extends ConsumerState<_PublishSheet> {
       setState(() {
         _grant = grant;
         _error = null;
+        _nowMs = DateTime.now().millisecondsSinceEpoch;
       });
+      _startTicking();
     } catch (e) {
       if (!mounted) return;
       // D15: surface the stated reason, never a fabricated URL.
@@ -134,7 +140,7 @@ class _PublishSheetState extends ConsumerState<_PublishSheet> {
     relPath: widget.relPath,
     grant: _grant,
     error: _error,
-    nowMs: DateTime.now().millisecondsSinceEpoch,
+    nowMs: _nowMs,
     onStop: _stop,
     onOpen: _open,
   );
