@@ -358,7 +358,9 @@ export class SessionManager extends EventEmitter {
     return [...this.projects.values()].map((p) => ({
       ...p.dto,
       // Include validated settings if present; undefined if absent (optional in DTO)
-      ...(p.settings ? { settings: p.settings as ProjectDTO['settings'] } : {}),
+      // No cast: the DTO now declares the keys that are actually persisted, so the
+      // compiler checks this shape instead of the cast hiding a mismatch.
+      ...(p.settings ? { settings: p.settings } : {}),
     }));
   }
 
@@ -1327,11 +1329,19 @@ export class SessionManager extends EventEmitter {
     return resolveWorktreeRoot(undefined, process.env).value;
   }
 
-  /** Parsed settings for the project owning [repoPath], or `{}`. */
+  /**
+   * Parsed settings for the project owning [repoPath], or `{}`.
+   *
+   * Compared CANONICALLY on both sides, like `addProject` and `repointProject`.
+   * `addProject` stores the resolved -- not canonicalised -- spelling, so a project
+   * added through a symlinked path used to fail this lookup whenever a caller supplied
+   * the canonical path (which is what git hands back). Every override then silently
+   * fell back to the default while still being shown in the UI.
+   */
   private settingsForPath(repoPath: string): RepoSettings {
-    const target = resolve(repoPath);
+    const target = canonicalPath(repoPath);
     for (const p of this.projects.values()) {
-      if (resolve(p.dto.path) === target) return parseRepoSettings(p.settings);
+      if (canonicalPath(p.dto.path) === target) return parseRepoSettings(p.settings);
     }
     return {};
   }
@@ -1435,9 +1445,12 @@ export class SessionManager extends EventEmitter {
     return {
       // Re-validated here too: an override read back from a hand-edited file must
       // not be reported as in force if it would be refused on use.
+      // A stored override that no longer validates falls back to whatever the chain
+      // says WITHOUT relabelling it: dropping the override can land on the env var,
+      // and `source` exists so the app states the origin rather than guessing it.
       worktreeRoot:
         worktreeRoot.source === "override" && !validateWorktreeRoot(worktreeRoot.value).ok
-          ? { ...resolveWorktreeRoot(undefined, process.env), source: "default" as const }
+          ? resolveWorktreeRoot(undefined, process.env)
           : worktreeRoot,
       provider,
       // Present ONLY when overridden. Absent means "no override" — the app already

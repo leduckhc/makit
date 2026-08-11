@@ -680,16 +680,29 @@ export interface ProjectDTO {
   path: string;
   pinned: boolean;
   lastActivityAt: number;
-  /** Per-repo settings: git provider, worktree root, default branch, etc. */
+  /**
+   * Per-repo settings, VERBATIM as persisted (SPEC-48).
+   *
+   * The key names are the stored ones -- `provider` and `logoHue`, not `gitProvider`
+   * and `logo`. They differed until a review caught it, and a cast in the manager hid
+   * the mismatch, so a client reading `settings.gitProvider` always got `undefined`.
+   *
+   * Unknown keys are preserved on purpose: a newer app's field must survive an older
+   * daemon writing a neighbouring one, so this is deliberately open rather than a
+   * closed shape. The RESOLVED, effective values live in `RepoDTO.settings`
+   * ({@link RepoSettingsDTO}), which is what the UI should render.
+   */
   settings?: {
-    /** Git forge this repo uses: Auto | None | Forgejo | Gitea | GitHub. */
-    gitProvider?: string | null;
-    /** Absolute canonicalized path for worktrees; inherits from global if absent. */
+    /** Provider override; absent means "believe detection". */
+    provider?: string | null;
+    /** Absolute canonicalised worktree root; absent inherits. */
     worktreeRoot?: string | null;
-    /** Default branch to check out (e.g., 'main' or 'master'); inherits if absent. */
+    /** Default-branch override; absent inherits git's answer. */
     defaultBranch?: string | null;
-    /** Logo/icon identifier; inherits if absent. */
-    logo?: string | null;
+    /** Monogram palette index; absent derives the hue from the name. */
+    logoHue?: number | null;
+    /** Anything a newer client stored. Never dropped. */
+    [key: string]: unknown;
   };
 }
 

@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { addWorktreeForPr } from "./git.js";
 
@@ -199,7 +199,12 @@ test("the honoured worktree root is the caller's, so per-repo roots still apply"
       baseDir: f.base,
       checkout: "pull-ref",
     });
-    assert.ok(r.path.startsWith(execFileSync("realpath", [f.base]).toString().trim()));
+    // The EXACT path, not a prefix: `startsWith` also accepts a sibling such as
+    // `${base}-other/...`, so the assertion held for a worktree outside the root the
+    // caller chose -- which is the only thing this test exists to check.
+    const base = execFileSync("realpath", [f.base]).toString().trim();
+    const repoName = basename(f.clone);
+    assert.equal(r.path, join(base, repoName, "pr-7-feature-login"));
   } finally {
     f.cleanup();
   }

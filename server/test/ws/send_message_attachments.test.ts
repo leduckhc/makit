@@ -87,6 +87,9 @@ function harness() {
       onPortsWatchersChanged: () => {},
       sendPortsSnapshot: () => {},
       ...docsDepsStub,
+      // Required since a settings write that acks without re-broadcasting is
+      // indistinguishable from a lost write; this harness observes neither.
+      onProjectsChanged: () => {},
       ...portsDepsStub,
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
@@ -241,7 +244,8 @@ test("a pending session promoted by an image-only turn gets a usable label", asy
       onPortsWatchersChanged: () => {},
       sendPortsSnapshot: () => {},
       ...docsDepsStub,
-      ...portsDepsStub,
+      onProjectsChanged: () => {},
+    ...portsDepsStub,
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps);
 

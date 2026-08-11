@@ -218,6 +218,38 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
     cache.set(key, { value, expiresAt: now() + ttlMs });
   }
 
+  /**
+   * In-flight requests, so N callers asking the same question issue ONE request.
+   *
+   * The cache alone is not enough: it is only populated once a response arrives, so on
+   * a cold cache the home-screen fan-out -- every worktree of a repo at once -- issued
+   * one copy per worktree of a query this module measures at 1.5-30s against a real
+   * instance (see BRANCH_LOOKUP_TIMEOUT_MS). The GitHub gateway shares in-flight work
+   * for the same reason.
+   *
+   * Keyed exactly like the cache entry it will produce, so a branch never receives
+   * another branch's answer.
+   */
+  const inflight = new Map<string, Promise<unknown>>();
+
+  function share<T>(key: string, run: () => Promise<T>): Promise<T> {
+    const hit = inflight.get(key) as Promise<T> | undefined;
+    if (hit !== undefined) return hit;
+    // `finally` rather than `then`: a rejection must also release the slot, or one
+    // failure would wedge that key for the process lifetime.
+    const p = run().finally(() => {
+      if (inflight.get(key) === p) inflight.delete(key);
+    });
+    inflight.set(key, p);
+    return p;
+  }
+
+  /** Drop every cached open-PR list for a repo, whatever limit it was asked with. */
+  function dropOpenPrLists(repoPath: string): void {
+    const prefix = `open:${repoPath}:`;
+    for (const key of cache.keys()) if (key.startsWith(prefix)) cache.delete(key);
+  }
+
   function headers(ref: ForgejoRepoRef, withBody: boolean): Record<string, string> {
     const h: Record<string, string> = { Accept: "application/json" };
     // Forgejo/Gitea's own credential form. Omitted entirely when absent, so an
@@ -284,9 +316,13 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
       if (throttled()) return { kind: "unknown", reason: "throttled" };
     }
 
-    const listed = await call(ref, prForBranchUrl(ref.baseUrl, ref.owner, ref.repo, branch), {
-      timeoutMs: BRANCH_LOOKUP_TIMEOUT_MS,
-    });
+    // Shared, so the fan-out across a repo's worktrees issues one request per
+    // (repo, branch) rather than one per caller.
+    const listed = await share(`req:${key}`, () =>
+      call(ref, prForBranchUrl(ref.baseUrl, ref.owner, ref.repo, branch), {
+        timeoutMs: BRANCH_LOOKUP_TIMEOUT_MS,
+      }),
+    );
     if (!isOk(listed)) {
       return {
         kind: "unknown",
@@ -353,9 +389,11 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
       if (throttled()) return [];
     }
 
-    const res = await call(ref, openPrsUrl(ref.baseUrl, ref.owner, ref.repo, limit), {
-      timeoutMs: OPEN_PRS_TIMEOUT_MS,
-    });
+    const res = await share(`req:${key}`, () =>
+      call(ref, openPrsUrl(ref.baseUrl, ref.owner, ref.repo, limit), {
+        timeoutMs: OPEN_PRS_TIMEOUT_MS,
+      }),
+    );
     if (!isOk(res)) return [];
     const rows = parseJson(res.body);
     if (!Array.isArray(rows)) return [];
@@ -444,7 +482,16 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
 
     // Only a success invalidates: dropping the entry after a failed mutation
     // would spend a fresh round trip to re-learn the state we already hold.
-    if (result.ok) cache.delete(prKey(repoPath, branch));
+    //
+    // BOTH the branch lookup and every open-PR list go: that list backs the "New
+    // worktree from PR" picker, so a squash-merged PR left in it leads to a checkout
+    // that fails, and a PR just marked ready still reads as a draft. The key carries
+    // the limit, and the picker and the home screen ask with different ones, so one
+    // delete is not enough.
+    if (result.ok) {
+      cache.delete(prKey(repoPath, branch));
+      dropOpenPrLists(repoPath);
+    }
     return result;
   }
 
@@ -453,7 +500,10 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
     openPrs,
     mutatePr,
     stats: () => ({ ...stats }),
-    close: () => cache.clear(),
+    close: () => {
+      cache.clear();
+      inflight.clear();
+    },
   };
 }
 

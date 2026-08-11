@@ -40,10 +40,19 @@ die() {
 	exit 1
 }
 
+# Arguments are validated before anything is copied: `[ "$1" = --check ]` alone left a
+# misspelled `--chek` as check_only=false, so a command meant to VERIFY vendored assets
+# silently overwrote them instead.
+check_only=false
+case "${1:-}" in
+	--check) check_only=true ;;
+	"") ;;
+	*) die "unknown argument: $1 (usage: sync-icons.sh [--check])" ;;
+esac
+[ "$#" -le 1 ] || die "too many arguments (usage: sync-icons.sh [--check])"
+
 [ -d "$SRC/icons" ] || die "no glyphs at $SRC/icons — set PHOSPHOR_EXTRAS_DIR to the phosphor_extras checkout"
 
-check_only=false
-[ "${1:-}" = "--check" ] && check_only=true
 
 drifted=0
 for name in "${GLYPHS[@]}"; do

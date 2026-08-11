@@ -70,7 +70,8 @@ class RepositorySettingsPage extends ConsumerWidget {
     RepoSettingsView view,
   ) async {
     final controller = TextEditingController(text: view.worktreeRoot);
-    final value = await showDialog<String>(
+    try {
+      final value = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Worktree root'),
@@ -105,11 +106,14 @@ class RepositorySettingsPage extends ConsumerWidget {
         ],
       ),
     );
-    if (value == null || value.isEmpty) return;
-    // Not validated here: the server owns the rules (absolute, no `..`, inside
-    // $HOME, canonicalised) and re-implementing them in Dart would give two
-    // answers that could disagree. A refusal comes back as an `err` frame.
-    _write(ref, {'worktreeRoot': value});
+      if (value == null || value.isEmpty) return;
+      // Not validated here: the server owns the rules (absolute, no `..`, inside
+      // $HOME, canonicalised) and re-implementing them in Dart would give two
+      // answers that could disagree. A refusal comes back as an `err` frame.
+      _write(ref, {'worktreeRoot': value});
+    } finally {
+      controller.dispose();
+    }
   }
 
   Future<void> _pickBranch(
@@ -149,7 +153,7 @@ class RepositorySettingsPage extends ConsumerWidget {
       builder: (ctx) => SimpleDialog(
         title: const Text('Logo colour'),
         children: [
-          for (var i = 0; i < 6; i++)
+          for (var i = 0; i < RepoMonogram.paletteLength; i++)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, i),
               child: Row(
@@ -195,7 +199,8 @@ class RepositorySettingsPage extends ConsumerWidget {
     RepoSettingsView view,
   ) async {
     final controller = TextEditingController(text: view.path);
-    final value = await showDialog<String>(
+    try {
+      final value = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Repository path'),
@@ -259,8 +264,11 @@ class RepositorySettingsPage extends ConsumerWidget {
       await ref
           .read(storeControllerProvider.notifier)
           .setRepoPath(repoId, value);
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(_reasonFrom(e))));
+      } catch (e) {
+        messenger.showSnackBar(SnackBar(content: Text(_reasonFrom(e))));
+      }
+    } finally {
+      controller.dispose();
     }
   }
 

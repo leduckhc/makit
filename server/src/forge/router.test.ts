@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { createForgeRouter, forgejoRefFromRemote, isGitHubHost, ORIGIN_REMOTE_ARGV } from "./router.js";
+import { createUnsupportedGateway } from "./unsupported.js";
 import type { ForgeGateway, ForgeSoftwareName, GatewayStats, PrLookup } from "./types.js";
 import type { ProviderChoice } from "../repo_settings.js";
 import type { GithubGateway } from "../github/gateway.js";
@@ -698,4 +699,87 @@ test("close closes EVERY provider, not just the two with caches", async () => {
   });
   router.close();
   assert.deepEqual(calls.sort(), ["forgejo.close", "github.close", "none.close", "unsupported.close"]);
+});
+
+test("a fallback route is NOT cached, so the repo recovers when the read works", async () => {
+  // Review finding: `pick` cached whatever `route` resolved, including the
+  // catch-block fallback, and nothing evicted it. One failed `git remote` read at
+  // startup therefore sent every later poll for a Forgejo repo to `gh` for the
+  // lifetime of the daemon, where it failed and the PR pill read `unknown` forever.
+  const calls: string[] = [];
+  let attempts = 0;
+  const router = createForgeRouter({
+    github: githubFake(calls),
+    forgejo: fake("forgejo", calls),
+    unsupported: fake("unsupported", calls),
+    none: fake("none", calls),
+    resolveInstance: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("transient git failure");
+      return { host: "git.example", baseUrl: "https://git.example" };
+    },
+    detect: async () => "forgejo",
+  });
+  await router.prForBranch("/r", "b");
+  assert.deepEqual(calls, ["github.prForBranch(/r,b)"], "first call falls back");
+  await router.prForBranch("/r", "b");
+  assert.deepEqual(
+    calls,
+    ["github.prForBranch(/r,b)", "forgejo.prForBranch(/r,b)"],
+    "the second call retries and reaches the real provider",
+  );
+});
+
+test("a successful route is still cached, so the fan-out stays cheap", async () => {
+  // The fix must not turn every call into a fresh `git remote` read.
+  const calls: string[] = [];
+  let lookups = 0;
+  const router = createForgeRouter({
+    github: githubFake(calls),
+    forgejo: fake("forgejo", calls),
+    unsupported: fake("unsupported", calls),
+    none: fake("none", calls),
+    resolveInstance: async () => {
+      lookups += 1;
+      return { host: "git.example", baseUrl: "https://git.example" };
+    },
+    detect: async () => "forgejo",
+  });
+  await router.prForBranch("/r", "b");
+  await router.prForBranch("/r", "c");
+  await router.openPrs("/r", 5);
+  assert.equal(lookups, 1);
+});
+
+test("the unsupported gateway names THIS repo's forge, not the last one detected", async () => {
+  // `currentSoftware` was a single shared variable set by whichever repo was detected
+  // most recently, so a mutation on a GitLab repo could report Bitbucket's name after
+  // another repo was probed. The decision is per repo; the message must be too.
+  // The REAL unsupported gateway, since the message is what is under test.
+  const calls: string[] = [];
+  const software: Record<string, ForgeSoftwareName> = {
+    "gitlab.example": "gitlab",
+    "weird.example": "unknown",
+  };
+  let inspector: { forgeFor(p: string): { software: ForgeSoftwareName } | undefined } | undefined;
+  const router = createForgeRouter({
+    github: githubFake(calls),
+    forgejo: fake("forgejo", calls),
+    unsupported: createUnsupportedGateway({
+      softwareFor: (repoPath) => inspector?.forgeFor(repoPath)?.software,
+    }),
+    none: fake("none", calls),
+    resolveInstance: async (repoPath: string) => {
+      const host = repoPath === "/gl" ? "gitlab.example" : "weird.example";
+      return { host, baseUrl: `https://${host}` };
+    },
+    detect: async (baseUrl: string) => software[baseUrl.replace("https://", "")] ?? "unknown",
+  });
+  inspector = router;
+  await router.prForBranch("/gl", "b");
+  // Probing the second repo used to overwrite the shared `currentSoftware`.
+  await router.prForBranch("/mystery", "b");
+  const r = await router.mutatePr("/gl", "b", 1, "merge-squash");
+  assert.equal(r.ok, false);
+  assert.match(r.error ?? "", /GitLab/);
 });

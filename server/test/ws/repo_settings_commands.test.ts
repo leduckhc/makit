@@ -7,9 +7,9 @@
  * refusal is asserted here, on the server, against `WsClient.isLocal` — the same
  * flag that already refuses a non-loopback client's reported pid (SPEC-37 D6).
  */
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, sep } from "node:path";
 
@@ -75,11 +75,21 @@ const ackOf = (c: FakeClient) => c.sent.find((f) => f.t === "ack");
 const errOf = (c: FakeClient) => c.sent.find((f) => f.t === "err") as undefined | { message: string };
 
 /** A root that will pass validation: inside the real home, and it exists. */
+const createdRoots: string[] = [];
+
 function goodRoot(): string {
-  const root = join(homedir(), ".makit-test-cmd-trees");
-  mkdirSync(root, { recursive: true });
+  // Inside the real home because the handler calls `validateWorktreeRoot` with no
+  // `home` argument, so the containment rule is checked against the real one. Unique
+  // per call and removed in `after`, instead of leaving a directory behind in the
+  // developer's home and on CI agents.
+  const root = mkdtempSync(join(homedir(), ".makit-test-cmd-trees-"));
+  createdRoots.push(root);
   return root;
 }
+
+after(() => {
+  for (const root of createdRoots) rmSync(root, { recursive: true, force: true });
+});
 
 // ---------------------------------------------------------------------------
 // The gate
@@ -304,4 +314,60 @@ test("a missing projectId or path is a bad request, not a crash", async () => {
   await router.dispatch(noPath, pathCmd({ projectId: "p1" }));
   assert.ok(errOf(noPath));
   assert.equal(calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// Review findings: the key-name rule was skipped for a `null` value.
+// ---------------------------------------------------------------------------
+
+test("an unknown key is refused even when its value is null", async () => {
+  // The clear-a-setting branch ran BEFORE the switch, so the unknown-key rule never
+  // saw a null value: `{wroktreeRoot: null}` was acked and the typo was written into
+  // the patch. A settings write that silently stores a misspelling is worse than one
+  // that refuses, because the user believes the setting exists.
+  const { router, written } = harness();
+  const c = fakeClient(true);
+  await router.dispatch(c, cmd({ projectId: "p1", settings: { wroktreeRoot: null } }));
+  assert.match(errOf(c)?.message ?? "", /wroktreeRoot/);
+  assert.deepEqual(written, [], "and nothing is written");
+});
+
+test("__proto__ is refused rather than reaching the patch object", async () => {
+  // With the key rule skipped, `applied["__proto__"] = null` invoked the prototype
+  // setter instead of creating an own property. Harmless to stored data, but it is
+  // input the stated rule refuses, and refusing it here is cheaper than reasoning
+  // about every object it is later spread into.
+  const { router, written } = harness();
+  const c = fakeClient(true);
+  // Built with JSON.parse, not a literal: `{__proto__: null}` in source sets the
+  // PROTOTYPE and creates no key, so a literal cannot reproduce this at all. Off the
+  // wire the value arrives decoded from JSON, which does create an own property --
+  // so this is the only faithful reproduction of the real input.
+  const hostile = JSON.parse('{"__proto__": null, "worktreeRoot": null}') as Record<string, unknown>;
+  await router.dispatch(c, cmd({ projectId: "p1", settings: hostile }));
+  assert.ok(errOf(c), "refused");
+  assert.deepEqual(written, []);
+});
+
+test("a known key with a null value still clears, as the UI relies on", async () => {
+  // The guard must not break the reset buttons.
+  const { router, written } = harness();
+  const c = fakeClient(true);
+  await router.dispatch(c, cmd({ projectId: "p1", settings: { worktreeRoot: null } }));
+  assert.ok(ackOf(c));
+  assert.deepEqual(written, [["p1", { worktreeRoot: null }]]);
+});
+
+test("a logoHue outside the palette is refused, not wrapped", async () => {
+  // `RepoMonogram.paletteAt` wraps with `%`, so a stored 6 renders as index 0 — a
+  // valid-looking colour the user never chose, and indistinguishable from having
+  // chosen 0. Rejecting at the boundary keeps one hue per stored value.
+  const { router, written } = harness();
+  const c = fakeClient(true);
+  await router.dispatch(c, cmd({ projectId: "p1", settings: { logoHue: 6 } }));
+  assert.ok(errOf(c));
+  assert.deepEqual(written, []);
+  const ok = fakeClient(true);
+  await router.dispatch(ok, cmd({ projectId: "p1", settings: { logoHue: 5 } }));
+  assert.ok(ackOf(ok), "the last valid index is still accepted");
 });

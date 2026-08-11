@@ -23,9 +23,17 @@
  */
 
 import type { Http } from "./forgejo/gateway.js";
+import type { ForgeSoftwareName } from "./types.js";
 
 /** Which software an instance runs. `unknown` means we could not tell. */
-export type ForgeSoftware = "github" | "forgejo" | "gitea" | "gitlab" | "unknown";
+/**
+ * Re-exported from `types.ts` rather than declared again.
+ *
+ * Two identical unions in two files drift: this one and `ForgeSoftwareName` were
+ * already the same list in two places, and nothing would have failed if one had
+ * gained a member.
+ */
+export type ForgeSoftware = ForgeSoftwareName;
 
 /** Probe timeout. A version endpoint is trivial; a slow answer is a bad sign. */
 const PROBE_TIMEOUT_MS = 8_000;

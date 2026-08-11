@@ -1,6 +1,23 @@
 /**
  * router.ts — picks a forge provider per repository.
  *
+ * The decision has three inputs, in this order:
+ *
+ *   1. **The repo's own provider setting** (SPEC-48 D3"). `forgejo`/`gitea` go to the
+ *      REST gateway, `github` to the `gh` one, and `none` to a gateway that talks to
+ *      no forge at all. An override is honoured WITHOUT probing, because the cases it
+ *      exists for are the ones where the probe cannot answer.
+ *   2. **`github.com` (or a subdomain)** → the `gh`-backed gateway. The host is
+ *      decisive here, so no probe is spent.
+ *   3. **Detection** — the instance is asked what software it runs (see `detect.ts`).
+ *      `forgejo`/`gitea` reach the REST gateway; GitLab or anything unidentifiable
+ *      reaches the `unsupported` gateway, which makes no requests and says so.
+ *
+ * An unreadable remote stays on `gh`: that is the status quo for every directory that
+ * is not a git checkout, and changing where such repos fail would be a behaviour
+ * change with no upside. That answer is deliberately NOT cached, so a transient
+ * failure does not pin the repo to the wrong provider.
+ *
  * Deliberately implements {@link GithubGateway} rather than a narrower type, so
  * `server.ts` and `manager.ts` need no changes: the budget surface they depend on
  * is forwarded to the gh-backed gateway, which is the only provider that HAS a
@@ -8,22 +25,6 @@
  * Forgejo repo therefore contributes nothing to the budget panel, which is
  * accurate rather than a stub.
  *
- * Provider choice is by the `origin` remote's host, cached per repo:
- *
- *   github.com (or a subdomain)  -> the `gh`-backed gateway
- *   anything else                -> the Forgejo/Gitea REST gateway
- *   unreadable remote            -> the `gh`-backed gateway
- *
- * "Anything else" is a judgement call worth stating. A hostname cannot tell you
- * that a server runs Forgejo, so this is a guess — but it is a *safe* one:
- * makit previously sent every non-GitHub remote to `gh`, where it failed and
- * surfaced as `unknown`. Sending it to Forgejo instead makes Forgejo and Gitea
- * work, and leaves GitLab/Bitbucket exactly as broken as they already were
- * (a failed REST call is also `unknown`). No case gets worse.
- *
- * An unreadable remote stays on `gh` on purpose: that is the status quo for every
- * directory that is not a git checkout, and changing where such repos fail would
- * be a behaviour change with no upside.
  */
 
 import type { Exec } from "../github/gateway.js";
@@ -255,13 +256,28 @@ export function createForgeRouter(
     // Re-check the choice, but keep the cache when it has not changed: re-resolving
     // on every call would throw away the read-sharing the fan-out depends on.
     if (hit !== undefined && hit.choice === choice) return hit.gateway;
-    const p = route(repoPath, choice);
+    const routed = route(repoPath, choice);
+    const p = routed.then((r) => r.gateway);
+    // Cache only a route that was actually DECIDED. A fallback produced by a failed
+    // `git remote` read or a failed probe must not be cached: nothing evicts these
+    // entries, so one transient failure at startup used to pin a Forgejo repo to the
+    // `gh` gateway for the lifetime of the daemon -- every later poll failing, the PR
+    // pill reading `unknown` forever, and no way back short of a restart.
     chosen.set(repoPath, { choice, gateway: p });
+    void routed.then((r) => {
+      if (!r.cacheable && chosen.get(repoPath)?.gateway === p) chosen.delete(repoPath);
+    });
     return p;
   }
 
-  function route(repoPath: string, choice: ProviderChoice): Promise<ForgeGateway> {
-    return (async (): Promise<ForgeGateway> => {
+  /** A routing answer, plus whether it was decided (cacheable) or fallen back to. */
+  interface Routed {
+    gateway: ForgeGateway;
+    cacheable: boolean;
+  }
+
+  function route(repoPath: string, choice: ProviderChoice): Promise<Routed> {
+    return (async (): Promise<Routed> => {
       // `none` short-circuits before the remote is even read. "Talks to no forge"
       // has to include not looking one up, or it is a label rather than an
       // instruction — and the decision is the user's, so there is nothing to learn.
@@ -269,7 +285,7 @@ export function createForgeRouter(
         inUse.add("none");
         decided.delete(repoPath);
         remotes.delete(repoPath);
-        return deps.none;
+        return { gateway: deps.none, cacheable: true };
       }
 
       const inst = await deps.resolveInstance(repoPath);
@@ -294,10 +310,10 @@ export function createForgeRouter(
         }
         if (choice === "github") {
           inUse.add("github");
-          return deps.github;
+          return { gateway: deps.github, cacheable: true };
         }
         inUse.add("forgejo");
-        return deps.forgejo;
+        return { gateway: deps.forgejo, cacheable: true };
       }
 
       // No readable remote: stay on gh, which is the status quo for anything that
@@ -308,7 +324,9 @@ export function createForgeRouter(
         if (inst !== null) {
           decided.set(repoPath, { software: "github", host: inst.host, source: "detected" });
         }
-        return deps.github;
+        // An unreadable remote is not a decision -- it is the absence of one, and it
+        // is exactly the transient case that must be retried rather than pinned.
+        return { gateway: deps.github, cacheable: inst !== null };
       }
       const software = await deps.detect(inst.baseUrl, inst.token);
       decided.set(repoPath, {
@@ -319,14 +337,16 @@ export function createForgeRouter(
       });
       if (software === "forgejo" || software === "gitea") {
         inUse.add("forgejo");
-        return deps.forgejo;
+        return { gateway: deps.forgejo, cacheable: true };
       }
       inUse.add("unsupported");
       if (!warned.has(inst.host)) {
         warned.add(inst.host);
         deps.onUnsupported?.(inst.host, software);
       }
-      return deps.unsupported;
+      // `unknown` means the probe could not classify it; re-probe next time rather
+      // than concluding forever. A named-but-unsupported forge IS a decision.
+      return { gateway: deps.unsupported, cacheable: software !== "unknown" };
     })().catch(() => {
       // A transient failure must not discard an EXPLICIT choice. Falling back to gh
       // here would ignore an instruction the user gave and send the repo to a
@@ -345,14 +365,14 @@ export function createForgeRouter(
       // status quo for a repo we could not read.
       if (choice === "forgejo" || choice === "gitea") {
         inUse.add("forgejo");
-        return deps.forgejo;
+        return { gateway: deps.forgejo, cacheable: false };
       }
       if (choice === "none") {
         inUse.add("none");
-        return deps.none;
+        return { gateway: deps.none, cacheable: false };
       }
       inUse.add("github");
-      return deps.github;
+      return { gateway: deps.github, cacheable: false };
     });
   }
 
@@ -446,7 +466,10 @@ export function createDefaultForgeGateway(opts: {
   };
   const http = createFetchHttp();
   const detector = createForgeDetector({ http });
-  let currentSoftware: ForgeSoftwareName = "unknown";
+  // Late-bound so the unsupported gateway can ask the router what THIS repo turned
+  // out to be. A single shared "most recently detected" value named the wrong forge
+  // as soon as a second repo was probed.
+  let inspector: ForgeInspector | undefined;
   const router = createForgeRouter({
     github: createGithubGateway({ exec: opts.exec }),
     forgejo: createForgejoGateway({
@@ -456,7 +479,9 @@ export function createDefaultForgeGateway(opts: {
         return url === null ? null : forgejoRefFromRemote(url, env);
       },
     }),
-    unsupported: createUnsupportedGateway({ software: () => currentSoftware }),
+    unsupported: createUnsupportedGateway({
+      softwareFor: (repoPath) => inspector?.forgeFor(repoPath)?.software,
+    }),
     none: createNoForgeGateway(),
     providerFor: opts.providerFor,
     resolveInstance: async (repoPath) => {
@@ -467,10 +492,7 @@ export function createDefaultForgeGateway(opts: {
       const host = parseForgejoRemote(url)?.host;
       return host === undefined ? null : { host, baseUrl: ref.baseUrl, token: ref.token };
     },
-    detect: async (baseUrl, token) => {
-      currentSoftware = await detector.detect(baseUrl, token);
-      return currentSoftware;
-    },
+    detect: (baseUrl, token) => detector.detect(baseUrl, token),
     onUnsupported: (host, software) => {
       const what = software === "unknown" ? "an unrecognised forge" : software;
       // Once per host. Silent failure here is what made this class of bug
@@ -480,5 +502,14 @@ export function createDefaultForgeGateway(opts: {
       );
     },
   });
+  inspector = router;
+  // Positive detections are cached with `expiresAt: null`, so the router's own
+  // `close()` -- which clears its per-repo maps -- would leave them behind. A closed
+  // gateway must not answer from a probe made before it was closed.
+  const close = router.close.bind(router);
+  router.close = (): void => {
+    detector.clear();
+    close();
+  };
   return router;
 }

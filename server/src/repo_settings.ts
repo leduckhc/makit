@@ -60,6 +60,16 @@ export interface RepoSettings {
   logoHue?: number;
 }
 
+/**
+ * How many hues a repo monogram can take, mirroring `RepoMonogram`'s palette in
+ * `app/lib/ui/home/repo_monogram.dart`.
+ *
+ * Enforced as a RANGE rather than trusted: `paletteAt` wraps with `%`, so a stored
+ * `6` would render as index 0 -- a colour the user never chose, indistinguishable
+ * from having chosen 0. Rejecting out-of-range keeps one hue per stored value.
+ */
+export const LOGO_HUE_COUNT = 6;
+
 /** Built-in worktree root when nothing else says otherwise. */
 export function defaultWorktreeRoot(home: string = homedir()): string {
   return join(home, ".worktrees");
@@ -273,8 +283,24 @@ export function validateProvider(raw: unknown): Validation<ProviderChoice> {
 export function validateBranch(raw: string): Validation<string> {
   const b = raw.trim();
   if (b.length === 0) return { ok: false, error: "Branch name cannot be empty." };
-  if (/[\s~^:?*[\\]/.test(b) || b.includes("..") || b.startsWith("-") || b.endsWith(".lock")) {
-    return { ok: false, error: `'${b}' is not a valid branch name.` };
+  const bad = (): Invalid => ({ ok: false, error: `'${b}' is not a valid branch name.` });
+  // The rules `git check-ref-format --branch` applies, in the same spirit: a name
+  // stored here is later handed to git as an argv element, and one git refuses fails
+  // deep inside a plumbing call where the message is unrecognisable. Shell
+  // metacharacters need no special handling -- every call goes through `execFile`
+  // with an argv array, never a shell string.
+  if (/[\s~^:?*[\\]/.test(b)) return bad();
+  // ASCII control characters and DEL.
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(b)) return bad();
+  if (b.includes("..") || b.includes("@{")) return bad();
+  if (b.startsWith("-") || b.startsWith("/") || b.startsWith(".")) return bad();
+  if (b.endsWith("/") || b.endsWith(".") || b.endsWith(".lock")) return bad();
+  if (b.includes("//")) return bad();
+  // No path component may begin with `.` or end with `.lock` -- `feat/.x` is refused
+  // by git even though the whole string does not start with a dot.
+  if (b.split("/").some((seg) => seg.length === 0 || seg.startsWith(".") || seg.endsWith(".lock"))) {
+    return bad();
   }
   return { ok: true, value: b };
 }
@@ -300,7 +326,12 @@ export function parseRepoSettings(raw: unknown): RepoSettings {
     const b = validateBranch(r.defaultBranch);
     if (b.ok) out.defaultBranch = b.value;
   }
-  if (typeof r.logoHue === "number" && Number.isInteger(r.logoHue) && r.logoHue >= 0) {
+  if (
+    typeof r.logoHue === "number" &&
+    Number.isInteger(r.logoHue) &&
+    r.logoHue >= 0 &&
+    r.logoHue < LOGO_HUE_COUNT
+  ) {
     out.logoHue = r.logoHue;
   }
   return out;

@@ -91,14 +91,21 @@ test("a repo makit does not know inherits rather than throwing", () => {
 });
 
 test("the stored root is used verbatim once validated, symlinks resolved", () => {
-  const home = homedir();
-  const real = join(home, ".makit-test-trees-real");
-  mkdirSync(real, { recursive: true });
-  const checked = validateWorktreeRoot(real);
-  assert.equal(checked.ok, true);
-  const a = mkdtempSync(join(tmpdir(), "makit-d-"));
-  const m = manager([{ id: "a", path: a, settings: { worktreeRoot: real } }]);
-  assert.equal(m.worktreeRootFor(a), (checked as { value: string }).value);
+  // The home directory is required, not incidental: `validateWorktreeRoot` refuses a
+  // root outside $HOME. `mkdtempSync` gives it a unique name so parallel runs cannot
+  // collide, and the `finally` removes it -- this used to leave a directory behind in
+  // the developer's home on every run.
+  const real = mkdtempSync(join(homedir(), ".makit-test-trees-real-"));
+  try {
+    const checked = validateWorktreeRoot(real);
+    assert.equal(checked.ok, true);
+    const a = mkdtempSync(join(tmpdir(), "makit-d-"));
+    const m = manager([{ id: "a", path: a, settings: { worktreeRoot: real } }]);
+    assert.equal(m.worktreeRootFor(a), (checked as { value: string }).value);
+    rmSync(a, { recursive: true, force: true });
+  } finally {
+    rmSync(real, { recursive: true, force: true });
+  }
 });
 
 test("collision detection looks in the repo's OWN root, not the global one", () => {
@@ -106,27 +113,33 @@ test("collision detection looks in the repo's OWN root, not the global one", () 
   // `addWorktree` wrote to the override, the two would disagree and a real
   // collision would slip through. Proven by making a name collide in the
   // OVERRIDDEN root only.
-  const home = homedir();
   const repo = mkdtempSync(join(tmpdir(), "makit-coll-"));
   const repoName = repo.split("/").pop()!;
-  const overrideRoot = join(home, ".makit-test-trees-collide");
-  mkdirSync(join(overrideRoot, repoName, "feat-x"), { recursive: true });
+  // Unique per run and removed afterwards: a fixed name accumulated one
+  // `<repoName>` subdirectory in the developer's home on every single run.
+  const overrideRoot = mkdtempSync(join(homedir(), ".makit-test-trees-collide-"));
+  try {
+    mkdirSync(join(overrideRoot, repoName, "feat-x"), { recursive: true });
 
-  const overridden = manager([
-    { id: "a", path: repo, settings: { worktreeRoot: overrideRoot } },
-  ]);
-  assert.notEqual(
-    overridden.uniqueWorktreeDir(repo, "feat-x"),
-    "feat-x",
-    "the existing dir under the OVERRIDE must be seen",
-  );
+    const overridden = manager([
+      { id: "a", path: repo, settings: { worktreeRoot: overrideRoot } },
+    ]);
+    assert.notEqual(
+      overridden.uniqueWorktreeDir(repo, "feat-x"),
+      "feat-x",
+      "the existing dir under the OVERRIDE must be seen",
+    );
 
-  const inherited = manager([{ id: "a", path: repo }]);
-  assert.equal(
-    inherited.uniqueWorktreeDir(repo, "feat-x"),
-    "feat-x",
-    "the same name is free under the inherited root",
-  );
+    const inherited = manager([{ id: "a", path: repo }]);
+    assert.equal(
+      inherited.uniqueWorktreeDir(repo, "feat-x"),
+      "feat-x",
+      "the same name is free under the inherited root",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(overrideRoot, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -627,5 +640,49 @@ test("addProject will not open one directory twice under two spellings", async (
     assert.equal(m.listProjects().length, 1);
   } finally {
     rmSync(real, { recursive: true, force: true });
+  }
+});
+
+test("a project reached by its canonical path still resolves its own settings", async () => {
+  // Review finding: `addProject` stores the RESOLVED (not canonicalised) spelling,
+  // while `settingsForPath` compared with `resolve` on both sides. A project added via
+  // a symlinked path therefore failed lookup when a caller supplied the canonical
+  // path, and `worktreeRootFor`, `providerFor` and `defaultBranchFor` all silently
+  // fell back to the defaults -- the override present on disk and shown in the UI,
+  // doing nothing.
+  const real = repoWithBranches([]);
+  const link = join(mkdtempSync(join(tmpdir(), "makit-slink-")), "alias");
+  symlinkSync(real, link);
+  try {
+    const m = manager([{ id: "a", path: link, settings: { provider: "gitea" } }]);
+    assert.equal(m.providerFor(link), "gitea", "found by the stored spelling");
+    assert.equal(
+      m.providerFor(realpathSync(real)),
+      "gitea",
+      "and by the canonical one, which is what git hands back",
+    );
+  } finally {
+    rmSync(real, { recursive: true, force: true });
+  }
+});
+
+test("an invalid override falls back WITHOUT mislabelling an environment root", async () => {
+  // Review finding: the fallback re-resolved correctly and then overwrote the source
+  // with "default". `SettingSourceDTO` exists so the app labels the origin rather than
+  // guessing, so with MAKIT_WORKTREE_DIR set the badge stated the wrong one.
+  const a = repoWithBranches([]);
+  const envRoot = mkdtempSync(join(homedir(), ".makit-test-env-"));
+  const prev = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = envRoot;
+  try {
+    const m = manager([{ id: "a", path: a, settings: { worktreeRoot: "/etc/nope" } }]);
+    const [repo] = await m.listRepos({ includePrs: false });
+    assert.equal(repo.settings?.worktreeRoot.value, envRoot);
+    assert.equal(repo.settings?.worktreeRoot.source, "environment");
+  } finally {
+    if (prev === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prev;
+    rmSync(a, { recursive: true, force: true });
+    rmSync(envRoot, { recursive: true, force: true });
   }
 });

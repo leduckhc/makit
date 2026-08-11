@@ -446,15 +446,23 @@ test("an interactive call is still attempted during backoff", async () => {
 });
 
 test("a successful response clears the backoff", async () => {
+  // Review finding: this test used to advance the clock 31s past a 30s Retry-After, so
+  // the window had expired by time ALONE and the later poll reached the network whether
+  // or not `call` reset `backoffUntil`. It passed with the reset deleted.
+  //
+  // Now the clock stays INSIDE the window, and the success is forced through an
+  // interactive call (which is exempt from the backoff). A background poll afterwards
+  // can only reach the network because the reset ran.
   const routes: Array<[string, { status?: number; json?: unknown; headers?: Record<string, string> }]> = [
     ["/pulls?", { status: 429, headers: { "retry-after": "30" } }],
   ];
   const { gateway, calls, tick } = harness(routes);
   await gateway.prForBranch("/repo", "b");
-  tick(31_000);
+  tick(5_000); // still well within the 30s window
   routes[0] = ["/pulls?", { json: [] }];
-  assert.deepEqual(await gateway.prForBranch("/repo", "b"), { kind: "none" });
+  await gateway.prForBranch("/repo", "b", { interactive: true });
   const n = calls.length;
+  // A BACKGROUND poll, on a branch with no cache entry: only the reset lets it out.
   await gateway.prForBranch("/repo", "x");
   assert.ok(calls.length > n, "no residual backoff after a success");
 });
@@ -473,4 +481,84 @@ test("openPrs also respects the backoff and returns an empty list", async () => 
   const n = calls.length;
   assert.deepEqual(await gateway.openPrs("/repo", 30), []);
   assert.equal(calls.length, n);
+});
+
+// ---------------------------------------------------------------------------
+// Review findings on the Forgejo gateway.
+// ---------------------------------------------------------------------------
+
+/** A gateway over a scripted `http`, so concurrency and call counts are visible. */
+function counting(handler: (url: string) => { status?: number; body?: string }) {
+  const urls: string[] = [];
+  let inflight = 0;
+  let peak = 0;
+  const http: Http = async (req: HttpRequest) => {
+    urls.push(req.url);
+    inflight += 1;
+    peak = Math.max(peak, inflight);
+    await new Promise((r) => setTimeout(r, 5));
+    inflight -= 1;
+    const res = handler(req.url);
+    return { status: res.status ?? 200, body: res.body ?? "[]", headers: {} };
+  };
+  const gateway = createForgejoGateway({ http, resolveRepo: async () => REF, now: () => 1_000 });
+  return { gateway, urls, peak: () => peak, lists: () => urls.filter((u) => u.includes("/pulls?")).length };
+}
+
+test("a successful mutation drops the cached open-PR list too", async () => {
+  // Review finding: only `prKey` was invalidated, so `open:<repo>:<limit>` survived its
+  // full TTL. That list backs the "New worktree from PR" picker, so a squash-merged PR
+  // stayed listed and the checkout that followed failed, and a PR just marked ready
+  // still read as a draft. The GitHub gateway drops both, and both feed one picker.
+  const h = counting(() => ({ body: "[]" }));
+  await h.gateway.openPrs("/r", 30);
+  assert.equal(h.lists(), 1);
+  await h.gateway.openPrs("/r", 30);
+  assert.equal(h.lists(), 1, "served from cache");
+  await h.gateway.mutatePr("/r", "b", 7, "merge-squash");
+  await h.gateway.openPrs("/r", 30);
+  assert.equal(h.lists(), 2, "re-fetched after the mutation");
+});
+
+test("every cached limit for the repo is dropped, not only one", async () => {
+  // The key carries the limit, and the picker and the home screen ask for different
+  // ones, so a single delete leaves the other stale.
+  const h = counting(() => ({ body: "[]" }));
+  await h.gateway.openPrs("/r", 30);
+  await h.gateway.openPrs("/r", 5);
+  assert.equal(h.lists(), 2);
+  // The precondition is asserted, not assumed: invalidation only runs on SUCCESS, so a
+  // verb that failed in the stub would make this test pass for the wrong reason.
+  const r = await h.gateway.mutatePr("/r", "b", 7, "merge-squash");
+  assert.equal(r.ok, true, "the mutation must succeed for invalidation to be in play");
+  await h.gateway.openPrs("/r", 30);
+  await h.gateway.openPrs("/r", 5);
+  assert.equal(h.lists(), 4);
+});
+
+test("concurrent lookups for one branch share a single in-flight request", async () => {
+  // Review finding: results were cached but in-flight requests were not shared, so on
+  // a cold cache N worktrees of one repo each issued their own copy of a query this
+  // module measures at 1.5-30s against a real instance. The GitHub gateway dedupes for
+  // exactly this reason.
+  const h = counting(() => ({ body: "[]" }));
+  await Promise.all([
+    h.gateway.prForBranch("/r", "same"),
+    h.gateway.prForBranch("/r", "same"),
+    h.gateway.prForBranch("/r", "same"),
+  ]);
+  assert.equal(h.peak(), 1, "one request served all three callers");
+});
+
+test("different branches are NOT collapsed into one request", async () => {
+  // The key must include the branch, or one worktree's question gets another's answer.
+  const h = counting(() => ({ body: "[]" }));
+  await Promise.all([h.gateway.prForBranch("/r", "a"), h.gateway.prForBranch("/r", "b")]);
+  assert.equal(h.urls.length, 2);
+});
+
+test("concurrent openPrs for one repo and limit share a request too", async () => {
+  const h = counting(() => ({ body: "[]" }));
+  await Promise.all([h.gateway.openPrs("/r", 30), h.gateway.openPrs("/r", 30)]);
+  assert.equal(h.peak(), 1);
 });

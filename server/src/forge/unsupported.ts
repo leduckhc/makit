@@ -17,6 +17,15 @@ import type { ForgeGateway, ForgeSoftwareName, GatewayStats, PrLookup, PrMutatio
 export interface UnsupportedGatewayDeps {
   /** What the detector found, for the message. */
   software?: () => ForgeSoftwareName;
+  /**
+   * What the detector found for a SPECIFIC repo, for the message.
+   *
+   * Preferred over {@link software}, which is a single shared value: it was set by
+   * whichever repo was probed most recently, so a mutation on a GitLab repo could
+   * name a different forge entirely once another repo had been detected. The
+   * decision is per repo, so the message must be too.
+   */
+  softwareFor?: (repoPath: string) => ForgeSoftwareName | undefined;
 }
 
 /** Human name for the message; `unknown` gets a vaguer phrasing. */
@@ -33,20 +42,21 @@ function describe(software: ForgeSoftwareName): string {
 
 export function createUnsupportedGateway(deps: UnsupportedGatewayDeps = {}): ForgeGateway {
   const stats: GatewayStats = { execs: 0, exemptExecs: 0, cacheHits: 0 };
-  const name = (): string => describe(deps.software?.() ?? "unknown");
+  const name = (repoPath: string): string =>
+    describe(deps.softwareFor?.(repoPath) ?? deps.software?.() ?? "unknown");
 
   return {
     // `unknown`, never `none`: we did not look, so we cannot claim there is no PR.
     prForBranch: async (): Promise<PrLookup> => ({ kind: "unknown", reason: "error" }),
     openPrs: async (): Promise<OpenPr[]> => [],
     mutatePr: async (
-      _repoPath: string,
+      repoPath: string,
       _branch: string,
       _number: number,
       verb: PrMutation,
     ): Promise<{ ok: boolean; error?: string }> => ({
       ok: false,
-      error: `makit has no ${name()} provider yet, so it cannot run "${verb}" on this repository.`,
+      error: `makit has no ${name(repoPath)} provider yet, so it cannot run "${verb}" on this repository.`,
     }),
     stats: () => ({ ...stats }),
     close: () => {},

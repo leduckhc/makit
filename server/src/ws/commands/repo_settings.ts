@@ -21,6 +21,7 @@ import { WireErrorCode } from "../../protocol/codec.js";
 import type { CommandRouter } from "../command_router.js";
 import type { CommandDeps } from "./deps.js";
 import {
+  LOGO_HUE_COUNT,
   validateBranch,
   validateProvider,
   validateWorktreeRoot,
@@ -29,6 +30,24 @@ import {
 
 /** Fields a client may write, and how each is validated. */
 type Patch = Partial<Record<keyof RepoSettings, unknown>>;
+
+/**
+ * The keys a client may write. Checked BEFORE the value, because the clear-a-setting
+ * branch used to run first and so skipped this rule entirely for a `null` value:
+ * `{wroktreeRoot: null}` was acked and the typo written into the patch. A settings
+ * write that silently stores a misspelling is worse than one that refuses, because
+ * the user believes the setting exists.
+ *
+ * A `Set` rather than a property test, so inherited names (`__proto__`,
+ * `constructor`) are not keys — assigning `applied["__proto__"]` invokes the
+ * prototype setter instead of creating an own property.
+ */
+const WRITABLE_KEYS: ReadonlySet<string> = new Set<keyof RepoSettings>([
+  "worktreeRoot",
+  "provider",
+  "defaultBranch",
+  "logoHue",
+]);
 
 export function register(r: CommandRouter, deps: CommandDeps): void {
   const { manager, onProjectsChanged } = deps;
@@ -57,6 +76,11 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
 
     const applied: Record<string, unknown> = {};
     for (const [key, raw] of Object.entries(patch as Patch)) {
+      // The key rule comes first, so it applies to a clear as well as to a write.
+      if (!WRITABLE_KEYS.has(key)) {
+        ctx.err(WireErrorCode.BadRequest, `Unknown setting '${key}'.`);
+        return;
+      }
       // `null` clears a setting: absent means inherit, so clearing is how the UI
       // says "go back to inheriting" without inventing a sentinel value.
       if (raw === null) {
@@ -103,14 +127,20 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
           break;
         }
         case "logoHue": {
-          if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
-            ctx.err(WireErrorCode.BadRequest, "logoHue must be a non-negative integer.");
+          if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0 || raw >= LOGO_HUE_COUNT) {
+            ctx.err(
+              WireErrorCode.BadRequest,
+              `logoHue must be an integer from 0 to ${LOGO_HUE_COUNT - 1}.`,
+            );
             return;
           }
           applied.logoHue = raw;
           break;
         }
         default:
+          // Unreachable: `WRITABLE_KEYS` already rejected anything not listed above.
+          // Kept so adding a key to that set without handling it here fails loudly
+          // rather than silently storing an unvalidated value.
           ctx.err(WireErrorCode.BadRequest, `Unknown setting '${key}'.`);
           return;
       }
