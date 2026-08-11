@@ -107,6 +107,24 @@ Print a fresh pairing QR without restarting:
 kill -USR1 "$(pgrep -f 'tsx.*index.ts serve' || pgrep -f 'node.*makit')"
 ```
 
+### Idle auto-close (memory hygiene)
+
+makit runs **one agent process per session**, so live sessions cost real
+memory (60–450 MB each). Any session idle longer than the window is closed
+automatically: its agent is released (ACP `session/close` / codex
+`thread/unsubscribe`) and the process reaped (`SIGTERM` → `SIGKILL` after a
+grace period). This is always reversible — the transcript and resume handle are
+kept, the session moves to the **Closed** list, and simply sending a message
+reopens and resumes it. Opening a closed session to *read* it does not respawn
+an agent.
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `MAKIT_IDLE_CLOSE_MIN` | `60` | Minutes of inactivity before a session is auto-closed. `0` disables it. |
+
+Sessions that are mid-turn, awaiting input/approval, still drafts, already cold,
+or lacking a native resume handle are never auto-closed.
+
 ### CLI subcommands
 
 `pnpm start`/`pnpm dev` always run `serve`. For the other subcommands invoke
@@ -134,6 +152,86 @@ pnpm build             # tsc -p . → dist/  (then: node dist/src/index.js serve
 ```
 
 ---
+
+## 1b. Forges other than GitHub (Forgejo / Gitea)
+
+The server picks a provider per repository by **asking the instance what it runs**,
+once per host, cached:
+
+| Probe | Forgejo | Gitea | GitLab |
+|-------|---------|-------|--------|
+| `GET /api/forgejo/v1/version` | 200 | 404 | — |
+| `GET /api/v1/version` | 200 | 200 | 302 → sign-in |
+| `GET /api/v4/version` | — | — | 401 |
+
+`github.com` (and subdomains) is decided by hostname and never probed. Forgejo and
+Gitea share one provider — the REST API is the same. GitLab, or anything
+unidentifiable, routes to an **unsupported** provider that makes no requests and
+says so on a button press, instead of being polled against an API that is not
+there and failing as "unknown" (which looked identical to an outage). The host is
+logged once, not once per poll.
+
+Caching, precisely: a decisive answer (`forgejo`, `gitea`, `gitlab`) is cached for
+the process lifetime, keyed by the normalised base URL. An **`unknown`** result --
+whether the host is unidentifiable or the probe failed to connect -- is cached for
+60 seconds and then re-probed, so an instance that was briefly down is not pinned as
+unsupported until the server restarts. Routing treats `unknown` as undecided too, so
+the repo is re-routed rather than left on the fallback provider.
+
+A repo's **provider setting** short-circuits all of this: `Forgejo`, `Gitea` or
+`GitHub` picks the gateway with no probe at all, and `None` reaches no forge. That is
+the recourse for an instance the probe cannot classify -- one that answers 401 to an
+anonymous request, or sits behind a proxy that hides the version endpoints. See
+`docs/specs/2026-08-10-SPEC-48-per-repo-settings.md`.
+
+No `gh`-style login is involved; the provider talks REST with a token.
+
+| Variable | Purpose |
+|----------|---------|
+| `FORGEJO_BASE_URL` (or `MAKIT_FORGEJO_BASE_URL`) | The instance URL. Only needed when `https://<host-from-the-remote>` is not right — a sub-path install, a non-standard port, or plain HTTP on a private network. |
+| `FORGEJO_ACCESS_TOKEN` (or `MAKIT_FORGEJO_TOKEN`, `FORGEJO_TOKEN`, `GITEA_TOKEN`) | API token, checked in that order. Create it under *Settings → Applications*. |
+
+**Setting an instance URL scopes the token to that host.** This is a security
+property: configuring one instance means exporting a single global token, and
+without scoping it would be attached to every non-GitHub remote — so opening any
+public Gitea/Forgejo repo would send your internal token to a third party. A
+foreign host is still queried, just unauthenticated (correct for a public repo).
+Host matching ignores scheme, port and path, because an scp-form remote
+(`git@host:owner/repo`) cannot express the API's port.
+
+Token scopes: `read:repository` is enough for the PR pills. The PR *actions*
+(mark ready, update branch, squash-merge) additionally need `write:repository`.
+Creating repositories needs `write:user` / `write:organization`, which makit
+never does.
+
+### Differences you will see versus GitHub
+
+- **No quota panel.** Forgejo exposes no request quota to read: no
+  `/api/v1/rate_limit` endpoint and no rate-limit response headers, and its
+  configuration has no instance-wide request limiter (the `quota` feature meters
+  *storage* — repo/LFS/package bytes — not requests). Rate limiting on a Forgejo
+  instance therefore comes from whatever sits in front of it, not from Forgejo
+  itself. So there is nothing to ration or display, and the budget
+  footer keeps showing GitHub's quota only. A Forgejo-only setup therefore polls
+  at the fast 5s rung rather than being throttled by GitHub's ladder.
+  In a **mixed** setup GitHub's ladder still governs the shared poll timer for
+  every repo; per-repo cadence would need reworking `pr_watcher`.
+- **Throttling still happens, just not from Forgejo.** An instance behind nginx
+  `limit_req`, Cloudflare or an anti-scraper gate can answer `429`, and a slow
+  query can shed load with `503`. Those are honoured: the provider backs off for
+  `Retry-After` (capped at 5 minutes so a bad header cannot park polling for a
+  day), withholds background polls while waiting, still lets a button press
+  through, and reports `throttled` rather than "no PR".
+- **"Mark ready" rewrites the title.** Forgejo derives `draft` from a
+  `WORK_IN_PROGRESS_PREFIXES` title prefix (default `WIP:`, `[WIP]`,
+  case-insensitive, configurable per instance) and its API has no `draft` field.
+  makit strips the prefix, and refuses rather than guessing if it does not
+  recognise one.
+- **No merge-state detail.** GitHub's `BEHIND`/`BLOCKED`/`CLEAN` has no Forgejo
+  counterpart, so that fact is reported as unknown instead of guessed.
+- **Unresolved review comments are not counted yet.** Forgejo exposes resolution
+  per review *comment* via a reviews→comments walk; until that is verified the
+  count is marked unmeasured rather than reported as zero.
 
 ## 2. App (`app/`)
 
@@ -229,6 +327,35 @@ cd /Users/le/Work/Vibe/makit
 ./app/tool/e2e.sh --mode=stub                # ~50s; boots sim, stub server on :9787
 ./app/tool/e2e.sh --mode=real                # slow; real pi, needs an LLM key
 ```
+
+### Keyless visual QA — real app, real server, scripted turn
+
+The stub adapter answers text triggers, so a live transcript can be driven with
+no LLM key and no agent binary. `TOOLS` is the one that produces **tool rows**
+(reasoning → read → multi-command shell → grep → edit → a failure → a
+destructive call, with real delays so the duration tokens fire):
+
+```sh
+# Terminal 1 — real daemon + StubAdapter, seeded pairing on :9787
+cd server
+export MAKIT_HOME=$(mktemp -d)
+pnpm exec tsx test/e2e-server.ts --mode stub --project /path/to/repo   # prints fp + bearer
+
+# Terminal 2 — the real app, paired to it
+cd app && flutter run -d "iPhone 17" \
+  --dart-define=MAKIT_TEST_HOST=127.0.0.1 --dart-define=MAKIT_TEST_PORT=9787 \
+  --dart-define=MAKIT_TEST_BEARER=e2e-token --dart-define=MAKIT_TEST_FP=<fp>
+
+# Terminal 3 — drive a turn; the app renders it live
+cd server && pnpm exec tsx test/drive-tools.ts             # sends TOOLS
+cd server && pnpm exec tsx test/drive-tools.ts --text THINK # or any other trigger
+```
+
+Other triggers: `STREAM`, `THINK`, `SLOW [ms]`, `MARKDOWN`, `ASK_QUESTION`,
+`ASK_MULTI`. The desktop app spawns its own daemon with the real adapter catalog
+(no stub), so this loop is iOS/simulator-only; for desktop-only row rendering use
+the widget harness `app/tool/tool_row_demo.dart`
+(`--dart-define=unfold=true` opens every row expanded).
 
 If a killed run leaks the stub server on port 9787:
 

@@ -28,22 +28,22 @@ import 'package:makit/store/store.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:makit/ui/composer/composer.dart';
 
-/// A connection whose `session.archive` completes only when the test says so.
+/// A connection whose `session.close` completes only when the test says so.
 class _KillConnection extends ConnectionController {
   _KillConnection() : super(const _NoStore());
 
   final killCompleted = Completer<Map<String, dynamic>>();
 
-  /// Set once a `session.archive` request is dispatched (the ✕ close path).
-  bool archiveRequested = false;
+  /// Set once a `session.close` request is dispatched (the ✕ close path).
+  bool closeRequested = false;
 
   @override
   Future<Map<String, dynamic>> request(
     MsgType type,
     Map<String, dynamic> body,
   ) {
-    if (body['kind'] == 'session.archive') {
-      archiveRequested = true;
+    if (body['kind'] == 'session.close') {
+      closeRequested = true;
       return killCompleted.future;
     }
     return Future.value(const {});
@@ -82,8 +82,8 @@ ProviderContainer _container({
 
   /// The groups state to run under. Defaults to a single **worktree** group:
   /// SPEC-30 decision 7 makes close-behaviour depend on the active group's kind
-  /// (a worktree group archives, a board unpins), and the suites here predate
-  /// groups and assert the archive path. The board's unpin path is covered in
+  /// (a worktree group closes the session, a board unpins), and the suites here predate
+  /// groups and assert the close path. The board's unpin path is covered in
   /// `selected_session_test.dart`.
   GroupsState? groups,
   List<RepoInfo> repos = const [],
@@ -282,7 +282,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // The sole split can never fully close: it resets to an empty starter
-      // tab. Closing the tab archives the session (soft, recoverable); it is
+      // tab. Closing the tab closes the session (soft, recoverable); it is
       // still in the local store until the server's next snapshot arrives.
       final root = c.read(workspaceControllerProvider).root as Split;
       expect(root.tabs, hasLength(1));
@@ -387,7 +387,7 @@ void main() {
   });
 
   group('quit', () {
-    testWidgets('closing a tab via ✕ archives its session', (tester) async {
+    testWidgets('closing a tab via ✕ closes its session', (tester) async {
       final conn = _KillConnection();
       final c = _container(
         sessions: [_session('s1', 'Wire up pairing')],
@@ -401,15 +401,15 @@ void main() {
       await tester.tap(find.byTooltip('Close tab'));
       await tester.pumpAndSettle();
 
-      // The ✕ closes the tab immediately (not gated on the archive ack): the
+      // The ✕ closes the tab immediately (not gated on the close ack): the
       // sole split resets to an empty starter tab and drops the selection.
       expect(c.read(selectedSessionProvider), isNull);
       expect(find.byType(EmptyPaneStarter), findsOneWidget);
 
-      // closeTabAndArchive fires a soft, fire-and-forget session.archive.
-      expect(conn.archiveRequested, isTrue);
+      // closeTabAndSession fires a soft, fire-and-forget session.close.
+      expect(conn.closeRequested, isTrue);
 
-      // Completing the archive later is harmless (fire-and-forget) and leaves
+      // Completing the close later is harmless (fire-and-forget) and leaves
       // the starter tab in place.
       conn.killCompleted.complete(const {});
       await tester.pumpAndSettle();

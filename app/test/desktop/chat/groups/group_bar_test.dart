@@ -74,6 +74,7 @@ ProviderContainer _container({
   String? activeGroupId,
   List<ClosedBoard> recentlyClosed = const [],
   List<RepoInfo> repos = const [],
+  String? previewGroupId,
 }) {
   final container = ProviderContainer(
     overrides: [
@@ -85,6 +86,7 @@ ProviderContainer _container({
             groups: groups,
             activeGroupId: activeGroupId ?? groups.first.id,
             recentlyClosed: recentlyClosed,
+            previewGroupId: previewGroupId,
           ),
         ),
       ),
@@ -199,6 +201,65 @@ void main() {
       expect(find.text('Rename board'), findsNothing);
     });
 
+    testWidgets('the preview tab renders italic; a kept one does not', (
+      tester,
+    ) async {
+      final c = _container(
+        groups: [
+          _wt('g1', '/tmp/wt/a', label: 'feat/a'),
+          _wt('g2', '/tmp/wt/b', label: 'feat/b'),
+        ],
+        sessions: const [],
+        previewGroupId: 'g2',
+      );
+      await _pump(tester, c, const GroupBar());
+
+      expect(
+        tester.widget<Text>(find.text('feat/b')).style?.fontStyle,
+        FontStyle.italic,
+      );
+      expect(
+        tester.widget<Text>(find.text('feat/a')).style?.fontStyle,
+        isNot(FontStyle.italic),
+      );
+    });
+
+    testWidgets('right-click on the preview tab keeps it (decision 4)', (
+      tester,
+    ) async {
+      final c = _container(
+        groups: [_wt('g1', '/tmp/wt/a', label: 'feat/a')],
+        sessions: const [],
+        previewGroupId: 'g1',
+      );
+      await _pump(tester, c, const GroupBar());
+
+      await tester.tap(find.text('feat/a'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Keep this view'));
+      await tester.pumpAndSettle();
+
+      expect(c.read(groupsControllerProvider).previewGroupId, isNull);
+      expect(
+        tester.widget<Text>(find.text('feat/a')).style?.fontStyle,
+        isNot(FontStyle.italic),
+        reason: 'the italic goes away with the preview status',
+      );
+    });
+
+    testWidgets('a kept worktree tab offers no Keep item', (tester) async {
+      final c = _container(
+        groups: [_wt('g1', '/tmp/wt/a', label: 'feat/a')],
+        sessions: const [],
+      );
+      await _pump(tester, c, const GroupBar());
+
+      await tester.tap(find.text('feat/a'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Keep this view'), findsNothing);
+    });
+
     testWidgets('a worktree tab shows the live branch, not a stale label', (
       tester,
     ) async {
@@ -240,7 +301,7 @@ void main() {
       tester,
     ) async {
       // Membership is filtered against the live session list, so a board left
-      // holding only archived ids must not claim to have agents.
+      // holding only closed ids must not claim to have agents.
       final c = _container(
         groups: [
           _board('b1', ['gone-1', 'gone-2']),

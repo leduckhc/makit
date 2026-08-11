@@ -64,7 +64,11 @@ export interface Policy {
   reserve: number;
 }
 
-const POLL_FAST_MS = 5_000;
+/**
+ * The unthrottled cadence. Exported because a provider with no quota to ration
+ * (Forgejo) must be able to claim it without going through the GitHub ladder.
+ */
+export const POLL_FAST_MS = 5_000;
 const POLL_SLOW_MS = 30_000;
 const POLL_CRAWL_MS = 120_000;
 const POLL_PAUSED_MS = Infinity;

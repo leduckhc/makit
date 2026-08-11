@@ -4,6 +4,7 @@ import { sharedMediaStore } from "../media/store.js";
 import { prepareTurnOrFail } from "../media/attach.js";
 import type { SessionConfigOption } from "../protocol.js";
 import type { UIResponse } from "../uicall.js";
+import { TurnStatusTracker } from "./turn-status.js";
 
 export interface StubAdapterOptions {
   askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
@@ -28,24 +29,91 @@ const MARKDOWN_SAMPLE = [
 ///   - "ASK_MULTI"     → multi-question / multi-select askUserQuestion round-trip
 ///   - "ASK_QUESTION"  → single-question askUserQuestion round-trip
 ///   - "MARKDOWN"      → a markdown reply (heading, link, fenced dart code block)
+///   - "AWAIT_APPROVAL"→ raise a real `confirmAction` prompt and park the turn on
+///                       the tool-permission gate until it is answered
+///   - "AWAIT_INPUT"   → raise a real `input` prompt and park on the elicitation
+///                       gate until it is answered
+///   - "FAIL_TURN"     → a terminal `session.error`, then settle IDLE (not "error")
 ///   - anything else   → `echo: <text>` after 50ms
 export class StubAdapter extends EventEmitter implements AgentAdapter {
   readonly agent = "stub";
 
   /** Resume-capable so keyless e2e can exercise the server-restart resume path
    *  (SPEC-29): the manager persists {@link agentSessionId} and re-attaches by it. */
-  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false };
+  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false, close: true };
   agentSessionId?: string;
 
   private sessionId = "";
   /** Session cwd — attachments are materialised here, as on a real adapter. */
   private workspaceRoot = "";
   private askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
-  /** Timeout handle for SLOW turns, cleared by cancel/kill to prevent late events. */
-  private slowTimeout?: ReturnType<typeof setTimeout>;
+  /**
+   * The pending completion of a **deferred turn** — SLOW's late reply or
+   * FAIL_TURN's error — cleared by `cancel()`/`kill()` so a cancelled or dead
+   * adapter never emits afterwards. `turnKey` is present only when the deferral
+   * entered a *tracked* turn (FAIL_TURN), so cancelling can leave that turn
+   * instead of stranding the tracker in `running` forever.
+   */
+  private pendingTurn?: { handle: ReturnType<typeof setTimeout>; turnKey?: string };
+  /**
+   * The TOOLS script's pending wait and its abort flag. Same hazard as
+   * the deferred turn above but larger: an uncancelled script keeps emitting six starts,
+   * six ends, a reply and a second `idle` for the rest of its ~5.5 s — after a
+   * `kill()` those land on an adapter that already reported `exit`.
+   */
+  private toolTimeout?: ReturnType<typeof setTimeout>;
+  /**
+   * Identity of the TOOLS script currently allowed to emit, bumped on every
+   * start and every abort. A script captures its own value and stops the moment
+   * it stops matching.
+   *
+   * Deliberately not a boolean: `cancel()` settles the pending wait (which only
+   * *queues* the script's continuation) and then emits `idle` synchronously, and
+   * the session layer starts a queued turn on `idle` — so a shared flag was
+   * reset to false before the cancelled script resumed, and it went on to emit
+   * the rest of its calls interleaved with the new turn.
+   */
+  private toolRun = 0;
+  /**
+   * Resolver for the wait currently in flight. Clearing the timer is not enough:
+   * its callback is the only thing that resolves the wait, so an aborted script
+   * stayed suspended at `await wait(...)` forever, retaining its closure and
+   * call data once per cancellation.
+   */
+  private toolWaitResolve?: () => void;
+  /**
+   * The in-flight TOOLS script. Exposed so a test can assert it actually settles
+   * after a cancel — a suspended async frame emits nothing, so the leak is
+   * invisible from the event stream alone.
+   */
+  toolScript?: Promise<void>;
+  /** Set by {@link close} — lets tests assert the graceful path was taken. */
+  closed = false;
+
 
   /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
   private turnCount = 0;
+
+  /**
+   * SPEC-46 (T15): the same turns/gates state machine the real subprocess
+   * adapters use, so a parked stub turn is indistinguishable on the wire from a
+   * parked codex or pi turn. Hand-rolling it here is what the tracker exists to
+   * prevent: the coarse `status` channel only carries `"idle" | "running"`, so
+   * `awaiting-approval` is a `session.status` EVENT, and two spellings of that
+   * is precisely the drift that produced stuck-spinner bugs in acp/codex.
+   */
+  private readonly turns = new TurnStatusTracker({
+    emitStatus: (s) => this.emit("status", s),
+    emitSessionStatus: (status) =>
+      this.emitEvent({ ts: Date.now(), kind: "session.status", payload: { status } }),
+    isExited: () => this.exited,
+  });
+
+  /** True once killed — suppresses any further transition (tracker contract). */
+  private exited = false;
+
+  /** Key of the turn parked on a gate, so cancel can release it. */
+  private gatedTurn?: string;
 
   constructor(options: StubAdapterOptions = {}) {
     super();
@@ -112,6 +180,67 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       return;
     }
 
+    // SPEC-46 (T15) — the two states `makit wait` must be able to observe, and
+    // the one it must NOT confuse with a status. Placed before SLOW/STREAM so a
+    // prompt naming a gate is never swallowed by another trigger.
+    //
+    // AWAIT_APPROVAL / AWAIT_INPUT: a turn genuinely in flight, then blocked on
+    // the user. The gate never clears itself — `makit wait --for approval` exiting
+    // 10 is only meaningful if it persists — but it IS released by an answer,
+    // because production adapters go `awaiting-*` *because* they asked something.
+    // Parking the status without asking made the flow the CLI exists for
+    // (`run` → exit 10 → `makit approve` → the turn finishes) impossible to
+    // exercise, and made `approve` look broken against a session that plainly
+    // reported `[awaiting-approval]`.
+    if (prompt.includes("AWAIT_APPROVAL") || prompt.includes("AWAIT_INPUT")) {
+      const approval = prompt.includes("AWAIT_APPROVAL");
+      const gate = approval ? "awaiting-approval" : "awaiting-input";
+      this.gatedTurn = this.turns.enterTurn();
+      this.turns.enterApproval(gate);
+      // No bridge (a unit test constructing the adapter bare) → the gate simply
+      // persists, which is the older behaviour and still what those tests assert.
+      if (!this.askUser) return;
+      // `sessionId` is not decoration: the server strips it to attribute the
+      // prompt, which is what D13's ladder routes on and what `makit approve <id>`
+      // matches. Without it the question is unroutable and unanswerable.
+      const body: Record<string, unknown> = approval
+        ? {
+            sessionId: this.sessionId,
+            kind: "confirmAction",
+            title: "Run `rm -rf build`?",
+            message: "the stub was asked to request approval",
+            action: "bash",
+            preview: "rm -rf build",
+          }
+        : { sessionId: this.sessionId, kind: "input", title: "What should the stub use?", prefill: "" };
+      void this.askUser(body)
+        .then(() => this.releaseGate())
+        .catch(() => this.releaseGate());
+      return;
+    }
+
+    // FAIL_TURN: a turn that fails. The status settles **idle**, not "error" —
+    // nothing in makit ever emits `status: "error"` (the real adapters emit
+    // `session.error` and then settle), which is exactly why `makit wait` keys
+    // its failure exit code off the EVENT. Encoded here so the stub cannot
+    // quietly acquire an "error" status and invalidate that design.
+    if (prompt.includes("FAIL_TURN")) {
+      const key = this.turns.enterTurn();
+      const handle = setTimeout(() => {
+        this.pendingTurn = undefined;
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: `FAIL_TURN: the stub was asked to fail this turn (${prompt})` },
+        });
+        this.turns.leaveTurn(key);
+      }, echoDelayMs);
+      // Tracked, so `kill()` cannot let a terminal error land after the exit and
+      // `cancel()` cannot leave the turn wedged running.
+      this.pendingTurn = { handle, turnKey: key };
+      return;
+    }
+
     // "SLOW [ms]" → a turn that OUTLIVES a keystroke: running now, reply after
     // `ms` (default 12s), then idle. The queue (SPEC-35/36) only exists while the
     // agent is busy, so without this the keyless loop — and the demo — has no
@@ -120,7 +249,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       const ms = Number(/SLOW\s+(\d+)/.exec(prompt)?.[1] ?? 12_000);
       this.emit("status", "running");
       const handle = setTimeout(() => {
-        this.slowTimeout = undefined;
+        this.pendingTurn = undefined;
         this.emitEvent({
           ts: Date.now(),
           kind: "agent.message",
@@ -128,7 +257,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
         });
         this.emit("status", "idle");
       }, ms);
-      this.slowTimeout = handle;
+      this.pendingTurn = { handle };
       return;
     }
 
@@ -159,6 +288,15 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
         }
       };
       setTimeout(tick, echoDelayMs);
+      return;
+    }
+    // "TOOLS" → a turn made of tool calls: the one row type the keyless loop
+    // could not produce, so the risk branches, durations, exit codes, command
+    // summaries and every expanded-body shape (file content, shell output,
+    // diff, facts-only) had to be taken on trust. Scripted with real delays so
+    // the live counter and the finished-duration gate (SPEC-47) both fire.
+    if (input.text.includes("TOOLS")) {
+      this.toolScript = this.runToolScript();
       return;
     }
     // "THINK" → emit a reasoning trace (folded thinking card) then a reply.
@@ -194,17 +332,233 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     }, echoDelayMs);
   }
 
+  /**
+   * A representative tool turn: reasoning, a safe read, a multi-command shell
+   * call, a grep, an edit (diff body), a failing shell call, and a destructive
+   * one. Every `tool.call.start` is closed — a dangling start renders as a row
+   * that spins forever.
+   */
+  private async runToolScript(): Promise<void> {
+    this.emit("status", "running");
+    // Release any script still in flight first. The token below would stop it
+    // emitting, but its pending timer is a shared field: left running, that
+    // timer fires later and nulls THIS script's handles, so a subsequent cancel
+    // has nothing to clear and the script cannot be aborted at all.
+    this.abortToolScript();
+    const run = ++this.toolRun;
+    const live = () => this.toolRun === run;
+    // The two long calls exist so the duration token clears SPEC-47's 2 s floor
+    // in the live loop. A unit test only cares about the event shape, so the
+    // scale is overridable rather than the script being duplicated.
+    const scale = Number(process.env.MAKIT_STUB_TOOL_SCALE ?? "1") || 1;
+    const wait = (ms: number) =>
+      new Promise<void>((resolve) => {
+        this.toolWaitResolve = resolve;
+        this.toolTimeout = setTimeout(() => {
+          this.toolTimeout = undefined;
+          this.toolWaitResolve = undefined;
+          resolve();
+        }, ms * scale);
+      });
+
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "agent.thinking",
+      payload: {
+        text:
+          "The risk tint fires on edit/write/bash, so it is on for almost every " +
+          "row; monochrome loses nothing and buys back the amber for something " +
+          "that is actually exceptional.",
+      },
+    });
+    await wait(60);
+
+    type Call = {
+      name: string;
+      args: Record<string, unknown>;
+      risk: "safe" | "risky" | "destructive";
+      /** Milliseconds the call "takes" — drives the duration token. */
+      ms: number;
+      exitCode?: number;
+      summary: string;
+      output?: string;
+    };
+
+    const calls: Call[] = [
+      {
+        name: "read",
+        args: { path: `${this.workspaceRoot}/app/lib/ui/session/tool_call_card.dart` },
+        risk: "safe",
+        ms: 40,
+        summary: "307 lines read",
+        output:
+          "import 'package:flutter/material.dart';\n" +
+          "import 'package:flutter_riverpod/flutter_riverpod.dart';\n\n" +
+          "class ToolCallCard extends ConsumerStatefulWidget {\n" +
+          "  const ToolCallCard({super.key, required this.item});\n",
+      },
+      {
+        name: "bash",
+        args: {
+          command: `cd ${this.workspaceRoot} && grep -rn "risk" server/src/*.ts | head -20`,
+        },
+        risk: "risky",
+        ms: 2600,
+        summary: "3 matches",
+        output:
+          "server/src/pi-sessions.ts:259:function classifyRisk(name: string) {\n" +
+          "server/src/adapters/acp-map.ts:540:function riskFromKind(kind) {\n" +
+          'server/src/adapters/codex-map.ts:29:type Risk = "safe" | "risky";',
+      },
+      {
+        name: "grep",
+        args: { pattern: "kToolRiskyColor", glob: "*.dart" },
+        risk: "safe",
+        ms: 30,
+        summary: "1 match",
+        output: "app/lib/ui/session/chat_metrics.dart:46:const Color kToolRiskyColor",
+      },
+      {
+        name: "edit",
+        args: {
+          path: "app/lib/ui/session/tool_call_card.dart",
+          oldText: "        size: 16,\n        color: riskColor,",
+          newText: "        size: kToolGlyph,\n        color: riskColor,",
+        },
+        risk: "risky",
+        ms: 40,
+        summary: "+1 −1",
+      },
+      {
+        name: "bash",
+        args: { command: "sed -i '' 's/Ran/Run/g' app/lib/ui/session/tool_renderers.dart" },
+        risk: "risky",
+        ms: 300,
+        exitCode: 1,
+        summary: "exit 1",
+        output: 'sed: 1: "s/Ran/Run/g": invalid command code R',
+      },
+      {
+        name: "bash",
+        args: { command: "rm -rf ~/Library/Caches/dev.getmakit.app && rm -rf build" },
+        risk: "destructive",
+        ms: 2200,
+        summary: "removed 2 paths",
+      },
+    ];
+
+    for (const [i, call] of calls.entries()) {
+      if (!live()) return;
+      const callId = `stub-tool-${Date.now()}-${i}`;
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "tool.call.start",
+        payload: { callId, name: call.name, args: call.args, risk: call.risk },
+      });
+      await wait(call.ms);
+      // Closing the call is not optional — a dangling start spins forever — but
+      // an aborted script must not open the next one either, so the guard sits
+      // on both sides of the wait.
+      if (!live()) return;
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "tool.call.end",
+        payload: {
+          callId,
+          exitCode: call.exitCode ?? 0,
+          summary: call.summary,
+          output: call.output ?? "",
+        },
+      });
+      await wait(40);
+    }
+    if (!live()) return;
+
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "agent.message",
+      payload: { text: "Rows are 31px now, one family, and the amber is gone." },
+    });
+    this.emit("status", "idle");
+  }
+
   /** No mid-turn injection (SPEC-35): the session layer queues instead. */
   async steer(_input: UserInput): Promise<boolean> {
     return false;
   }
 
   async cancel(): Promise<void> {
-    if (this.slowTimeout !== undefined) {
-      clearTimeout(this.slowTimeout);
-      this.slowTimeout = undefined;
+    // Both kinds of deferred work are cancelled: a SLOW/FAIL_TURN completion and
+    // a TOOLS script mid-flight. Either left running would emit into the turn
+    // that replaces this one.
+    const settled = this.clearPendingTurn();
+    this.abortToolScript();
+    if (this.releaseGate()) return;
+    // A tracked deferral already settled via `leaveTurn`; an untracked one (SLOW
+    // drives the status directly) still needs the idle.
+    if (!settled) this.emit("status", "idle");
+  }
+
+  /**
+   * Cancel a deferred turn completion. Returns true when doing so already
+   * settled the status (a tracked turn was left), false otherwise.
+   */
+  private clearPendingTurn(): boolean {
+    const pending = this.pendingTurn;
+    if (pending === undefined) return false;
+    this.pendingTurn = undefined;
+    clearTimeout(pending.handle);
+    if (pending.turnKey === undefined) return false;
+    this.turns.leaveTurn(pending.turnKey);
+    return true;
+  }
+
+  /**
+   * Release a parked gate (SPEC-46 T15) without emitting the intermediate
+   * "running" that `leaveApproval` would otherwise produce: drop the TURN first
+   * so the tracker has nothing to resume to, then the gate. A cancel that left
+   * the gate counted would wedge the session for good — `settleIdle` could never
+   * fire again, so every later turn would look stuck.
+   *
+   * The settle is `leaveApproval`'s own job as of SPEC-29: it now settles to
+   * `idle` when the last gate closes and no turn remains (it used to only resume
+   * `running`, which pinned a session whose turn ended before its gate). So this
+   * must NOT settle again — doing so emitted `idle` twice for one cancel.
+   *
+   * Returns whether there was a gate to release. Called both by `cancel` and when
+   * the user *answers* the prompt that raised the gate.
+   */
+  private releaseGate(): boolean {
+    if (this.gatedTurn === undefined) return false;
+    this.turns.leaveTurn(this.gatedTurn);
+    this.gatedTurn = undefined;
+    this.turns.leaveApproval();
+    return true;
+  }
+
+  /** Stop an in-flight TOOLS script: clear its pending wait, block the rest. */
+  private abortToolScript(): void {
+    // Bumping the token invalidates the in-flight script for good: a later start
+    // takes a new value, so the cancelled one can never be revalidated.
+    this.toolRun++;
+    if (this.toolTimeout !== undefined) {
+      clearTimeout(this.toolTimeout);
+      this.toolTimeout = undefined;
     }
-    this.emit("status", "idle");
+    // Settle the wait so the script resumes, sees the flag and returns. Without
+    // this it never runs again and its frame is never released.
+    this.toolWaitResolve?.();
+    this.toolWaitResolve = undefined;
+  }
+
+  /**
+   * Graceful close. The stub has no agent-side state to release, but it records
+   * the call and cancels like the real thing so the keyless e2e loop can prove
+   * the close path runs end-to-end (`test/e2e-server.ts --mode stub`).
+   */
+  async close(): Promise<void> {
+    this.closed = true;
+    await this.cancel();
   }
 
   /**
@@ -313,10 +667,11 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async kill(): Promise<void> {
-    if (this.slowTimeout !== undefined) {
-      clearTimeout(this.slowTimeout);
-      this.slowTimeout = undefined;
-    }
+    // Exited FIRST: `settleIdle` is suppressed once `isExited()`, so cancelling
+    // the deferred turn below cannot emit a status for an adapter already gone.
+    this.exited = true;
+    this.clearPendingTurn();
+    this.abortToolScript();
     this.emit("exit", null);
   }
 

@@ -11,6 +11,7 @@ import '../window_overlays.dart';
 // forgotten by a call site; re-exported so existing importers of
 // `settingsOpenProvider` are unaffected.
 export '../window_overlays.dart' show settingsOpenProvider;
+import '../../store/store.dart';
 import 'registry/settings_registry.dart';
 import 'settings_detail_pane.dart';
 import 'settings_item_anchor.dart';
@@ -115,7 +116,12 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
     final stored = ref
         .read(preferencesControllerProvider.notifier)
         .get(lastSectionPreference);
+    // Resolved against the STATIC list here, because the repo snapshot may not
+    // have arrived yet. A stored `repo:<id>` is honoured in build(), once the
+    // sections that could contain it exist.
     _selectedId = kSettingsSections.any((s) => s.id == stored)
+        ? stored
+        : isRepoSection(stored)
         ? stored
         : kSettingsSections.first.id;
   }
@@ -142,7 +148,19 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
 
   @override
   Widget build(BuildContext context) {
-    final section = kSettingsSections.firstWhere((s) => s.id == _selectedId);
+    // A function of the live repo list: one section per pinned repo (SPEC-48 D1).
+    final sections = sectionsFor(ref.watch(reposProvider).repos);
+    // Falls back rather than throwing when the selected repo disappears — removed
+    // while its section was open, or a stored id whose repo is gone.
+    final section = sections.firstWhere(
+      (s) => s.id == _selectedId,
+      orElse: () => sections.first,
+    );
+    // The nav pane is told which section is ACTUALLY shown, not what was requested.
+    // When a stored `repo:<id>` is no longer available the detail pane falls back to
+    // the first section while `_selectedId` still held the missing id, so the sidebar
+    // highlighted nothing and the window looked like it had lost its place.
+    final effectiveSelectedId = section.id;
     // A modal focus scope: traps tab traversal inside Settings, binds Escape to
     // close, and marks the subtree as a route for assistive tech.
     return FocusScope(
@@ -163,8 +181,8 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
                   SizedBox(
                     width: _navWidth,
                     child: SettingsNavPane(
-                      sections: kSettingsSections,
-                      selectedId: _selectedId,
+                      sections: sections,
+                      selectedId: effectiveSelectedId,
                       query: _query,
                       controller: _searchController,
                       onQueryChanged: (q) => setState(() => _query = q),

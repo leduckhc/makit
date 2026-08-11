@@ -100,6 +100,7 @@ class GroupsState {
     required this.groups,
     required this.activeGroupId,
     this.recentlyClosed = const [],
+    this.previewGroupId,
   }) : assert(groups.length > 0, 'a workspace always has at least one group');
 
   /// The fresh-launch state: one empty board. SPEC-30 decision 19 prefers the
@@ -124,6 +125,26 @@ class GroupsState {
   /// Closed boards, oldest first, capped at [kRecentlyClosedLimit].
   final List<ClosedBoard> recentlyClosed;
 
+  /// SPEC-51 — the **preview** (disposable) group, or null when every group was
+  /// kept. A single nullable id rather than a flag on [Group] because "at most
+  /// one preview group" is a property of the collection: modelled here it holds
+  /// by construction, modelled on the group it would be an invariant that every
+  /// mutation has to re-establish across a list.
+  ///
+  /// Only ever a worktree group (decision 1). A stale id means "no preview"
+  /// ([previewGroup] resolves it), so it can never strand the rail.
+  final String? previewGroupId;
+
+  /// The preview group, or null when there is none (or the id is stale).
+  Group? get previewGroup {
+    final id = previewGroupId;
+    if (id == null) return null;
+    for (final g in groups) {
+      if (g.id == id) return g;
+    }
+    return null;
+  }
+
   /// The active group. Falls back to the first group when the id is stale, so
   /// there is always a canvas.
   Group get active => groups.firstWhere(
@@ -132,10 +153,15 @@ class GroupsState {
   );
 
   /// JSON for persistence, versioned.
+  ///
+  /// [previewGroupId] is written only when set, so the payload of an install
+  /// that never turns the mode on is byte-identical to before SPEC-51 — see
+  /// decision 10 for why the version is deliberately *not* bumped.
   Map<String, Object?> toJson() => {
     'v': kGroupsPayloadVersion,
     'groups': [for (final g in groups) g.toJson()],
     'activeGroupId': activeGroupId,
+    if (previewGroupId != null) 'previewGroupId': previewGroupId,
     'recentlyClosed': [for (final c in recentlyClosed) c.toJson()],
   };
 
@@ -144,12 +170,14 @@ class GroupsState {
       other is GroupsState &&
       listEquals(other.groups, groups) &&
       other.activeGroupId == activeGroupId &&
+      other.previewGroupId == previewGroupId &&
       listEquals(other.recentlyClosed, recentlyClosed);
 
   @override
   int get hashCode => Object.hash(
     Object.hashAll(groups),
     activeGroupId,
+    previewGroupId,
     Object.hashAll(recentlyClosed),
   );
 }
@@ -197,10 +225,22 @@ class GroupsController extends StateNotifier<GroupsState> {
 
   /// Activates the group for `(projectId, worktreePath)`, minting it when no
   /// group holds that scope yet (SPEC-30 decision 15). Returns its id.
+  ///
+  /// SPEC-51: [preview] mints the group as the **disposable** one — it takes the
+  /// slot of the previous preview group, which is dropped. That drop is safe by
+  /// the same reasoning as [closeGroup]: a worktree group's membership is
+  /// derived, so its agents keep running and clicking the branch rebuilds it.
+  /// What it costs is that group's arrangement, which is why the mode is opt-in.
+  ///
+  /// A scope that is **already open** is only activated — never re-marked. So
+  /// navigating to a group you kept cannot make it disposable again (decision
+  /// 9), and a deliberate open (`preview: false`) neither marks nor evicts
+  /// (decision 6).
   String openWorktreeGroup({
     required String projectId,
     required String worktreePath,
     required String label,
+    bool preview = false,
   }) {
     for (final g in state.groups) {
       if (g.isScopedTo(projectId: projectId, worktreePath: worktreePath)) {
@@ -215,8 +255,46 @@ class GroupsController extends StateNotifier<GroupsState> {
       label: label,
       tree: WorkspaceController.seedWorkspace(),
     );
-    _commit(_copy(groups: [...state.groups, minted], activeGroupId: minted.id));
+    if (!preview) {
+      _commit(
+        _copy(groups: [...state.groups, minted], activeGroupId: minted.id),
+      );
+      return minted.id;
+    }
+    // Replace in place when there is a preview group, so browsing branches
+    // never changes the rail's length or reorders the tabs around it.
+    final displaced = state.groups.indexWhere(
+      (g) => g.id == state.previewGroupId,
+    );
+    final groups = [...state.groups];
+    if (displaced < 0) {
+      groups.add(minted);
+    } else {
+      groups[displaced] = minted;
+    }
+    _commit(
+      GroupsState(
+        groups: groups,
+        activeGroupId: minted.id,
+        recentlyClosed: state.recentlyClosed,
+        previewGroupId: minted.id,
+      ),
+    );
     return minted.id;
+  }
+
+  /// Promotes [id] out of preview — it stops being replaceable (SPEC-51
+  /// decision 4). A no-op for any other group, so the two affordances that call
+  /// it (double-clicking the worktree row, "Keep this view") need no guard.
+  void keepGroup(String id) {
+    if (state.previewGroupId != id) return;
+    _commit(
+      GroupsState(
+        groups: state.groups,
+        activeGroupId: state.activeGroupId,
+        recentlyClosed: state.recentlyClosed,
+      ),
+    );
   }
 
   /// Creates an empty board and activates it. Returns its id.
@@ -258,6 +336,11 @@ class GroupsController extends StateNotifier<GroupsState> {
             ? groups[(index - 1).clamp(0, groups.length - 1)].id
             : state.activeGroupId,
         recentlyClosed: recentlyClosed,
+        // However the preview group goes — this ✕, a deleted worktree — the
+        // pointer goes with it (decision 7).
+        previewGroupId: state.previewGroupId == id
+            ? null
+            : state.previewGroupId,
       ),
     );
   }
@@ -288,6 +371,7 @@ class GroupsController extends StateNotifier<GroupsState> {
         groups: groups,
         activeGroupId: pruned.id,
         recentlyClosed: [...state.recentlyClosed]..removeAt(at),
+        previewGroupId: state.previewGroupId,
       ),
     );
   }
@@ -476,10 +560,20 @@ class GroupsController extends StateNotifier<GroupsState> {
     final active = groups.any((g) => g.id == activeId)
         ? activeId as String
         : groups.first.id;
+    // A preview id for a group that did not survive the decode (corrupt, or its
+    // worktree went away) degrades to "no preview" rather than stranding the
+    // pointer on nothing. It must also be a worktree group (decision 1): a
+    // board id — e.g. from a hand-edited or corrupt payload — is never honoured
+    // as the preview pointer.
+    final previewId = decoded['previewGroupId'];
     return GroupsState(
       groups: groups,
       activeGroupId: active,
       recentlyClosed: _capped(closed),
+      previewGroupId:
+          groups.any((g) => g.id == previewId && g.kind == GroupKind.worktree)
+          ? previewId as String
+          : null,
     );
   }
 
@@ -520,6 +614,12 @@ class GroupsController extends StateNotifier<GroupsState> {
     groups: groups ?? state.groups,
     activeGroupId: activeGroupId ?? state.activeGroupId,
     recentlyClosed: recentlyClosed ?? state.recentlyClosed,
+    // Always preserved. A nullable argument cannot express "clear it" and
+    // "leave it" at once, and the codebase answer to that (see
+    // `Group.withLayout`) is a dedicated method rather than a sentinel: the
+    // three mutations that set or clear the pointer build a [GroupsState]
+    // directly.
+    previewGroupId: state.previewGroupId,
   );
 
   void _replace(int index, Group group) {

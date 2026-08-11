@@ -146,7 +146,7 @@ class SessionActionsMenu extends ConsumerWidget {
               sessionId: sessionId,
             );
           case 'quit':
-            _confirmArchive(context, ref);
+            _confirmClose(context, ref);
         }
       },
       itemBuilder: (context) => [
@@ -158,24 +158,25 @@ class SessionActionsMenu extends ConsumerWidget {
         const PopupMenuDivider(),
         themedMenuItem(
           value: 'quit',
-          icon: PhosphorIconsLight.archiveBox,
-          label: 'Archive session',
+          icon: PhosphorIconsLight.moon,
+          label: 'Close session',
         ),
       ],
     );
   }
 
-  Future<void> _confirmArchive(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmClose(BuildContext context, WidgetRef ref) async {
     // Resolved before the first await: `ref` throws once its widget is
     // unmounted, and the record must survive the thing that reported to it.
     final status = ref.status;
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: const Text('Archive session?'),
+        title: const Text('Close session?'),
         content: const Text(
-          'This removes the session from the active list and stops its agent. '
-          'The transcript is kept and the session can be restored later.',
+          'This releases the agent and frees its memory, and removes the session '
+          'from the active list. The transcript is kept — reopen it any time to '
+          'resume where you left off.',
         ),
         actions: [
           TextButton(
@@ -184,7 +185,7 @@ class SessionActionsMenu extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dctx, true),
-            child: const Text('Archive'),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -195,11 +196,11 @@ class SessionActionsMenu extends ConsumerWidget {
     final store = ref.read(storeControllerProvider.notifier);
     final workspace = ref.read(workspaceControllerProvider.notifier);
 
-    // Archive first, then drop the session's tabs — only mutate the workspace
-    // once the archive is acknowledged, so a failed archive leaves the active
+    // Close first, then drop the session's tabs — only mutate the workspace
+    // once the close is acknowledged, so a failed close leaves the active
     // session and its tabs intact (no orphaned layout).
     try {
-      await store.archiveSession(sessionId);
+      await store.closeSession(sessionId);
       if (splitId != null && tabId != null) {
         workspace.closeTab(splitId!, tabId!);
       }
@@ -207,7 +208,7 @@ class SessionActionsMenu extends ConsumerWidget {
       workspace.unbindSession(sessionId);
     } catch (e) {
       status.failure(
-        'Could not archive the session',
+        'Could not close the session',
         error: e,
         source: StatusSources.session,
         sessionId: sessionId,

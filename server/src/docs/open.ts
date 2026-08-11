@@ -1,0 +1,102 @@
+/**
+ * makit — SPEC-46 D8 rev 2: open a document on the machine that holds it.
+ *
+ * When the viewer is already on the server's host there is nothing to serve: the
+ * OS opener hands the file to the real browser with perfect fidelity, no HTTP, no
+ * grant, no TTL, no Tailscale and no listener. Publishing (D9/D10/D15) exists for
+ * the case this one cannot cover — a *different* device.
+ *
+ * Two constraints make this safe to expose at all:
+ *   1. The caller must be a **local** client. That gate lives in the command
+ *      layer, which is the only place that knows the connection.
+ *   2. The path goes through {@link resolveDocPath}, the same boundary the WSS
+ *      read and the static route share, so "open" can never reach a dotfile,
+ *      an excluded directory, a non-document extension or outside the worktree.
+ *
+ * The path is passed as an argv element to a non-shell binary, so a filename
+ * containing spaces, quotes or `;` is inert.
+ *
+ * Windows is deliberately unsupported. The obvious opener there is
+ * `cmd /c start ""`, and `cmd.exe` **is** a command interpreter: it re-parses
+ * `& | > < ^` in the path, so that route reintroduces exactly the injection this
+ * design avoids. makit's server targets macOS and Linux, so the honest answer is
+ * to refuse with a reason rather than ship a shell-quoting guess.
+ */
+
+import { execFile } from "node:child_process";
+
+import { resolveDocPath, type DocPathResult } from "./resolve.js";
+
+/** `execFile`-shaped, injected so a test never launches a browser. */
+export type Spawn = (cmd: string, args: string[], cb: (err: Error | null) => void) => void;
+
+export interface OpenDocDeps {
+  /** Injected for tests; defaults to `process.platform`. */
+  platform?: NodeJS.Platform;
+  /** Injected for tests; defaults to {@link execFile}. */
+  spawn?: Spawn;
+  /** Injected for tests; defaults to {@link resolveDocPath}. */
+  resolveDoc?: (worktreeRoot: string, relPath: string) => DocPathResult;
+}
+
+export type OpenResult = { ok: true; absPath: string } | { ok: false; reason: string };
+
+/**
+ * The OS opener for `platform`, or undefined when there is no shell-free one.
+ *
+ * Both supported entries are plain executables that take the path as a single
+ * argument — no interpreter, so nothing to escape.
+ *
+ * **Windows is deliberately unsupported.** Every route there goes through an
+ * interpreter: `cmd /c start ""` re-parses `& | > < ^`, and `powershell -Command`
+ * *joins* its remaining arguments into a script, so a path containing `;` or
+ * `$(...)` is evaluated. Both reintroduce the injection this design exists to
+ * avoid. makit's server targets macOS and Linux; refusing with a reason beats
+ * shipping a quoting guess.
+ */
+function openerFor(platform: NodeJS.Platform): string | undefined {
+  switch (platform) {
+    case "darwin":
+      return "/usr/bin/open";
+    case "linux":
+      return "xdg-open";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Open one document with the host's default application. Resolves once the
+ * opener has been launched — not once the browser has painted, which is not
+ * observable and not worth waiting for.
+ */
+export async function openDocOnHost(
+  worktreePath: string,
+  relPath: string,
+  deps: OpenDocDeps = {},
+): Promise<OpenResult> {
+  const resolveDoc = deps.resolveDoc ?? resolveDocPath;
+  const platform = deps.platform ?? process.platform;
+  const spawn = deps.spawn ?? ((cmd, args, cb) => void execFile(cmd, args, { windowsHide: true }, (err) => cb(err)));
+
+  const resolved = resolveDoc(worktreePath, relPath);
+  if (!resolved.ok) return { ok: false, reason: `cannot open ${relPath}: ${resolved.reason}` };
+
+  const opener = openerFor(platform);
+  if (opener === undefined) {
+    return {
+      ok: false,
+      reason: `opening on the host is not supported on ${platform}; publish it instead`,
+    };
+  }
+
+  return new Promise<OpenResult>((resolve) => {
+    spawn(opener, [resolved.absPath], (err) => {
+      if (err !== null) {
+        resolve({ ok: false, reason: `opener failed: ${err.message}` });
+        return;
+      }
+      resolve({ ok: true, absPath: resolved.absPath });
+    });
+  });
+}

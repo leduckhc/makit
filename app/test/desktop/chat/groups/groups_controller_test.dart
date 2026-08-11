@@ -91,6 +91,218 @@ void main() {
     });
   });
 
+  group('preview groups (SPEC-51)', () {
+    test('a fresh state has no preview group', () {
+      expect(_with([_wt('g1', 'feat/x')]).state.previewGroupId, isNull);
+      expect(GroupsState.fresh().previewGroupId, isNull);
+    });
+
+    test('a preview open marks the minted group as the preview one', () {
+      final c = _with([_wt('g1', 'feat/x')]);
+      final id = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/fix-y',
+        label: 'fix/y',
+        preview: true,
+      );
+      expect(c.state.previewGroupId, id);
+      expect(c.state.activeGroupId, id);
+      expect(c.state.groups, hasLength(2));
+    });
+
+    test('the next preview open takes the preview slot — the rail never grows '
+        '(decision 3)', () {
+      final c = _with([_wt('g1', 'feat/x'), _board('b1', 'Ship', const [])]);
+      final first = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      expect(c.state.groups.map((g) => g.id), ['g1', 'b1', first]);
+
+      final second = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/b',
+        label: 'b',
+        preview: true,
+      );
+      expect(
+        c.state.groups.map((g) => g.id),
+        ['g1', 'b1', second],
+        reason: 'the newcomer reuses the displaced slot',
+      );
+      expect(c.state.previewGroupId, second);
+      expect(c.state.activeGroupId, second);
+      expect(
+        c.state.recentlyClosed,
+        isEmpty,
+        reason: 'a derived group leaves no residue (decision 5)',
+      );
+    });
+
+    test('a preview open replaces even when another group is active', () {
+      final c = _with([_wt('g1', 'feat/x')]);
+      final first = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      c.activate('g1');
+      final second = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/b',
+        label: 'b',
+        preview: true,
+      );
+      expect(c.state.groups.map((g) => g.id), ['g1', second]);
+      expect(c.groupById(first), isNull);
+    });
+
+    test('the preview group is never the last group standing — it replaces, so '
+        'the canvas invariant holds', () {
+      final c = GroupsController.ephemeral();
+      final first = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      final second = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/b',
+        label: 'b',
+        preview: true,
+      );
+      expect(c.groupById(first), isNull);
+      expect(c.state.groups.map((g) => g.id), contains(second));
+      expect(c.state.groups, isNotEmpty);
+    });
+
+    test('re-opening the same scope keeps it preview (decision 9)', () {
+      final c = _with([_wt('g1', 'feat/x')]);
+      final id = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      c.activate('g1');
+      final again = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      expect(again, id);
+      expect(c.state.groups, hasLength(2));
+      expect(c.state.previewGroupId, id);
+    });
+
+    test('keepGroup promotes the preview group and only it (decision 4)', () {
+      final c = _with([_wt('g1', 'feat/x')]);
+      final id = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      c.keepGroup('g1');
+      expect(
+        c.state.previewGroupId,
+        id,
+        reason: 'keeping a group that was never preview changes nothing',
+      );
+      c.keepGroup(id);
+      expect(c.state.previewGroupId, isNull);
+      expect(c.state.groups, hasLength(2), reason: 'promotion keeps the group');
+
+      final next = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/b',
+        label: 'b',
+        preview: true,
+      );
+      expect(
+        c.state.groups.map((g) => g.id),
+        ['g1', id, next],
+        reason: 'a promoted group is no longer replaceable',
+      );
+    });
+
+    test('a deliberate open neither marks nor evicts (decision 6)', () {
+      final c = _with([_wt('g1', 'feat/x')]);
+      final preview = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      final permanent = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/b',
+        label: 'b',
+      );
+      expect(c.state.groups.map((g) => g.id), ['g1', preview, permanent]);
+      expect(c.state.previewGroupId, preview);
+    });
+
+    test('a preview open on an existing permanent scope does not mark it', () {
+      final c = _with([_wt('g1', 'feat/x'), _wt('g2', 'main')]);
+      final id = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/main',
+        label: 'main',
+        preview: true,
+      );
+      expect(id, 'g2');
+      expect(
+        c.state.previewGroupId,
+        isNull,
+        reason: 'navigating to a kept group must not make it disposable',
+      );
+    });
+
+    test('newBoard leaves the preview group alone', () {
+      final c = _with([_wt('g1', 'feat/x')]);
+      final preview = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      c.newBoard(label: 'Review');
+      expect(c.state.previewGroupId, preview);
+      expect(c.state.groups, hasLength(3));
+    });
+
+    test('closing the preview group clears the pointer (decision 7)', () {
+      final c = _with([_wt('g1', 'feat/x')]);
+      final id = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      c.closeGroup(id);
+      expect(c.state.previewGroupId, isNull);
+      expect(c.state.groups.map((g) => g.id), ['g1']);
+    });
+
+    test('closing another group leaves the pointer intact', () {
+      final c = _with([_wt('g1', 'feat/x'), _board('b1', 'Ship', const [])]);
+      final id = c.openWorktreeGroup(
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/a',
+        label: 'a',
+        preview: true,
+      );
+      c.closeGroup('b1');
+      expect(c.state.previewGroupId, id);
+    });
+  });
+
   group('closeGroup (decision 7)', () {
     test('a worktree group leaves no residue — nothing to restore it from', () {
       final c = _with([_wt('g1', 'feat/x'), _wt('g2', 'main')]);
@@ -150,7 +362,7 @@ void main() {
       expect(c.state.recentlyClosed, isEmpty, reason: 'consumed on reopen');
     });
 
-    test('filters members archived while the board was closed', () {
+    test('filters members closed while the board was closed', () {
       // A closed board is not live, so decision 6's unpin cannot reach it.
       final c = _with([
         _wt('g1', 'feat/x'),
@@ -379,6 +591,72 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
       expect(c.state.groups.map((g) => g.id), ['b1']);
+    });
+
+    test(
+      'the preview pointer survives a reload (SPEC-51 decision 10)',
+      () async {
+        final prefs = await SharedPreferences.getInstance();
+        final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
+        final id = c.openWorktreeGroup(
+          projectId: 'p1',
+          worktreePath: '/tmp/wt/a',
+          label: 'a',
+          preview: true,
+        );
+        await pumpEventQueue();
+
+        final reloaded = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
+        expect(reloaded.state.previewGroupId, id);
+        expect(reloaded.state, c.state);
+      },
+    );
+
+    test('a payload with no previewGroupId decodes to no preview', () async {
+      final good = _board('b1', 'Ship', const []);
+      SharedPreferences.setMockInitialValues({
+        kGroupsPrefsKey: jsonEncode({
+          'v': 1,
+          'groups': <Object?>[good.toJson()],
+          'activeGroupId': 'b1',
+        }),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      expect(GroupsController.load(ProfileScopedPrefs.unscoped(prefs)).state.previewGroupId, isNull);
+    });
+
+    test('a stale previewGroupId degrades to no preview', () async {
+      final good = _board('b1', 'Ship', const []);
+      SharedPreferences.setMockInitialValues({
+        kGroupsPrefsKey: jsonEncode({
+          'v': 1,
+          'groups': <Object?>[good.toJson()],
+          'activeGroupId': 'b1',
+          'previewGroupId': 'gone',
+        }),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      expect(GroupsController.load(ProfileScopedPrefs.unscoped(prefs)).state.previewGroupId, isNull);
+    });
+
+    test('a previewGroupId that matches a board decodes to no preview — the '
+        'worktree-only invariant survives a reload', () async {
+      final board = _board('b1', 'Ship', const []);
+      SharedPreferences.setMockInitialValues({
+        kGroupsPrefsKey: jsonEncode({
+          'v': 1,
+          'groups': <Object?>[board.toJson()],
+          'activeGroupId': 'b1',
+          // A board id must never be honoured as the preview pointer, even
+          // when that group survives the decode: preview is worktree-only
+          // (decision 1). This guards against corrupt/hand-edited payloads.
+          'previewGroupId': 'b1',
+        }),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final reloaded = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
+      expect(reloaded.state.previewGroupId, isNull);
+      expect(reloaded.state.groups.map((g) => g.id), ['b1']);
     });
 
     test('a stale activeGroupId falls back to the first group', () async {

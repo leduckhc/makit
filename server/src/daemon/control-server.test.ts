@@ -10,6 +10,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { connect } from "node:net";
 
@@ -18,6 +19,8 @@ import {
   createControlServer,
   type ControlBackend,
 } from "./control-server.js";
+import { DeviceRegistry } from "../pairing/registry.js";
+import type { CliGrantData } from "./protocol.js";
 import {
   encodeMessage,
   decodeResponse,
@@ -54,9 +57,69 @@ function fakeBackend(over: Partial<ControlBackend> = {}): ControlBackend {
       emit("line-1");
       emit("line-2");
     },
+    cliGrant: () => ({ deviceId: "cli-1", label: "cli@host", bearer: "beef", created: true }),
     ...over,
   };
 }
+
+/** Run `fn` against a fresh isolated MAKIT_HOME so devices.json is scoped. */
+async function withHome(fn: (reg: DeviceRegistry) => void | Promise<void>) {
+  const prev = process.env.MAKIT_HOME;
+  const home = mkdtempSync(join(tmpdir(), "makit-ctl-home-"));
+  process.env.MAKIT_HOME = home;
+  try {
+    await fn(new DeviceRegistry());
+  } finally {
+    if (prev === undefined) delete process.env.MAKIT_HOME;
+    else process.env.MAKIT_HOME = prev;
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+test("dispatch: cli.grant returns the backend credential", async () => {
+  const [res] = await collect(
+    { id: "cg", verb: "cli.grant" },
+    fakeBackend({
+      cliGrant: () => ({ deviceId: "d1", label: "cli@box", bearer: "tok", created: true }),
+    }),
+  );
+  assert.equal(res!.ok, true);
+  assert.deepEqual((res as { data: CliGrantData }).data, {
+    deviceId: "d1",
+    label: "cli@box",
+    bearer: "tok",
+    created: true,
+  });
+});
+
+test("registry.grantCli mints a cli@<host> device with the client cap and a bearer", () =>
+  withHome((reg) => {
+    const { device, created } = reg.grantCli();
+    assert.equal(created, true);
+    assert.equal(device.label, `cli@${hostname()}`);
+    assert.deepEqual(device.caps, ["client"]);
+    assert.equal(typeof device.bearer, "string");
+    assert.ok(device.bearer.length >= 32);
+  }));
+
+test("registry.grantCli is idempotent — a second call returns the same device, not a new row", () =>
+  withHome((reg) => {
+    const first = reg.grantCli();
+    const second = reg.grantCli();
+    assert.equal(second.created, false);
+    assert.equal(second.device.id, first.device.id);
+    assert.equal(second.device.bearer, first.device.bearer);
+    assert.equal(reg.list().length, 1);
+  }));
+
+test("registry: a device with NO caps still authenticates (existing-phone regression)", () =>
+  withHome((reg) => {
+    const device = reg.consumePairToken(reg.mintPairToken(), "phone");
+    assert.ok(device);
+    const authed = reg.authenticate(device!.bearer);
+    assert.equal(authed?.id, device!.id);
+    assert.equal(authed?.caps, undefined);
+  }));
 
 async function collect(req: ControlRequest, backend: ControlBackend): Promise<ControlResponse[]> {
   const out: ControlResponse[] = [];

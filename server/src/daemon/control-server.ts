@@ -36,6 +36,7 @@ import {
   type DevicesListData,
   type DevicesRevokeData,
   type SessionsListData,
+  type CliGrantData,
   type ServerStopData,
   type LogsTailArgs,
   LineBufferOverflowError,
@@ -58,6 +59,8 @@ export interface ControlBackend {
   devicesList(): Awaitable<DevicesListData>;
   devicesRevoke(args: { id: string }): Awaitable<DevicesRevokeData>;
   sessionsList(): Awaitable<SessionsListData>;
+  /** SPEC-46 (D2): mint (or return) the CLI's own device credential. */
+  cliGrant(): Awaitable<CliGrantData>;
   serverStop(): Awaitable<ServerStopData>;
   /**
    * Stream log lines. Calls `emit` for each backlog line and, when
@@ -104,6 +107,9 @@ export async function dispatchRequest(
         return;
       case "sessions.list":
         respond({ id, ok: true, data: await backend.sessionsList() });
+        return;
+      case "cli.grant":
+        respond({ id, ok: true, data: await backend.cliGrant() });
         return;
       case "server.stop":
         respond({ id, ok: true, data: await backend.serverStop() });

@@ -176,6 +176,30 @@ final autoSplitThresholdProvider = Provider<int>((ref) {
       .get(autoSplitThresholdPreference);
 });
 
+/// SPEC-51 — whether a sidebar worktree click opens a **preview** group. A
+/// provider (not the `WidgetRef` extension) because the navigation helpers read
+/// it through a `WidgetRef` *and* it belongs next to the other placement policy
+/// this layer reads.
+final previewGroupsEnabledProvider = Provider<bool>((ref) {
+  ref.watch(
+    preferencesControllerProvider.select(
+      (overrides) => overrides[previewGroupsPreference.id],
+    ),
+  );
+  return ref
+      .read(preferencesControllerProvider.notifier)
+      .get(previewGroupsPreference);
+});
+
+/// The id of the disposable group, or null when every group was kept. Narrow on
+/// purpose: the group bar renders identity only, so it must not be dragged into
+/// a rebuild by every tree mutation.
+final previewGroupIdProvider = Provider<String?>(
+  (ref) => ref.watch(
+    groupsControllerProvider.select<String?>((s) => s.previewGroupId),
+  ),
+);
+
 /// Whether [group]'s stored tree already has a tab bound to [sessionId].
 bool _treeHosts(Group group, String sessionId) =>
     firstSplitWhere<bool>(group.tree.root, (split) {

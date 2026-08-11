@@ -20,6 +20,7 @@ function fakeClient(authed = true, subs: string[] = []): FakeClient {
     subscribed: new Set(subs),
     watchingMetrics: false,
     watchingPorts: false,
+    watchingDocs: false,
     isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},
@@ -45,7 +46,7 @@ test("keeps request pending when onUndeliverable returns true", async () => {
   assert.equal(typeof seen[0]!.ctx.pendingCount, "number");
 
   const id = seen[0]!.env.id;
-  rpc.handleResponse({ v: 1, t: "srv.response", id, approved: true } as Envelope);
+  rpc.handleResponse({ v: 1, t: "srv.response", id, approved: true } as Envelope, fakeClient());
   assert.equal((await promise).approved, true);
 });
 
@@ -121,7 +122,7 @@ test("real (enabled fake) sender + token + not-connected → stays pending", asy
   const probe = fakeClient();
   rpc.replayPendingTo(probe);
   const reqId = String(probe.sent[0]!.id);
-  rpc.handleResponse({ v: 1, t: "srv.response", id: reqId, approved: false } as Envelope);
+  rpc.handleResponse({ v: 1, t: "srv.response", id: reqId, approved: false } as Envelope, probe);
   assert.equal((await promise).approved, false);
 });
 
@@ -142,7 +143,7 @@ test("replayPendingTo delivers each pending request once per client", async () =
   assert.equal(client.sent.filter((f) => f.t === "srv.request").length, 1);
 
   const reqId = String(client.sent[0]!.id);
-  rpc.handleResponse({ v: 1, t: "srv.response", id: reqId, approved: true } as Envelope);
+  rpc.handleResponse({ v: 1, t: "srv.response", id: reqId, approved: true } as Envelope, client);
   await promise;
 });
 
@@ -157,6 +158,6 @@ test("a client already sent the request live is not re-delivered on replay", asy
   assert.equal(live.sent.filter((f) => f.t === "srv.request").length, 1);
 
   const reqId = String(live.sent[0]!.id);
-  rpc.handleResponse({ v: 1, t: "srv.response", id: reqId, approved: true } as Envelope);
+  rpc.handleResponse({ v: 1, t: "srv.response", id: reqId, approved: true } as Envelope, live);
   await promise;
 });

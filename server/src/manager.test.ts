@@ -15,13 +15,15 @@ import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { SessionEvent, SessionConfigOption, SessionDTO } from "./protocol.js";
 import { SqliteEventStore } from "./storage/sqlite_event_store.js";
+import { sessionTokens } from "./ws/session_tokens.js";
+import { MAX_LIVE_CHILDREN } from "./lineage.js";
 import type { AgentAdapter, SpawnOpts } from "./adapters/adapter.js";
 
 /** A stub adapter that records the SpawnOpts it was started with. */
-function stubAdapter(started: SpawnOpts[]): AgentAdapter {
+function stubAdapter(started: SpawnOpts[], calls: string[] = []): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
   (e as any).agent = "stub";
-  (e as any).capabilities = { resume: true, load: false, list: true, delete: true, fork: false };
+  (e as any).capabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false, close: true };
   (e as any).agentSessionId = undefined;
   (e as any).start = async (opts: SpawnOpts) => {
     started.push(opts);
@@ -31,7 +33,12 @@ function stubAdapter(started: SpawnOpts[]): AgentAdapter {
   };
   (e as any).send = async () => {};
   (e as any).cancel = async () => {};
-  (e as any).kill = async () => {};
+  (e as any).close = async () => {
+    calls.push("close");
+  };
+  (e as any).kill = async () => {
+    calls.push("kill");
+  };
   return e;
 }
 
@@ -340,7 +347,7 @@ test("removeWorktree deletes the worktree from disk", async () => {
   }
 });
 
-test("removeWorktree preserves archived sessions and auto-archives live ones (SPEC-29)", async () => {
+test("removeWorktree preserves closed sessions and auto-closes live ones (SPEC-29)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
   const cwd = makeGitRepo();
@@ -356,28 +363,28 @@ test("removeWorktree preserves archived sessions and auto-archives live ones (SP
     const projectId = manager.listProjects()[0].id;
     const wt = await manager.createWorktree(projectId);
 
-    // Two sessions bound to the worktree: one already archived, one live.
+    // Two sessions bound to the worktree: one already closed, one live.
     const draftA = await manager.spawnPendingSession(projectId, "pi", wt.path);
-    await manager.promotePendingSession(draftA, "archived one");
-    await manager.archiveSession(draftA.id);
+    await manager.promotePendingSession(draftA, "closed one");
+    await manager.closeSession(draftA.id);
 
     const draftB = await manager.spawnPendingSession(projectId, "pi", wt.path);
     await manager.promotePendingSession(draftB, "live one");
-    assert.equal(manager.getSession(draftB.id)!.archived, false);
+    assert.equal(manager.getSession(draftB.id)!.closed, false);
 
     await manager.removeWorktree(projectId, wt.path);
 
-    // Neither was destroyed: both survive as archived sessions.
-    assert.equal(manager.getSession(draftA.id)!.archived, true); // preserved
-    assert.equal(manager.getSession(draftB.id)!.archived, true); // auto-archived
+    // Neither was destroyed: both survive as closed sessions.
+    assert.equal(manager.getSession(draftA.id)!.closed, true); // preserved
+    assert.equal(manager.getSession(draftB.id)!.closed, true); // auto-closed
     // Both are hidden from the active list.
     const active = manager.listSessions().map((d) => d.id);
     assert.ok(!active.includes(draftA.id));
     assert.ok(!active.includes(draftB.id));
-    // Both appear in the archived list, flagged orphaned (worktree removed).
-    const archived = await manager.listArchivedSessions();
-    const a = archived.find((d) => d.id === draftA.id)!;
-    const b = archived.find((d) => d.id === draftB.id)!;
+    // Both appear in the closed list, flagged orphaned (worktree removed).
+    const closed = await manager.listClosedSessions();
+    const a = closed.find((d) => d.id === draftA.id)!;
+    const b = closed.find((d) => d.id === draftB.id)!;
     assert.equal(a.orphaned, true);
     assert.equal(b.orphaned, true);
   } finally {
@@ -391,7 +398,7 @@ test("removeWorktree preserves archived sessions and auto-archives live ones (SP
 
 test("listRepos counts only live sessions in worktree.sessionIds (SPEC-29)", async () => {
   // The field's own protocol doc says it links the sessions bound to the worktree,
-  // and archived ones are hidden from `listSessions()` and so from every
+  // and closed ones are hidden from `listSessions()` and so from every
   // client-side session list — their ids resolved to nothing in the consumers that
   // map this field to rows, and SPEC-38's wrap-up brief counted them as work left
   // behind. `listRepos` is handed `allSessions()`, which keeps them.
@@ -413,8 +420,8 @@ test("listRepos counts only live sessions in worktree.sessionIds (SPEC-29)", asy
     const live = await manager.spawnPendingSession(projectId, "pi", wt.path);
     await manager.promotePendingSession(live, "live one");
     const gone = await manager.spawnPendingSession(projectId, "pi", wt.path);
-    await manager.promotePendingSession(gone, "archived one");
-    await manager.archiveSession(gone.id);
+    await manager.promotePendingSession(gone, "closed one");
+    await manager.closeSession(gone.id);
 
     const repos = await manager.listRepos();
     const snap = repos.find((r) => r.id === projectId)!;
@@ -429,7 +436,7 @@ test("listRepos counts only live sessions in worktree.sessionIds (SPEC-29)", asy
   }
 });
 
-test("unarchive of an orphaned session detaches it to the repo root (SPEC-29)", async () => {
+test("reopen of an orphaned session detaches it to the repo root (SPEC-29)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
   const cwd = realpathSync(makeGitRepo());
@@ -449,15 +456,15 @@ test("unarchive of an orphaned session detaches it to the repo root (SPEC-29)", 
     await manager.promotePendingSession(draft, "orphan me");
     assert.equal(manager.getSession(draft.id)!.worktreePath !== undefined, true);
 
-    // Deleting the worktree auto-archives the session, flagged orphaned.
+    // Deleting the worktree auto-closes the session, flagged orphaned.
     await manager.removeWorktree(projectId, wt.path);
-    assert.equal((await manager.listArchivedSessions()).find((d) => d.id === draft.id)!.orphaned, true);
+    assert.equal((await manager.listClosedSessions()).find((d) => d.id === draft.id)!.orphaned, true);
 
     // Restore: it returns to the ACTIVE list, detached to the repo root — its
     // stale worktree path is cleared so it renders under the primary worktree.
-    await manager.unarchiveSession(draft.id);
+    await manager.reopenSession(draft.id);
     const restored = manager.getSession(draft.id)!;
-    assert.equal(restored.archived, false);
+    assert.equal(restored.closed, false);
     assert.equal(restored.worktreePath, undefined, "orphaned worktree path is cleared");
     assert.equal(restored.branch, undefined, "orphaned branch is cleared");
     assert.ok(manager.listSessions().some((d) => d.id === draft.id), "back in active list");
@@ -477,7 +484,7 @@ test("unarchive of an orphaned session detaches it to the repo root (SPEC-29)", 
   }
 });
 
-test("unarchive of a session whose worktree is still live preserves its binding (SPEC-29)", async () => {
+test("reopen of a session whose worktree is still live preserves its binding (SPEC-29)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
   const cwd = realpathSync(makeGitRepo());
@@ -500,15 +507,15 @@ test("unarchive of a session whose worktree is still live preserves its binding 
     const boundBranch = before.branch;
     assert.ok(boundPath !== undefined, "session is bound to the worktree");
 
-    // Archive WITHOUT removing the worktree, so the recorded path stays live.
-    await manager.archiveSession(draft.id);
-    assert.equal((await manager.listArchivedSessions()).find((d) => d.id === draft.id)!.orphaned, false);
+    // Close WITHOUT removing the worktree, so the recorded path stays live.
+    await manager.closeSession(draft.id);
+    assert.equal((await manager.listClosedSessions()).find((d) => d.id === draft.id)!.orphaned, false);
 
     // Restore must NOT detach: the worktree is still a live worktree, so the
     // binding is preserved (only a genuinely-absent worktree detaches to root).
-    await manager.unarchiveSession(draft.id);
+    await manager.reopenSession(draft.id);
     const restored = manager.getSession(draft.id)!;
-    assert.equal(restored.archived, false);
+    assert.equal(restored.closed, false);
     assert.equal(restored.worktreePath, boundPath, "live worktree path is preserved");
     assert.equal(restored.branch, boundBranch, "live branch is preserved");
   } finally {
@@ -594,6 +601,33 @@ test("spawnPendingSession is a draft: no worktree, no agent started", async () =
     assert.equal(started.length, 0, "no adapter should start for a draft");
     assert.equal(s.toDTO().pending, true);
     assert.equal(s.toDTO().branch, undefined);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+// SPEC-46 U4 — the promotion trap. A forked draft carries the forked thread id
+// as `resumeAgentSessionId`; when the first message promotes it, that id MUST
+// reach the adapter's start() so the child continues the forked conversation
+// (codex `thread/resume`). If promotion started a fresh thread instead, the
+// fork would be silently discarded and the user would get a new conversation
+// that merely looked forked — so this asserts the id survives promotion.
+test("a forked draft resumes the forked thread on promotion, never starts fresh (U4)", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    const draft = await manager.spawnPendingSession(
+      projectId, "codex", undefined, undefined, undefined, undefined, undefined, "th-forked",
+    );
+    await manager.promotePendingSession(draft, "continue the fork");
+    assert.equal(started.length, 1, "the fork promotes to exactly one live agent");
+    assert.equal(
+      started[0].resumeAgentSessionId, "th-forked",
+      "promotion must resume the forked thread, not start a fresh one",
+    );
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -1580,7 +1614,68 @@ test("promotePendingSession routes a draft-promotion failure through the session
   }
 });
 
-test("archiveSession hides a session from the active list but keeps it (SPEC-29)", async () => {
+/**
+ * The whole point of close-over-archive: the agent-side session is released
+ * GRACEFULLY (ACP `session/close` / codex `thread/unsubscribe`) and only then is
+ * the process reaped. Order matters — unsubscribing a thread after SIGTERM is
+ * pointless, and skipping the reap is what leaked ~1 GB of resident agents.
+ */
+test("closeSession closes the agent session before reaping the process (SPEC-29)", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-close-"));
+  try {
+    const calls: string[] = [];
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([], calls),
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "close me", "pi");
+
+    await mgr.closeSession(s.id);
+
+    assert.deepEqual(calls, ["close", "kill"], "graceful close must precede the reap");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+/**
+ * A wedged agent must not be able to keep its memory: a close that rejects is
+ * logged and the reap still happens.
+ */
+test("closeSession still reaps when the graceful close rejects (SPEC-29)", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-close-fail-"));
+  try {
+    const calls: string[] = [];
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a = stubAdapter([], calls);
+        (a as any).close = async () => {
+          calls.push("close");
+          throw new Error("agent is wedged");
+        };
+        return a;
+      },
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "wedged", "pi");
+
+    await mgr.closeSession(s.id); // must not throw
+    assert.deepEqual(calls, ["close", "kill"]);
+    assert.equal(mgr.getSession(s.id)!.closed, true);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+test("closeSession hides a session from the active list but keeps it (SPEC-29)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
   const cwd = mkdtempSync(join(tmpdir(), "makit-arch-"));
@@ -1591,37 +1686,37 @@ test("archiveSession hides a session from the active list but keeps it (SPEC-29)
       adapterFactory: () => stubAdapter([]),
     });
     const projectId = mgr.listProjects()[0].id;
-    const s = await mgr.spawnPiSession(projectId, "archive me", "pi");
+    const s = await mgr.spawnPiSession(projectId, "close me", "pi");
     const sid = s.id;
     assert.equal(s.agentSessionId !== undefined, true);
     assert.ok(mgr.listSessions().some((d) => d.id === sid)); // active
 
-    await mgr.archiveSession(sid);
+    await mgr.closeSession(sid);
     // Gone from the ACTIVE list, but still in the registry + resumable.
     assert.ok(!mgr.listSessions().some((d) => d.id === sid));
-    // …and present in the archived list.
-    assert.ok((await mgr.listArchivedSessions()).some((d) => d.id === sid && d.archived));
+    // …and present in the closed list.
+    assert.ok((await mgr.listClosedSessions()).some((d) => d.id === sid && d.closed));
     const arch = mgr.getSession(sid)!;
-    assert.equal(arch.archived, true);
+    assert.equal(arch.closed, true);
     assert.equal(arch.agentSessionId !== undefined, true); // resume handle kept
 
-    // Persisted archived: a fresh manager over the same store keeps it hidden.
+    // Persisted closed: a fresh manager over the same store keeps it hidden.
     const mgr2 = new SessionManager({ projects: [{ id: projectId, path: cwd }], store });
-    assert.equal(mgr2.getSession(sid)!.archived, true);
+    assert.equal(mgr2.getSession(sid)!.closed, true);
     assert.ok(!mgr2.listSessions().some((d) => d.id === sid));
 
-    // Unarchive restores it to the active list.
-    await mgr2.unarchiveSession(sid);
+    // Reopen restores it to the active list.
+    await mgr2.reopenSession(sid);
     assert.ok(mgr2.listSessions().some((d) => d.id === sid));
-    assert.ok(!(await mgr2.listArchivedSessions()).some((d) => d.id === sid));
-    assert.equal(mgr2.getSession(sid)!.archived, false);
+    assert.ok(!(await mgr2.listClosedSessions()).some((d) => d.id === sid));
+    assert.equal(mgr2.getSession(sid)!.closed, false);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
     store.close();
   }
 });
 
-test('listArchivedSessions omits sessions whose project was removed (SPEC-29)', async () => {
+test('listClosedSessions omits sessions whose project was removed (SPEC-29)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'makit-mgr-'));
   const store = new SqliteEventStore(join(cwd, '.makit.db'));
   try {
@@ -1633,18 +1728,18 @@ test('listArchivedSessions omits sessions whose project was removed (SPEC-29)', 
     });
     const projectId = mgr.listProjects()[0].id;
 
-    // Two archived sessions in the project root (not orphaned — no worktree).
+    // Two closed sessions in the project root (not orphaned — no worktree).
     const s1 = await mgr.spawnPiSession(projectId, 's1', 'pi');
     const s2 = await mgr.spawnPiSession(projectId, 's2', 'pi');
-    await mgr.archiveSession(s1.id);
-    await mgr.archiveSession(s2.id);
-    const archived = await mgr.listArchivedSessions();
-    assert.ok(archived.some((d: SessionDTO) => d.id === s1.id && !d.orphaned));
-    assert.ok(archived.some((d: SessionDTO) => d.id === s2.id && !d.orphaned));
+    await mgr.closeSession(s1.id);
+    await mgr.closeSession(s2.id);
+    const closed = await mgr.listClosedSessions();
+    assert.ok(closed.some((d: SessionDTO) => d.id === s1.id && !d.orphaned));
+    assert.ok(closed.some((d: SessionDTO) => d.id === s2.id && !d.orphaned));
 
-    // Remove the project → its archived sessions are unreachable and hidden.
+    // Remove the project → its closed sessions are unreachable and hidden.
     mgr.removeProject(projectId);
-    const after = await mgr.listArchivedSessions();
+    const after = await mgr.listClosedSessions();
     assert.equal(after.length, 0, 'removed-project sessions are filtered out');
   } finally {
     store.close();
@@ -2087,7 +2182,7 @@ test("a matching branch proceeds, and no expectation means no check", async () =
 function seedColdSession(
   store: SqliteEventStore,
   id: string,
-  extra: Partial<{ agentSessionId: string; resumeSessionPath: string; archived: boolean }> = {},
+  extra: Partial<{ agentSessionId: string; resumeSessionPath: string; closed: boolean }> = {},
 ) {
   store.saveSession({
     id,
@@ -2153,10 +2248,10 @@ test("ensureLive brings a cold resumable session back, then no-ops when it is li
   store.close();
 });
 
-test("ensureLive leaves history-only, archived, draft and unknown sessions alone", async () => {
+test("ensureLive leaves history-only, closed, draft and unknown sessions alone", async () => {
   const store = new SqliteEventStore();
   seedColdSession(store, "sess-noresume"); // no resume handle at all
-  seedColdSession(store, "sess-archived", { agentSessionId: "pi-2", archived: true });
+  seedColdSession(store, "sess-closed", { agentSessionId: "pi-2", closed: true });
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     const started: SpawnOpts[] = [];
@@ -2165,8 +2260,8 @@ test("ensureLive leaves history-only, archived, draft and unknown sessions alone
     // History-only: nothing to resume, so it stays read-only rather than
     // silently starting a FRESH agent that has lost the transcript.
     await mgr.ensureLive("sess-noresume");
-    // Archived is a deliberate stop (SPEC-29) — resurrect only via unarchive.
-    await mgr.ensureLive("sess-archived");
+    // Closed is a deliberate stop (SPEC-29) — resurrect only via reopen.
+    await mgr.ensureLive("sess-closed");
     // A draft also holds a DetachedAdapter; it must promote, never re-attach.
     const draft = await mgr.spawnPendingSession(mgr.listProjects()[0].id);
     // Give the draft a resume handle so `pending` is the ONLY thing that can
@@ -2358,5 +2453,427 @@ test("a replaced adapter can no longer feed the session it was swapped out of", 
     assert.equal(session.queuedMessages.length, 1, "queue survived the re-attach");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("SPEC-46 D9: MAKIT_SPAWN_DEPTH reports the session's real depth (display only)", async () => {
+  // D9 makes the *guard* recompute depth server-side and ignore this variable,
+  // precisely because an agent can forge it. That is exactly why it must still be
+  // honest: an agent reads it to decide whether to hand off again, and a value
+  // hardcoded to 0 tells every descendant it is a root.
+  const cwd = process.cwd();
+  const started: SpawnOpts[] = [];
+  const manager = new SessionManager({
+    projects: [cwd],
+    adapterFactory: () => stubAdapter(started),
+  });
+  // env is only injected once a bridge exists (it carries the agent's credentials).
+  manager.setBridge({ url: "http://127.0.0.1:1", token: "bridge-token", extensionPaths: [] });
+  const projectId = manager.listProjects()[0].id;
+
+  const root = await manager.spawnPendingSession(projectId, "stub", cwd, undefined, undefined, {
+    origin: "cli",
+  });
+  await manager.promotePendingSession(root, "root");
+
+  const child = await manager.spawnPendingSession(projectId, "stub", cwd, undefined, undefined, {
+    parentId: root.id,
+    origin: "agent",
+  });
+  await manager.promotePendingSession(child, "child");
+
+  const grandchild = await manager.spawnPendingSession(projectId, "stub", cwd, undefined, undefined, {
+    parentId: child.id,
+    origin: "agent",
+  });
+  await manager.promotePendingSession(grandchild, "grandchild");
+
+  const envOf = (sessionId: string) => started.find((o) => o.sessionId === sessionId)?.env;
+  assert.equal(envOf(root.id)?.MAKIT_SPAWN_DEPTH, "0", "a root session is at depth 0");
+  assert.equal(envOf(child.id)?.MAKIT_SPAWN_DEPTH, "1");
+  assert.equal(envOf(grandchild.id)?.MAKIT_SPAWN_DEPTH, "2");
+
+  // The same launch path owes the agent the rest of its context (D3). This is
+  // the *draft promotion* path — the one every app and CLI session takes — so an
+  // empty MAKIT_PROJECT_ID here means `makit handoff` cannot resolve its own
+  // project from the environment at all.
+  assert.equal(envOf(child.id)?.MAKIT_PROJECT_ID, projectId);
+  assert.equal(envOf(child.id)?.MAKIT_WORKTREE, cwd);
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-46 D3 — an agent's token dies with its session
+//
+// `startOpts` mints a MAKIT_CLI_TOKEN per session and re-attach drops the old
+// one, but D3 says the token is "revoked when it ends" — and kill/close end a
+// session without a restart. A store comment claimed in-memory made this "true
+// by construction"; it does not. Within one daemon lifetime a killed session's
+// token kept authenticating, so an agent process that outlived its kill() — or
+// a token read out of a log — still held spawn/send/read.
+// ---------------------------------------------------------------------------
+
+/** The token `startOpts` injected for `sessionId`, via a real authenticate(). */
+function tokenWorks(token: string): boolean {
+  return sessionTokens.authenticate(token) !== null;
+}
+
+async function withTokenedSession(
+  fn: (mgr: SessionManager, sessionId: string, token: string) => Promise<void>,
+): Promise<void> {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    await withAgentDir(cwd, async () => {
+      const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+      const projectId = manager.listProjects()[0].id;
+      const session = await manager.spawnPiSession(projectId);
+      const token = sessionTokens.mint(session.id); // as startOpts does
+      assert.ok(tokenWorks(token), "precondition: the token authenticates while the session lives");
+      await fn(manager, session.id, token);
+    });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+test("D3: killSession revokes the session's agent token", async () => {
+  await withTokenedSession(async (mgr, sessionId, token) => {
+    await mgr.killSession(sessionId);
+    assert.equal(tokenWorks(token), false, "a killed session's token must stop authenticating");
+  });
+});
+
+test("D3: closeSession revokes the session's agent token", async () => {
+  await withTokenedSession(async (mgr, sessionId, token) => {
+    await mgr.closeSession(sessionId);
+    assert.equal(tokenWorks(token), false, "a closed session's token must stop authenticating");
+  });
+});
+
+test("D3: the token authenticates as its OWN session, so revocation is attributable", async () => {
+  await withTokenedSession(async (mgr, sessionId, token) => {
+    assert.equal(sessionTokens.authenticate(token)?.sessionId, sessionId);
+    await mgr.killSession(sessionId);
+    assert.equal(sessionTokens.authenticate(token), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-46 D9 — the fan-out bound holds against concurrent spawns
+//
+// The command layer checks the bound and `spawnPendingSession` then awaits
+// (listWorktrees) before registering the session, so the count the check read is
+// stale by the time the row lands. Two spawns fired together from one parent
+// therefore both passed a check that each saw as "one slot left". The caller this
+// bound was written for is an agent in a retry loop, which is precisely the thing
+// that fires concurrent spawns — so an advisory bound is no bound.
+// ---------------------------------------------------------------------------
+
+test("D9: concurrent spawns from one parent cannot both take the last child slot", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    await withAgentDir(cwd, async () => {
+      const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+      const projectId = manager.listProjects()[0].id;
+      const parent = await manager.spawnPiSession(projectId);
+
+      // Fill the bound to one slot short of MAX_LIVE_CHILDREN.
+      for (let i = 0; i < MAX_LIVE_CHILDREN - 1; i++) {
+        await manager.spawnPendingSession(projectId, undefined, undefined, undefined, undefined, {
+          parentId: parent.id,
+        });
+      }
+      assert.equal(manager.checkSpawnBounds(parent.id), null, "precondition: one slot is free");
+
+      const results = await Promise.allSettled([
+        manager.spawnPendingSession(projectId, undefined, undefined, undefined, undefined, { parentId: parent.id }),
+        manager.spawnPendingSession(projectId, undefined, undefined, undefined, undefined, { parentId: parent.id }),
+      ]);
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const live = manager.listSessions().filter((s) => s.parentId === parent.id).length;
+
+      assert.equal(ok, 1, "exactly one of two concurrent spawns may take the last slot");
+      assert.equal(live, MAX_LIVE_CHILDREN, `the bound must hold (found ${live} children)`);
+      const refused = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+      assert.match(String(refused.reason.message), new RegExp(String(MAX_LIVE_CHILDREN)));
+    });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("D9: a spawn with no parent is never subject to the fan-out bound", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    await withAgentDir(cwd, async () => {
+      const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+      const projectId = manager.listProjects()[0].id;
+      // Well past MAX_LIVE_CHILDREN: root sessions are the user's own, unbounded.
+      for (let i = 0; i < MAX_LIVE_CHILDREN + 2; i++) await manager.spawnPendingSession(projectId);
+      assert.equal(manager.listSessions().length, MAX_LIVE_CHILDREN + 2);
+    });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+
+
+
+
+
+
+
+/**
+ * Recovery has to be invisible, or auto-close is just a way to lose your place:
+ * sending a message to a closed session reopens and resumes it. Subscribing does
+ * NOT (viewing a transcript must never respawn an agent).
+ */
+test("ensureLiveForInput reopens a closed session; ensureLive alone does not", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-reopen-input-"));
+  const cleanup = () => {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  };
+  try {
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const session = await mgr.spawnPiSession(projectId, "reopen-on-input", "pi");
+    await mgr.closeSession(session.id);
+    assert.equal(session.closed, true);
+
+    // Viewing: stays closed, replays read-only.
+    await mgr.ensureLive(session.id);
+    assert.equal(session.closed, true, "sub must not respawn an agent");
+
+    // Sending: unambiguous intent to continue → reopened.
+    await mgr.ensureLiveForInput(session.id);
+    assert.equal(session.closed, false, "a message must transparently reopen");
+  } finally {
+    cleanup();
+  }
+});
+
+
+
+/**
+ * Contract enforcement, not politeness: `AgentAdapter.close()` must never throw
+ * AND never hang. The manager cannot trust an implementation to honour that, and
+ * the consequence of a hang is severe — `kill()` is never reached (the RSS this
+ * branch exists to reclaim stays held) and `sweeping` never clears, so the idle
+ * sweeper is disabled for the lifetime of the daemon.
+ */
+test("closeSession reaps even when the agent's close() never settles", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-close-hang-"));
+  try {
+    const calls: string[] = [];
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a: any = stubAdapter([], calls);
+        a.close = () => {
+          calls.push("close");
+          return new Promise<void>(() => {}); // hangs forever
+        };
+        return a;
+      },
+      closeGraceMs: 30,
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "hung-agent", "pi");
+
+    const started = Date.now();
+    await mgr.closeSession(s.id);
+
+    assert.ok(Date.now() - started < 2000, "must not block on a hung close()");
+    assert.deepEqual(calls, ["close", "kill"], "the reap must still happen");
+    assert.equal(s.closed, true);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+/**
+ * Teardown must be serialized against input (review: "Serialize input with
+ * session teardown"). While `closeSession` awaits `adapter.close()` and `kill()`,
+ * the session still reads `closed === false` with the live adapter installed, so
+ * a racing `send.message` would pass `ensureLiveForInput` and prompt an agent
+ * that is being reaped — the turn is lost or errors.
+ */
+test("a message racing a close waits for teardown, then reopens the session", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-close-race-"));
+  try {
+    const order: string[] = [];
+    let releaseClose = () => {};
+    const gate = new Promise<void>((r) => {
+      releaseClose = r;
+    });
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a: any = stubAdapter([]);
+        a.close = async () => {
+          order.push("close:start");
+          await gate;
+          order.push("close:end");
+        };
+        return a;
+      },
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "racer", "pi");
+
+    const closing = mgr.closeSession(s.id); // not awaited: teardown in flight
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(order, ["close:start"], "teardown is mid-flight");
+
+    const input = (async () => {
+      await mgr.ensureLiveForInput(s.id);
+      order.push("input:live");
+    })();
+
+    releaseClose();
+    await Promise.all([closing, input]);
+
+    assert.deepEqual(
+      order,
+      ["close:start", "close:end", "input:live"],
+      "input must not be serviced until teardown finished",
+    );
+    assert.equal(mgr.getSession(s.id)!.closed, false, "the racing message reopened it");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+/**
+ * Closing drops queued mid-turn messages, mirroring `cancel`'s "stop means stop"
+ * (SPEC-35). Without this, the `idle` an adapter's `close()` emits triggers
+ * `flushNext()` and a queued message is sent into the agent being reaped.
+ */
+test("closeSession drops queued mid-turn messages instead of flushing them into a dying agent", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-close-queue-"));
+  try {
+    const sends: string[] = [];
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a: any = stubAdapter([]);
+        a.send = async (input: { text: string }) => {
+          sends.push(input.text);
+        };
+        a.steer = async () => false; // unsteerable → mid-turn input queues
+        a.close = async () => a.emit("status", "idle"); // as a real cancel does
+        return a;
+      },
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "queued", "pi");
+    await s.sendUserMessage("first");
+    s.adapter.emit("status", "running");
+    await s.sendUserMessage("queued-while-busy");
+    assert.equal(s.queuedMessages.length, 1, "precondition: one message is queued");
+
+    await mgr.closeSession(s.id);
+
+    assert.equal(s.queuedMessages.length, 0, "the queue is dropped, not flushed");
+    assert.deepEqual(sends, ["first"], "no queued message reached the closing agent");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+/**
+ * A reopen racing an in-flight close must not be lost. Teardown sets
+ * `closed = true` only after awaiting the agent, so a reopen that slips in
+ * between clears a flag the close is about to set again — leaving the session
+ * closed although the user asked for it back. Mirrors the `ensureLiveForInput`
+ * guard; `session.reopen` is reachable straight from the wire.
+ */
+test("a reopen racing an in-flight close still leaves the session open", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-reopen-race-"));
+  try {
+    let releaseClose = () => {};
+    const gate = new Promise<void>((r) => {
+      releaseClose = r;
+    });
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a: any = stubAdapter([]);
+        a.close = async () => {
+          await gate;
+        };
+        return a;
+      },
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "reopen-racer", "pi");
+
+    const closing = mgr.closeSession(s.id); // teardown in flight, not awaited
+    await new Promise((r) => setTimeout(r, 10));
+    const reopening = mgr.reopenSession(s.id);
+
+    releaseClose();
+    await Promise.all([closing, reopening]);
+
+    assert.equal(mgr.getSession(s.id)!.closed, false, "the reopen must win, not be overwritten");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+/**
+ * `reopenSession` is documented as idempotent, but it ran unconditionally: on an
+ * already-open session it shelled out to `git worktree list` and, when the
+ * session's recorded worktree no longer matched a live one, called
+ * `detachToRoot()` — clearing a LIVE session's worktree binding. Reachable from
+ * the wire with any session id.
+ */
+test("reopenSession on an already-open session is a no-op", async () => {
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-reopen-noop-"));
+  try {
+    execFileSync("git", ["init", "-q"], { cwd });
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "already-open", "pi");
+    // A recorded worktree that is not a live worktree of the project — the exact
+    // shape `isOrphaned` reports true for, so the unguarded path would detach it.
+    s.markStarted({ branch: "gone", worktreePath: join(cwd, ".wt", "gone") });
+    let detached = false;
+    (s as unknown as { detachToRoot: () => void }).detachToRoot = () => {
+      detached = true;
+    };
+
+    assert.equal(s.closed, false, "precondition: the session is open");
+    await mgr.reopenSession(s.id);
+
+    assert.equal(detached, false, "must not touch the worktree binding of a live session");
+    assert.equal(s.closed, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
   }
 });

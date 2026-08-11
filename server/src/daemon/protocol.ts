@@ -31,6 +31,18 @@ export const CONTROL_VERBS = [
   "server.stop",
   "logs.tail",
   "logs.cancel",
+  /**
+   * SPEC-46 (D2): mint (or return) the CLI's own device credential — a bearer
+   * for `cli@<hostname>` with `caps: ["client"]`, cached by the caller at
+   * `~/.makit/cli.json`.
+   *
+   * **Additive, not a repurposing** — the frozen contract above permits new
+   * verbs. It belongs on the control socket rather than behind a QR pair token
+   * because a process that can write `~/.makit/control.sock` is already the
+   * local user; demanding a phone camera to authorise a local terminal would be
+   * theatre. It is the *only* SPEC-46 verb here: every session verb is WSS (D1).
+   */
+  "cli.grant",
 ] as const;
 
 export type ControlVerb = (typeof CONTROL_VERBS)[number];
@@ -104,6 +116,18 @@ export interface DevicesRevokeData {
 
 export interface SessionsListData {
   sessions: SessionDTO[];
+}
+
+/**
+ * SPEC-46 (D2): the CLI's credential. `created` is false when an existing
+ * `cli@<host>` device was returned, so the caller can tell first run from a
+ * cache miss it caused itself.
+ */
+export interface CliGrantData {
+  deviceId: string;
+  label: string;
+  bearer: string;
+  created: boolean;
 }
 
 export interface ServerStopData {

@@ -99,7 +99,15 @@ export type EventKind =
    * Watch-gated — nothing is scanned or sent unless a client asked via
    * `ports.watch`. See {@link PortsSnapshotDTO}.
    */
-  | "ports.snapshot";
+  | "ports.snapshot"
+  /**
+   * Every renderable document (`.md` / `.html`) inside each known worktree's
+   * allowlisted doc roots (SPEC-46). Like {@link ports.snapshot} this is a
+   * top-level broadcast, NOT a session event: documents describe the checkout,
+   * not one session. Watch-gated — nothing is walked or sent unless a client
+   * asked via `docs.watch`. See {@link DocsSnapshotDTO}.
+   */
+  | "docs.snapshot";
 
 /**
  * Normalized context/cost usage for one session (SPEC-37), unified across three
@@ -398,6 +406,86 @@ export interface PortsSnapshotDTO {
 }
 
 /**
+ * One renderable document inside a worktree (SPEC-46).
+ *
+ * The index is an **allowlist** of doc roots (`mockups/`, `docs/`, root `*.md`),
+ * not a file tree (D1): a tree invites traversal and buries the four
+ * directories you want under twelve you do not.
+ */
+export interface DocDTO {
+  /**
+   * `"<worktreePath>:<relPath>"`. A **snapshot key, never persisted** (D3) —
+   * same discipline as {@link PortDTO.key}. Files get renamed and moved, so a
+   * stored key rots silently; the UI re-selects by `(worktreePath, relPath)`.
+   */
+  key: string;
+  /** Worktree-relative POSIX path, e.g. `"mockups/open-ports.html"`. */
+  relPath: string;
+  /**
+   * A **human** name, extracted from the file (D4): `<title>` for HTML, the
+   * first ATX heading for markdown, and the basename only as a last resort.
+   * `2026-08-07-SPEC-44-ports-forward.md` is unreadable on a 375 pt row.
+   */
+  title: string;
+  kind: "md" | "html";
+  bytes: number;
+  /** Epoch ms of the file's mtime. Rows sort by this, descending. */
+  modifiedAt: number;
+  worktreePath: string;
+  /** Session that last wrote it when known; absent, never guessed. */
+  sessionId?: string;
+  /**
+   * True when the file differs from the branch's **merge base** — the review
+   * question, not "dirty in the working tree" (D5). Absent when undetermined.
+   */
+  changed?: boolean;
+  /**
+   * Parsed from a leading `**Status:** …` line, shortened to its first clause
+   * (`"Draft"`, `"Implemented"`). **Absent rather than guessed** (D14): this
+   * repo writes the line by convention, but a doc without one must not be
+   * labelled.
+   */
+  docStatus?: string;
+}
+
+export interface DocsSnapshotDTO {
+  /** Documents across every known worktree, mtime-descending within a worktree. */
+  docs: DocDTO[];
+  /** Epoch ms this walk completed. */
+  scannedAt: number;
+  /**
+   * True when the walk ran — **not** that the list is complete (the
+   * {@link PortsSnapshotDTO.scanOk} rule). An unreadable file is skipped
+   * without failing the walk.
+   */
+  scanOk: boolean;
+  /** One-line reason when `scanOk` is false. */
+  scanError?: string;
+}
+
+/**
+ * An active publication of one document over the tailnet (SPEC-46 D9).
+ *
+ * A URL that must open in Safari cannot carry a bearer *header*, so the
+ * capability lives in the path: `/docs/<grantId>/<relPath>`. Publishing is
+ * therefore always explicit, always time-boxed, and always revocable.
+ */
+export interface DocGrantDTO {
+  /** 32 bytes of CSPRNG, hex. This value **is** the capability — treat as secret. */
+  grantId: string;
+  worktreePath: string;
+  relPath: string;
+  /** The full URL to hand over. Never `localhost`. */
+  url: string;
+  /**
+   * What actually bound, never invented (D15): `tailnet` when `tailscale serve`
+   * fronted it, `lan` for the explicitly-labelled fallback.
+   */
+  reach: "tailnet" | "lan";
+  expiresAt: number;
+}
+
+/**
  * The endpoint the user confirmed killing, captured from the row they saw
  * (SPEC-43 D1/D8).
  */
@@ -495,7 +583,7 @@ export interface PortKillOrphansResult {
  */
 export type SessionEventKind = Exclude<
   EventKind,
-  "github.budget" | "metrics.sample" | "ports.snapshot"
+  "github.budget" | "metrics.sample" | "ports.snapshot" | "docs.snapshot"
 >;
 
 export interface SessionEvent {
@@ -558,6 +646,19 @@ export type SessionStatus =
   | "error"
   | "exited";
 
+/**
+ * Is the agent mid-flight for this status — either working, or holding a question
+ * the user has not answered yet?
+ *
+ * The canonical answer, next to the type it interrogates, because "busy" is not
+ * the same as "not idle": `error` and `exited` are also not idle but hold nothing.
+ * Callers that must not disturb live work (e.g. idle auto-close) ask this rather
+ * than re-deriving a list of statuses to exclude.
+ */
+export function isBusy(status: SessionStatus): boolean {
+  return status === "running" || status === "awaiting-input" || status === "awaiting-approval";
+}
+
 export type ApprovalPolicy = "yolo" | "ask-on-risky" | "ask-always";
 
 /**
@@ -579,6 +680,30 @@ export interface ProjectDTO {
   path: string;
   pinned: boolean;
   lastActivityAt: number;
+  /**
+   * Per-repo settings, VERBATIM as persisted (SPEC-48).
+   *
+   * The key names are the stored ones -- `provider` and `logoHue`, not `gitProvider`
+   * and `logo`. They differed until a review caught it, and a cast in the manager hid
+   * the mismatch, so a client reading `settings.gitProvider` always got `undefined`.
+   *
+   * Unknown keys are preserved on purpose: a newer app's field must survive an older
+   * daemon writing a neighbouring one, so this is deliberately open rather than a
+   * closed shape. The RESOLVED, effective values live in `RepoDTO.settings`
+   * ({@link RepoSettingsDTO}), which is what the UI should render.
+   */
+  settings?: {
+    /** Provider override; absent means "believe detection". */
+    provider?: string | null;
+    /** Absolute canonicalised worktree root; absent inherits. */
+    worktreeRoot?: string | null;
+    /** Default-branch override; absent inherits git's answer. */
+    defaultBranch?: string | null;
+    /** Monogram palette index; absent derives the hue from the name. */
+    logoHue?: number | null;
+    /** Anything a newer client stored. Never dropped. */
+    [key: string]: unknown;
+  };
 }
 
 /**
@@ -634,7 +759,7 @@ export interface PullRequestDTO {
  * stats are measured against the repo's default branch; `pr` is present only
  * when an open GitHub PR heads this branch. `sessionIds` links the makit
  * sessions bound to this worktree — drafts included (their worktree is resolved
- * before the spawn), archived ones excluded (SPEC-29 hides those everywhere else,
+ * before the spawn), closed ones excluded (SPEC-29 hides those everywhere else,
  * so their ids would resolve to nothing here).
  */
 export interface WorktreeDTO {
@@ -661,6 +786,47 @@ export interface WorktreeDTO {
  * Repo-centric home-screen unit. Wraps a {@link ProjectDTO} with git
  * intelligence: the current + default branch and the list of live worktrees.
  */
+/** Where an effective per-repo value came from. Drives the badge, never inferred. */
+export type SettingSourceDTO = "override" | "environment" | "default";
+
+/** An effective value plus its source, so the app labels rather than guesses. */
+export interface ResolvedDTO<T> {
+  value: T;
+  source: SettingSourceDTO;
+}
+
+/**
+ * Per-repo settings as the app sees them: **effective values with their sources**,
+ * not the raw stored record.
+ *
+ * The app is told facts and never derives them — the rule that stopped it
+ * re-deriving the forge from a PR URL. So the server resolves the chain
+ * (`override → environment → default`) and sends the answer plus why.
+ */
+export interface RepoSettingsDTO {
+  /** Where new worktrees for this repo are created. Never blank. */
+  worktreeRoot: ResolvedDTO<string>;
+  /** `auto` believes detection; `none` means talk to no forge at all. */
+  provider: ResolvedDTO<"auto" | "none" | "forgejo" | "gitea" | "github">;
+  /** Absent when neither an override nor `origin/HEAD` gave one. */
+  defaultBranch?: ResolvedDTO<string>;
+  /** Monogram hue index; absent = derive it from the name. */
+  logoHue?: number;
+  /**
+   * Whether the repo has an `origin` remote at all. False means no forge is
+   * possible — a **different statement** from "not identified yet", and rendering
+   * them alike implies a probe is pending when none can help.
+   */
+  hasRemote: boolean;
+  /**
+   * What detection concluded. **Absent means not measured yet**, never "no forge":
+   * routing only happens when a PR operation runs, so a quiet repo may genuinely
+   * not know. `authed` is omitted for GitHub, where `gh`'s budget is not
+   * host-specific authentication. The token is never sent.
+   */
+  forge?: { software: string; host: string; authed?: boolean };
+}
+
 export interface RepoDTO {
   id: string;
   name: string;
@@ -671,6 +837,12 @@ export interface RepoDTO {
   defaultBranch: string | null;
   currentBranch: string | null;
   worktrees: WorktreeDTO[];
+  /**
+   * Per-repo settings. Optional so an older app renders no settings section rather
+   * than a fabricated one, and a newer app paired with an older server does the
+   * same.
+   */
+  settings?: RepoSettingsDTO;
 }
 
 export interface SessionDTO {
@@ -716,19 +888,54 @@ export interface SessionDTO {
    */
   resumable: boolean;
   /**
-   * Archived (SPEC-29): a soft, recoverable hide. Archived sessions are omitted
+   * Closed (SPEC-29): a soft, recoverable hide. Closed sessions are omitted
    * from the active `sessions.snapshot`; this flag is present for any surface
-   * that explicitly lists archived sessions.
+   * that explicitly lists closed sessions.
    */
-  archived: boolean;
+  closed: boolean;
   /**
-   * Orphaned (SPEC-29): an archived session whose recorded worktree is no longer
+   * Orphaned (SPEC-29): a closed session whose recorded worktree is no longer
    * an active worktree of its project (e.g. the worktree was removed). Only set
-   * on the `session.listArchived` result; undefined elsewhere. The branch ref
+   * on the `session.listClosed` result; undefined elsewhere. The branch ref
    * usually still exists, so resume can offer to recreate the worktree.
    */
   orphaned?: boolean;
+  /**
+   * SPEC-46 lineage (D10). The session this one was handed off / spawned from,
+   * **derived server-side from the spawning credential** (D9) and never taken
+   * from the wire — a body `parentId` that disagrees with the caller's own
+   * session is refused. Absent for a session with no parent (every session
+   * created before SPEC-46, and every one the app spawns).
+   */
+  parentId?: string;
+  /** SPEC-46 (D10): why the handoff happened, as written by the outgoing agent. */
+  handoffReason?: string;
+  /** SPEC-46 (D10): which client created this session. Absent means "app" (pre-SPEC-46 rows). */
+  origin?: SessionOrigin;
 }
+
+/**
+ * SPEC-46 (D10): who created a session. Persisted on `SessionMeta` and carried
+ * on `SessionDTO` so the app can caption "handed off from …" without a second
+ * lookup. Absent (rather than `"app"`) on rows written before SPEC-46 — the
+ * migration does not backfill, because guessing an origin is worse than none.
+ */
+export type SessionOrigin = "app" | "cli" | "agent";
+
+/**
+ * SPEC-46 (D2/D3/D17): what a credential is allowed to do.
+ *
+ * A device with **no** `caps` is full access — that is what every already-paired
+ * phone is, and the absence is load-bearing: adding `caps` must not retroactively
+ * restrict a device that predates the field.
+ *
+ * - `client` — a human-driven peer (the app, or `cli@<host>`). Same surface as an
+ *   unrestricted device; the point is that it is a separately revocable subject.
+ * - `read` / `send` / `spawn` — the agent-scoped per-session token (D3), which is
+ *   deliberately narrower than a human's: it may read its own session, send into
+ *   it, and spawn a child, and nothing else.
+ */
+export type DeviceCap = "client" | "read" | "send" | "spawn";
 
 let _seq = 0;
 export const newId = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${(_seq++).toString(36)}`;
@@ -756,10 +963,19 @@ export type CmdKind =
   | "session.list"
   | "session.attach"
   | "session.kill"
-  | "session.archive"
-  | "session.unarchive"
-  | "session.listArchived"
+  | "session.close"
+  | "session.reopen"
+  | "session.listClosed"
   | "session.setAgent"
+  /**
+   * SPEC-46 (D5/C3): a **bounded** read of a session's event log —
+   * `{kind:'session.transcript', sessionId, limit}` → `ack {events}` with the
+   * last `limit` events, oldest-first. Exists because `sub {fromSeq}` cannot
+   * bound a tail: it takes no limit, no DTO publishes a latest seq to subtract
+   * from, and `session.events` hydrates the whole persisted log before the
+   * filter runs. `makit handoff --carry last:N` is the caller.
+   */
+  | "session.transcript"
   /** Drop ONE pending mid-turn message by `queuedId` (SPEC-35). */
   | "queue.cancel"
   /** Edit a pending mid-turn message; empty text cancels it (SPEC-38). */
@@ -791,6 +1007,29 @@ export type CmdKind =
    * nothing is scanned while no client is watching.
    */
   | "ports.watch"
+  /**
+   * SPEC-46: hold/release the host-wide document index. Ref-counted exactly
+   * like `ports.watch` — nothing is walked while no client is watching.
+   */
+  | "docs.watch"
+  /**
+   * SPEC-46: read one markdown document's text over this channel (D7). Errors
+   * for `kind === "html"`, which is only useful once a browser engine renders
+   * it. `{kind:'docs.read', worktreePath, relPath}`.
+   */
+  | "docs.read"
+  /**
+   * SPEC-46 D8 rev 2: open the document on the machine holding it, via the
+   * host's OS opener. **Local clients only** — a remote client cannot be served
+   * this way and must publish instead. `{kind:'docs.open', worktreePath, relPath}`.
+   */
+  | "docs.open"
+  /** SPEC-46: publish one document over the tailnet, returning a {@link DocGrantDTO}. */
+  | "docs.publish"
+  /** SPEC-46: revoke a publication by `grantId`. */
+  | "docs.unpublish"
+  /** SPEC-46: list active publications, so the app can say "3 docs are shared". */
+  | "docs.grants"
   /**
    * SPEC-43: terminate ONE listening process the user is looking at. Carries the
    * full identity tuple captured from the row it displayed

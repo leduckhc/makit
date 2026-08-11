@@ -1,0 +1,329 @@
+/**
+ * T16 (SPEC-46) — `makit wait`: the exit code IS the automation contract (D8).
+ *
+ * The subtlety, and the reason this is edge-triggered: `send.message` **acks
+ * before promotion** (`ws/commands/session.ts:128`), so a composed
+ * `new + send + wait` would observe the session's pre-existing `idle` and exit
+ * `0` having waited for nothing. So `wait` requires a `running` → non-running
+ * **transition**, which is the same boundary the app's notification policy uses
+ * (`notification_policy.dart:19`) rather than a second invented one.
+ *
+ * The other trap D8 records: **nothing in makit ever emits `status: "error"`**.
+ * Adapters emit a `session.error` *event* and then settle **idle**, so exit `20`
+ * must key off the event. A `wait` that keyed off the status would report a
+ * failed turn as a clean success.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { parseWaitArgs, runWait, awaitOutcome, EXIT_APPROVAL, EXIT_INPUT, EXIT_ERROR, EXIT_EXITED, EXIT_TIMEOUT } from "./wait.js";
+import { openClient } from "./client.js";
+import { startStubWss, type StubWss } from "../../test/support/stub_wss.js";
+import { withCliHome, captureCli } from "../../test/support/cli_home.js";
+
+const SID = "s1";
+
+const session = (status: string) => ({
+  id: SID,
+  projectId: "p1",
+  agent: "pi",
+  title: "t",
+  status,
+  lastActivityAt: 1,
+});
+
+const statusEvent = (seq: number, status: string) => ({
+  seq,
+  sessionId: SID,
+  ts: seq,
+  kind: "session.status",
+  payload: { status },
+});
+
+const errorEvent = (seq: number, message: string) => ({
+  seq,
+  sessionId: SID,
+  ts: seq,
+  kind: "session.error",
+  payload: { message },
+});
+
+/**
+ * Run `makit wait` against a stub whose session starts in `status`, then feed it
+ * `script` (events pushed once the client has subscribed). Nothing is ever
+ * awaited that the stub does not send — a blocked session is by definition a
+ * promise that never settles.
+ */
+async function waitWith(
+  argv: string[],
+  status: string,
+  script: Record<string, unknown>[] = [],
+): Promise<{ out: string; err: string; code: number }> {
+  let stub: StubWss | undefined;
+  let captured = { out: "", err: "", code: 0 };
+  try {
+    stub = await startStubWss({
+      acceptBearer: "CACHED",
+      sessions: [session(status)],
+      onCmd: () => ({}),
+      // Pushed the instant the client is subscribed, in order, so the script can
+      // never outrun the connect (see `onSub`). The socket preserves order, so no
+      // delay is needed and none is wanted: a delay is what made this racy.
+      onSub: () => {
+        for (const ev of script) stub!.push(ev);
+      },
+    });
+    const port = stub.port;
+    await withCliHome(async () => {
+      captured = await captureCli(async () => {
+        await runWait([SID, "--port", String(port), ...argv]);
+      });
+    });
+  } finally {
+    await stub?.close();
+  }
+  return captured;
+}
+
+// ---------------------------------------------------------------------------
+// argv parsing
+// ---------------------------------------------------------------------------
+
+test("parseWaitArgs: session id, --for and --timeout", () => {
+  const a = parseWaitArgs([SID, "--for", "approval", "--timeout", "30"]);
+  assert.equal(a.sessionId, SID);
+  assert.equal(a.forWhat, "approval");
+  assert.equal(a.timeoutMs, 30_000);
+});
+
+test("parseWaitArgs: defaults to --for any and no timeout", () => {
+  const a = parseWaitArgs([SID]);
+  assert.equal(a.forWhat, "any");
+  assert.equal(a.timeoutMs, undefined);
+});
+
+test("wait with no session id is a usage error", async () => {
+  const r = await captureCli(async () => {
+    await runWait([]);
+  });
+  assert.equal(r.code, 2);
+});
+
+// ---------------------------------------------------------------------------
+// D8 — the running → non-running edge
+// ---------------------------------------------------------------------------
+
+test("a turn that runs and finishes exits 0", async () => {
+  const r = await waitWith([], "idle", [statusEvent(1, "running"), statusEvent(2, "idle")]);
+  assert.equal(r.code, 0, r.err);
+});
+
+test("an idle session does NOT exit 0 until a turn has actually run (the new+send+wait trap)", async () => {
+  // Only an idle status arrives — no `running` was ever seen, so there was no
+  // turn to complete. `wait` must keep waiting; `--timeout` is what ends it.
+  const r = await waitWith(["--timeout", "1"], "idle", [statusEvent(1, "idle"), statusEvent(2, "idle")]);
+  assert.equal(r.code, EXIT_TIMEOUT);
+});
+
+test("a session already running when wait starts still gets its completion", async () => {
+  const r = await waitWith([], "running", [statusEvent(1, "idle")]);
+  assert.equal(r.code, 0, r.err);
+});
+
+// ---------------------------------------------------------------------------
+// blocked and failed outcomes
+// ---------------------------------------------------------------------------
+
+test("blocked on a tool approval exits 10", async () => {
+  const r = await waitWith([], "running", [statusEvent(1, "awaiting-approval")]);
+  assert.equal(r.code, EXIT_APPROVAL);
+  assert.equal(EXIT_APPROVAL, 10);
+});
+
+test("blocked on an elicitation exits 11", async () => {
+  const r = await waitWith([], "running", [statusEvent(1, "awaiting-input")]);
+  assert.equal(r.code, EXIT_INPUT);
+  assert.equal(EXIT_INPUT, 11);
+});
+
+test("a session already blocked when wait starts reports it immediately", async () => {
+  // No edge is required here: it is already blocked on the human, and pretending
+  // otherwise would hang a script on a question it cannot see.
+  const r = await waitWith([], "awaiting-approval");
+  assert.equal(r.code, EXIT_APPROVAL);
+});
+
+test("a session.error EVENT exits 20, even though the session then settles idle", async () => {
+  const r = await waitWith([], "running", [errorEvent(1, "the model refused"), statusEvent(2, "idle")]);
+  assert.equal(r.code, EXIT_ERROR);
+  assert.equal(EXIT_ERROR, 20);
+  assert.match(r.err, /the model refused/);
+});
+
+test("an exited agent exits 21", async () => {
+  const r = await waitWith([], "running", [statusEvent(1, "exited")]);
+  assert.equal(r.code, EXIT_EXITED);
+  assert.equal(EXIT_EXITED, 21);
+});
+
+// ---------------------------------------------------------------------------
+// --for narrows what ends the wait
+// ---------------------------------------------------------------------------
+
+test("--for idle waits through an approval instead of exiting on it", async () => {
+  const r = await waitWith(["--for", "idle", "--timeout", "1"], "running", [statusEvent(1, "awaiting-approval")]);
+  assert.equal(r.code, EXIT_TIMEOUT, "an approval is not what was asked for");
+});
+
+test("--for approval exits 10 on the prompt and ignores a completed turn", async () => {
+  const r = await waitWith(["--for", "approval"], "running", [
+    statusEvent(1, "idle"),
+    statusEvent(2, "running"),
+    statusEvent(3, "awaiting-approval"),
+  ]);
+  assert.equal(r.code, EXIT_APPROVAL);
+});
+
+test("--timeout is a distinct code, never confused with a completed turn", async () => {
+  const r = await waitWith(["--timeout", "1"], "running");
+  assert.equal(r.code, EXIT_TIMEOUT);
+  assert.notEqual(EXIT_TIMEOUT, 0);
+  assert.match(r.err, /timed out/i);
+});
+
+// ---------------------------------------------------------------------------
+// Replay is not a turn (found by driving `ask` against a session with history)
+// ---------------------------------------------------------------------------
+
+test("a REPLAYED running→idle pair from the log does not count as this turn's edge", async () => {
+  // `sub` replays the whole persisted log before acking, so a session that has
+  // ever completed a turn hands the client a running→idle pair the instant it
+  // subscribes. Treating that as the edge is the same false success D8 warns
+  // about, arriving by a different route: `wait` would exit 0 having waited for
+  // nothing, and `ask` would print the answer to the PREVIOUS question.
+  let stub: StubWss | undefined;
+  let captured = { out: "", err: "", code: 0 };
+  try {
+    stub = await startStubWss({
+      acceptBearer: "CACHED",
+      sessions: [session("idle")],
+      events: [statusEvent(1, "running"), statusEvent(2, "idle")], // history, replayed on sub
+    });
+    const port = stub.port;
+    await withCliHome(async () => {
+      captured = await captureCli(async () => {
+        await runWait([SID, "--port", String(port), "--timeout", "1"]);
+      });
+    });
+  } finally {
+    await stub?.close();
+  }
+  assert.equal(captured.code, EXIT_TIMEOUT, "history must not satisfy the edge");
+});
+
+// ---------------------------------------------------------------------------
+// A terminal state ends the wait whatever --for asked for
+// ---------------------------------------------------------------------------
+
+test("--for idle still exits 21 when the agent EXITS — nothing will ever go idle", async () => {
+  // `--for` narrows which *ongoing* outcome you are waiting for; it cannot make a
+  // dead session worth waiting on. Dropping `exited` here reintroduced exactly the
+  // hang D8 exists to remove: no default timeout, and an agent that crashes leaves
+  // the caller blocked forever.
+  // `--timeout 1` bounds the assertion: before the fix this returned 124 (it hung
+  // until the timer), after it returns 21. Without the bound the test would hang
+  // rather than fail, which is a worse test even when it is red for the right reason.
+  const r = await waitWith(["--for", "idle", "--timeout", "1"], "running", [statusEvent(1, "exited")]);
+  assert.equal(r.code, EXIT_EXITED, "an exited agent is terminal for any --for");
+});
+
+test("--for approval also exits 21 on an exited agent", async () => {
+  const r = await waitWith(["--for", "approval", "--timeout", "1"], "running", [statusEvent(1, "exited")]);
+  assert.equal(r.code, EXIT_EXITED);
+});
+
+test("--for approval still ignores a completed turn (the narrowing that IS wanted)", async () => {
+  const r = await waitWith(["--for", "approval", "--timeout", "1"], "running", [statusEvent(1, "idle")]);
+  assert.equal(r.code, EXIT_TIMEOUT, "idle is not terminal — a later turn may still block");
+});
+
+test("a session already EXITED when wait starts reports it immediately", async () => {
+  const r = await waitWith(["--for", "idle", "--timeout", "1"], "exited");
+  assert.equal(r.code, EXIT_EXITED);
+});
+
+// ---------------------------------------------------------------------------
+// The contract refuses to guess (D8)
+// ---------------------------------------------------------------------------
+
+test("a misspelled --for is a usage error, never a silent widening to 'any'", async () => {
+  // Silently falling back to `any` is the worst outcome available: `wait --for
+  // aproval` would exit 0 on a *completed turn*, so a script written to block
+  // until a human is asked something sails straight past it.
+  const r = await captureCli(async () => {
+    parseWaitArgs([SID, "--for", "aproval"]);
+  });
+  assert.equal(r.code, 2);
+  assert.match(r.err, /--for/);
+  assert.match(r.err, /idle\|approval\|input\|any/);
+});
+
+// ---------------------------------------------------------------------------
+// A settled wait is over: no event may be delivered after it
+// ---------------------------------------------------------------------------
+
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
+
+/** Drive `awaitOutcome` directly against a stub, so `onEvent` is observable. */
+async function withOutcome(
+  fn: (stub: StubWss, seen: string[], outcome: Promise<{ code: number }>) => Promise<void>,
+  opts: { timeoutMs?: number } = {},
+): Promise<void> {
+  const stub = await startStubWss({ acceptBearer: "good", onCmd: () => ({}) });
+  const client = await openClient({ host: "127.0.0.1", port: stub.port, bearer: "good" });
+  try {
+    await client.hello();
+    const seen: string[] = [];
+    const outcome = awaitOutcome(client, SID, {
+      forWhat: "any",
+      timeoutMs: opts.timeoutMs,
+      onEvent: (ev) => seen.push(`${ev.kind}:${String(ev.payload.status ?? "")}`),
+    });
+    await delay(40); // let the sub ack land, so replay is over
+    await fn(stub, seen, outcome);
+  } finally {
+    client.close();
+    await stub.close();
+  }
+}
+
+test("events from the NEXT turn are not delivered after the wait has settled", async () => {
+  // `run` and `ask` print from `onEvent`, so a listener that outlives the
+  // outcome makes them emit the following turn's output as if it were theirs.
+  await withOutcome(async (stub, seen, outcome) => {
+    stub.push(statusEvent(1, "running"));
+    stub.push(statusEvent(2, "idle"));
+    assert.equal((await outcome).code, 0);
+    const settledAt = seen.length;
+    stub.push(statusEvent(3, "running"));
+    stub.push(statusEvent(4, "idle"));
+    await delay(40);
+    assert.deepEqual(seen.slice(settledAt), [], "no event may arrive after the outcome");
+  });
+});
+
+test("events are not delivered after --timeout has fired either", async () => {
+  // The timeout path resolves the promise, so it must trip the same guard: a
+  // timed-out `run` that keeps printing has no way to stop.
+  await withOutcome(
+    async (stub, seen, outcome) => {
+      assert.equal((await outcome).code, EXIT_TIMEOUT);
+      const settledAt = seen.length;
+      stub.push(statusEvent(1, "running"));
+      stub.push(statusEvent(2, "idle"));
+      await delay(40);
+      assert.deepEqual(seen.slice(settledAt), [], "no event may arrive after a timeout");
+    },
+    { timeoutMs: 60 },
+  );
+});

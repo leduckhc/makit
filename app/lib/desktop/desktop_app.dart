@@ -300,7 +300,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
 
   @override
   Widget build(BuildContext context) {
-    // Close tabs whose session no longer exists server-side (archived or quit
+    // Close tabs whose session no longer exists server-side (closed or quit
     // from another client, or a restored layout pointing at dead sessions)
     // BEFORE auto-select, so it sees the pruned workspace.
     ref.watch(desktopSessionPruneProvider);

@@ -33,7 +33,7 @@ bool escalates(int ms) => ms >= kLiveEscalationMs;
 /// * A no-end call whose enclosing turn closed freezes at that `idle`
 ///   ([enclosingTurnCloseTs]) — never a climbing number (D6a).
 /// * A no-end call in a still-running session ticks off [serverNowMs].
-/// * Otherwise (an orphaned no-end call in an idle/archived transcript) there is
+/// * Otherwise (an orphaned no-end call in an idle/closed transcript) there is
 ///   no honest number and no live counter (D19).
 ///
 /// `ms` is null when the span is unrepresentable (D10b) or absent.

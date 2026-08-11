@@ -11,13 +11,16 @@ import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/store/prefs/preference_entries.dart';
+import 'package:makit/store/prefs/preferences_controller.dart';
+import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/transport/protocol.dart';
 
 /// A connection that answers every request instantly — so the fire-and-forget
-/// archive on tab close leaves no pending timeout Timer in widget tests.
+/// close on tab close leaves no pending timeout Timer in widget tests.
 class _FastConn extends ConnectionController {
   _FastConn() : super(const _NoStore());
   final sent = <Map<String, dynamic>>[];
@@ -56,6 +59,21 @@ Session _session(
 );
 
 const _wtA = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-a', branch: 'a');
+const _wtB = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-b', branch: 'b');
+const _wtC = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-c', branch: 'c');
+
+/// A container with no sessions and [previewGroupsPreference] set to [enabled].
+ProviderContainer _previewContainer({required bool enabled}) =>
+    ProviderContainer(
+      overrides: [
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+        preferencesControllerProvider.overrideWith(
+          (ref) => PreferencesController(null, {
+            previewGroupsPreference.id: enabled,
+          }),
+        ),
+      ],
+    );
 
 WorkspaceController _workspace(ProviderContainer c) =>
     c.read(workspaceControllerProvider.notifier);
@@ -93,9 +111,9 @@ Future<void> _invoke(
 void main() {
   setUp(resetNodeIds);
 
-  // SPEC-30 Lane 7 / decision 7: unpin-vs-archive is a property of the ACTIVE
+  // SPEC-30 Lane 7 / decision 7: unpin-vs-close is a property of the ACTIVE
   // GROUP'S KIND, not of the affordance — so the tab ✕ and ⌘⇧W cannot disagree.
-  group('closeTabAndArchive by group kind (decision 7)', () {
+  group('closeTabAndSession by group kind (decision 7)', () {
     /// Runs [close] against a container whose active group is [group], with
     /// session `s1` bound to the active tab, and reports what was sent.
     Future<(_FastConn, GroupsController)> runClose(
@@ -136,46 +154,45 @@ void main() {
       tree: WorkspaceController.seedWorkspace(),
     );
 
-    testWidgets('on a board the tab ✕ unpins and never archives', (
-      tester,
-    ) async {
+    testWidgets('on a board the tab ✕ unpins and never closes', (tester) async {
       final (conn, groups) = await runClose(tester, board(), (ref) {
         final state = ref.read(workspaceControllerProvider);
         final tab = activeTab(state)!;
-        closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
+        closeTabAndSession(ref, state.activeSplitId, tab.id, tab.sessionId);
       });
 
       expect(groups.groupById('b1')!.members, isEmpty, reason: 'unpinned');
       expect(
-        conn.sent.where((m) => m['kind'] == 'session.archive'),
+        conn.sent.where((m) => m['kind'] == 'session.close'),
         isEmpty,
         reason: 'the agent keeps running',
       );
     });
 
-    testWidgets('in a worktree group the tab ✕ archives (unchanged)', (
-      tester,
-    ) async {
-      final (conn, _) = await runClose(tester, worktree(), (ref) {
-        final state = ref.read(workspaceControllerProvider);
-        final tab = activeTab(state)!;
-        closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
-      });
+    testWidgets(
+      'in a worktree group the tab ✕ closes the session (unchanged)',
+      (tester) async {
+        final (conn, _) = await runClose(tester, worktree(), (ref) {
+          final state = ref.read(workspaceControllerProvider);
+          final tab = activeTab(state)!;
+          closeTabAndSession(ref, state.activeSplitId, tab.id, tab.sessionId);
+        });
 
-      expect(conn.sent.where((m) => m['kind'] == 'session.archive').length, 1);
-    });
+        expect(conn.sent.where((m) => m['kind'] == 'session.close').length, 1);
+      },
+    );
 
     testWidgets('⌘⇧W agrees with the ✕ on a board (one shared path)', (
       tester,
     ) async {
       final (conn, groups) = await runClose(tester, board(), closeActiveTab);
       expect(groups.groupById('b1')!.members, isEmpty);
-      expect(conn.sent.where((m) => m['kind'] == 'session.archive'), isEmpty);
+      expect(conn.sent.where((m) => m['kind'] == 'session.close'), isEmpty);
     });
 
     testWidgets('⌘⇧W agrees with the ✕ in a worktree group', (tester) async {
       final (conn, _) = await runClose(tester, worktree(), closeActiveTab);
-      expect(conn.sent.where((m) => m['kind'] == 'session.archive').length, 1);
+      expect(conn.sent.where((m) => m['kind'] == 'session.close').length, 1);
     });
   });
 
@@ -250,6 +267,88 @@ void main() {
       expect(container.read(selectedWorktreeProvider), _wtA);
       expect(container.read(selectedSessionProvider), isNull);
     });
+
+    testWidgets('mints a permanent group while the preview pref is off', (
+      tester,
+    ) async {
+      final container = _previewContainer(enabled: false);
+      addTearDown(container.dispose);
+
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
+      expect(container.read(groupsControllerProvider).previewGroupId, isNull);
+    });
+
+    testWidgets('mints a preview group when the pref is on (SPEC-51)', (
+      tester,
+    ) async {
+      final container = _previewContainer(enabled: true);
+      addTearDown(container.dispose);
+
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
+      final groups = container.read(groupsControllerProvider);
+      expect(groups.previewGroupId, groups.activeGroupId);
+      expect(groups.previewGroup!.worktreePath, _wtA.path);
+    });
+
+    testWidgets('browsing branches never grows the rail past one preview', (
+      tester,
+    ) async {
+      final container = _previewContainer(enabled: true);
+      addTearDown(container.dispose);
+
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
+      final before = container.read(groupsControllerProvider).groups.length;
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtB));
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtC));
+
+      final groups = container.read(groupsControllerProvider);
+      expect(groups.groups, hasLength(before));
+      expect(groups.previewGroup!.worktreePath, _wtC.path);
+    });
+
+    testWidgets('keep: true promotes the preview group in place', (
+      tester,
+    ) async {
+      final container = _previewContainer(enabled: true);
+      addTearDown(container.dispose);
+
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
+      final previewId = container.read(groupsControllerProvider).previewGroupId;
+      // The double-click arrives as a second gesture on the same row, after the
+      // single tap already opened it in preview.
+      await _invoke(
+        tester,
+        container,
+        (ref) => selectWorktree(ref, _wtA, keep: true),
+      );
+
+      final groups = container.read(groupsControllerProvider);
+      expect(groups.previewGroupId, isNull, reason: 'promoted');
+      expect(groups.activeGroupId, previewId, reason: 'same group, kept');
+      expect(
+        groups.groups.where((g) => g.worktreePath == _wtA.path),
+        hasLength(1),
+        reason: 'no duplicate group for the same scope',
+      );
+    });
+
+    testWidgets('a kept group survives the next branch click', (tester) async {
+      final container = _previewContainer(enabled: true);
+      addTearDown(container.dispose);
+
+      await _invoke(
+        tester,
+        container,
+        (ref) => selectWorktree(ref, _wtA, keep: true),
+      );
+      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtB));
+
+      final paths = container
+          .read(groupsControllerProvider)
+          .groups
+          .map((g) => g.worktreePath);
+      expect(paths, containsAll([_wtA.path, _wtB.path]));
+    });
   });
 
   group('closeActiveSplit / closeActiveTab', () {
@@ -277,13 +376,13 @@ void main() {
       expect(container.read(selectedSessionProvider), 's1');
     });
 
-    testWidgets('closeActiveTab archives the orphaned session (SPEC-29)', (
+    testWidgets('closeActiveTab closes the orphaned session (SPEC-29)', (
       tester,
     ) async {
-      // SPEC-30 decision 7 made this kind-dependent: archiving is the WORKTREE
+      // SPEC-30 decision 7 made this kind-dependent: closing is the WORKTREE
       // group's behaviour (membership is derived, so ending the session is the
       // only way off that canvas). On a board the same path unpins instead —
-      // covered in "closeTabAndArchive by group kind".
+      // covered in "closeTabAndSession by group kind".
       final conn = _FastConn();
       final container = ProviderContainer(
         overrides: [
@@ -312,15 +411,15 @@ void main() {
 
       await _invoke(tester, container, closeActiveTab);
 
-      // Closing the sole tab orphans s1 → it is archived (soft, recoverable).
-      final archive = conn.sent.firstWhere(
-        (b) => b['kind'] == 'session.archive',
+      // Closing the sole tab orphans s1 → it is closed (soft, recoverable).
+      final close = conn.sent.firstWhere(
+        (b) => b['kind'] == 'session.close',
         orElse: () => const {},
       );
-      expect(archive['sessionId'], 's1');
+      expect(close['sessionId'], 's1');
     });
 
-    testWidgets('closeActiveTab does NOT archive an untouched draft (SPEC-29)', (
+    testWidgets('closeActiveTab does NOT close an untouched draft (SPEC-29)', (
       tester,
     ) async {
       final conn = _FastConn();
@@ -354,8 +453,8 @@ void main() {
       await _invoke(tester, container, closeActiveTab);
 
       // A never-started draft has no history worth preserving — closing its tab
-      // must not archive it (no empty entry in the Archived list).
-      expect(conn.sent.any((b) => b['kind'] == 'session.archive'), isFalse);
+      // must not close it (no empty entry in the Closed list).
+      expect(conn.sent.any((b) => b['kind'] == 'session.close'), isFalse);
     });
 
     testWidgets('closeActiveSplit is a no-op on the sole split', (

@@ -5,6 +5,10 @@
  */
 
 import { WireErrorCode } from "../../protocol/codec.js";
+import type { ApprovalPolicy, SessionOrigin } from "../../protocol.js";
+import { isAgentScoped } from "../principal.js";
+import { canReadSession } from "../read_access.js";
+import { ForkPreconditionError } from "../../adapters/adapter.js";
 import { log } from "../../log.js";
 import {
   isMediaId,
@@ -17,6 +21,14 @@ import type { CommandDeps } from "./deps.js";
 
 /** Per-message attachment cap (SPEC-33 §3.3). A prompt, not a gallery. */
 export const MAX_ATTACHMENTS = 8;
+
+/**
+ * SPEC-46 C3: `session.transcript` clamps `limit` to this window. A bounded
+ * tail is the whole point of the command (D5) — an unbounded slice would defeat
+ * it — and 200 is generous for the "quote the last few turns" use it serves.
+ */
+const MIN_TRANSCRIPT_LIMIT = 1;
+const MAX_TRANSCRIPT_LIMIT = 200;
 
 /**
  * Label handed to `promotePendingSession` when an image-only turn promotes a
@@ -130,7 +142,12 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // (reconnect resubscribe + a queued message), and no input may be answered
     // with the cold-session error while a resume is still possible. Collapses
     // onto the same in-flight re-attach rather than starting a second agent.
-    await manager.ensureLive(sid);
+    //
+    // ...ForInput, because a message is unambiguous intent to continue: it also
+    // reopens a session the idle sweeper closed (SPEC-29 option D), so an
+    // auto-close is invisible to the user. Plain `sub` deliberately does NOT do
+    // this — reading a closed transcript must not respawn an agent.
+    await manager.ensureLiveForInput(sid);
     // A pending (draft) session materializes its worktree + agent on the
     // first real request, which names the branch. The manager routes any
     // promotion failure through the session's own event pipeline (a real,
@@ -305,12 +322,13 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
-  // Archive (SPEC-29): hide from the active list but keep it resumable. The
-  // fresh snapshot omits archived sessions; unarchive restores it.
-  r.register("session.archive", async (ctx) => {
+  // Close (SPEC-29): release the agent and reclaim its process, keeping the
+  // session resumable. The fresh snapshot omits closed sessions; reopen
+  // restores it.
+  r.register("session.close", async (ctx) => {
     const sid = String(ctx.env.sessionId ?? "");
     try {
-      await manager.archiveSession(sid);
+      await manager.closeSession(sid);
     } catch {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
@@ -320,10 +338,10 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
-  r.register("session.unarchive", async (ctx) => {
+  r.register("session.reopen", async (ctx) => {
     const sid = String(ctx.env.sessionId ?? "");
     try {
-      await manager.unarchiveSession(sid);
+      await manager.reopenSession(sid);
     } catch {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
@@ -333,14 +351,105 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
-  // Return the archived sessions (SPEC-29) for the "Show archived" list. Unlike
+  // Return the closed sessions (SPEC-29) for the "Show closed" list. Unlike
   // the active `sessions.snapshot` (which omits them), this is an explicit
-  // request/ack so archived sessions only load when the user asks.
-  r.register("session.listArchived", async (ctx) => {
-    ctx.ack({ sessions: await manager.listArchivedSessions() });
+  // request/ack so closed sessions only load when the user asks.
+  r.register("session.listClosed", async (ctx) => {
+    ctx.ack({ sessions: await manager.listClosedSessions() });
+  });
+
+  // SPEC-46 C3 (D5): a BOUNDED transcript slice for `makit handoff --carry`.
+  // The last `limit` events, oldest-first, served from the event store (not the
+  // session's in-memory cache) and returned VERBATIM — the same wire shape as
+  // fanout, no projection (D7). Rendering the slice into a fenced block is CLI
+  // work, not the server's.
+  r.register("session.transcript", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const rawLimit = ctx.env.limit;
+    if (typeof rawLimit !== "number" || !Number.isFinite(rawLimit)) {
+      ctx.err(WireErrorCode.BadRequest, "session.transcript requires a numeric `limit`");
+      return;
+    }
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    // D17: the `read` cap grants the *command*; the principal still has to own the
+    // session. Same answer as an absent session, so this does not become an oracle
+    // for which session ids exist.
+    if (!canReadSession(ctx.client.principal, sid, (id) => manager.getSession(id)?.parentId)) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    const limit = Math.max(
+      MIN_TRANSCRIPT_LIMIT,
+      Math.min(MAX_TRANSCRIPT_LIMIT, Math.floor(rawLimit)),
+    );
+    // Bounded in the store's own query (D5), so a long session never loads its
+    // whole log to return its last few lines. Oldest-first, and the whole log
+    // when it is shorter than `limit`.
+    ctx.ack({ events: manager.readTranscript(sid, limit) });
   });
 
   r.register("session.spawn", async (ctx) => {
+    // SPEC-46 D9/D10 — lineage by subject, not by field:
+    //
+    // - An **agent-scoped** token's parent IS its own session. A body `parentId`
+    //   naming a different session is a forgery attempt and is refused (not
+    //   silently honoured, not silently overwritten). That is D9's whole point:
+    //   an agent cannot attach a child to an unrelated session, build a cycle, or
+    //   forge shallow ancestry to escape the depth bound.
+    // - A **human** credential (the CLI's `client` cap, or a phone with no caps)
+    //   may state the parent it handed off from. It gains nothing by lying: D17
+    //   already grants it every session, so a forged parent discloses nothing it
+    //   could not read anyway. Refusing it, on the other hand, made every
+    //   `makit handoff` from a terminal record a `handoffReason` with no parent —
+    //   the mystery session D10 exists to prevent, with nothing to caption and
+    //   nothing for `makit tree` to nest.
+    //
+    // Both paths are bounded identically below: a stated parent must exist, and
+    // the depth/fan-out guard is recomputed from persisted lineage either way, so
+    // the CLI is not a way around the anti-runaway limit.
+    const principal = ctx.client.principal;
+    const bodyParentId = ctx.env.parentId ? String(ctx.env.parentId) : undefined;
+    const handoffReason = ctx.env.handoffReason ? String(ctx.env.handoffReason) : undefined;
+    let parentId: string | undefined;
+    let origin: SessionOrigin;
+    if (isAgentScoped(principal)) {
+      parentId = principal!.sessionId!;
+      if (bodyParentId !== undefined && bodyParentId !== parentId) {
+        ctx.err(
+          WireErrorCode.BadRequest,
+          "session.spawn parentId is derived from the calling session and cannot name a different session",
+        );
+        return;
+      }
+      origin = "agent";
+      // SPEC-46 D9/T11: depth + live-child count are recomputed server-side from
+      // persisted lineage; the forgeable MAKIT_SPAWN_DEPTH is display-only.
+      const boundError = manager.checkSpawnBounds(parentId);
+      if (boundError) {
+        ctx.err(WireErrorCode.BadRequest, boundError);
+        return;
+      }
+    } else {
+      // The `client` cap marks the CLI (D2); a full-access principal (no caps)
+      // is the app/phone. This is the only app-vs-CLI signal the wire carries.
+      origin = principal?.caps?.includes("client") ? "cli" : "app";
+      parentId = bodyParentId;
+      if (parentId !== undefined) {
+        if (!manager.getSession(parentId)) {
+          ctx.err(WireErrorCode.BadRequest, `no such parent session: ${parentId}`);
+          return;
+        }
+        const boundError = manager.checkSpawnBounds(parentId);
+        if (boundError) {
+          ctx.err(WireErrorCode.BadRequest, boundError);
+          return;
+        }
+      }
+    }
     const projectId = String(ctx.env.projectId ?? "");
     const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
     // The worktree the client resolved (creating it first when the user asked
@@ -351,15 +460,153 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // the cached catalog by the manager (unknown ids/values dropped) and applied
     // at first-message launch.
     const configOptions = parseConfigPicks(ctx.env.configOptions);
+    // SPEC-46 D13: the approval policy may be RELAXED (`yolo`) only by a human
+    // credential. An agent setting `yolo` would be granting itself the
+    // unsupervised shell access the audience ladder exists to keep under a
+    // human's eye, so it is refused (not silently downgraded). A stricter
+    // policy from an agent is harmless and allowed; an unknown value is
+    // dropped so the session falls back to the default (`ask-on-risky`).
+    const VALID_POLICIES: readonly ApprovalPolicy[] = ["yolo", "ask-on-risky", "ask-always"];
+    const requestedPolicy = ctx.env.policy ? String(ctx.env.policy) : undefined;
+    if (requestedPolicy === "yolo" && isAgentScoped(principal)) {
+      ctx.err(
+        WireErrorCode.BadRequest,
+        "session.spawn policy 'yolo' may only be set by a human credential, not an agent token",
+      );
+      return;
+    }
+    const policy = VALID_POLICIES.includes(requestedPolicy as ApprovalPolicy)
+      ? (requestedPolicy as ApprovalPolicy)
+      : undefined;
     // New sessions are DRAFTS: the agent is deferred until the first
     // substantive message names the session (see send.message).
-    const newSession = await manager.spawnPendingSession(projectId, agent, worktreePath, branch, configOptions);
+    const newSession = await manager.spawnPendingSession(projectId, agent, worktreePath, branch, configOptions, {
+      parentId,
+      handoffReason,
+      origin,
+    }, policy);
     // wireSession is invoked via the manager's "sessionCreated" listener
     // registered above — don't call it explicitly or every event fans out
     // twice.
     broadcastSnapshots();
     void broadcastReposSnapshot();
     ctx.ack({ sessionId: newSession.id });
+  });
+
+  // SPEC-46 U4: session.fork — an adapter-native fork of a live session at its
+  // head (codex `thread/fork`). Deliberately NOT `handoff` (D6): a handoff
+  // carries a written manifest across harnesses, a fork is a high-fidelity
+  // branch of the same conversation, so it is gated on the adapter's own
+  // `fork` capability and refuses in a sentence that names the alternative
+  // where unsupported — an agent reading "fork: false" learns nothing about
+  // what to do instead.
+  r.register("session.fork", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const source = sid ? manager.getSession(sid) : undefined;
+    if (!source) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    // A fork needs a persisted rollout. A draft has never run, so there is
+    // literally nothing to fork — refuse in the same plain words the codex
+    // rollout precondition earns below, never a capability boolean an agent
+    // cannot act on.
+    const NO_ROLLOUT = `session ${sid} has not run a turn yet, so there is nothing to fork`;
+    if (source.pending) {
+      ctx.err(WireErrorCode.BadRequest, NO_ROLLOUT);
+      return;
+    }
+    // A cold session (rehydrated after a restart) carries a process-less
+    // placeholder adapter whose capabilities are all false, so judging `fork` off
+    // it slanders the harness: "codex cannot fork" about codex. Re-attach first,
+    // exactly as `send.message` does, then ask the real adapter. Cheap when the
+    // session is already live (`ensureLive` only acts on a detached adapter).
+    await manager.ensureLive(sid);
+    const live = manager.getSession(sid) ?? source;
+    const adapter = live.adapter;
+    if (!adapter.capabilities.fork || !adapter.forkSession) {
+      // D6's precise sentence: name the harness, why it cannot, and the way
+      // forward. The `pi-acp` half is named only for pi, which genuinely runs
+      // under that bridge — deriving "<agent>-acp" for every harness would cite a
+      // binary that does not exist ("stub-acp", "codex-acp"), which a user can
+      // neither act on nor search for.
+      const because =
+        live.agent === "pi"
+          ? "pi-acp advertises no `session/fork`"
+          : "its back end advertises no native fork";
+      ctx.err(
+        WireErrorCode.BadRequest,
+        `${live.agent} cannot fork: ${because} — use \`makit handoff\` instead`,
+      );
+      return;
+    }
+    // The child runs on the SOURCE's harness, always. A native fork is a
+    // continuation of *that* back end's thread, so the thread id is only
+    // meaningful to it — handing a codex thread to pi produced a child that was
+    // created successfully and could never start (`session/load: Invalid params`).
+    // Moving harness is what `handoff` is for (D6), which is why a differing
+    // `--agent` is refused rather than honoured. (The spec's grammar listed
+    // `fork [--agent A]`; that is only coherent as "the same harness", so the
+    // flag survives as a no-op and a mismatch is an error.)
+    //
+    // Checked BEFORE the fork, with the depth guard and for the same reason: a
+    // forked thread whose session is never created is unreachable by any verb.
+    const wantedAgent = ctx.env.agent ? String(ctx.env.agent) : undefined;
+    if (wantedAgent !== undefined && wantedAgent !== live.agent) {
+      ctx.err(
+        WireErrorCode.BadRequest,
+        `cannot fork a ${source.agent} session onto ${wantedAgent}: a native fork continues the same ` +
+          `back end's thread — use \`makit handoff --to ${wantedAgent}\` to change harness`,
+      );
+      return;
+    }
+    // A fork IS a spawn (D9): apply the depth/fan-out guard BEFORE forking, so a
+    // refused fork never leaves an orphan thread behind on the back end.
+    const boundError = manager.checkSpawnBounds(sid);
+    if (boundError) {
+      ctx.err(WireErrorCode.BadRequest, boundError);
+      return;
+    }
+    let forked: { agentSessionId: string };
+    try {
+      forked = await adapter.forkSession();
+    } catch (e) {
+      // The rollout precondition (codex `-32600`) is an expected refusal, said
+      // in plain words; anything else is a real transport bug and keeps its
+      // message so it does not masquerade as a graceful "nothing to fork".
+      if (e instanceof ForkPreconditionError) {
+        ctx.err(WireErrorCode.BadRequest, NO_ROLLOUT);
+        return;
+      }
+      throw e;
+    }
+    // Lineage: the source IS the parent, and `handoffReason` stays unset — a
+    // fork is not a handoff (D10). Origin follows the credential exactly as a
+    // spawn does. The child adopts the forked thread through the resume path
+    // (resumeAgentSessionId → the adapter's `thread/resume` at promotion), not
+    // a fresh launch.
+    const principal = ctx.client.principal;
+    const origin: SessionOrigin = isAgentScoped(principal)
+      ? "agent"
+      : principal?.caps?.includes("client")
+        ? "cli"
+        : "app";
+    const agent = live.agent;
+    const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
+    const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;
+    const child = await manager.spawnPendingSession(
+      live.projectId,
+      agent,
+      worktreePath,
+      branch,
+      undefined,
+      { parentId: sid, origin },
+      undefined,
+      forked.agentSessionId,
+    );
+    broadcastSnapshots();
+    void broadcastReposSnapshot();
+    ctx.ack({ sessionId: child.id });
   });
 
   r.register("agents.list", async (ctx) => {

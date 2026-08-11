@@ -128,7 +128,7 @@ Widget chatItemWidget(
   ),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
   // SPEC-47 D9: the dim line that closes a turn. Static text derived from
-  // timestamps, so it renders identically in an archived transcript (D19).
+  // timestamps, so it renders identically in a closed transcript (D19).
   TurnReceiptItem() => TurnReceipt(item: item),
   // An image/GIF the agent produced (SPEC-22) — the one thing a terminal
   // client can't show. Rendered inline, tap for fullscreen.
@@ -292,6 +292,7 @@ class ThinkingLine extends ConsumerWidget {
               textWidget,
               onLeadingTap: toggle,
               durationLabel: _durationLabel(context, ref),
+              expanded: true,
             ),
           )
         : InkWell(
@@ -309,12 +310,16 @@ class ThinkingLine extends ConsumerWidget {
     Widget textWidget, {
     VoidCallback? onLeadingTap,
     Widget? durationLabel,
+    bool expanded = false,
   }) {
     final cs = Theme.of(context).colorScheme;
+    // Size and alpha come from the shared row tokens, not literals: the tool row
+    // was asked to match this glyph exactly, and one constant is the only way
+    // that survives a future tweak to either row.
     Widget leading = Icon(
       PhosphorIconsLight.brain,
-      size: 15,
-      color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+      size: kToolGlyph,
+      color: cs.onSurfaceVariant.withValues(alpha: kToolGlyphAlpha),
     );
     if (onLeadingTap != null) {
       leading = GestureDetector(
@@ -328,12 +333,32 @@ class ThinkingLine extends ConsumerWidget {
       children: [
         leading,
         const SizedBox(width: kSpace6),
-        // D7: the duration leads — a thinking row's only structured fact.
-        if (durationLabel != null) ...[
-          durationLabel,
-          const SizedBox(width: kSpace6),
+        // Folded, the label and the one-line preview share the row: the
+        // duration leads (D7) and the preview trails it, ellipsised.
+        //
+        // Unfolded, the reasoning is a paragraph, not a trailing fragment.
+        // Keeping it on the label's line would indent every wrapped line around
+        // a word that only belongs to the first one and cost the paragraph the
+        // label's width, so the label takes its own line and the text starts
+        // fresh beneath it — flush left with the label, under the icon's gutter.
+        if (durationLabel != null && expanded)
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                durationLabel,
+                const SizedBox(height: kSpace2),
+                textWidget,
+              ],
+            ),
+          )
+        else ...[
+          if (durationLabel != null) ...[
+            durationLabel,
+            const SizedBox(width: kSpace6),
+          ],
+          Expanded(child: textWidget),
         ],
-        Expanded(child: textWidget),
       ],
     );
   }
