@@ -16,6 +16,7 @@
 import { createInterface, type Interface } from "node:readline";
 import { renderEvent, type RenderState } from "./render.js";
 import { connectCli } from "./connect.js";
+import { parseFlags, str, int, bool } from "./flags.js";
 
 interface AttachArgs {
   host: string;
@@ -26,16 +27,20 @@ interface AttachArgs {
 }
 
 function parseAttachArgs(argv: string[]): AttachArgs {
-  const a: AttachArgs = { host: "127.0.0.1", port: 7777, spawn: false };
-  for (let i = 0; i < argv.length; i++) {
-    const t = argv[i]!;
-    if (t === "--port") a.port = Number(argv[++i]);
-    else if (t === "--host") a.host = String(argv[++i]);
-    else if (t === "--new") a.spawn = true;
-    else if (t === "--project") a.projectId = String(argv[++i]);
-    else if (!t.startsWith("--")) a.sessionId = t;
-  }
-  return a;
+  const p = parseFlags(argv, {
+    host: { type: "string", def: "127.0.0.1" },
+    port: { type: "int", def: 7777 },
+    new: { type: "bool" },
+    project: { type: "string" },
+  });
+  return {
+    host: str(p, "host")!,
+    port: int(p, "port")!,
+    // The last positional wins, as this verb has always done.
+    sessionId: p.positionals.at(-1),
+    spawn: bool(p, "new"),
+    projectId: str(p, "project"),
+  };
 }
 
 interface SessionDTO {

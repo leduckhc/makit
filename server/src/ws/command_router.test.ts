@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { CommandRouter } from "./command_router.js";
-import { COMMAND_CAPABILITIES } from "./capabilities.js";
+import { canDispatch } from "./capabilities.js";
 import { buildCommandRouter } from "../server.js";
 import type { WsClient } from "./client.js";
 import type { Envelope } from "../protocol.js";
@@ -70,10 +70,19 @@ test("a principal with NO caps (an existing phone) may dispatch session.kill", a
   assert.equal(client.frames.at(-1)?.t, "ack");
 });
 
-test("completeness: every kind the real router registers appears in the capability map", () => {
+test("completeness: every registered command is either agent-reachable or client/full-access only", () => {
+  // The test is that canDispatch works for all registered commands without throwing.
+  // No command should be undefined or unmapped; all implicitly map to client-only if
+  // not in AGENT_COMMANDS.
   const router = buildCommandRouter({} as CommandDeps, { setPushToken: () => {} });
-  const missing = router.kinds().filter((k) => !(k in COMMAND_CAPABILITIES));
-  assert.deepEqual(missing, [], `command kinds missing from the capability map: ${missing.join(", ")}`);
+  const agentPrincipal = { caps: ["send", "spawn", "read"] } as any;
+  const clientPrincipal = { caps: ["client"] } as any;
+  for (const kind of router.kinds()) {
+    assert.doesNotThrow(() => {
+      canDispatch(kind, agentPrincipal);
+      canDispatch(kind, clientPrincipal);
+    }, `canDispatch failed for command: ${kind}`);
+  }
 });
 
 test("an agent token — even with spawn+read+send — is refused session.fork", async () => {

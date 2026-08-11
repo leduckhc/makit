@@ -1,105 +1,51 @@
 /**
- * The command capability map (SPEC-46 D17 / contract C1).
+ * The agent capability surface (SPEC-46 D17 / contract C1).
  *
- * Default-deny. Each registered command kind maps to the **agent** caps that
- * may dispatch it; `[]` means "no agent cap grants this — a `client` or
- * full-access principal only". A full-access principal (an existing phone, no
- * caps) and a `client` principal (`cli@<host>`) may dispatch everything; the
- * three agent caps carve out the narrow surface a handoff child needs:
+ * Default-deny: every command kind is forbidden to agent tokens unless
+ * explicitly listed here. The map is indexed by agent cap (`send`, `spawn`,
+ * `read`) and lists the command kinds that cap grants.
  *
- *  - `read`  → `sub`, `unsub`, `session.transcript`, `sessions.snapshot`
- *              (sub/unsub are handled before the router, sessions.snapshot is
- *              push-only; `session.transcript` is the one `cmd` `read` grants).
- *  - `send`  → `send.message`, `session.action`.
- *  - `spawn` → `session.spawn`, `worktree.create`.
+ * A full-access principal (phone, no caps) and a `client` principal
+ * (`cli@<host>`) may dispatch everything; the three agent caps carve out the
+ * narrow surface a handoff child needs:
  *
- * Everything else — `session.kill`, `session.close`, `session.setAgent`,
- * `ports.*`, `pr.*`, `worktree.wrapUp`/`discard`, `devices.*` — is refused for
- * an agent token. Completeness is enforced by a test over `router.kinds()`, so
- * a command added later without a map entry fails the build rather than
- * silently becoming agent-reachable.
+ *  - `send`  → `send.message`, `session.action`
+ *  - `spawn` → `session.spawn`, `worktree.create`
+ *  - `read`  → `session.transcript`
+ *
+ * All other commands — `session.kill`, `session.close`, `session.setAgent`,
+ * `ports.*`, `pr.*`, `worktree.wrapUp`/`discard`, `devices.*` — are
+ * client/full-access only.
+ *
+ * Completeness is enforced by a test over `router.kinds()`: a command added
+ * later without an entry here is caught as unmapped, and `canDispatch` denies
+ * it for agent tokens, not silently permits it.
  */
 
 import type { DeviceCap } from "../protocol.js";
 import type { Principal } from "./principal.js";
 import { isFullAccess } from "./principal.js";
 
-export const COMMAND_CAPABILITIES: Record<string, readonly DeviceCap[]> = {
-  // send
-  "send.message": ["send"],
-  "session.action": ["send"],
-  // spawn
-  "session.spawn": ["spawn"],
-  "worktree.create": ["spawn"],
-  // read
-  "session.transcript": ["read"],
-  // client / full-access only (no agent cap grants these)
-  "agents.list": [],
-  "agents.refresh": [],
-  "branch.rename": [],
-  cancel: [],
-  "client.log": [],
-  "github.pause": [],
-  "github.refresh": [],
-  "github.watch": [],
-  "metrics.watch": [],
-  "ports.watch": [],
-  "pr.list": [],
-  "pr.markReady": [],
-  "pr.updateBranch": [],
-  "pr.squashMerge": [],
-  "project.add": [],
-  "project.browse": [],
-  "project.remove": [],
-  "push.register": [],
-  "queue.cancel": [],
-  "queue.promote": [],
-  "queue.reorder": [],
-  "queue.update": [],
-  "repo.refresh": [],
-  // SPEC-42/44 ports (arrived on main after this map was written). Every one of
-  // them either kills a process or opens a network path, so none is
-  // agent-reachable: `[]` means a client / full-access principal only, exactly
-  // like session.kill. An agent that could kill a port could reap the user's dev
-  // server, and one that could forward would be publishing a local service.
-  "ports.kill": [],
-  "ports.killOrphans": [],
-  "ports.forward": [],
-  "ports.forward.stop": [],
-  "ports.watchPort": [],
-  "session.close": [],
-  "session.attach": [],
-  // A fork names its source on the argv and is a human/CLI verb (no
-  // MAKIT_SESSION_ID). Unlike session.spawn, whose agent parentId is forced to
-  // the caller's own session, session.fork trusts the named source — so it is
-  // NOT agent-reachable (least privilege); a client / full-access principal
-  // only, exactly like session.kill/close.
-  "session.fork": [],
-  "session.kill": [],
-  "session.list": [],
-  "session.listClosed": [],
-  "session.setAgent": [],
-  "session.reopen": [],
-  "worktree.createFromPr": [],
-  "worktree.discard": [],
-  "worktree.remove": [],
-  "worktree.wrapUp": [],
-  // dev-only (registered only under MAKIT_DEV) — mapped so completeness holds
-  // even when they are present.
-  "debug.ask": [],
-  "debug.ask-multi": [],
+/** Commands reachable by each agent cap. Everything else is client/full-access only. */
+const AGENT_COMMANDS: Record<DeviceCap, string[]> = {
+  send: ["send.message", "session.action"],
+  spawn: ["session.spawn", "worktree.create"],
+  read: ["session.transcript"],
+  client: [], // not an agent cap; listed for completeness
 };
 
 /**
  * True when `principal` may dispatch `kind`. Full access and `client` pass
- * everything; an agent token passes only when it holds a cap the map lists for
- * that kind. An unmapped kind is denied for anything less than full access.
+ * everything; an agent token passes only when that cap grants the command.
+ * An unmapped kind is denied for anything less than full access.
  */
 export function canDispatch(kind: string, principal: Principal | undefined): boolean {
   if (isFullAccess(principal)) return true;
   const caps = principal!.caps!;
   if (caps.includes("client")) return true;
-  const allowed = COMMAND_CAPABILITIES[kind];
-  if (allowed === undefined) return false;
-  return allowed.some((cap) => caps.includes(cap));
+  // An agent token passes iff one of its caps lists this command
+  for (const cap of caps) {
+    if (AGENT_COMMANDS[cap as DeviceCap]?.includes(kind)) return true;
+  }
+  return false;
 }

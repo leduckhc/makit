@@ -44,19 +44,15 @@ export function failAuth(message: string): never {
 }
 
 export async function connectCli(args: ConnectArgs): Promise<MakitClient> {
-  // Before anything is probed or dialled. Every verb parses these two flags the
-  // same way (`Number(argv[++i])`, `String(argv[++i])`), so a trailing `--port`
-  // yields NaN and a trailing `--host` the literal string "undefined" — which
-  // then failed as a *connection* error (exit 4, "your credential is the
-  // problem") for what is plainly a typo. One check here beats fifty-odd bounds
-  // checks at the parse sites, and it catches `--port abc` as well as a missing
-  // value.
+  // A missing or non-numeric value is now rejected where it belongs, by the
+  // shared parser, so what is left here is the part parsing cannot know: the
+  // range. `--port 0` and `--port 70000` are numbers and still unusable.
   if (!Number.isInteger(args.port) || args.port < 1 || args.port > 65535) {
     console.error(`[makit] --port must be a number in 1..65535, got: ${args.port}`);
     return process.exit(EXIT_USAGE);
   }
-  if (args.host.length === 0 || args.host === "undefined") {
-    console.error(`[makit] --host needs a value, got: ${JSON.stringify(args.host)}`);
+  if (args.host.length === 0) {
+    console.error("[makit] --host needs a value");
     return process.exit(EXIT_USAGE);
   }
 

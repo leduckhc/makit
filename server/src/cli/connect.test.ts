@@ -154,12 +154,15 @@ test("a port outside 1..65535 is exit 2", async () => {
   }
 });
 
-test("an empty or literal-undefined host is exit 2", async () => {
-  for (const host of ["", "undefined"]) {
-    const r = await captureCli(async () => {
-      await connectCli({ host, port: 7777 });
-    });
-    assert.equal(r.code, 2, `host ${JSON.stringify(host)}: ${r.err}`);
-    assert.match(r.err, /--host/);
-  }
+test("an empty host is exit 2", async () => {
+  // Only the empty case lives here now. The old guard also rejected the literal
+  // string "undefined", which was never something a user typed — it was the
+  // *parsing bug's* output, and `parseFlags` rejects a valueless `--host` at
+  // source. Keeping the sentinel would have been a check on a shape that can no
+  // longer occur.
+  const r = await captureCli(async () => {
+    await connectCli({ host: "", port: 7777 });
+  });
+  assert.equal(r.code, 2, r.err);
+  assert.match(r.err, /--host/);
 });
