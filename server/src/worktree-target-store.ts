@@ -176,6 +176,11 @@ export function putTarget(
  * Writes only when something changed, so a rename of an untargeted branch does
  * not churn the file.
  *
+ * Returns how many moved, or **`null` when the write was refused** — `0` alone
+ * could not distinguish "nothing pointed at the old name" (a success) from "the
+ * store is not writable" (a silent divergence, where every dependent worktree
+ * keeps aiming at a branch name that no longer exists).
+ *
  * [scope], when given, restricts the rewrite to those worktree paths. The store
  * is GLOBAL across every project, and branch names are not unique across repos,
  * so a caller renaming a branch in one repo must pass its own worktree paths or
@@ -186,7 +191,7 @@ export function renameTargetBranch(
   oldName: string,
   newName: string,
   scope?: ReadonlySet<string>,
-): number {
+): number | null {
   if (!oldName || !newName || oldName === newName) return 0;
   const all = loadTargets(file);
   let moved = 0;
@@ -196,12 +201,7 @@ export function renameTargetBranch(
     all[path] = { ...entry, target: newName };
     moved++;
   }
-  if (moved > 0 && !saveTargets(file, all)) {
-    // The rename could not be persisted: report zero moved so the caller does not
-    // trust an on-disk change that did not land (the affected worktrees still
-    // point at the old, now-deleted branch name).
-    return 0;
-  }
+  if (moved > 0 && !saveTargets(file, all)) return null;
   return moved;
 }
 

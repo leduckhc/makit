@@ -972,7 +972,14 @@ export class SessionManager extends EventEmitter {
     // unique across repos, so an unscoped rewrite would drag along a same-named
     // target in an unrelated repo.
     const scope = new Set(trees.map((t) => resolve(t.path)));
-    renameTargetBranch(worktreeTargetsFile(), oldName, newName, scope);
+    if (renameTargetBranch(worktreeTargetsFile(), oldName, newName, scope) === null) {
+      // git already renamed the branch, so this cannot fail the operation. Log it:
+      // every worktree that landed in `oldName` still has that name on disk, and
+      // will read as `targetResolved: false` until the store is writable again.
+      log.warn(
+        `[makit] renamed ${oldName} -> ${newName} but could not persist the worktree targets aiming at it (store not writable)`,
+      );
+    }
   }
 
   /**

@@ -402,3 +402,34 @@ test("putTarget without `expect` is an unconditional write (interactive path)", 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("renameTargetBranch honours `scope`, leaving other repos' same-named targets", () => {
+  // The store is global and branch names are not unique across repos, so a rename
+  // in one repo must not rewrite an identically-named target in another.
+  const { dir, file } = tmpFile();
+  try {
+    putTarget(file, "/repo-a/wt", "develop");
+    putTarget(file, "/repo-b/wt", "develop");
+    const moved = renameTargetBranch(file, "develop", "main", new Set(["/repo-a/wt"]));
+    assert.equal(moved, 1, "only the in-scope worktree moves");
+    assert.equal(targetOf(file, "/repo-a/wt"), "main");
+    assert.equal(targetOf(file, "/repo-b/wt"), "develop", "the other repo is untouched");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("renameTargetBranch returns null (not 0) when the write is refused", () => {
+  // `0` means "nothing pointed at the old name" — a success. A refused write must
+  // be distinguishable, or the caller acks a rename that never reached disk.
+  const { dir } = tmpFile();
+  try {
+    const blocker = join(dir, "blocker");
+    writeFileSync(blocker, "not a directory");
+    const file = join(blocker, "sub", "worktree-targets.json");
+    // Nothing is stored (the store is unreadable), so nothing matches -> 0, not null.
+    assert.equal(renameTargetBranch(file, "a", "b"), 0, "no candidates is still a success");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
