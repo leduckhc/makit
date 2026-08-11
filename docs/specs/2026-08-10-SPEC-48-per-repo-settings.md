@@ -360,3 +360,30 @@ return to `Auto`.
 a git repo and re-run detection, and getting that wrong silently detaches a project from its sessions.
 The provider choice is **stored and served but does not yet re-route** — `D3″` demands it drive routing,
 auth lookup and PR rendering, which is P2. Lifecycle scripts remain P3 behind `D13`.
+
+
+### The live proof the tests could not give
+
+A throwaway probe over the real machine — two real `git init` repos, a real
+`projects.json`, a real `SessionManager`, and a real `git worktree add`:
+
+```
+settings survived the round trip                     PASS
+an unknown key survived too                          PASS
+the untouched repo stays two-key                     PASS
+repo A uses its override    /Users/le/.makit-e2e-trees-alpha
+repo B inherits             /Users/le/.worktrees
+A reports source=override, B reports source=default  PASS
+no token is ever on the wire                         PASS
+A's unknown key was not clobbered by B's write        PASS
+worktree created under the override
+   /Users/le/.makit-e2e-trees-alpha/makit-alpha-DAfwAT/feat-e2e
+...and not under the inherited root                  PASS
+```
+
+The last two are the point: the setting **moves where `git worktree add` writes**, which no unit test
+can establish. The probe was deleted; its temp repos and roots were removed.
+
+**Limitation it exposed:** the probe reloaded settings from the file rather than restarting the process.
+Reload is what a restart does, but a true restart would also re-run detection, so the `forge` field's
+behaviour across a restart is still unproven.
