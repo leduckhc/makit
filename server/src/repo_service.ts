@@ -92,14 +92,14 @@ async function repoSnapshot(dto: ProjectDTO, sessions: Session[]): Promise<RepoD
   // counts too: its worktree is resolved before the spawn, so it renders under
   // that worktree's row rather than in a separate UI bucket.
   //
-  // Archived sessions (SPEC-29) are NOT counted. The caller hands us
+  // Closed sessions (SPEC-29) are NOT counted. The caller hands us
   // `allSessions()`, which keeps them for fan-out and lookup, but they are hidden
   // from `listSessions()` and therefore from every client-side session list — so
   // their ids resolved to nothing in the consumers that map this field to session
   // rows, and SPEC-38's wrap-up brief counted them as work left behind.
   const sessionsByPath = new Map<string, string[]>();
   for (const s of sessions) {
-    if (s.projectId !== dto.id || s.archived) continue;
+    if (s.projectId !== dto.id || s.closed) continue;
     const key = s.boundWorktreePath ?? repoPath;
     const list = sessionsByPath.get(key) ?? [];
     list.push(s.id);

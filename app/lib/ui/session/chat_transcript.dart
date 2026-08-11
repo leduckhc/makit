@@ -128,7 +128,7 @@ Widget chatItemWidget(
   ),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
   // SPEC-47 D9: the dim line that closes a turn. Static text derived from
-  // timestamps, so it renders identically in an archived transcript (D19).
+  // timestamps, so it renders identically in a closed transcript (D19).
   TurnReceiptItem() => TurnReceipt(item: item),
   // An image/GIF the agent produced (SPEC-22) — the one thing a terminal
   // client can't show. Rendered inline, tap for fullscreen.

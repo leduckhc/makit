@@ -240,7 +240,7 @@ void main() {
       tester,
     ) async {
       // Membership is filtered against the live session list, so a board left
-      // holding only archived ids must not claim to have agents.
+      // holding only closed ids must not claim to have agents.
       final c = _container(
         groups: [
           _board('b1', ['gone-1', 'gone-2']),

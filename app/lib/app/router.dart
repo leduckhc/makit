@@ -8,7 +8,7 @@ import '../pairing/onboarding_controller.dart';
 import '../pairing/onboarding_screen.dart';
 import '../pairing/readiness.dart';
 import '../ui/docs/docs_screen.dart';
-import '../ui/home/archived_screen.dart';
+import '../ui/home/closed_screen.dart';
 import '../ui/home/home_screen.dart';
 import '../ui/ports/ports_screen.dart';
 import '../ui/session/session_screen.dart';
@@ -58,10 +58,7 @@ final routerProvider = Provider<GoRouter>((ref) {
                 path: 'settings',
                 builder: (_, _) => const SettingsScreen(),
               ),
-              GoRoute(
-                path: 'archived',
-                builder: (_, _) => const ArchivedScreen(),
-              ),
+              GoRoute(path: 'closed', builder: (_, _) => const ClosedScreen()),
               GoRoute(
                 path: 'ports',
                 builder: (_, s) =>

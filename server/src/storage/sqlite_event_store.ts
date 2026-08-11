@@ -39,7 +39,7 @@ export class SqliteEventStore implements EventStore {
         agent_session_id TEXT,
         branch         TEXT,
         worktree_path  TEXT,
-        archived       INTEGER NOT NULL DEFAULT 0
+        closed       INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS events (
         session_id TEXT NOT NULL,
@@ -66,8 +66,15 @@ export class SqliteEventStore implements EventStore {
     if (!cols.some((c) => c.name === "worktree_path")) {
       this.db.exec("ALTER TABLE sessions ADD COLUMN worktree_path TEXT");
     }
-    if (!cols.some((c) => c.name === "archived")) {
-      this.db.exec("ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
+    // SPEC-29 close/reopen: the flag was called `archived` before sessions grew a
+    // real close (release the agent, keep the session). RENAME rather than add,
+    // so sessions a user had already closed stay closed across the upgrade —
+    // adding a fresh column would silently return every one of them to the
+    // active list and respawn its agent on the next subscribe.
+    if (cols.some((c) => c.name === "archived") && !cols.some((c) => c.name === "closed")) {
+      this.db.exec("ALTER TABLE sessions RENAME COLUMN archived TO closed");
+    } else if (!cols.some((c) => c.name === "closed")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN closed INTEGER NOT NULL DEFAULT 0");
     }
   }
 
@@ -105,7 +112,7 @@ export class SqliteEventStore implements EventStore {
     this.db
       .prepare(
         `INSERT INTO sessions
-           (id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, agent_session_id, branch, worktree_path, archived)
+           (id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, agent_session_id, branch, worktree_path, closed)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            project_id = excluded.project_id,
@@ -119,7 +126,7 @@ export class SqliteEventStore implements EventStore {
            agent_session_id = excluded.agent_session_id,
            branch = excluded.branch,
            worktree_path = excluded.worktree_path,
-           archived = excluded.archived`,
+           closed = excluded.closed`,
       )
       .run(
         m.id,
@@ -135,14 +142,14 @@ export class SqliteEventStore implements EventStore {
         m.agentSessionId ?? null,
         m.branch ?? null,
         m.worktreePath ?? null,
-        m.archived ? 1 : 0,
+        m.closed ? 1 : 0,
       );
   }
 
   loadSessions(): SessionMeta[] {
     const rows = this.db
       .prepare(
-        `SELECT id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, agent_session_id, branch, worktree_path, archived
+        `SELECT id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, agent_session_id, branch, worktree_path, closed
          FROM sessions ORDER BY last_activity_at DESC`,
       )
       .all() as Array<Record<string, unknown>>;
@@ -160,7 +167,7 @@ export class SqliteEventStore implements EventStore {
       agentSessionId: (r.agent_session_id as string | null) ?? undefined,
       branch: (r.branch as string | null) ?? undefined,
       worktreePath: (r.worktree_path as string | null) ?? undefined,
-      archived: Number(r.archived ?? 0) === 1,
+      closed: Number(r.closed ?? 0) === 1,
     }));
   }
 

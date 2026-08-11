@@ -18,7 +18,7 @@ const kRouteRoot = '/';
 const kRouteRepos = '/repos';
 
 const kRouteSettings = '$kRouteRepos/settings';
-const kRouteArchived = '$kRouteRepos/archived';
+const kRouteClosed = '$kRouteRepos/closed';
 const kRouteDiagnostics = '$kRouteRepos/diagnostics';
 
 /// The Activity feed (SPEC-48) — every outcome the app has reported, with the

@@ -3,7 +3,7 @@
 /// Pure functions and value types only: no widgets, no provider reads, so the
 /// screen's visible-set logic is testable without a container (the same split
 /// as [portsForWorktree] in `store/ports.dart`). The repo/worktree lookup reads
-/// [ReposState] the way `archived_screen.dart` groups by repo.
+/// [ReposState] the way `closed_screen.dart` groups by repo.
 library;
 
 import '../../store/models.dart';

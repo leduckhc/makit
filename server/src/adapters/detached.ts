@@ -41,6 +41,9 @@ export class DetachedAdapter extends EventEmitter implements AgentAdapter {
 
   async cancel(): Promise<void> {}
 
+  /** Nothing to release: the agent process is already gone (SPEC-29). */
+  async close(): Promise<void> {}
+
   async kill(): Promise<void> {
     this.emit("exit", null);
   }

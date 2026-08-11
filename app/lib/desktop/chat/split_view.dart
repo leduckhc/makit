@@ -92,7 +92,7 @@ GroupConversion? dropSessionIntoActiveGroup(
 }) {
   final active = ref.read(groupsControllerProvider).active;
   final session = ref.read(sessionsProvider).byId(sessionId);
-  // The session can be archived between the drag starting and the drop landing.
+  // The session can be closed between the drag starting and the drop landing.
   // There is then nothing to add and nothing to show: opening a tab for it would
   // put a pane on the canvas bound to a session the server no longer has, which
   // is the dead tile decision 6 forbids.
@@ -598,7 +598,7 @@ class _TabChip extends ConsumerWidget {
               color: active ? cs.onSurface : cs.onSurfaceVariant,
               icon: const Icon(PhosphorIconsLight.x),
               onPressed: () =>
-                  closeTabAndArchive(ref, split.id, tab.id, tab.sessionId),
+                  closeTabAndSession(ref, split.id, tab.id, tab.sessionId),
             ),
           ],
         ),

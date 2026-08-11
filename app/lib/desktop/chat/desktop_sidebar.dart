@@ -22,7 +22,7 @@ import '../desktop_ports_route.dart';
 import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
 import '../metrics/metrics_button.dart';
-import 'archived_sidebar_view.dart';
+import 'closed_sidebar_view.dart';
 import 'connection_endpoint.dart';
 import 'github_budget_button.dart';
 import 'groups/group.dart';
@@ -52,7 +52,7 @@ class DesktopSidebar extends ConsumerWidget {
     final repos = ref.watch(reposProvider).repos;
     final sessions = ref.watch(sessionsProvider);
     final selected = ref.watch(selectedSessionProvider);
-    final archived = ref.watch(sidebarArchivedProvider);
+    final closed = ref.watch(sidebarClosedProvider);
     final cs = Theme.of(context).colorScheme;
 
     return Material(
@@ -61,8 +61,8 @@ class DesktopSidebar extends ConsumerWidget {
         children: [
           const _Header(),
           Expanded(
-            child: archived
-                ? const ArchivedSidebarView()
+            child: closed
+                ? const ClosedSidebarView()
                 : repos.isEmpty
                 ? const _EmptySidebar()
                 : ListView(
@@ -152,7 +152,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
     // truly dead ones. A cold, RESUMABLE session (e.g. every session right
     // after a server restart, before re-attach) stays visible so it remains
     // discoverable and can be reopened (it auto-attaches on subscribe).
-    // Archived sessions live in the Archived view. Drafts + live sessions stay.
+    // Closed sessions live in the Closed view. Drafts + live sessions stay.
     final sessions = widget.sessions
         .where((s) => s.status != SessionStatus.exited || s.resumable)
         .toList();
@@ -1249,8 +1249,7 @@ class _Footer extends ConsumerWidget {
     final server = ref.watch(connectionProvider).server;
     final endpoint = formatEndpoint(server?.host, server?.port);
     final theme = Theme.of(context);
-    final archived = ref.watch(sidebarArchivedProvider) as bool?;
-    final showArchived = archived ?? false;
+    final showClosed = ref.watch(sidebarClosedProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(
@@ -1288,20 +1287,20 @@ class _Footer extends ConsumerWidget {
             onPressed: () => showFolderBrowser(context),
           ),
           IconButton(
-            tooltip: showArchived
+            tooltip: showClosed
                 ? 'Show active sessions'
-                : 'Show archived sessions',
+                : 'Show closed sessions',
             icon: Icon(
-              showArchived
+              showClosed
                   ? PhosphorIconsLight.stackSimple
-                  : PhosphorIconsLight.archiveBox,
+                  : PhosphorIconsLight.moon,
               size: 18,
             ),
-            color: showArchived ? theme.colorScheme.primary : null,
+            color: showClosed ? theme.colorScheme.primary : null,
             visualDensity: VisualDensity.compact,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: () => ref.read(sidebarArchivedProvider.notifier).state =
-                !showArchived,
+            onPressed: () =>
+                ref.read(sidebarClosedProvider.notifier).state = !showClosed,
           ),
           if (onOpenSettings != null)
             IconButton(

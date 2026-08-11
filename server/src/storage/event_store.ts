@@ -45,10 +45,10 @@ export interface SessionMeta {
   branch?: string;
   worktreePath?: string;
   /**
-   * Archived (SPEC-29): hidden from the active session list but kept + resumable
-   * and restorable via `session.unarchive`. Persisted so it survives a restart.
+   * Closed (SPEC-29): hidden from the active session list but kept + resumable
+   * and restorable via `session.reopen`. Persisted so it survives a restart.
    */
-  archived?: boolean;
+  closed?: boolean;
 }
 
 /** A new event to append: seq + sessionId are assigned/owned by the store. */

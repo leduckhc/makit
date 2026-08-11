@@ -149,7 +149,7 @@ void main() {
       expect(c.state.recentlyClosed, isEmpty, reason: 'consumed on reopen');
     });
 
-    test('filters members archived while the board was closed', () {
+    test('filters members closed while the board was closed', () {
       // A closed board is not live, so decision 6's unpin cannot reach it.
       final c = _with([
         _wt('g1', 'feat/x'),

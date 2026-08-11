@@ -50,6 +50,7 @@ import { log } from "../log.js";
  */
 const ACP_HANDSHAKE_TIMEOUT = 15_000;
 
+
 export interface AcpSpawnSpec {
   /** makit agent label surfaced in the session DTO ("pi", "codex", …). */
   agent: string;
@@ -498,6 +499,19 @@ export class AcpAdapter extends SubprocessAdapter {
     });
   }
 
+  /**
+   * ACP `session/close`: cancels any in-flight turn agent-side and frees the
+   * session's resources, leaving it listable/resumable. Plain request — a hung
+   * or rejecting agent is `SessionManager.closeSession`'s problem, and it bounds
+   * this call for every back end rather than each adapter re-implementing (and
+   * having to keep in step with) the same deadline.
+   */
+  async close(): Promise<void> {
+    if (!this.conn || !this.acpSessionId) return;
+    if (!this.capabilities.close || !this.conn.closeSession) return;
+    await this.conn.closeSession({ sessionId: this.acpSessionId });
+  }
+
   async kill(): Promise<void> {
     this.transport?.dispose();
     this.handleExit(null);
@@ -750,6 +764,7 @@ export function deriveAcpCapabilities(init: unknown): SessionCapabilities {
     delete: has(sc.delete),
     fork: has(sc.fork),
     archive: has(sc.archive),
+    close: has(sc.close),
   };
 }
 
