@@ -78,7 +78,11 @@ interface Run {
  */
 async function run(
   argv: string[],
-  opts: { projects?: unknown[]; worktree?: { path: string; branch: string | null } } = {},
+  opts: {
+    projects?: unknown[];
+    worktree?: { path: string; branch: string | null };
+    refuse?: { kind: string; message: string };
+  } = {},
 ): Promise<Run> {
   const cmds: Record<string, unknown>[] = [];
   const wt = opts.worktree ?? { path: "/tmp/repo-one-wt/fix-the-migration", branch: "fix-the-migration" };
@@ -88,6 +92,7 @@ async function run(
     sessions: [],
     onCmd: (m) => {
       cmds.push(m);
+      if (opts.refuse && m.kind === opts.refuse.kind) return { __err: opts.refuse.message };
       if (m.kind === "worktree.create") return { projectId: m.projectId, path: wt.path, branch: wt.branch };
       if (m.kind === "session.spawn") return { sessionId: "new-sid" };
       return {};
@@ -260,4 +265,43 @@ test("human output names the session and the branch it landed on", async () => {
   const r = await run(["-m", "fix the migration"]);
   assert.match(r.out, /new-sid/);
   assert.match(r.out, /fix-the-migration/);
+});
+
+// ---------------------------------------------------------------------------
+// A half-created session leaves no worktree behind
+//
+// `new` creates a worktree and *then* spawns, so every refusal of the spawn
+// leaves an orphan tree on disk. That refusal is not exotic: it is exactly what
+// D9's depth and fan-out bounds return, and the caller they were written for is
+// an agent in a retry loop — so the orphans accumulate one per attempt, on the
+// path the bound exists to make safe. `spawnFromArgs` is shared with `makit
+// run`, so both verbs inherit whatever this does.
+// ---------------------------------------------------------------------------
+
+test("a refused session.spawn removes the worktree it had just created", async () => {
+  const r = await run(["-m", "hello"], {
+    refuse: { kind: "session.spawn", message: "session s1 already has 4 live children" },
+  });
+  assert.equal(r.code, 1);
+  assert.match(r.err, /already has 4 live children/);
+  const removed = sent(r.cmds, "worktree.remove");
+  assert.ok(removed, "the worktree created for a session that never existed must be removed");
+  assert.equal(removed.worktreePath, "/tmp/repo-one-wt/fix-the-migration");
+  assert.equal(removed.projectId, "p1");
+});
+
+test("--here has no worktree to roll back, so a refused spawn removes nothing", async () => {
+  const r = await run(["-m", "hello", "--here"], {
+    refuse: { kind: "session.spawn", message: "spawn depth 3 reached" },
+  });
+  assert.equal(r.code, 1);
+  assert.equal(sent(r.cmds, "worktree.remove"), undefined, "the user's own checkout is not ours to remove");
+});
+
+test("a rollback that itself fails still reports the original refusal", async () => {
+  // The tree may be dirty or already gone; the spawn refusal is the news.
+  const r = await run(["-m", "hello"], {
+    refuse: { kind: "session.spawn", message: "spawn depth 3 reached" },
+  });
+  assert.match(r.err, /spawn depth 3 reached/);
 });

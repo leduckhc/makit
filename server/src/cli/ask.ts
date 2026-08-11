@@ -12,9 +12,10 @@
  * answer — a partial reply presented as the answer is worse than no reply, because
  * the caller cannot tell it was cut off.
  */
-import { connectCli } from "./connect.js";
+import { connectCli, failCommand } from "./connect.js";
 import { EXIT_USAGE } from "./exit-codes.js";
 import { awaitOutcome, codeForStatus } from "./wait.js";
+import { WireError, type MakitClient } from "./client.js";
 import type { SessionEvent } from "../protocol.js";
 
 export interface AskArgs {
@@ -55,7 +56,22 @@ export async function runAsk(argv: string[]): Promise<void> {
   const sessionId = args.sessionId;
 
   const client = await connectCli(args);
+  // A refused `send.message` arrives *after* the wait is armed, so the outcome
+  // promise is orphaned: no turn will start, so the edge never fires and `ask`
+  // waits forever on a question the server already declined — the hang D8 names
+  // for this verb, reached by the one route the snapshot check cannot see.
+  try {
+    await askOnce(client, sessionId, args);
+  } catch (e) {
+    if (e instanceof WireError) return failCommand(e);
+    throw e;
+  } finally {
+    client.close();
+  }
+}
 
+/** The check + send + wait body, so one `finally` owns the socket. */
+async function askOnce(client: MakitClient, sessionId: string, args: AskArgs): Promise<never | void> {
   // A session that is already blocked or gone cannot answer: the message would sit
   // in the queue, no turn would start, and with no default timeout `ask` would hang
   // — the exact failure D8 names for this verb. `wait` checks the snapshot before

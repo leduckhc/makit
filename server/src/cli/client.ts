@@ -29,8 +29,34 @@ export interface OpenClientOpts {
   host: string;
   port: number;
   bearer: string;
-  /** Verify the server cert. Defaults false: the CLI talks to loopback, self-signed. */
+  /**
+   * Verify the server cert. Defaults to {@link verifiesCert}: **off for
+   * loopback** (where the cert is self-signed and the peer is this machine),
+   * **on for anything else**.
+   */
   rejectUnauthorized?: boolean;
+}
+
+/**
+ * Whether the cert must be verified for `host`.
+ *
+ * The blanket `rejectUnauthorized: false` was justified by "the CLI talks to
+ * loopback, self-signed" — true of the default target, but `host` comes from
+ * `--host` argv, so the exemption silently covered every remote host as well.
+ * D11 makes remote a P3 feature that **pins the fingerprint the app pins**;
+ * until that exists, a remote target must fail loudly rather than connect with
+ * verification quietly disabled.
+ */
+export function verifiesCert(host: string, explicit?: boolean): boolean {
+  if (explicit !== undefined) return explicit;
+  return !isLoopback(host);
+}
+
+function isLoopback(host: string): boolean {
+  const h = host.replace(/^\[|\]$/g, "").toLowerCase();
+  if (h === "localhost" || h.endsWith(".localhost")) return true;
+  if (h === "::1" || h === "0:0:0:0:0:0:0:1") return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
 }
 
 export interface SessionsSnapshot {
@@ -92,20 +118,28 @@ export class AuthError extends Error {
 }
 
 type Pending = { resolve: (frame: Record<string, unknown>) => void; reject: (err: Error) => void };
+type Waiter<T> = { resolve: (value: T) => void; reject: (err: Error) => void };
 
 /** Open a WSS client, resolving once the socket is open (rejecting on connect error). */
 export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`wss://${opts.host}:${opts.port}`, {
-      rejectUnauthorized: opts.rejectUnauthorized ?? false,
+      rejectUnauthorized: verifiesCert(opts.host, opts.rejectUnauthorized),
     });
 
     const pending = new Map<string, Pending>();
     let helloPending: Pending | undefined;
     let snapshot: SessionsSnapshot | undefined;
-    let snapshotWaiter: ((s: SessionsSnapshot) => void) | undefined;
     let projects: ProjectDTO[] | undefined;
-    let projectsWaiter: ((p: ProjectDTO[]) => void) | undefined;
+    /**
+     * Snapshot/projects awaits are the only ones not keyed by a frame id, so
+     * they are the two `failAll` can silently skip — and an unsettled promise
+     * here holds an open handle, so the verb never reaches an exit code at all
+     * (D8). They are **lists** because a single slot would let a second caller
+     * overwrite the first's resolver and orphan it permanently.
+     */
+    const snapshotWaiters: Waiter<SessionsSnapshot>[] = [];
+    const projectsWaiters: Waiter<ProjectDTO[]>[] = [];
     let frameCb: ((frame: Record<string, unknown>) => void) | undefined;
     /**
      * Frames that arrived before a caller registered `onFrame`. `hello` is sent
@@ -127,6 +161,8 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
       helloPending = undefined;
       for (const p of pending.values()) p.reject(err);
       pending.clear();
+      for (const w of snapshotWaiters.splice(0)) w.reject(err);
+      for (const w of projectsWaiters.splice(0)) w.reject(err);
     };
 
     ws.on("message", (buf: Buffer) => {
@@ -170,13 +206,11 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
       }
       if (m.t === "event" && m.kind === "projects.snapshot") {
         projects = (m.projects as ProjectDTO[]) ?? [];
-        projectsWaiter?.(projects);
-        projectsWaiter = undefined;
+        for (const w of projectsWaiters.splice(0)) w.resolve(projects);
       }
       if (m.t === "event" && m.kind === "sessions.snapshot") {
         snapshot = { sessions: (m.sessions as SessionDTO[]) ?? [], frame: m };
-        snapshotWaiter?.(snapshot);
-        snapshotWaiter = undefined;
+        for (const w of snapshotWaiters.splice(0)) w.resolve(snapshot);
       }
       emit(m);
     });
@@ -196,26 +230,32 @@ export function openClient(opts: OpenClientOpts): Promise<MakitClient> {
             if (closed) return rej(new Error("client closed"));
             const id = `c${++seq}`;
             pending.set(id, { resolve: res, reject: rej });
-            ws.send(JSON.stringify({ v: 1, t: "cmd", id, kind, ...fields }));
+            // `fields` is spread FIRST so the protocol envelope always wins. Several
+            // verbs forward user-derived values (`text` from argv, a manifest an LLM
+            // wrote), and a key collision must not be able to rewrite `id` — which
+            // is how this reply is correlated — or `t`/`kind`, which is how it routes.
+            ws.send(JSON.stringify({ ...fields, v: 1, t: "cmd", id, kind }));
           });
         },
         awaitSnapshot() {
           if (snapshot) return Promise.resolve(snapshot);
           if (closed) return Promise.reject(new Error("client closed"));
-          return new Promise((res) => {
-            snapshotWaiter = res;
+          return new Promise((resolve, reject) => {
+            snapshotWaiters.push({ resolve, reject });
           });
         },
         awaitProjects() {
           if (projects) return Promise.resolve(projects);
           if (closed) return Promise.reject(new Error("client closed"));
-          return new Promise((res) => {
-            projectsWaiter = res;
+          return new Promise((resolve, reject) => {
+            projectsWaiters.push({ resolve, reject });
           });
         },
         send(frame, onSent) {
           if (!closed && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ v: 1, ...frame }), () => onSent?.());
+            // `v` last for the same reason `cmd` puts the envelope last: a frame
+            // body may carry caller-supplied keys.
+            ws.send(JSON.stringify({ ...frame, v: 1 }), () => onSent?.());
           } else {
             onSent?.();
           }

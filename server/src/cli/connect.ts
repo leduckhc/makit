@@ -16,7 +16,7 @@
 import { requireDaemon } from "./require-daemon.js";
 import { controlSocketPath } from "../daemon/paths.js";
 import { openClient, resolveBearer, AuthError, type MakitClient } from "./client.js";
-import { EXIT_AUTH } from "./exit-codes.js";
+import { EXIT_AUTH, EXIT_USAGE } from "./exit-codes.js";
 
 export interface ConnectArgs {
   host: string;
@@ -44,15 +44,33 @@ export function failAuth(message: string): never {
 }
 
 export async function connectCli(args: ConnectArgs): Promise<MakitClient> {
+  // Before anything is probed or dialled. Every verb parses these two flags the
+  // same way (`Number(argv[++i])`, `String(argv[++i])`), so a trailing `--port`
+  // yields NaN and a trailing `--host` the literal string "undefined" — which
+  // then failed as a *connection* error (exit 4, "your credential is the
+  // problem") for what is plainly a typo. One check here beats fifty-odd bounds
+  // checks at the parse sites, and it catches `--port abc` as well as a missing
+  // value.
+  if (!Number.isInteger(args.port) || args.port < 1 || args.port > 65535) {
+    console.error(`[makit] --port must be a number in 1..65535, got: ${args.port}`);
+    return process.exit(EXIT_USAGE);
+  }
+  if (args.host.length === 0 || args.host === "undefined") {
+    console.error(`[makit] --host needs a value, got: ${JSON.stringify(args.host)}`);
+    return process.exit(EXIT_USAGE);
+  }
+
   const control = await requireDaemon(controlSocketPath());
   let bearer: string;
   try {
     bearer = await resolveBearer(control);
   } catch (e) {
-    return failAuth((e as Error).message);
-  } finally {
+    // Closed before exiting: `failAuth` calls `process.exit`, which terminates
+    // synchronously, so the `finally` that used to hold this never ran.
     control.close();
+    return failAuth((e as Error).message);
   }
+  control.close();
 
   let client: MakitClient;
   try {

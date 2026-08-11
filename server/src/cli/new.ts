@@ -101,24 +101,39 @@ export async function spawnFromArgs(client: MakitClient, args: NewArgs): Promise
   // branch — which must be omitted rather than forwarded as null.
   let worktreePath = process.cwd();
   let branch: string | undefined;
+  let created = false;
   if (!args.here) {
-    const created = await client.cmd("worktree.create", {
+    const wt = await client.cmd("worktree.create", {
       projectId,
       branchName: args.branch ?? args.message,
       baseBranch: args.base,
     });
-    worktreePath = String(created.path);
-    branch = typeof created.branch === "string" ? created.branch : undefined;
+    worktreePath = String(wt.path);
+    branch = typeof wt.branch === "string" ? wt.branch : undefined;
+    created = true;
   }
 
-  const spawned = await client.cmd("session.spawn", {
-    projectId,
-    agent: args.agent,
-    worktreePath,
-    branch,
-    configOptions: args.configOptions.length ? args.configOptions : undefined,
-  });
-  return { sessionId: String(spawned.sessionId), worktreePath, branch };
+  try {
+    const spawned = await client.cmd("session.spawn", {
+      projectId,
+      agent: args.agent,
+      worktreePath,
+      branch,
+      configOptions: args.configOptions.length ? args.configOptions : undefined,
+    });
+    return { sessionId: String(spawned.sessionId), worktreePath, branch };
+  } catch (e) {
+    // The worktree exists but the session it was for never will — and a refusal
+    // here is not exotic: it is what D9's depth and fan-out bounds return, to a
+    // caller that is typically an agent retrying. Without this the orphan trees
+    // accumulate one per attempt, on the very path the bound exists to make
+    // safe. `--here` is the user's own checkout and is never ours to remove.
+    if (created) {
+      // A rollback that fails is not the news; the refusal is.
+      await client.cmd("worktree.remove", { projectId, worktreePath }).catch(() => {});
+    }
+    throw e;
+  }
 }
 
 export async function runNew(argv: string[]): Promise<void> {

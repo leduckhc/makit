@@ -28,12 +28,13 @@ interface Run {
 
 async function run(
   argv: string[],
-  opts: { err?: string; mediaId?: string } = {},
+  opts: { err?: string; mediaId?: string; mediaStall?: boolean } = {},
 ): Promise<Run & { uploads: { mime: string; auth?: string; bytes: number }[] }> {
   const cmds: Record<string, unknown>[] = [];
   const stub = await startStubWss({
     acceptBearer: "CACHED",
     mediaId: opts.mediaId,
+    mediaStall: opts.mediaStall,
     onCmd: (m) => {
       cmds.push(m);
       return opts.err ? { __err: opts.err } : {};

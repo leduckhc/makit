@@ -256,3 +256,28 @@ test("no server listening on the WSS port → exit 4", async () => {
     { control: true, bearer: "CACHED" },
   );
 });
+
+test("a refused session.listArchived is a sentence and exit 1, not an unhandled rejection", async () => {
+  // `ls` catches AuthError only, so a plain server refusal on this path escaped
+  // as a rejected promise: a node stack trace instead of the one-line refusal
+  // every other verb prints, and an exit code nothing chose.
+  const stub = await startStubWss({
+    acceptBearer: "CACHED",
+    sessions: SESSIONS,
+    onCmd: () => ({ __err: "archived sessions are unavailable while the store is compacting" }),
+  });
+  try {
+    await withHome(
+      async () => {
+        const { err, code, out } = await capture(["--archived", "--port", String(stub.port)]);
+        assert.equal(code, 1);
+        assert.match(err, /while the store is compacting/);
+        assert.doesNotMatch(err, /at .*\.ts:|node:internal/, "no stack trace");
+        assert.equal(out, "");
+      },
+      { control: true, bearer: "CACHED" },
+    );
+  } finally {
+    await stub.close();
+  }
+});

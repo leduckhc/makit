@@ -42,6 +42,12 @@ export interface StubWssOpts {
    */
   mediaId?: string;
   /**
+   * Accept `POST /media` and then never answer it — an overloaded or wedged
+   * server. The request is recorded on {@link StubWss.uploads} as usual, so a
+   * test can prove the upload was attempted and still timed out.
+   */
+  mediaStall?: boolean;
+  /**
    * Called for each `cmd` frame; returns the ack payload to merge into the
    * reply. Return `{ __err: "message" }` to answer with an `err` frame instead
    * (e.g. `no_such_session`), which is how a plain command failure is tested.
@@ -87,6 +93,7 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
       const body = Buffer.concat(chunks);
       const mime = String(req.headers["content-type"] ?? "");
       uploads.push({ mime, auth: req.headers.authorization, bytes: body.length });
+      if (opts.mediaStall) return; // accepted, never answered
       if (opts.mediaId === undefined) {
         res.writeHead(415, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "unsupported_media_type" }));

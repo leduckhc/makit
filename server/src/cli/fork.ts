@@ -64,14 +64,23 @@ export async function runFork(argv: string[]): Promise<void> {
       (s: SessionDTO) => s.id === args.sessionId,
     );
 
+    // A source we cannot read is refused outright. The server takes
+    // `worktreePath` at face value rather than re-deriving it from the source,
+    // so proceeding with `undefined` would fork a session that *is* resolvable
+    // server-side (an archived one, say) into a child with no tree at all —
+    // silently the opposite of the rule below.
+    if (!source) {
+      return failUsage(`cannot find session ${args.sessionId} in the snapshot — is it archived?`);
+    }
+
     // D15 inverse: inherit the source's tree, or take a fresh one on request.
     // Resolved from the snapshot the app itself reads, so the terminal cannot
     // drift from the phone. The server still verifies the path belongs to the
     // project (spawnPendingSession) and refuses an unknown source outright.
-    let worktreePath = source?.worktreePath;
-    let branch = source?.branch;
+    let worktreePath = source.worktreePath;
+    let branch = source.branch;
     if (args.freshWorktree) {
-      const projectId = source?.projectId;
+      const projectId = source.projectId;
       if (!projectId) {
         return failUsage(`cannot resolve the project of session ${args.sessionId} — is it still live?`);
       }

@@ -96,6 +96,16 @@ export async function respondToPrompt(args: RespondArgs, spec: RespondSpec): Pro
         // never one that merely arrived on this socket.
         if (m.sessionId !== sid) return;
         const kind = typeof m.kind === "string" ? m.kind : "";
+        // The id is what correlates the answer to the pending request. Taken
+        // unchecked, a frame without one produced a response whose `id` was
+        // dropped by JSON.stringify: the server could match it to nothing, so the
+        // answer vanished while the verb reported success — the human believes
+        // they approved a tool call that is still waiting.
+        const promptId = typeof m.id === "string" && m.id.length > 0 ? m.id : undefined;
+        if (promptId === undefined) {
+          fail("the pending prompt arrived without an id, so it cannot be answered");
+          return;
+        }
         // A session can have several prompts pending, and the replay order is not
         // ours to choose. Remember a kind we cannot answer and keep listening until
         // the grace window closes — failing on the first mismatch made arrival order
@@ -106,8 +116,10 @@ export async function respondToPrompt(args: RespondArgs, spec: RespondSpec): Pro
           return;
         }
         // Close only once the response is on the wire, so teardown does not
-        // terminate the socket before it flushes.
-        client.send({ t: "srv.response", id: m.id, kind, ...spec.build(m) }, finish);
+        // terminate the socket before it flushes. The body is spread FIRST so the
+        // envelope (`t`/`id`/`kind`) always wins — that is what routes and
+        // correlates the frame, so it is not the part a body may rewrite.
+        client.send({ ...spec.build(m), t: "srv.response", id: promptId, kind }, finish);
         return;
       }
       // The pending prompt (if any) follows this ack immediately; a short grace

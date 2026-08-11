@@ -275,6 +275,33 @@ test("a manifest file that is not JSON is a usage error, not a half-made session
   }
 });
 
+test("a manifest file that does not exist is a usage error, not a raw ENOENT", async () => {
+  // The producer of `--file` is usually an agent, which mis-paths files. Only
+  // JSON.parse was guarded, so a bad path threw a raw Node error with a stack —
+  // in an agent's transcript that reads as a crash rather than "fix the path".
+  const r = await run(["--file", join(tmpdir(), "makit-no-such-manifest-9f3a.json")]);
+  assert.equal(r.code, 2);
+  assert.match(r.err, /makit-no-such-manifest-9f3a\.json/, "the message names the file");
+  assert.doesNotMatch(r.err, /at .*\.ts:|node:internal/, "no stack trace");
+  assert.equal(r.cmds.length, 0, "and nothing is created");
+});
+
+test("a manifest file that cannot be read is a usage error too", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-manifest-"));
+  const f = join(dir, "m.json");
+  writeFileSync(f, JSON.stringify({ goal: "x" }), { mode: 0o000 });
+  try {
+    const r = await run(["--file", f]);
+    // Running as root would read it anyway; only assert when the mode bites.
+    if (r.code !== 0) {
+      assert.equal(r.code, 2);
+      assert.doesNotMatch(r.err, /at .*\.ts:|node:internal/, "no stack trace");
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // --carry: a bounded excerpt, fetched with session.transcript (C3/D5)
 // ---------------------------------------------------------------------------

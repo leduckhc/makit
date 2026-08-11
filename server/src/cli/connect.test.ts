@@ -17,6 +17,7 @@ import { cliCredentialPath } from "./client.js";
 import { createControlServer, type ControlBackend } from "../daemon/control-server.js";
 import { controlSocketPath } from "../daemon/paths.js";
 import { startStubWss } from "../../test/support/stub_wss.js";
+import { captureCli } from "../../test/support/cli_home.js";
 
 function stubBackend(): ControlBackend {
   const unused = () => {
@@ -124,4 +125,41 @@ test("no daemon exits 3 with SPEC-02's message", async () => {
     assert.equal(res.code, 3);
     assert.match(res.err, /makit is not running/);
   });
+});
+
+// ---------------------------------------------------------------------------
+// A flag with no value is a usage error, not a connection to nowhere
+//
+// Every verb parses `--host`/`--port` the same way — `String(argv[++i])` and
+// `Number(argv[++i])` — so a trailing flag yields the literal host "undefined"
+// or the port NaN. Both then travelled into `wss://<host>:<port>`, which fails
+// as a *connection* error (exit 4, "your credential is the problem") for what is
+// plainly a typo. Validated once here rather than at fifty-odd parse sites.
+// ---------------------------------------------------------------------------
+
+test("a NaN port (from `--port` with no value) is exit 2, before anything is dialled", async () => {
+  const r = await captureCli(async () => {
+    await connectCli({ host: "127.0.0.1", port: Number(undefined) });
+  });
+  assert.equal(r.code, 2, r.err);
+  assert.match(r.err, /--port/);
+});
+
+test("a port outside 1..65535 is exit 2", async () => {
+  for (const port of [0, -1, 70000, 1.5]) {
+    const r = await captureCli(async () => {
+      await connectCli({ host: "127.0.0.1", port });
+    });
+    assert.equal(r.code, 2, `port ${port}: ${r.err}`);
+  }
+});
+
+test("an empty or literal-undefined host is exit 2", async () => {
+  for (const host of ["", "undefined"]) {
+    const r = await captureCli(async () => {
+      await connectCli({ host, port: 7777 });
+    });
+    assert.equal(r.code, 2, `host ${JSON.stringify(host)}: ${r.err}`);
+    assert.match(r.err, /--host/);
+  }
 });

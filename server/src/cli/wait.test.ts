@@ -16,7 +16,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { parseWaitArgs, runWait, EXIT_APPROVAL, EXIT_INPUT, EXIT_ERROR, EXIT_EXITED, EXIT_TIMEOUT } from "./wait.js";
+import { parseWaitArgs, runWait, awaitOutcome, EXIT_APPROVAL, EXIT_INPUT, EXIT_ERROR, EXIT_EXITED, EXIT_TIMEOUT } from "./wait.js";
+import { openClient } from "./client.js";
 import { startStubWss, type StubWss } from "../../test/support/stub_wss.js";
 import { withCliHome, captureCli } from "../../test/support/cli_home.js";
 
@@ -247,4 +248,80 @@ test("--for approval still ignores a completed turn (the narrowing that IS wante
 test("a session already EXITED when wait starts reports it immediately", async () => {
   const r = await waitWith(["--for", "idle", "--timeout", "1"], "exited");
   assert.equal(r.code, EXIT_EXITED);
+});
+
+// ---------------------------------------------------------------------------
+// The contract refuses to guess (D8)
+// ---------------------------------------------------------------------------
+
+test("a misspelled --for is a usage error, never a silent widening to 'any'", async () => {
+  // Silently falling back to `any` is the worst outcome available: `wait --for
+  // aproval` would exit 0 on a *completed turn*, so a script written to block
+  // until a human is asked something sails straight past it.
+  const r = await captureCli(async () => {
+    parseWaitArgs([SID, "--for", "aproval"]);
+  });
+  assert.equal(r.code, 2);
+  assert.match(r.err, /--for/);
+  assert.match(r.err, /idle\|approval\|input\|any/);
+});
+
+// ---------------------------------------------------------------------------
+// A settled wait is over: no event may be delivered after it
+// ---------------------------------------------------------------------------
+
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
+
+/** Drive `awaitOutcome` directly against a stub, so `onEvent` is observable. */
+async function withOutcome(
+  fn: (stub: StubWss, seen: string[], outcome: Promise<{ code: number }>) => Promise<void>,
+  opts: { timeoutMs?: number } = {},
+): Promise<void> {
+  const stub = await startStubWss({ acceptBearer: "good", onCmd: () => ({}) });
+  const client = await openClient({ host: "127.0.0.1", port: stub.port, bearer: "good" });
+  try {
+    await client.hello();
+    const seen: string[] = [];
+    const outcome = awaitOutcome(client, SID, {
+      forWhat: "any",
+      timeoutMs: opts.timeoutMs,
+      onEvent: (ev) => seen.push(`${ev.kind}:${String(ev.payload.status ?? "")}`),
+    });
+    await delay(40); // let the sub ack land, so replay is over
+    await fn(stub, seen, outcome);
+  } finally {
+    client.close();
+    await stub.close();
+  }
+}
+
+test("events from the NEXT turn are not delivered after the wait has settled", async () => {
+  // `run` and `ask` print from `onEvent`, so a listener that outlives the
+  // outcome makes them emit the following turn's output as if it were theirs.
+  await withOutcome(async (stub, seen, outcome) => {
+    stub.push(statusEvent(1, "running"));
+    stub.push(statusEvent(2, "idle"));
+    assert.equal((await outcome).code, 0);
+    const settledAt = seen.length;
+    stub.push(statusEvent(3, "running"));
+    stub.push(statusEvent(4, "idle"));
+    await delay(40);
+    assert.deepEqual(seen.slice(settledAt), [], "no event may arrive after the outcome");
+  });
+});
+
+test("events are not delivered after --timeout has fired either", async () => {
+  // The timeout path resolves the promise, so it must trip the same guard: a
+  // timed-out `run` that keeps printing has no way to stop.
+  await withOutcome(
+    async (stub, seen, outcome) => {
+      assert.equal((await outcome).code, EXIT_TIMEOUT);
+      const settledAt = seen.length;
+      stub.push(statusEvent(1, "running"));
+      stub.push(statusEvent(2, "idle"));
+      await delay(40);
+      assert.deepEqual(seen.slice(settledAt), [], "no event may arrive after a timeout");
+    },
+    { timeoutMs: 60 },
+  );
 });

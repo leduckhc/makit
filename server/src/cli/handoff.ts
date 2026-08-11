@@ -86,7 +86,16 @@ function failUsage(message: string): never {
  */
 function resolveManifest(args: HandoffArgs): HandoffManifest {
   if (args.file !== undefined) {
-    const raw = args.file === "-" ? readFileSync(0, "utf8") : readFileSync(args.file, "utf8");
+    // The read is inside the guard too: only `JSON.parse` was covered, so a
+    // mis-pathed or unreadable file threw a raw Node error with a stack. The
+    // producer here is usually an agent, for which that reads as a crash rather
+    // than "fix the path".
+    let raw: string;
+    try {
+      raw = args.file === "-" ? readFileSync(0, "utf8") : readFileSync(args.file, "utf8");
+    } catch (e) {
+      return failUsage(`--file ${args.file} could not be read: ${(e as Error).message}`);
+    }
     try {
       return parseManifest(JSON.parse(raw));
     } catch {
@@ -129,6 +138,10 @@ export async function runHandoff(argv: string[]): Promise<void> {
     const parent = (await client.awaitSnapshot()).sessions.find((s: SessionDTO) => s.id === parentId);
     const projectId = parent?.projectId ?? process.env.MAKIT_PROJECT_ID;
     if (!projectId) {
+      // Closed before exiting: `failUsage` calls `process.exit`, which terminates
+      // synchronously and never runs the `finally` below — so the socket would go
+      // away as a TCP reset rather than a close frame.
+      client.close();
       return failUsage(`cannot resolve the project of session ${parentId} — is it still live?`);
     }
 

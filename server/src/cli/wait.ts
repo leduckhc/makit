@@ -64,6 +64,10 @@ export function parseWaitArgs(argv: string[]): WaitArgs {
     else if (t === "--for") {
       const v = String(argv[++i]);
       if (v === "idle" || v === "approval" || v === "input" || v === "any") a.forWhat = v;
+      // Never widen a misspelling to the default: `--for aproval` would then
+      // exit 0 on a completed turn, sailing past the block it was written to
+      // wait for. D8 makes a usage error exit 2 instead.
+      else failUsage(`unknown --for value: ${v} (expected idle|approval|input|any)`);
     } else if (t === "--timeout") {
       const s = Number(argv[++i]);
       if (Number.isFinite(s) && s > 0) a.timeoutMs = s * 1000;
@@ -129,6 +133,17 @@ export interface WaitOutcome {
  * and would make `makit ask` print the answer to the *previous* question. The ack
  * is the only end-of-replay signal on the wire (`tail` uses it for the same
  * reason); there is no `latestSeq` on any DTO to subtract from.
+ *
+ * **Known gap, and why `--timeout` is load-bearing.** Discarding the replay also
+ * discards a transition that lands *inside* it. `runWait` reads the snapshot,
+ * then subscribes; if the session goes `running` → `idle` in that window, the
+ * status event is replayed (and dropped) and no further one arrives, so the wait
+ * runs to its timeout. `run`/`ask` are immune — they subscribe before sending the
+ * message that starts the turn — but a standalone `makit wait` on an
+ * already-running session can hit it. Closing it needs a bounded end-of-replay
+ * marker the wire does not have (`sub` takes no limit and no DTO publishes a
+ * latest seq), so it is a spec question, not a patch: until then `--timeout` is
+ * the only bound on this path and automation should always pass one.
  */
 export function awaitOutcome(
   client: MakitClient,
@@ -139,17 +154,30 @@ export function awaitOutcome(
     let sawRunning = opts.initialStatus === "running";
     let replayed = false;
     let timer: NodeJS.Timeout | undefined;
-    if (opts.timeoutMs !== undefined) {
-      timer = setTimeout(() => resolve({ code: EXIT_TIMEOUT, message: "timed out waiting" }), opts.timeoutMs);
-      timer.unref();
-    }
+    /**
+     * The wait is over exactly once. The frame and close listeners cannot be
+     * unregistered (the client holds one of each), so without this guard they
+     * keep calling `onEvent` after the outcome — and `run`/`ask` print from
+     * `onEvent`, so a finished command emits the *following* turn's output as
+     * if it were its own.
+     */
+    let settled = false;
     const settle = (o: WaitOutcome) => {
+      if (settled) return;
+      settled = true;
       if (timer) clearTimeout(timer);
       resolve(o);
     };
+    if (opts.timeoutMs !== undefined) {
+      // Through `settle`, not `resolve`: a timeout ends the wait like any other
+      // outcome, so it must trip the same guard.
+      timer = setTimeout(() => settle({ code: EXIT_TIMEOUT, message: "timed out waiting" }), opts.timeoutMs);
+      timer.unref();
+    }
 
     client.onClose(() => settle({ code: 1, message: "connection closed while waiting" }));
     client.onFrame((m) => {
+      if (settled) return;
       if (m.t === "ack" && m.id === SUB_ID) {
         replayed = true;
         return;

@@ -28,6 +28,13 @@ const MIME_BY_EXT: Readonly<Record<string, string>> = {
 /** Human list of what `--attach` accepts, for the refusal message. */
 export const ATTACHABLE = Object.keys(MIME_BY_EXT).join(" ");
 
+/**
+ * How long an upload may take before it is abandoned. Generous enough for a
+ * large attachment on a slow link, but finite: an unbounded wait means the verb
+ * produces no exit code at all, which is the one result automation cannot handle.
+ */
+export const UPLOAD_TIMEOUT_MS = 30_000;
+
 /** The mime for a path, or undefined when the server would refuse to store it. */
 export function mimeForPath(path: string): string | undefined {
   return MIME_BY_EXT[extname(path).toLowerCase()];
@@ -49,6 +56,7 @@ export function uploadMedia(
   path: string,
   bytes: Buffer,
   mime: string,
+  timeoutMs: number = UPLOAD_TIMEOUT_MS,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const req = request(
@@ -85,6 +93,14 @@ export function uploadMedia(
       },
     );
     req.on("error", (e) => reject(new Error(`${basename(path)}: ${e.message}`)));
+    // This leg does not ride the WebSocket, so `client.close()` cannot rescue it:
+    // a server that takes the connection and then stalls left the promise
+    // unsettled, keeping the event loop alive so the verb never reached an exit
+    // code at all (D8). `destroy()` makes the `error` handler above fire, so the
+    // rejection still names the file.
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`upload timed out after ${timeoutMs}ms`));
+    });
     req.end(bytes);
   });
 }

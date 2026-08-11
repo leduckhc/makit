@@ -13,8 +13,8 @@
  *     server refuses is exit `4`. That probe is also where `cli.grant` mints the
  *     CLI's own device, so liveness and credential are one round trip.
  */
-import { AuthError } from "./client.js";
-import { connectCli, failAuth } from "./connect.js";
+import { AuthError, WireError } from "./client.js";
+import { connectCli, failAuth, failCommand } from "./connect.js";
 import { renderSessionLine } from "./render.js";
 import type { SessionDTO } from "../protocol.js";
 
@@ -59,6 +59,10 @@ export async function runLs(argv: string[]): Promise<void> {
     for (const s of shown) console.log(renderSessionLine(s));
   } catch (e) {
     if (e instanceof AuthError) return failAuth(e.message);
+    // A plain refusal (`--archived` asks the server a question it can decline) is
+    // a sentence and exit 1, as in every other verb; only a real bug keeps its
+    // stack.
+    if (e instanceof WireError) return failCommand(e);
     throw e;
   } finally {
     client.close();

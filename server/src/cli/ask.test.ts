@@ -47,6 +47,7 @@ async function ask(
   argv: string[],
   script: Record<string, unknown>[],
   status = "idle",
+  opts: { refuse?: string } = {},
 ): Promise<{ out: string; err: string; code: number; cmds: Record<string, unknown>[] }> {
   const cmds: Record<string, unknown>[] = [];
   let stub: StubWss | undefined;
@@ -57,6 +58,7 @@ async function ask(
       sessions: [{ ...SESSION, status }],
       onCmd: (m) => {
         cmds.push(m);
+        if (opts.refuse !== undefined && m.kind === "send.message") return { __err: opts.refuse };
         return {};
       },
     });
@@ -159,4 +161,15 @@ test("a session already blocked reports it instead of hanging (the docstring's o
 test("a session that has already exited is reported, not waited on", async () => {
   const r = await ask([SID, "-m", "hello", "--timeout", "1"], [], "exited");
   assert.equal(r.code, 21);
+});
+
+test("a refused send.message exits 1 with a sentence, and does not hang", async () => {
+  // The refusal arrives *after* the wait has been armed, so the outcome promise
+  // is left orphaned: no turn will ever start, so the edge never fires. Unless
+  // the failure closes the socket, `ask` waits forever on a question the server
+  // already declined — D8's named hazard for this exact verb.
+  const r = await ask([SID, "-m", "hello"], [], "idle", { refuse: "queue is full" });
+  assert.equal(r.code, 1);
+  assert.match(r.err, /queue is full/);
+  assert.doesNotMatch(r.err, /at .*\.ts:/, "a refusal must not print a stack trace");
 });

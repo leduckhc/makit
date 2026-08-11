@@ -128,3 +128,33 @@ test("approve finds its confirmAction even when an input prompt is replayed firs
   assert.equal(r.responses[0]!.id, "srv-confirm", "it answered the confirmAction, not the input");
   assert.equal(r.responses[0]!.approved, true);
 });
+
+// ---------------------------------------------------------------------------
+// A malformed prompt is not answered into the void
+//
+// `m.kind` and `m.sessionId` are both validated, but `m.id` was taken as-is. A
+// frame whose `id` is not a string produced an `srv.response` with the field
+// dropped by JSON.stringify — which the server cannot correlate to any pending
+// request, so the answer vanishes and the verb reports success. Silent is the
+// worst outcome here: the human believes they approved the tool call.
+// ---------------------------------------------------------------------------
+
+test("a prompt with no usable id is refused, not answered with a dropped id", async () => {
+  const noId = { ...confirm() };
+  delete noId.id;
+  const r = await run([SID], { srvRequests: [noId] });
+  assert.equal(r.responses.length, 0, "nothing may be sent for a prompt we cannot correlate");
+  assert.notEqual(r.code, 0, "and the verb must not claim success");
+});
+
+test("the response envelope cannot be overwritten by the answer body", async () => {
+  // `build()` returns `{approved}` today, so this is a latent footgun rather
+  // than a live bug — but the envelope is what routes and correlates the frame,
+  // so it must not be the part a body can rewrite.
+  const r = await run([SID], { srvRequests: [confirm()] });
+  assert.equal(r.responses.length, 1);
+  const sent = r.responses[0]!;
+  assert.equal(sent.t, "srv.response");
+  assert.equal(sent.id, "srv-1", "the id is the prompt's own");
+  assert.equal(sent.kind, "confirmAction");
+});
