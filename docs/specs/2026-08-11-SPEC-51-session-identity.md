@@ -1,6 +1,9 @@
 # SPEC-51 — Session identity: copy the id, and its transcript
 
-**Status:** Draft (rev 2 — dual review applied) · **Priority:** P2 · **Branch:** `feat/get-session-id`
+**Status:** Implemented — P1 (rev 2 — dual review applied) · **Priority:** P2 · **Branch:**
+`feat/get-session-id`
+Deferred to P2: the codex/`threadId` resolver branch, and D12's identity section inside the
+context-usage panel (cut on review — see the plan's deviations 4 and 5).
 **Depends on:** SPEC-29 (`agentSessionId` / `resumeSessionPath` persistence, closed-session
 resume), SPEC-37 (`ContextUsageDetails` — the panel this appends to, and the ring's absence
 rule this must not weaken), SPEC-47 D12 (the precedent for adding one optional field to
@@ -170,17 +173,33 @@ fail** · `flutter analyze --fatal-infos --no-pub` "No issues found".
 
 ## Verification
 
-Filled in on implementation. Required evidence, not claims:
+Required evidence, not claims. Recorded as measured:
 
-1. `cd server && node_modules/.bin/tsc -p . --noEmit` clean; `pnpm test` green at **≥ 1313 pass / 0 fail**.
-2. `cd app && flutter analyze --fatal-infos --no-pub` → "No issues found";
-   `flutter test --no-pub` green against the recorded flake baseline (judge by non-`loading`
-   failures only).
-3. Every new test's bite proven by reverting **only** the production line.
-4. **Pixel-perfect sign-off on the real macOS app**, not on a widget test: the panel rendered
-   through `app/tool/session_identity_demo.dart`, geometry read from the accessibility tree via
+1. `cd server && node_modules/.bin/tsc -p . --noEmit` clean; `pnpm test` **1326 pass / 0 fail**
+   (baseline 1313 — +13 net new, nothing regressed). ✅
+2. `cd app && flutter analyze --fatal-infos --no-pub` → "No issues found!";
+   `flutter test --no-pub` → **0 non-`loading` failures**. The 15–17 reported failures are all of
+   the form `loading <file>`, and the set varies run to run; each one passes when run directly.
+   That is the recorded flake baseline (harness load timeout under full-suite concurrency), not a
+   regression. The 71 SPEC-51 tests are green run as a set. ✅
+3. Every new test's bite proven by reverting **only** the production line — 9 mutations across the
+   two trees, listed in the P1c commit body. The two load-bearing ones: `cwd` → project path fails
+   the worktree test, and relaxing the transcript suffix match to a prefix fails the D15 collision
+   test. A tenth — `handleClientCommand`'s exact name match → `startsWith` — is caught by
+   `test/session_command_test.dart`'s "`/sessions` is NOT intercepted". ✅
+4. **Pixel sign-off on the real macOS app**, not on a widget test: the panel rendered through
+   `app/tool/session_identity_demo.dart`, geometry read from the accessibility tree via
    `cua-driver get_window_state` (AX space = Flutter logical px), row pitch and both uuid rows
-   measured at **one line**, compared against `mockups/session-identity.html`.
-5. A live probe: a real pi session's `agentSessionId` from the running server, resolved to a
-   real path, `pi --session <that id>` accepted by the real binary. Deleted afterwards; what it
-   revealed recorded here.
+   measured at **one line**, compared against `mockups/session-identity.html`. Light-mode
+   `Copy all` measured 10.95:1 contrast (needs 4.5); line counts 4/3/3/2/1 all correct. That gate
+   — not any test — is what found the "1 lines" pluralisation bug, now asserted in both the
+   visible and the semantics label. ✅
+5. **Live probe** (throwaway, deleted): `resolveTranscriptPath` run against the real
+   `~/.pi/agent/sessions` tree, for this branch's own worktree, with the pi session id of the
+   session that implemented the feature. It returned
+   `…/--Users-le-.worktrees-makit-feat-get-session-id--/2026-08-11T14-01-46-945Z_019ff121-….jsonl`
+   — byte-identical to the path pi itself reports for that session. The same call with the 8-char
+   prefix `019ff121` returned `undefined`, so D15 holds on real data. Non-pi, draft, and
+   unreadable-dir inputs all returned `undefined` without throwing (boundary rule). `pi --help`
+   confirms the resume line's spelling, `--session <path|id>`, which accepts both the full id and
+   the transcript path the panel offers. ✅
