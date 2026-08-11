@@ -62,7 +62,11 @@ final _repos = <RepoInfo>[
       'defaultBranch': {'value': 'trunk', 'source': 'override'},
       'logoHue': 2,
       'hasRemote': true,
-      'forge': {'software': 'forgejo', 'host': 'forgejo.internal.test', 'authed': true},
+      'forge': {
+        'software': 'forgejo',
+        'host': 'forgejo.internal.test',
+        'authed': true,
+      },
     },
   })!,
   RepoInfo.fromJson({
@@ -101,7 +105,9 @@ Widget _app() => ProviderScope(
     desktopControllerProvider.overrideWithValue(
       DesktopController(
         client: FakeControlClient(),
-        lifecycle: DaemonLifecycle(resolver: MakitCliResolver(shellLookup: () async => null)),
+        lifecycle: DaemonLifecycle(
+          resolver: MakitCliResolver(shellLookup: () async => null),
+        ),
       ),
     ),
     connectionProvider.overrideWithValue(MakitConnState()),
@@ -128,7 +134,9 @@ void main() {
     _prefs = await SharedPreferences.getInstance();
   });
 
-  testWidgets('a pinned repo gets a reachable section in the real window', (tester) async {
+  testWidgets('a pinned repo gets a reachable section in the real window', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
@@ -152,7 +160,9 @@ void main() {
     expect(find.text('Worktree root'), findsOneWidget);
   });
 
-  testWidgets('the rows carry THIS repo\'s values, resolved from the snapshot', (tester) async {
+  testWidgets('the rows carry THIS repo\'s values, resolved from the snapshot', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
     await _openRepo(tester, 'Diana');
@@ -167,7 +177,9 @@ void main() {
     expect(find.text('trunk'), findsOneWidget);
   });
 
-  testWidgets('switching repos re-renders from the newly selected repo', (tester) async {
+  testWidgets('switching repos re-renders from the newly selected repo', (
+    tester,
+  ) async {
     // The bug this guards: a section built once and cached would keep showing the
     // first repo's values under the second repo's title, which reads as correct.
     await tester.pumpWidget(_app());
@@ -177,12 +189,22 @@ void main() {
     expect(find.text('overridden'), findsOneWidget);
 
     await _openRepo(tester, 'makit');
-    expect(find.text('~/trees/diana'), findsNothing, reason: "Diana's root leaked into makit");
-    expect(find.text('overridden'), findsNothing, reason: 'makit inherits, so nothing is overridden');
+    expect(
+      find.text('~/trees/diana'),
+      findsNothing,
+      reason: "Diana's root leaked into makit",
+    );
+    expect(
+      find.text('overridden'),
+      findsNothing,
+      reason: 'makit inherits, so nothing is overridden',
+    );
     expect(find.text('~/.worktrees'), findsOneWidget);
   });
 
-  testWidgets('the sidebar draws each repo its own mark, with the chosen hue', (tester) async {
+  testWidgets('the sidebar draws each repo its own mark, with the chosen hue', (
+    tester,
+  ) async {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
@@ -191,11 +213,15 @@ void main() {
       matching: find.byType(RepoMonogram),
     );
     expect(marks, findsNWidgets(2), reason: 'one mark per pinned repo');
-    final diana = tester.widgetList<RepoMonogram>(marks).firstWhere((m) => m.name == 'Diana');
+    final diana = tester
+        .widgetList<RepoMonogram>(marks)
+        .firstWhere((m) => m.name == 'Diana');
     expect(diana.hue, 2, reason: 'the stored hue must reach the sidebar');
   });
 
-  testWidgets('search reaches a repo row and lands on THAT repo', (tester) async {
+  testWidgets('search reaches a repo row and lands on THAT repo', (
+    tester,
+  ) async {
     // The nav pane searches the DYNAMIC sections; on the static list "worktree root"
     // found nothing and the result would have been titled `repo:<id>`.
     //
@@ -216,6 +242,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(RepositorySettingsSection), findsOneWidget);
-    expect(find.text('~/trees/diana'), findsOneWidget, reason: 'landed on Diana, not makit');
+    expect(
+      find.text('~/trees/diana'),
+      findsOneWidget,
+      reason: 'landed on Diana, not makit',
+    );
   });
 }

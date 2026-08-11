@@ -76,10 +76,10 @@ class SettingsNavPane extends StatelessWidget {
         Expanded(
           child: searching
               ? _SearchResults(
-                query: query,
-                sections: sections,
-                onSelectResult: onSelectResult,
-              )
+                  query: query,
+                  sections: sections,
+                  onSelectResult: onSelectResult,
+                )
               : _SectionList(
                   sections: sections,
                   selectedId: selectedId,
@@ -156,6 +156,7 @@ class _SearchResults extends StatelessWidget {
     required this.onSelectResult,
   });
   final String query;
+
   /// The same list the pane renders, so repo rows are searchable and their result
   /// titles read as the repo name rather than `repo:<id>`.
   final List<SettingsSection> sections;

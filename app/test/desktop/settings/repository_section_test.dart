@@ -83,49 +83,74 @@ Future<void> _pump(
 /// only thing that proves what the user sees.
 Color? _paintedHue(WidgetTester t) {
   final container = t.widget<Container>(
-    find.descendant(of: find.byType(RepoMonogram), matching: find.byType(Container)).first,
+    find
+        .descendant(
+          of: find.byType(RepoMonogram),
+          matching: find.byType(Container),
+        )
+        .first,
   );
   return (container.decoration as BoxDecoration?)?.color;
 }
 
 void main() {
   group('what it renders', () {
-    testWidgets('the repo name is the page title, above the group headers', (t) async {
+    testWidgets('the repo name is the page title, above the group headers', (
+      t,
+    ) async {
       await _pump(t, _view());
       expect(find.text('DIANA'), findsOneWidget);
       expect(find.text('IDENTITY'), findsOneWidget);
       expect(find.text('WORKTREES'), findsOneWidget);
     });
 
-    testWidgets('paths are home-abbreviated, so the column is not spent on /Users/le', (t) async {
-      await _pump(t, _view());
-      expect(find.text('~/Work/XDent/Diana'), findsOneWidget);
-      expect(find.text('/Users/le/Work/XDent/Diana'), findsNothing);
-    });
+    testWidgets(
+      'paths are home-abbreviated, so the column is not spent on /Users/le',
+      (t) async {
+        await _pump(t, _view());
+        expect(find.text('~/Work/XDent/Diana'), findsOneWidget);
+        expect(find.text('/Users/le/Work/XDent/Diana'), findsNothing);
+      },
+    );
 
-    testWidgets('an unprobed repo omits the provider name but still offers the choice', (t) async {
-      // `forge == null` means "not measured yet", never "no forge" — routing only
-      // happens when a PR operation runs, so a quiet repo genuinely may not know.
-      await _pump(t, _view(forge: null, forgeHost: null));
-      expect(find.text('Auto: not identified yet'), findsOneWidget);
-      expect(find.text('Forgejo'), findsOneWidget, reason: 'the segment, not a value');
-      expect(find.byType(SegmentedButton<ForgeChoice>), findsOneWidget);
-    });
+    testWidgets(
+      'an unprobed repo omits the provider name but still offers the choice',
+      (t) async {
+        // `forge == null` means "not measured yet", never "no forge" — routing only
+        // happens when a PR operation runs, so a quiet repo genuinely may not know.
+        await _pump(t, _view(forge: null, forgeHost: null));
+        expect(find.text('Auto: not identified yet'), findsOneWidget);
+        expect(
+          find.text('Forgejo'),
+          findsOneWidget,
+          reason: 'the segment, not a value',
+        );
+        expect(find.byType(SegmentedButton<ForgeChoice>), findsOneWidget);
+      },
+    );
 
-    testWidgets('Auto names what it resolved to, so the default is not mysterious', (t) async {
-      await _pump(t, _view());
-      expect(
-        find.text('Auto: Forgejo · forgejo.internal.xdent.ai · token set'),
-        findsOneWidget,
-      );
-    });
+    testWidgets(
+      'Auto names what it resolved to, so the default is not mysterious',
+      (t) async {
+        await _pump(t, _view());
+        expect(
+          find.text('Auto: Forgejo · forgejo.internal.xdent.ai · token set'),
+          findsOneWidget,
+        );
+      },
+    );
 
-    testWidgets('an unauthenticated instance says so rather than implying a token', (t) async {
-      await _pump(t, _view(forgeAuthed: false));
-      expect(find.textContaining('no token'), findsOneWidget);
-    });
+    testWidgets(
+      'an unauthenticated instance says so rather than implying a token',
+      (t) async {
+        await _pump(t, _view(forgeAuthed: false));
+        expect(find.textContaining('no token'), findsOneWidget);
+      },
+    );
 
-    testWidgets('provenance badges are absent — the row already says it', (t) async {
+    testWidgets('provenance badges are absent — the row already says it', (
+      t,
+    ) async {
       // Pinned as a negative: `from name` beside a monogram, `from remote` beside
       // `main`, and `detected` beside a subtitle reading "Auto: Forgejo …" are all
       // the same sentence twice. Only resolution state earns a badge.
@@ -153,15 +178,22 @@ void main() {
       expect(chosen, [ForgeChoice.none]);
     });
 
-    testWidgets('None says what it means for polling, not just that it is set', (t) async {
-      await _pump(t, _view(providerChoice: ForgeChoice.none));
-      expect(
-        find.text('No forge · pull requests are not checked for this repository'),
-        findsOneWidget,
-      );
-    });
+    testWidgets(
+      'None says what it means for polling, not just that it is set',
+      (t) async {
+        await _pump(t, _view(providerChoice: ForgeChoice.none));
+        expect(
+          find.text(
+            'No forge · pull requests are not checked for this repository',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
 
-    testWidgets('a repo with no remote is a conclusion, not a pending probe', (t) async {
+    testWidgets('a repo with no remote is a conclusion, not a pending probe', (
+      t,
+    ) async {
       // These two states must NOT read the same: one has an answer, the other is
       // waiting for one, and only the second is worth looking into.
       await _pump(t, _view(forge: null, forgeHost: null, hasRemote: false));
@@ -169,14 +201,23 @@ void main() {
       expect(find.text('Auto: not identified yet'), findsNothing);
     });
 
-    testWidgets('an unprobed repo WITH a remote still says a probe is pending', (t) async {
-      await _pump(t, _view(forge: null, forgeHost: null));
-      expect(find.text('Auto: not identified yet'), findsOneWidget);
-    });
+    testWidgets(
+      'an unprobed repo WITH a remote still says a probe is pending',
+      (t) async {
+        await _pump(t, _view(forge: null, forgeHost: null));
+        expect(find.text('Auto: not identified yet'), findsOneWidget);
+      },
+    );
 
-    testWidgets('None is an override, so it offers a way back to Auto', (t) async {
+    testWidgets('None is an override, so it offers a way back to Auto', (
+      t,
+    ) async {
       final chosen = <ForgeChoice>[];
-      await _pump(t, _view(providerChoice: ForgeChoice.none), onChoose: chosen.add);
+      await _pump(
+        t,
+        _view(providerChoice: ForgeChoice.none),
+        onChoose: chosen.add,
+      );
       await t.tap(find.byTooltip('Reset to default').first);
       await t.pumpAndSettle();
       expect(chosen, [ForgeChoice.auto]);
@@ -207,9 +248,15 @@ void main() {
       expect(find.byTooltip('Reset to default'), findsNWidgets(2));
     });
 
-    testWidgets('reset calls back — it does not silently do nothing', (t) async {
+    testWidgets('reset calls back — it does not silently do nothing', (
+      t,
+    ) async {
       var reset = 0;
-      await _pump(t, _view(worktreeRootOverridden: true), onReset: () => reset++);
+      await _pump(
+        t,
+        _view(worktreeRootOverridden: true),
+        onReset: () => reset++,
+      );
       await t.tap(find.byTooltip('Reset to default').first);
       await t.pumpAndSettle();
       expect(reset, 1);
@@ -225,7 +272,9 @@ void main() {
       expect(chosen, [ForgeChoice.gitea]);
     });
 
-    testWidgets('an override relabels the row and offers a way back to Auto', (t) async {
+    testWidgets('an override relabels the row and offers a way back to Auto', (
+      t,
+    ) async {
       await _pump(t, _view(providerChoice: ForgeChoice.gitea));
       expect(find.textContaining('Set to Gitea'), findsOneWidget);
       // No badge: the subtitle already says it. The reset button is the only
@@ -234,21 +283,34 @@ void main() {
       expect(find.byTooltip('Reset to default'), findsOneWidget);
     });
 
-    testWidgets('resetting the provider asks for Auto, not for the detected forge', (t) async {
-      final chosen = <ForgeChoice>[];
-      await _pump(t, _view(providerChoice: ForgeChoice.gitea), onChoose: chosen.add);
-      await t.tap(find.byTooltip('Reset to default').first);
-      await t.pumpAndSettle();
-      expect(chosen, [ForgeChoice.auto]);
-    });
+    testWidgets(
+      'resetting the provider asks for Auto, not for the detected forge',
+      (t) async {
+        final chosen = <ForgeChoice>[];
+        await _pump(
+          t,
+          _view(providerChoice: ForgeChoice.gitea),
+          onChoose: chosen.add,
+        );
+        await t.tap(find.byTooltip('Reset to default').first);
+        await t.pumpAndSettle();
+        expect(chosen, [ForgeChoice.auto]);
+      },
+    );
   });
 
   group('read-only clients (D16: only loopback may write)', () {
-    testWidgets('a non-editable view offers no selector and no reset', (t) async {
+    testWidgets('a non-editable view offers no selector and no reset', (
+      t,
+    ) async {
       final chosen = <ForgeChoice>[];
       await _pump(
         t,
-        _view(editable: false, worktreeRootOverridden: true, providerChoice: ForgeChoice.gitea),
+        _view(
+          editable: false,
+          worktreeRootOverridden: true,
+          providerChoice: ForgeChoice.gitea,
+        ),
         onChoose: chosen.add,
       );
       expect(find.byTooltip('Reset to default'), findsNothing);
@@ -273,18 +335,22 @@ void main() {
       // hardcoded 3 asserted nothing. Picking the first index that differs keeps the
       // test honest if either the palette or the hash changes.
       final derived = RepoMonogram.hueFor(_base.name);
-      final chosen = List.generate(RepoMonogram.paletteLength, (i) => i).firstWhere(
-        (i) => RepoMonogram.paletteAt(i) != derived,
-        // Not reachable with the current palette, but a cryptic "Bad state: No
-        // element" would send the next reader hunting in the wrong file.
-        orElse: () => fail('every palette entry equals the derived hue $derived'),
-      );
+      final chosen = List.generate(RepoMonogram.paletteLength, (i) => i)
+          .firstWhere(
+            (i) => RepoMonogram.paletteAt(i) != derived,
+            // Not reachable with the current palette, but a cryptic "Bad state: No
+            // element" would send the next reader hunting in the wrong file.
+            orElse: () =>
+                fail('every palette entry equals the derived hue $derived'),
+          );
       await _pump(t, _view(logoHue: chosen));
       expect(_paintedHue(t), RepoMonogram.paletteAt(chosen));
       expect(_paintedHue(t), isNot(derived));
     });
 
-    testWidgets('with no choice the mark PAINTS the name-derived hue', (t) async {
+    testWidgets('with no choice the mark PAINTS the name-derived hue', (
+      t,
+    ) async {
       // Asserting `hue == null` alone proved nothing: it holds whatever the widget
       // then paints, so a hardcoded fallback colour inside build() would pass. The
       // assertion has to be on the pixel decision, not on the input that informs it.
@@ -303,7 +369,9 @@ void main() {
       expect(taps, 1);
     });
 
-    testWidgets('the root path row opens the re-point flow (SPEC-48 D4\u2032)', (t) async {
+    testWidgets('the root path row opens the re-point flow (SPEC-48 D4\u2032)', (
+      t,
+    ) async {
       // It used to show a "not supported yet" notice. The row is only honest once it
       // actually re-points, because the alternative it recommended — remove and
       // re-add — loses the project id and everything keyed to it.
@@ -324,7 +392,9 @@ void main() {
       expect(taps, 0);
     });
 
-    testWidgets('default branch is pickable when there are branches to pick', (t) async {
+    testWidgets('default branch is pickable when there are branches to pick', (
+      t,
+    ) async {
       var taps = 0;
       await _pump(t, _view(), onBranch: () => taps++);
       await t.tap(find.text('Default branch'));
@@ -332,12 +402,15 @@ void main() {
       expect(taps, 1);
     });
 
-    testWidgets('with no branches known the row does not open an empty picker', (t) async {
-      var taps = 0;
-      await _pump(t, _view(branches: const []), onBranch: () => taps++);
-      await t.tap(find.text('Default branch'));
-      await t.pumpAndSettle();
-      expect(taps, 0);
-    });
+    testWidgets(
+      'with no branches known the row does not open an empty picker',
+      (t) async {
+        var taps = 0;
+        await _pump(t, _view(branches: const []), onBranch: () => taps++);
+        await t.tap(find.text('Default branch'));
+        await t.pumpAndSettle();
+        expect(taps, 0);
+      },
+    );
   });
 }

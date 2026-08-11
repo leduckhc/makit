@@ -328,7 +328,11 @@ List<SettingsSection> sectionsFor(List<RepoInfo> repos) {
         // the place the "two repos look identical" problem actually bites, and the
         // place the user looks to confirm a chosen colour took effect (D15/D14′).
         // `icon` stays as the fallback for any renderer that ignores `leading`.
-        leading: RepoMonogram(name: repo.name, hue: repo.settings?.logoHue, size: 20),
+        leading: RepoMonogram(
+          name: repo.name,
+          hue: repo.settings?.logoHue,
+          size: 20,
+        ),
         builder: (_) => RepositorySettingsPage(repoId: repo.id),
         // Generated per repo so the existing search field reaches these rows too;
         // without them "worktree root" would find nothing.
@@ -336,7 +340,8 @@ List<SettingsSection> sectionsFor(List<RepoInfo> repos) {
           SettingsItem(
             id: '${repoSectionId(repo.id)}.identity',
             title: 'Identity',
-            help: 'Logo, root path, git provider and default branch for ${repo.name}.',
+            help:
+                'Logo, root path, git provider and default branch for ${repo.name}.',
             keywords: const ['logo', 'path', 'provider', 'forge', 'branch'],
           ),
           SettingsItem(

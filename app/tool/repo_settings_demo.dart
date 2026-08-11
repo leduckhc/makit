@@ -128,12 +128,20 @@ class _ShellState extends State<_Shell> {
               padding: const EdgeInsets.symmetric(vertical: kSpace12),
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(kSpace16, kSpace4, kSpace16, kSpace12),
+                  padding: const EdgeInsets.fromLTRB(
+                    kSpace16,
+                    kSpace4,
+                    kSpace16,
+                    kSpace12,
+                  ),
                   child: Row(
                     children: [
                       Icon(PhosphorIconsLight.x, size: 16, color: cs.outline),
                       const SizedBox(width: kSpace8),
-                      Text('Settings', style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        'Settings',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
                     ],
                   ),
                 ),
@@ -149,11 +157,23 @@ class _ShellState extends State<_Shell> {
                 ])
                   ListTile(
                     dense: true,
-                    leading: Icon(PhosphorIconsLight.circle, size: 15, color: cs.outline),
-                    title: Text(label, style: Theme.of(context).textTheme.bodySmall),
+                    leading: Icon(
+                      PhosphorIconsLight.circle,
+                      size: 15,
+                      color: cs.outline,
+                    ),
+                    title: Text(
+                      label,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(kSpace16, kSpace16, kSpace16, kSpace4),
+                  padding: const EdgeInsets.fromLTRB(
+                    kSpace16,
+                    kSpace16,
+                    kSpace16,
+                    kSpace4,
+                  ),
                   child: Text(
                     'REPOSITORIES',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -195,7 +215,6 @@ class _ShellState extends State<_Shell> {
     );
   }
 }
-
 
 /// Re-projects the seeded scene with whatever the user has since selected, so the
 /// controls visibly respond and a screenshot proves they are wired rather than

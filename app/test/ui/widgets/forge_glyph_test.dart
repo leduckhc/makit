@@ -70,7 +70,10 @@ void main() {
     test('GitHub uses the Phosphor font glyph, the others use our SVGs', () {
       // GitHub's mark ships in Phosphor; Forgejo's and Gitea's do not, hence the
       // in-house SVGs on the same 256 grid.
-      expect(forgeGlyphFor(ForgeKind.forgejo), forgeGlyphFor(ForgeKind.forgejo));
+      expect(
+        forgeGlyphFor(ForgeKind.forgejo),
+        forgeGlyphFor(ForgeKind.forgejo),
+      );
       expect(
         forgeGlyphFor(ForgeKind.forgejo) == forgeGlyphFor(ForgeKind.gitea),
         isFalse,

@@ -941,6 +941,7 @@ class RepoForge {
   const RepoForge({required this.software, required this.host, this.authed});
   final String software;
   final String host;
+
   /// Whether a credential is configured for that host. Absent for GitHub, where
   /// `gh`'s budget is not host-specific authentication.
   final bool? authed;
@@ -972,12 +973,15 @@ class RepoSettings {
 
   final Resolved<String> worktreeRoot;
   final Resolved<String> provider;
+
   /// False = no `origin`, so no forge is possible. A different statement from
   /// "not identified yet", which is [forge] being null.
   final bool hasRemote;
+
   /// Present ONLY when overridden; otherwise read `RepoInfo.defaultBranch`.
   final Resolved<String>? defaultBranch;
   final int? logoHue;
+
   /// Null means detection has not run for this repo yet, never "no forge".
   final RepoForge? forge;
 
@@ -988,7 +992,8 @@ class RepoSettings {
     if (root == null) return null;
     return RepoSettings(
       worktreeRoot: root,
-      provider: _resolvedString(j['provider']) ??
+      provider:
+          _resolvedString(j['provider']) ??
           const Resolved('auto', SettingSource.defaultValue),
       hasRemote: j['hasRemote'] == true,
       defaultBranch: _resolvedString(j['defaultBranch']),

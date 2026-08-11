@@ -321,7 +321,9 @@ class _OpenOnForgeButton extends StatelessWidget {
           ? const Icon(PhosphorIconsLight.arrowSquareOut, size: 16)
           : forgeGlyphFor(kind).build(size: 16),
       label: Text(
-        kind == null ? 'Open $identity' : 'Open $identity on ${forgeNameFor(kind)}',
+        kind == null
+            ? 'Open $identity'
+            : 'Open $identity on ${forgeNameFor(kind)}',
       ),
     );
   }

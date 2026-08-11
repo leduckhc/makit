@@ -228,7 +228,11 @@ class RepositorySettingsSection extends StatelessWidget {
               action: _Chevron(enabled: view.editable),
             ),
             _SettingsValueRow(
-              leading: Icon(PhosphorIconsLight.folder, size: 20, color: cs.outline),
+              leading: Icon(
+                PhosphorIconsLight.folder,
+                size: 20,
+                color: cs.outline,
+              ),
               title: 'Root path',
               enabled: view.editable,
               onTap: onChangeRootPath,
@@ -252,7 +256,11 @@ class RepositorySettingsSection extends StatelessWidget {
             ),
             if (view.defaultBranch != null)
               _SettingsValueRow(
-                leading: Icon(PhosphorIconsLight.gitBranch, size: 20, color: cs.outline),
+                leading: Icon(
+                  PhosphorIconsLight.gitBranch,
+                  size: 20,
+                  color: cs.outline,
+                ),
                 title: 'Default branch',
                 // Pickable from the repo's own branches, never free text: a typo
                 // here silently breaks diff-vs-default and the PR base. Needed
@@ -262,7 +270,9 @@ class RepositorySettingsSection extends StatelessWidget {
                 onTap: onChooseDefaultBranch,
                 value: view.defaultBranch,
                 mono: true,
-                action: _Chevron(enabled: view.editable && view.branches.isNotEmpty),
+                action: _Chevron(
+                  enabled: view.editable && view.branches.isNotEmpty,
+                ),
               ),
           ],
         ),
@@ -293,7 +303,9 @@ class RepositorySettingsSection extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(kSpace24, 0, kSpace24, kSpace24),
             child: Text(
               'These settings are editable on the machine running makit.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.outline),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: cs.outline),
             ),
           ),
       ],
@@ -360,9 +372,11 @@ class _SettingsValueRow extends StatelessWidget {
   final String title;
   final Widget? leading;
   final String? value;
+
   /// Render [value] monospaced — paths and refs, where character shape matters.
   final bool mono;
   final Widget? badge;
+
   /// A trailing control that occupies the reset slot instead (the copy button).
   final Widget? action;
   final bool resetVisible;
@@ -374,7 +388,9 @@ class _SettingsValueRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context);
     final cs = t.colorScheme;
-    final valueStyle = t.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant);
+    final valueStyle = t.textTheme.bodySmall?.copyWith(
+      color: cs.onSurfaceVariant,
+    );
     return ListTile(
       enabled: enabled,
       onTap: enabled ? onTap : null,
@@ -401,7 +417,10 @@ class _SettingsValueRow extends StatelessWidget {
           if (action != null)
             action!
           else
-            SettingsResetButton(visible: resetVisible, onPressed: onReset ?? () {}),
+            SettingsResetButton(
+              visible: resetVisible,
+              onPressed: onReset ?? () {},
+            ),
         ],
       ),
     );
@@ -435,7 +454,9 @@ class _ProviderRow extends StatelessWidget {
               : SizedBox(
                   width: 20,
                   height: 20,
-                  child: forgeGlyphFor(detected).build(size: 20, color: cs.primary),
+                  child: forgeGlyphFor(
+                    detected,
+                  ).build(size: 20, color: cs.primary),
                 ),
           title: const Text('Git provider'),
           subtitle: Text(RepositorySettingsSection.forgeSubtitle(view)),
@@ -453,7 +474,9 @@ class _ProviderRow extends StatelessWidget {
             ],
             selected: {view.providerChoice},
             showSelectedIcon: false,
-            onSelectionChanged: onChoose == null ? null : (s) => onChoose!(s.first),
+            onSelectionChanged: onChoose == null
+                ? null
+                : (s) => onChoose!(s.first),
           ),
         ),
       ],

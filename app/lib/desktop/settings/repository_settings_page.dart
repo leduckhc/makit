@@ -81,7 +81,9 @@ class RepositorySettingsPage extends ConsumerWidget {
             TextField(
               controller: controller,
               autofocus: true,
-              decoration: const InputDecoration(hintText: '/Users/you/.worktrees'),
+              decoration: const InputDecoration(
+                hintText: '/Users/you/.worktrees',
+              ),
             ),
             const SizedBox(height: 10),
             Text(
@@ -92,7 +94,10 @@ class RepositorySettingsPage extends ConsumerWidget {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: const Text('Set'),
@@ -134,7 +139,11 @@ class RepositorySettingsPage extends ConsumerWidget {
     _write(ref, {'defaultBranch': picked.isEmpty ? null : picked});
   }
 
-  Future<void> _pickHue(BuildContext context, WidgetRef ref, RepoInfo repo) async {
+  Future<void> _pickHue(
+    BuildContext context,
+    WidgetRef ref,
+    RepoInfo repo,
+  ) async {
     final picked = await showDialog<int>(
       context: context,
       builder: (ctx) => SimpleDialog(
@@ -197,7 +206,9 @@ class RepositorySettingsPage extends ConsumerWidget {
             TextField(
               controller: controller,
               autofocus: true,
-              decoration: const InputDecoration(hintText: '/Users/you/Work/project'),
+              decoration: const InputDecoration(
+                hintText: '/Users/you/Work/project',
+              ),
             ),
             const SizedBox(height: 10),
             Text(
@@ -211,7 +222,10 @@ class RepositorySettingsPage extends ConsumerWidget {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           // Disabled until the value is both non-empty and actually different. The
           // guard below still returns early, but a button that closes the dialog and
           // does nothing is the failure this feature already refuses elsewhere: a
@@ -242,7 +256,9 @@ class RepositorySettingsPage extends ConsumerWidget {
     if (!context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(storeControllerProvider.notifier).setRepoPath(repoId, value);
+      await ref
+          .read(storeControllerProvider.notifier)
+          .setRepoPath(repoId, value);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(_reasonFrom(e))));
     }
@@ -253,7 +269,9 @@ class RepositorySettingsPage extends ConsumerWidget {
   static String _reasonFrom(Object error) {
     final text = error.toString();
     final marker = text.indexOf(': ');
-    return marker >= 0 && marker + 2 < text.length ? text.substring(marker + 2) : text;
+    return marker >= 0 && marker + 2 < text.length
+        ? text.substring(marker + 2)
+        : text;
   }
 }
 

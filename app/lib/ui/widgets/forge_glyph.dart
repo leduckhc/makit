@@ -38,7 +38,9 @@ ForgeKind? forgeKindForUrl(String? url) {
   if (host == 'github.com' || host.endsWith('.github.com')) {
     return ForgeKind.github;
   }
-  if (host == 'gitea.com' || host.endsWith('.gitea.com')) return ForgeKind.gitea;
+  if (host == 'gitea.com' || host.endsWith('.gitea.com')) {
+    return ForgeKind.gitea;
+  }
   return ForgeKind.forgejo;
 }
 

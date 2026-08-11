@@ -822,11 +822,10 @@ class StoreController extends StateNotifier<StoreState> {
   /// git repository", "already open as X") and the caller shows them, where a
   /// fire-and-forget write would drop the only part the user can act on.
   Future<void> setRepoPath(String projectId, String path) async {
-    await _ref.read(connectionControllerProvider.notifier).request(MsgType.cmd, {
-      'kind': 'repo.path.set',
-      'projectId': projectId,
-      'path': path,
-    });
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'repo.path.set', 'projectId': projectId, 'path': path},
+    );
   }
 
   /// Spawn a fresh agent session in the given project, in the worktree the
