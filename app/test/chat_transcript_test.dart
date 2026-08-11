@@ -131,27 +131,25 @@ void main() {
     await tester.pump();
 
     // Collapsed: shows the one-liner summary, no body sections yet.
-    expect(find.text('Ran echo hi'), findsOneWidget);
+    expect(find.text('Run echo', findRichText: true), findsOneWidget);
     expect(find.text('Command'), findsNothing);
 
-    await tester.tap(find.text('Ran echo hi'));
+    await tester.tap(find.text('Run echo', findRichText: true));
     await tester.pumpAndSettle();
 
-    // Expanded: header collapses to just the verb; body sections appear inside
-    // a bounded scroll region.
-    expect(find.text('Command'), findsOneWidget);
-    expect(find.text('Output'), findsOneWidget);
+    // Expanded: the payload appears inside a bounded scroll region, and the
+    // header KEEPS its subject (that is what lets the body drop its arguments
+    // section — mockups/tool-expanded-body.html §3).
+    expect(find.byType(ToolCodeBlock), findsOneWidget);
     expect(find.byType(SingleChildScrollView), findsWidgets);
-    // The full command moved into the body, so the header now reads just 'Ran'.
-    expect(find.text('Ran'), findsOneWidget);
-    expect(find.text('Ran echo hi'), findsNothing);
+    expect(find.text('Run echo', findRichText: true), findsOneWidget);
+    expect(find.text('Run', findRichText: true), findsNothing);
 
-    // Tapping anywhere on the header (here: the verb label) collapses it, and
-    // the full one-liner summary returns.
-    await tester.tap(find.text('Ran'));
+    // Tapping the header again collapses it.
+    await tester.tap(find.text('Run echo', findRichText: true));
     await tester.pumpAndSettle();
-    expect(find.text('Command'), findsNothing);
-    expect(find.text('Ran echo hi'), findsOneWidget);
+    expect(find.byType(ToolCodeBlock), findsNothing);
+    expect(find.text('Run echo', findRichText: true), findsOneWidget);
   });
 
   testWidgets('disclosure caret is hidden until the row is hovered', (
@@ -234,7 +232,7 @@ void main() {
         ),
       );
       await tester.pump();
-      await tester.tap(find.text('Ran echo hi'));
+      await tester.tap(find.text('Run echo', findRichText: true));
       await tester.pumpAndSettle();
 
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
@@ -266,8 +264,8 @@ void main() {
       ended: true,
       exitCode: 0,
     );
-    final a = bash('a', 'echo a');
-    final b = bash('b', 'echo b');
+    final a = bash('a', 'cat a.txt');
+    final b = bash('b', 'wc -l b.txt');
     var items = <ChatItem>[a];
     late StateSetter setOuter;
 
@@ -298,9 +296,9 @@ void main() {
     await tester.pump();
 
     // Expand call 'a'.
-    await tester.tap(find.text('Ran echo a'));
+    await tester.tap(find.text('Run cat', findRichText: true));
     await tester.pumpAndSettle();
-    expect(find.text('Command'), findsOneWidget);
+    expect(find.byType(ToolCodeBlock), findsOneWidget);
 
     // A new tool call 'b' streams in and becomes the newest (slot 0). Without
     // keying by callId, Flutter would reuse slot-0 state and 'b' would appear
@@ -308,15 +306,15 @@ void main() {
     setOuter(() => items = [a, b]);
     await tester.pumpAndSettle();
 
-    expect(find.text('Ran echo b'), findsOneWidget);
-    // Exactly one body is expanded, and it is still 'a' (code 'echo a').
-    expect(find.text('Command'), findsOneWidget);
+    expect(find.text('Run wc', findRichText: true), findsOneWidget);
+    // Exactly one body is expanded, and it is still 'a' (code 'cat a.txt').
+    expect(find.byType(ToolCodeBlock), findsOneWidget);
     final codes = tester
         .widgetList<ToolCodeBlock>(find.byType(ToolCodeBlock))
         .map((w) => w.code)
         .toList();
-    expect(codes, contains('echo a'));
-    expect(codes, isNot(contains('echo b')));
+    expect(codes, contains('cat a.txt'));
+    expect(codes, isNot(contains('wc -l b.txt')));
   });
 
   testWidgets('WorkingIndicator shows the shimmer word (no spinner)', (
@@ -415,16 +413,16 @@ void main() {
     );
 
     await tester.pumpWidget(app(ToolCallCard(item: item, expansionKey: 'k')));
-    await tester.tap(find.text('Ran echo hi'));
+    await tester.tap(find.text('Run echo', findRichText: true));
     await tester.pumpAndSettle();
-    expect(find.text('Output'), findsOneWidget);
+    expect(find.byType(ToolCodeBlock), findsOneWidget);
 
     // The row is destroyed and a brand-new one is built for the same call.
     await tester.pumpWidget(app(const SizedBox.shrink()));
     await tester.pumpWidget(app(ToolCallCard(item: item, expansionKey: 'k')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Output'), findsOneWidget);
+    expect(find.byType(ToolCodeBlock), findsOneWidget);
   });
 
   test('expansion keys are scoped per session', () {

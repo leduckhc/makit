@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — The notice layer: copyable, reviewable, never in the way</title>
+<style>
+  :root{
+    --bg:#171717; --lowest:#121212; --low:#1E1E1E; --cont:#242424;
+    --high:#2E2E2E; --highest:#383838;
+    --text:#F5F5F5; --muted:#9E9E9E; --hairline:#333333;
+    --primary:#4ADE80; --error:#FFB4AB; --warn:#E0A72E; --caution:#E07B39;
+    --merged:#A371F7; --page:#0e0e0e; --radius-card:12px; --radius-pill:9999px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 96px}
+  .wrap{max-width:1200px;margin:0 auto}
+  h1{font-size:23px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin:0 0 6px;max-width:920px;font-size:13.5px}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px;
+    font-family:"SF Mono",Menlo,Consolas,monospace}
+  .lede{max-width:920px;margin:14px 0 8px;padding:13px 15px;border:1px solid #2b3b2f;
+    background:#121a14;border-radius:10px;font-size:13px;color:#c9e6d3}
+  .lede strong{color:#eafff1}
+  .lede.bad{border-color:#4a2b2b;background:#1c1212;color:#e8c9c9}
+  .lede.bad strong{color:#ffeaea}
+  .lede.info{border-color:#2b3646;background:#111721;color:#c6d6ea}
+  .lede.info strong{color:#e8f2ff}
+
+  h2.sec{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;margin:46px 0 6px;padding-bottom:8px;border-bottom:1px solid #222}
+  .secnote{color:var(--muted);font-size:13px;max-width:920px;margin:10px 0 22px}
+  .rule{font-size:19px;font-weight:600;margin:0 0 4px;letter-spacing:-.01em}
+
+  .card{border:1px solid var(--hairline);border-radius:14px;background:#141414;
+    margin-bottom:26px;overflow:hidden}
+  .card > header{padding:12px 16px;border-bottom:1px solid var(--hairline);
+    display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .card h3{font-size:14.5px;margin:0;font-weight:600}
+  .card header p{margin:0;color:var(--muted);font-size:12.5px}
+  .card .body{padding:20px 16px;background:#111}
+  .rec{font-size:10px;color:#0e0e0e;background:var(--primary);border-radius:5px;padding:2px 6px;font-weight:700}
+  .no{font-size:10px;color:#0e0e0e;background:var(--error);border-radius:5px;padding:2px 6px;font-weight:700}
+  .keep{font-size:10px;color:#0e0e0e;background:var(--muted);border-radius:5px;padding:2px 6px;font-weight:700}
+  .later{font-size:10px;color:#0e0e0e;background:var(--merged);border-radius:5px;padding:2px 6px;font-weight:700}
+  .now{font-size:10px;color:#0e0e0e;background:var(--caution);border-radius:5px;padding:2px 6px;font-weight:700}
+
+  .grid{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+  .cap{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);
+    font-weight:700;margin:0 0 10px}
+  .why{font-size:12.5px;color:var(--muted);margin:14px 0 0}
+  .why b{color:var(--text);font-weight:600}
+  ul.why{padding-left:16px;margin:12px 0 0} ul.why li{margin:5px 0}
+  .plus::before{content:"+ ";color:var(--primary);font-weight:700}
+  .minus::before{content:"− ";color:var(--error);font-weight:700}
+  .note{font-size:12.5px;color:var(--muted);border-left:2px solid var(--hairline);padding-left:12px;
+    margin:16px 0 0;max-width:920px}
+  .note b{color:var(--text)}
+  .note.good{border-left-color:var(--primary)}
+  .note.bad{border-left-color:var(--error)}
+
+  .i{width:16px;height:16px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.45;
+    stroke-linecap:round;stroke-linejoin:round;display:block}
+  .i .dot{fill:currentColor;stroke:none}
+  .i.solid path{fill:currentColor}
+  .i.s10{width:10px;height:10px} .i.s11{width:11px;height:11px} .i.s13{width:13px;height:13px}
+  .i.s15{width:15px;height:15px} .i.s18{width:18px;height:18px} .i.s20{width:20px;height:20px}
+  .i.teeth{stroke-width:2.6}
+
+  table.t{border-collapse:collapse;width:100%;margin-top:6px}
+  table.t th,table.t td{text-align:left;padding:9px 11px;border-bottom:1px solid #222;
+    vertical-align:top;font-size:12.5px}
+  table.t th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  table.t td.k{color:var(--text);font-weight:600;white-space:nowrap}
+  table.t td.m{color:var(--muted)}
+  .xmark{color:var(--error);font-weight:700} .okmark{color:var(--primary);font-weight:700}
+
+  /* phone */
+  .phone{width:320px;border:1px solid #2c2c2c;border-radius:36px;background:var(--bg);
+    position:relative;overflow:hidden;box-shadow:0 16px 44px rgba(0,0,0,.55);flex:0 0 auto;height:470px}
+  .island{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:78px;height:22px;
+    background:#000;border-radius:12px;z-index:60}
+  .statusbar{height:40px;display:flex;align-items:flex-end;justify-content:space-between;
+    padding:0 22px 4px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+  .bars{display:flex;gap:2px;align-items:flex-end}
+  .bars i{width:3px;background:var(--text);border-radius:1px;display:block}
+  .batt{width:20px;height:10px;border:1px solid var(--text);border-radius:3px;position:relative}
+  .batt::after{content:"";position:absolute;inset:1.5px;right:6px;background:var(--text);border-radius:1px}
+  .pscreen{position:relative;height:calc(100% - 40px)}
+  .glassbar{position:absolute;left:12px;right:12px;top:6px;height:44px;border-radius:26px;
+    background:rgba(24,24,24,.55);backdrop-filter:blur(18px) saturate(1.8);
+    -webkit-backdrop-filter:blur(18px) saturate(1.8);border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;align-items:center;gap:6px;padding:0 8px;z-index:40}
+  .backc{width:29px;height:29px;border-radius:var(--radius-pill);display:grid;place-items:center;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);flex:0 0 auto}
+  .bartitle{flex:1;min-width:0}
+  .bartitle .t1{font-size:13px;font-weight:600;line-height:1.2;display:block}
+  .bartitle .t2{font-size:10px;color:var(--muted);line-height:1.3;display:block}
+  .sdot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;display:inline-block}
+  .composer{position:absolute;left:12px;right:12px;bottom:10px;height:46px;border-radius:28px;
+    background:rgba(24,24,24,.55);backdrop-filter:blur(18px) saturate(1.8);
+    -webkit-backdrop-filter:blur(18px) saturate(1.8);border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;align-items:center;padding:0 6px 0 16px;gap:8px;z-index:30}
+  .composer span.ph{color:#6f6f6f;font-size:13px}
+  .sendbtn{width:32px;height:32px;border-radius:50%;background:var(--primary);color:#0b0b0b;
+    display:grid;place-items:center;margin-left:auto}
+  .transcriptP{padding:60px 20px 0;display:flex;flex-direction:column;gap:10px}
+  .msg{font-size:12.5px;line-height:1.5;color:#e6e6e6}
+  .msg.user{align-self:flex-end;background:var(--high);border-radius:16px;padding:8px 12px;max-width:80%}
+  .think{font-size:12.5px;font-style:italic;color:rgba(158,158,158,.7)}
+  .toolcard{border:1px solid var(--hairline);background:var(--lowest);border-radius:var(--radius-card);
+    padding:9px 11px;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:11px;color:#cfcfcf}
+
+  /* THE OLD SNACKBAR (before) */
+  .snack{position:absolute;left:14px;right:14px;bottom:22px;background:#2E2E2E;border-radius:4px;
+    padding:13px 14px;font-size:12.5px;color:#E6E6E6;box-shadow:0 4px 14px rgba(0,0,0,.5);z-index:45;
+    display:flex;align-items:center;gap:10px}
+  .snack .txt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .badmark{position:absolute;border:1.5px dashed var(--error);border-radius:6px;pointer-events:none}
+  .badlbl{position:absolute;background:var(--error);color:#170f0f;font-size:9.5px;font-weight:800;
+    padding:1px 5px;border-radius:4px;white-space:nowrap;letter-spacing:.02em}
+
+  /* THE NOTICE (new) */
+  .notice{background:var(--high);border:1px solid var(--hairline);border-radius:var(--radius-card);
+    box-shadow:0 6px 18px rgba(0,0,0,.45);display:flex;overflow:hidden;position:relative}
+  .notice .stripe{width:3px;flex:0 0 3px;background:var(--muted)}
+  .notice.f .stripe{background:var(--error)} .notice.w .stripe{background:var(--warn)}
+  .notice.s .stripe{background:var(--primary)} .notice.c .stripe{background:var(--caution)}
+  .notice .nin{padding:9px 10px;flex:1;min-width:0}
+  .nrow{display:flex;align-items:flex-start;gap:8px}
+  .ntitle{font-size:13px;line-height:1.35;flex:1;min-width:0}
+  .nglyph.f{color:var(--error)} .nglyph.w{color:var(--warn)} .nglyph.s{color:var(--primary)}
+  .ndetail{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:10.5px;color:var(--muted);
+    margin:5px 0 0 24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ndetail.full{white-space:pre-wrap;word-break:break-word;color:#cfcfcf;line-height:1.45;
+    background:var(--low);border:1px solid var(--hairline);border-radius:8px;padding:7px 8px;margin-left:24px}
+  .dwellbar{position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(255,255,255,.07)}
+  .dwellbar i{display:block;height:100%;background:var(--muted);opacity:.55}
+  .hint{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;
+    letter-spacing:.02em;padding:2px 7px;border-radius:6px;background:rgba(255,255,255,.07);
+    color:var(--muted);white-space:nowrap}
+  .hint.on{background:rgba(74,222,128,.15);color:var(--primary)}
+  .hint.pause{background:rgba(224,167,46,.15);color:var(--warn)}
+  .cursor{position:absolute;width:16px;height:16px;color:#fff;filter:drop-shadow(0 1px 2px rgba(0,0,0,.8));z-index:70}
+
+  /* docked strip */
+  .dockstrip{border-bottom:1px solid var(--hairline);background:var(--cont);
+    display:flex;align-items:center;gap:8px;padding:0 8px 0 0;overflow:hidden}
+  .dockstrip .lead{width:3px;align-self:stretch;flex:0 0 3px}
+  .hairline{height:3px;background:var(--error);opacity:.75}
+  .rewind{background:var(--lowest);border-bottom:1px solid var(--hairline)}
+  .rwrow{display:flex;align-items:center;gap:9px;padding:7px 12px;border-top:1px solid #202020;font-size:12px}
+  .rwrow .ago{margin-left:auto;font-size:10px;color:#6f6f6f;font-variant-numeric:tabular-nums}
+  .rwhead{padding:6px 12px 5px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    color:#6f6f6f;font-weight:700;display:flex;align-items:center;gap:8px}
+
+  /* transcript system row */
+  .sysrow{border:1px solid rgba(255,180,171,.30);background:rgba(255,180,171,.045);
+    border-radius:var(--radius-card);padding:9px 11px}
+  .sysrow .h{display:flex;align-items:center;gap:8px;font-size:12px}
+  .sysrow .who{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .mono{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:10.5px;color:#cfcfcf;
+    background:var(--lowest);border:1px solid var(--hairline);border-radius:8px;padding:7px 8px;
+    margin-top:7px;white-space:pre-wrap;word-break:break-word;line-height:1.45;-webkit-user-select:text;user-select:text}
+  .acts{display:flex;gap:14px;margin-top:7px}
+  .act{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);font-weight:500}
+  .act.pri{color:var(--primary)}
+
+  /* mac */
+  .mac{border:1px solid #2c2c2c;border-radius:11px;overflow:hidden;background:var(--bg);
+    box-shadow:0 18px 50px rgba(0,0,0,.55);position:relative}
+  .tl{display:flex;gap:7px;align-items:center} .tl i{width:11px;height:11px;border-radius:50%;display:block}
+  .macbar{height:34px;display:flex;align-items:center;gap:12px;padding:0 12px;
+    background:rgba(24,24,24,.85);border-bottom:1px solid var(--hairline)}
+  .macbody{display:flex;position:relative}
+  .macside{width:190px;flex:0 0 190px;background:var(--lowest);border-right:1px solid var(--hairline);
+    display:flex;flex-direction:column}
+  .sidehead{padding:9px 12px 6px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    color:#6f6f6f;font-weight:700}
+  .siderow{padding:6px 12px;display:flex;align-items:center;gap:8px;font-size:12px;color:#d6d6d6;position:relative}
+  .siderow.sel{background:var(--cont)}
+  .sidefoot{margin-top:auto;border-top:1px solid var(--hairline);padding:6px 8px;display:flex;gap:2px}
+  .footbtn{width:30px;height:30px;border-radius:7px;display:grid;place-items:center;color:var(--muted);position:relative}
+  .macpane{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+  .titlestrip{height:24px;display:flex;align-items:center;gap:6px;padding:0 12px;
+    border-bottom:1px solid var(--hairline);font-size:10.5px;color:var(--muted);
+    letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+  .paneheader{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;
+    border-bottom:1px solid var(--hairline)}
+  .paneheader .pn{font-size:13px;font-weight:600}
+  .transcript{flex:1;padding:14px 18px;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+  .maccomposer{margin:0 14px 12px;height:40px;border-radius:28px;background:rgba(24,24,24,.6);
+    border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;padding:0 16px;
+    color:#6f6f6f;font-size:12.5px}
+
+  .kbd{display:inline-block;padding:1px 6px;border-radius:5px;background:var(--high);
+    border:1px solid var(--highest);border-bottom-width:2px;font-size:11px;font-weight:600;
+    font-family:-apple-system,sans-serif;color:var(--text);white-space:nowrap}
+  .clip{background:var(--lowest);border:1px solid var(--hairline);border-radius:10px;padding:11px 12px;
+    font-family:"SF Mono",Menlo,Consolas,monospace;font-size:10.5px;color:#cfcfcf;line-height:1.55;
+    white-space:pre-wrap;word-break:break-word}
+  .clip .cm{color:#6f6f6f}
+  .menu{background:#232323;border:1px solid #3a3a3a;border-radius:8px;padding:4px;width:212px;
+    box-shadow:0 12px 30px rgba(0,0,0,.6)}
+  .mi{display:flex;align-items:center;gap:9px;padding:5px 8px;border-radius:5px;font-size:12px}
+  .mi.sel{background:rgba(74,222,128,.16);color:var(--primary)}
+  .mi .k{margin-left:auto;font-size:10.5px;color:#7a7a7a}
+  .msep{height:1px;background:#3a3a3a;margin:4px 2px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="g-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.1 12.2l2.7 2.7 5.1-5.5"/></symbol>
+  <symbol id="g-checkbare" viewBox="0 0 24 24"><path d="M5 12.6l4.4 4.4L19 6.6"/></symbol>
+  <symbol id="g-warn" viewBox="0 0 24 24"><path d="M12 4.3l9 15.4H3z"/><path d="M12 9.4v4.3"/><circle class="dot" cx="12" cy="16.7" r=".75"/></symbol>
+  <symbol id="g-warncirc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7.3v5.1"/><circle class="dot" cx="12" cy="16.2" r=".75"/></symbol>
+  <symbol id="g-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10.9 11.2h1.3V16h1"/><circle class="dot" cx="12" cy="7.9" r=".75"/></symbol>
+  <symbol id="g-copy" viewBox="0 0 24 24"><rect x="8.6" y="8.6" width="10.9" height="10.9" rx="2.2"/><path d="M15.4 5.4H4.5v10.9"/></symbol>
+  <symbol id="g-caret" viewBox="0 0 24 24"><path d="M9.4 5.4L16 12l-6.6 6.6"/></symbol>
+  <symbol id="g-caretdown" viewBox="0 0 24 24"><path d="M5.4 9.4L12 16l6.6-6.6"/></symbol>
+  <symbol id="g-caretup" viewBox="0 0 24 24"><path d="M5.4 14.6L12 8l6.6 6.6"/></symbol>
+  <symbol id="g-x" viewBox="0 0 24 24"><path d="M6.2 6.2l11.6 11.6M17.8 6.2L6.2 17.8"/></symbol>
+  <symbol id="g-left" viewBox="0 0 24 24"><path d="M14.6 5.4L8 12l6.6 6.6"/></symbol>
+  <symbol id="g-send" viewBox="0 0 24 24"><path d="M12 19V5.4"/><path d="M6.6 10.8L12 5.4l5.4 5.4"/></symbol>
+  <symbol id="g-branch" viewBox="0 0 24 24"><circle cx="7.2" cy="6" r="2.2"/><circle cx="7.2" cy="18" r="2.2"/><circle cx="16.8" cy="7.6" r="2.2"/><path d="M7.2 8.2v7.6"/><path d="M16.8 9.8v1.6a3.6 3.6 0 0 1-3.6 3.6H9.4"/></symbol>
+  <symbol id="g-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><circle class="teeth" cx="12" cy="12" r="7.4" stroke-dasharray="2.3 3.2"/></symbol>
+  <symbol id="g-bell" viewBox="0 0 24 24"><path d="M6.2 10.6a5.8 5.8 0 0 1 11.6 0c0 3.3.9 5.1 1.6 6.1H4.6c.7-1 1.6-2.8 1.6-6.1z"/><path d="M9.7 19.2a2.5 2.5 0 0 0 4.6 0"/></symbol>
+  <symbol id="g-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20.2 4.6v3.9h-3.9"/></symbol>
+  <symbol id="g-out" viewBox="0 0 24 24"><path d="M14.2 4.6h5.2v5.2"/><path d="M19.4 4.6L11 13"/><path d="M16.2 14.6v4.8H4.6V7.8h4.8"/></symbol>
+  <symbol id="g-pointer" viewBox="0 0 24 24"><path d="M5.5 3.2l13 8.4-5.6 1.1 3 5.9-2.6 1.3-3-5.9-4 3.7z" fill="currentColor" stroke="#111" stroke-width="1"/></symbol>
+  <symbol id="g-finger" viewBox="0 0 24 24"><path d="M9.2 12V6.6a1.7 1.7 0 0 1 3.4 0V12"/><path d="M12.6 12V9.4a1.6 1.6 0 0 1 3.2 0V15a5.6 5.6 0 0 1-5.6 5.6H9a4.6 4.6 0 0 1-3.3-1.4l-1.2-1.2a1.6 1.6 0 0 1 2.3-2.3l.8.8V12"/></symbol>
+  <symbol id="g-stack" viewBox="0 0 24 24"><path d="M12 3.6l8.4 4.2-8.4 4.2-8.4-4.2z"/><path d="M3.6 12.4l8.4 4.2 8.4-4.2"/><path d="M3.6 16.6l8.4 4.2 8.4-4.2"/></symbol>
+  <symbol id="g-file" viewBox="0 0 24 24"><path d="M6.4 3.6h7.2l4.4 4.4v12.4H6.4z"/><path d="M13.4 3.8V8h4.4"/></symbol>
+  <symbol id="g-dots" viewBox="0 0 24 24"><circle class="dot" cx="6" cy="12" r="1.5"/><circle class="dot" cx="12" cy="12" r="1.5"/><circle class="dot" cx="18" cy="12" r="1.5"/></symbol>
+</defs></svg>
+
+<div class="wrap">
+  <h1>The notice layer — copyable, reviewable, never in the way</h1>
+  <p class="sub">The thing that pops up to tell you something went wrong · <strong>iOS + macOS</strong></p>
+
+  <div class="lede info">
+    <strong>First, a fact you should have.</strong> The bottom pop-up you are describing is Flutter’s
+    <code>SnackBar</code>, and on <code>main</code> there are <strong>72 of them across 29 files</strong>.
+    On this branch (<code>feat/status</code>, uncommitted) there are <strong>zero</strong> — SPEC-48 already
+    moved them to a top-anchored card plus a durable record. <em>So if you are still seeing bottom pop-ups,
+    you are running a build without this branch.</em> That said: <strong>the replacement still fails both
+    things you named</strong>, and this page is about fixing the notice itself, not where it lives.
+  </div>
+
+  <!-- ═══════════════ 0 · DIAGNOSIS ═══════════════ -->
+  <h2 class="sec">0 · Why it fails — measured, not felt</h2>
+
+  <div class="card">
+    <header><h3>Today, on <code>main</code>: the bottom pop-up</h3><span class="no">BROKEN</span>
+      <p>stock M3 <code>SnackBar</code> · 4 s · no selection · one line</p></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:0 0 320px">
+          <p class="cap">iOS — it lands on the composer</p>
+          <div class="phone">
+            <div class="island"></div>
+            <div class="statusbar"><span>9:41</span>
+              <span class="bars"><i style="height:4px"></i><i style="height:6px"></i><i style="height:8px"></i><i style="height:10px"></i>
+                <span class="batt" style="margin-left:6px"></span></span></div>
+            <div class="pscreen">
+              <div class="glassbar">
+                <span class="backc"><svg class="i s15"><use href="#g-left"/></svg></span>
+                <span class="bartitle"><span class="t1">feat/status</span><span class="t2">pi · sonnet</span></span>
+                <span class="sdot" style="background:var(--primary)"></span>
+              </div>
+              <div class="transcriptP">
+                <div class="msg user">make a worktree for the toast work</div>
+                <div class="think">Creating the worktree…</div>
+              </div>
+              <div class="snack">
+                <span class="txt">Could not create worktree: FileSystemException: Creation failed, path…</span>
+              </div>
+              <div class="composer"><span class="ph">Message pi…</span>
+                <span class="sendbtn"><svg class="i s18"><use href="#g-send"/></svg></span></div>
+              <div class="badmark" style="left:10px;right:10px;bottom:18px;height:52px"></div>
+              <div class="badlbl" style="left:14px;bottom:78px">covers the composer</div>
+              <div class="badlbl" style="right:14px;bottom:78px">gone in 4 s, forever</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex:1 1 470px;min-width:450px">
+          <p class="cap">macOS — bottom-centre, ~700 px from the thing you clicked</p>
+          <div class="mac">
+            <div class="macbar">
+              <span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>
+              <span style="font-size:12px;color:var(--muted)">makit</span>
+            </div>
+            <div class="macbody" style="height:270px">
+              <div class="macside">
+                <div class="sidehead">makit</div>
+                <div class="siderow sel"><span class="sdot" style="background:var(--primary)"></span>feat/status</div>
+                <div class="siderow" style="background:rgba(255,180,171,.07)">
+                  <span class="sdot" style="background:var(--muted)"></span>feat/toast
+                  <svg class="i s13" style="margin-left:auto;color:var(--muted)"><use href="#g-dots"/></svg></div>
+                <div class="siderow"><span class="sdot" style="background:var(--muted)"></span>main</div>
+              </div>
+              <div class="macpane">
+                <div class="titlestrip"><svg class="i s11"><use href="#g-branch"/></svg>feat/status</div>
+                <div class="paneheader"><span class="sdot" style="background:var(--primary)"></span>
+                  <span class="pn">status &amp; activity</span></div>
+                <div class="transcript"><div class="msg user">delete the toast worktree</div>
+                  <div class="think">Removing…</div></div>
+                <div class="maccomposer">Message pi…</div>
+              </div>
+              <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:16px;
+                   background:#2E2E2E;border-radius:4px;padding:12px 16px;font-size:12.5px;color:#E6E6E6;
+                   box-shadow:0 4px 14px rgba(0,0,0,.5);white-space:nowrap">
+                Could not delete worktree: PathAccessException: Deletion failed, path = '/Use…
+              </div>
+              <div class="badlbl" style="left:10px;top:100px">you clicked here</div>
+              <div class="badlbl" style="left:50%;transform:translateX(-50%);bottom:62px">the answer appears here</div>
+              <svg style="position:absolute;left:96px;top:80px;width:280px;height:150px;overflow:visible" viewBox="0 0 280 150">
+                <path d="M8 8 C 60 60, 140 90, 240 128" fill="none" stroke="#FFB4AB" stroke-width="1.4"
+                      stroke-dasharray="4 4" opacity=".75"/>
+                <path d="M240 128 l -9 -3 M240 128 l -3 -9" fill="none" stroke="#FFB4AB" stroke-width="1.4" opacity=".75"/>
+              </svg>
+            </div>
+          </div>
+          <p class="why"><b>And the pointer makes it worse.</b> An M3 <code>SnackBar</code> does not pause
+            when you hover it, so on desktop the notice is dying <em>while you move the mouse toward it</em>.</p>
+        </div>
+      </div>
+
+      <table class="t" style="margin-top:24px">
+        <tr><th>Your complaint</th><th>Mechanical cause</th><th>Evidence</th></tr>
+        <tr>
+          <td class="k">“Impossible to copy”</td>
+          <td class="m"><code>SnackBar</code> renders a <code>Text</code>, not a <code>SelectableText</code>,
+            and has no clipboard action. ~30 of the 72 sites interpolate the raw exception into the
+            sentence — <code>'Could not create worktree: $e'</code> — so the only part worth sending
+            someone is inside a string that is also truncated on screen.</td>
+          <td class="m"><code>git grep showSnackBar main</code> → <b>72 / 29 files</b></td>
+        </tr>
+        <tr>
+          <td class="k">“I cannot review what popped”</td>
+          <td class="m">Four seconds and it is destroyed. No history, no scrollback, nothing anywhere
+            in the product could answer <em>“what just happened?”</em></td>
+          <td class="m">fixed on this branch by the Activity record — <b>but only if you go looking</b></td>
+        </tr>
+        <tr>
+          <td class="k">“Terrible on mobile”</td>
+          <td class="m">Bottom-centre is the composer’s slot. The notice covers the one control the
+            design doc protects, sits under your thumb, and fights the keyboard.</td>
+          <td class="m">drawn above</td>
+        </tr>
+        <tr>
+          <td class="k">“Terrible on desktop”</td>
+          <td class="m">Appears ~700 px from the click; no hover-pause; no keyboard path; a 1-line pill
+            for a 6-line stack trace.</td>
+          <td class="m">drawn above</td>
+        </tr>
+      </table>
+
+      <p class="note bad"><b>What this branch has not fixed.</b> The new top card is better placed and the
+        record is durable, but: copy is a <b>13 px icon inside a 24 px button</b> — the smallest target on
+        the card is the action you need most; the dwell timer runs regardless of whether you are reading it
+        (<code>grep -c MouseRegion status_toast.dart</code> → <b>0</b>); and reviewing still means navigating
+        to another surface. Four rules below, in the order I would ship them.</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════ RULE 1 ═══════════════ -->
+  <h2 class="sec">Rule 1 · If you are reading it, it does not leave</h2>
+  <p class="secnote">
+    The cheapest fix in the whole page, and it removes most of the panic. A dwell timer should measure
+    <em>inattention</em>, not elapsed time. Point at it (macOS) or touch it (iOS) and the clock stops and
+    the detail unfolds; leave and it resumes with the full dwell, not the remainder.
+  </p>
+
+  <div class="card">
+    <header><h3>Freeze on attention, expand on contact</h3><span class="rec">SHIP FIRST</span>
+      <p><code>MouseRegion</code> + <code>Listener</code> around the card · ~15 lines</p></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:0 0 330px">
+          <p class="cap">resting — 8 s failure dwell, draining</p>
+          <div class="notice f" style="max-width:330px">
+            <span class="stripe"></span>
+            <div class="nin">
+              <div class="nrow">
+                <svg class="i s15 nglyph f" style="margin-top:1px"><use href="#g-warncirc"/></svg>
+                <span class="ntitle">Could not create worktree</span>
+              </div>
+              <div class="ndetail">FileSystemException: Creation failed, path = '/Use…</div>
+            </div>
+            <div class="dwellbar"><i style="width:62%"></i></div>
+          </div>
+          <p class="why">A hairline drain, not a countdown number — you can see time left without being
+            told to hurry.</p>
+        </div>
+
+        <div style="flex:0 0 360px">
+          <p class="cap">pointer enters → frozen and unfolded</p>
+          <div style="position:relative;max-width:360px">
+            <div class="notice f">
+              <span class="stripe"></span>
+              <div class="nin">
+                <div class="nrow">
+                  <svg class="i s15 nglyph f" style="margin-top:1px"><use href="#g-warncirc"/></svg>
+                  <span class="ntitle">Could not create worktree</span>
+                  <span class="hint pause">paused</span>
+                </div>
+                <div class="ndetail full">FileSystemException: Creation failed,
+path = '/Users/le/.worktrees/makit/feat-status'
+(OS Error: File exists, errno = 17)</div>
+                <div class="acts" style="margin-left:24px">
+                  <span class="act pri"><svg class="i s13"><use href="#g-copy"/></svg>Click to copy</span>
+                  <span class="act"><svg class="i s13"><use href="#g-refresh"/></svg>Retry</span>
+                </div>
+              </div>
+              <div class="dwellbar"><i style="width:62%;background:var(--warn)"></i></div>
+            </div>
+            <svg class="cursor" style="left:210px;top:52px"><use href="#g-pointer"/></svg>
+          </div>
+          <p class="why">Same card, no new surface: the one-line preview becomes the whole payload only
+            while you are actually looking at it.</p>
+        </div>
+
+        <div style="flex:1 1 280px;min-width:270px">
+          <ul class="why">
+            <li class="plus"><b>Answers “I cannot review it” for the 90 % case</b> without any navigation,
+              any route, or any bell — you were already looking at it.</li>
+            <li class="plus"><b>Fixes the desktop race</b> where the notice dies while the mouse travels
+              toward it. On iOS, touch-and-hold does the same job.</li>
+            <li class="plus"><b>Resume with the full dwell.</b> After you look away it is news again — the
+              same reasoning the toast layer already uses for a coalesced repeat.</li>
+            <li class="minus">A frozen card can be forgotten under a stationary pointer. Cap the freeze at
+              <b>30 s</b>, then fade — the record still holds it, so nothing is lost.</li>
+            <li class="minus">Touch-and-hold on iOS competes with swipe-to-dismiss. Resolve by direction:
+              vertical/press = read, horizontal = dismiss.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ RULE 2 ═══════════════ -->
+  <h2 class="sec">Rule 2 · The whole notice is the copy button</h2>
+  <p class="secnote">
+    You copy an error for exactly one reason: to give it to somebody — a colleague, an issue, an agent.
+    So the unit of copying is not the sentence on screen, it is <strong>everything needed to act on it</strong>.
+    And the target should be the entire card, because the current 13 px icon is the smallest thing on the
+    smallest surface at the worst moment.
+  </p>
+
+  <div class="card">
+    <header><h3>One tap, paste-ready</h3><span class="rec">SHIP FIRST</span>
+      <p>tap/click anywhere = copy · long-press / right-click = choose the format</p></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:0 0 340px">
+          <p class="cap">the three states</p>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="notice f">
+              <span class="stripe"></span>
+              <div class="nin"><div class="nrow">
+                <svg class="i s15 nglyph f" style="margin-top:1px"><use href="#g-warncirc"/></svg>
+                <span class="ntitle">Could not create worktree</span></div>
+                <div class="ndetail">FileSystemException: Creation failed, path…</div></div>
+            </div>
+            <div class="notice f" style="border-color:rgba(74,222,128,.35)">
+              <span class="stripe"></span>
+              <div class="nin"><div class="nrow">
+                <svg class="i s15 nglyph f" style="margin-top:1px"><use href="#g-warncirc"/></svg>
+                <span class="ntitle">Could not create worktree</span>
+                <span class="hint on"><svg class="i s10"><use href="#g-copy"/></svg>click to copy</span></div>
+                <div class="ndetail">FileSystemException: Creation failed, path…</div></div>
+            </div>
+            <div class="notice s" style="border-color:rgba(74,222,128,.45)">
+              <span class="stripe"></span>
+              <div class="nin"><div class="nrow">
+                <svg class="i s15 nglyph s" style="margin-top:1px"><use href="#g-checkbare"/></svg>
+                <span class="ntitle">Copied — error, command and context</span></div>
+                <div class="ndetail" style="color:var(--primary);opacity:.8">6 lines on the clipboard</div></div>
+            </div>
+          </div>
+          <p class="why">The confirmation happens <b>in place</b>. A “Copied” toast about a toast is the
+            kind of thing that makes a status layer feel like a bureaucracy.</p>
+        </div>
+
+        <div style="flex:0 0 300px">
+          <p class="cap">long-press / right-click — pick the format</p>
+          <div class="menu">
+            <div class="mi sel"><svg class="i s13"><use href="#g-copy"/></svg>Copy with context<span class="k">default</span></div>
+            <div class="mi"><svg class="i s13"><use href="#g-file"/></svg>Copy error only<span class="k">⌘⇧C</span></div>
+            <div class="mi"><svg class="i s13"><use href="#g-stack"/></svg>Copy last 10 notices</div>
+            <div class="msep"></div>
+            <div class="mi"><svg class="i s13"><use href="#g-refresh"/></svg>Retry</div>
+            <div class="mi"><svg class="i s13"><use href="#g-out"/></svg>Open in Diagnostics</div>
+          </div>
+          <p class="why"><b>“Copy last 10”</b> is the sleeper feature: when something is really wrong,
+            the useful artefact is the <em>sequence</em>, not the last line.</p>
+        </div>
+
+        <div style="flex:1 1 330px;min-width:320px">
+          <p class="cap">what “with context” puts on the clipboard</p>
+          <div class="clip">makit <span class="cm">·</span> 12:34:56.789 <span class="cm">·</span> FAILURE [worktree]
+Could not create worktree
+
+FileSystemException: Creation failed,
+path = '/Users/le/.worktrees/makit/feat-status'
+(OS Error: File exists, errno = 17)
+
+<span class="cm">session</span>  feat/status (pi · sonnet)
+<span class="cm">action</span>   worktree.create branch=feat/toast
+<span class="cm">build</span>    app 1.0.0 (482) · server 1.0.0 · macOS 15.3</div>
+          <ul class="why">
+            <li class="plus"><b>It mirrors <code>LogRecord.toLine()</code></b>, so a pasted notice and a
+              pasted log read as siblings — the format precedent already exists in
+              <code>diagnostics/log.dart</code>.</li>
+            <li class="plus"><b>The three context lines are the difference between a bug report and a
+              shrug.</b> They are all already in memory at post time; none require new plumbing.</li>
+            <li class="minus">Copying build info silently is a (small) privacy surface. Keep paths, drop
+              anything user-typed — and “Copy error only” stays one keystroke away.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="note good"><b>Why tap-to-copy and not tap-to-open.</b> The current card navigates to
+        Activity on tap. But you are already <em>looking</em> at the notice — navigating throws away the
+        thing you can see to show you a list containing it. Copy is the action that cannot be done any
+        other way; make it the one the whole surface performs. Opening moves to the <code>›</code> chevron
+        and the keyboard.</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════ RULE 3 ═══════════════ -->
+  <h2 class="sec">Rule 3 · Dock it — a notice must never cover anything</h2>
+  <p class="secnote">
+    Floating over content is why a notice feels like an interruption and why dismissing it is urgent.
+    Instead: a strip that <strong>lives</strong> below the top bar at 3 px, grows to a line when there is
+    something to say, and to a card when you touch it. It occupies layout — so it can never sit on the
+    composer, the transcript, or a control.
+  </p>
+
+  <div class="card">
+    <header><h3>Hairline → line → card</h3><span class="rec">RECOMMENDED</span>
+      <p>the same 3 px of chrome, three heights</p></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:0 0 320px">
+          <p class="cap">idle — 3 px, the colour of the last thing that happened</p>
+          <div class="phone" style="height:400px">
+            <div class="pscreen" style="height:100%">
+              <div class="glassbar" style="top:14px">
+                <span class="backc"><svg class="i s15"><use href="#g-left"/></svg></span>
+                <span class="bartitle"><span class="t1">feat/status</span><span class="t2">pi · sonnet</span></span>
+                <span class="sdot" style="background:var(--primary)"></span>
+              </div>
+              <div style="position:absolute;left:12px;right:12px;top:62px" class="hairline"></div>
+              <div class="transcriptP" style="padding-top:76px">
+                <div class="msg user">run the status tests</div>
+                <div class="toolcard">$ flutter test test/status/<br><span style="color:var(--primary)">+ 61</span> passed</div>
+                <div class="msg">All nine suites are green.</div>
+              </div>
+              <div class="composer"><span class="ph">Message pi…</span>
+                <span class="sendbtn"><svg class="i s18"><use href="#g-send"/></svg></span></div>
+            </div>
+          </div>
+          <p class="why">Three pixels is not chrome, it is a <b>bookmark</b>: “something happened, and it
+            was red.” Nothing to read, nothing to dismiss.</p>
+        </div>
+
+        <div style="flex:0 0 320px">
+          <p class="cap">a notice arrives — one line, pushing nothing you were reading</p>
+          <div class="phone" style="height:400px">
+            <div class="pscreen" style="height:100%">
+              <div class="glassbar" style="top:14px">
+                <span class="backc"><svg class="i s15"><use href="#g-left"/></svg></span>
+                <span class="bartitle"><span class="t1">feat/status</span><span class="t2">pi · sonnet</span></span>
+                <span class="sdot" style="background:var(--primary)"></span>
+              </div>
+              <div style="position:absolute;left:12px;right:12px;top:62px;border-radius:8px;
+                   overflow:hidden;border:1px solid var(--hairline)">
+                <div class="dockstrip" style="height:30px;border-bottom:none">
+                  <span class="lead" style="background:var(--error)"></span>
+                  <svg class="i s13" style="color:var(--error);margin-left:8px"><use href="#g-warncirc"/></svg>
+                  <span style="font-size:11.5px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;
+                        text-overflow:ellipsis">Could not create worktree</span>
+                  <span class="hint"><svg class="i s10"><use href="#g-copy"/></svg>copy</span>
+                  <svg class="i s11" style="color:var(--muted)"><use href="#g-caretdown"/></svg>
+                </div>
+              </div>
+              <div class="transcriptP" style="padding-top:104px">
+                <div class="msg user">make a worktree for the toast work</div>
+                <div class="think">Creating the worktree…</div>
+              </div>
+              <div class="composer"><span class="ph">Message pi…</span>
+                <span class="sendbtn"><svg class="i s18"><use href="#g-send"/></svg></span></div>
+            </div>
+          </div>
+          <p class="why"><b>The composer is untouched</b>, the transcript is untouched, and the notice is
+            in the same place it always is — so you learn where to look exactly once.</p>
+        </div>
+
+        <div style="flex:1 1 290px;min-width:280px">
+          <ul class="why">
+            <li class="plus"><b>The transcript is <code>reverse: true</code></b>
+              (<code>ui/session/transcript_list.dart:103</code>) — newest at offset 0, pinned to the bottom.
+              A strip that grows at the <em>top</em> therefore moves nothing you are reading. The usual
+              objection to docked banners — “layout jank” — does not apply to this app.</li>
+            <li class="plus"><b>Dismissal stops being urgent.</b> Nothing is covered, so there is no reason
+              to swat it — which is what makes a 4-second auto-hide feel necessary in the first place.</li>
+            <li class="plus"><b>One layout for both shells.</b> Under the glass bar on iOS, under the pane
+              header on macOS. Both already have a horizontal strip there.</li>
+            <li class="minus">Costs ~30 pt while a notice is up. Bounded: one line, one notice, newest wins
+              — a second arrival replaces the line and bumps a <code>+N</code> counter rather than stacking.</li>
+            <li class="minus">A permanently-coloured hairline could become wallpaper you stop seeing. Fade
+              it to <code>outline-variant</code> after the record is read, so colour always means “new”.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ RULE 4 ═══════════════ -->
+  <h2 class="sec">Rule 4 · Review without leaving — pull the strip</h2>
+  <p class="secnote">
+    “I cannot review what was just popping” has a literal answer: put the last few notices <em>behind the
+    strip they came from</em>. Drag it down (iOS) or click it (macOS) and the recent ones unroll in place;
+    let go and they roll back up. No route, no dialog, no navigation away from what you were doing.
+  </p>
+
+  <div class="card">
+    <header><h3>The last five, in the place they appeared</h3><span class="rec">RECOMMENDED</span>
+      <p>drag the strip · newest first · every row copyable · <code>Open Activity</code> at the foot</p></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:0 0 320px">
+          <p class="cap">iOS — drag the strip down</p>
+          <div class="phone" style="height:470px">
+            <div class="pscreen" style="height:100%">
+              <div class="glassbar" style="top:14px">
+                <span class="backc"><svg class="i s15"><use href="#g-left"/></svg></span>
+                <span class="bartitle"><span class="t1">feat/status</span><span class="t2">pi · sonnet</span></span>
+                <span class="sdot" style="background:var(--primary)"></span>
+              </div>
+              <div style="position:absolute;left:12px;right:12px;top:62px;border-radius:10px;overflow:hidden;
+                   border:1px solid var(--hairline);background:var(--lowest);
+                   box-shadow:0 10px 26px rgba(0,0,0,.5);z-index:35">
+                <div class="rwhead">recent<span style="margin-left:auto;font-weight:600;text-transform:none;
+                     letter-spacing:0;font-size:10px;color:#5f5f5f">drag to hold open</span></div>
+                <div class="rwrow"><svg class="i s13" style="color:var(--error)"><use href="#g-warncirc"/></svg>
+                  <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                    Could not create worktree</span>
+                  <svg class="i s11" style="color:var(--muted)"><use href="#g-copy"/></svg>
+                  <span class="ago">20s</span></div>
+                <div class="rwrow"><svg class="i s13" style="color:var(--primary)"><use href="#g-check"/></svg>
+                  <span style="flex:1;min-width:0">Killed :5173</span>
+                  <svg class="i s11" style="color:var(--muted)"><use href="#g-copy"/></svg>
+                  <span class="ago">4m</span></div>
+                <div class="rwrow"><svg class="i s13" style="color:var(--error)"><use href="#g-warncirc"/></svg>
+                  <span style="flex:1;min-width:0">Pair failed</span>
+                  <svg class="i s11" style="color:var(--muted)"><use href="#g-copy"/></svg>
+                  <span class="ago">6m</span></div>
+                <div class="rwrow"><svg class="i s13" style="color:var(--muted)"><use href="#g-info"/></svg>
+                  <span style="flex:1;min-width:0">Paired with le-mbp</span>
+                  <svg class="i s11" style="color:var(--muted)"><use href="#g-copy"/></svg>
+                  <span class="ago">12m</span></div>
+                <div class="rwrow" style="justify-content:space-between;color:var(--muted)">
+                  <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px">
+                    <svg class="i s11"><use href="#g-copy"/></svg>Copy all 5</span>
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px">
+                    Open Activity<svg class="i s10"><use href="#g-caret"/></svg></span></div>
+                <div style="text-align:center;padding:3px 0 6px">
+                  <span style="display:inline-block;width:34px;height:4px;border-radius:2px;background:#4a4a4a"></span></div>
+              </div>
+              <svg class="cursor" style="left:150px;top:232px;width:20px;height:20px;color:#e8e8e8">
+                <use href="#g-finger"/></svg>
+              <div class="transcriptP" style="padding-top:250px;opacity:.45">
+                <div class="msg user">make a worktree for the toast work</div>
+              </div>
+              <div class="composer"><span class="ph">Message pi…</span>
+                <span class="sendbtn"><svg class="i s18"><use href="#g-send"/></svg></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex:1 1 470px;min-width:450px">
+          <p class="cap">macOS — click the strip; it stays until you click away</p>
+          <div class="mac">
+            <div class="macbar">
+              <span class="tl"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span>
+              <span style="font-size:12px;color:var(--muted)">makit</span>
+            </div>
+            <div class="macbody" style="height:290px">
+              <div class="macside">
+                <div class="sidehead">makit</div>
+                <div class="siderow sel"><span class="sdot" style="background:var(--primary)"></span>feat/status</div>
+                <div class="siderow"><span class="sdot" style="background:var(--muted)"></span>main</div>
+                <div class="sidefoot"><span class="footbtn"><svg class="i s18"><use href="#g-gear"/></svg></span>
+                  <span class="footbtn"><svg class="i s18"><use href="#g-bell"/></svg></span></div>
+              </div>
+              <div class="macpane">
+                <div class="titlestrip"><svg class="i s11"><use href="#g-branch"/></svg>feat/status</div>
+                <div class="paneheader"><span class="sdot" style="background:var(--primary)"></span>
+                  <span class="pn">status &amp; activity</span></div>
+                <div class="rewind">
+                  <div class="rwhead">recent
+                    <span style="margin-left:auto;text-transform:none;letter-spacing:0;font-size:10px;color:#5f5f5f">
+                      ⌘⇧C copies the newest</span>
+                    <svg class="i s11" style="color:var(--muted)"><use href="#g-caretup"/></svg></div>
+                  <div class="rwrow" style="background:rgba(255,255,255,.03)">
+                    <svg class="i s13" style="color:var(--error)"><use href="#g-warncirc"/></svg>
+                    <span style="flex:1;min-width:0">Could not delete worktree</span>
+                    <span class="hint on" style="font-size:9.5px"><svg class="i s10"><use href="#g-copy"/></svg>click to copy</span>
+                    <span class="ago">12s</span></div>
+                  <div class="rwrow"><svg class="i s13" style="color:var(--warn)"><use href="#g-warn"/></svg>
+                    <span style="flex:1;min-width:0">Port 5173 already in use</span><span class="ago">3m</span></div>
+                  <div class="rwrow"><svg class="i s13" style="color:var(--primary)"><use href="#g-check"/></svg>
+                    <span style="flex:1;min-width:0">Pushed feat/status</span><span class="ago">8m</span></div>
+                  <div class="rwrow" style="color:var(--muted);gap:16px">
+                    <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px">
+                      <svg class="i s11"><use href="#g-copy"/></svg>Copy all</span>
+                    <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px">
+                      <svg class="i s11"><use href="#g-out"/></svg>Open Activity</span></div>
+                </div>
+                <div class="transcript" style="opacity:.5">
+                  <div class="msg user">delete the toast worktree</div>
+                  <div class="think">Removing…</div></div>
+                <div class="maccomposer">Message pi…</div>
+              </div>
+            </div>
+          </div>
+          <ul class="why">
+            <li class="plus"><b>Review is now zero-navigation.</b> The question “what just popped?” is
+              answered where it popped, in one gesture, without losing the screen you were on.</li>
+            <li class="plus"><b>It makes the strip worth having when idle.</b> The 3 px hairline is not
+              decoration — it is the handle.</li>
+            <li class="plus"><b>Activity stops being load-bearing.</b> The full record still exists for
+              filtering and copy-all, but the 10-second case never reaches for it — which is the right
+              division: the strip is <em>recent</em>, Activity is <em>everything</em>.</li>
+            <li class="minus">Two ways in to overlapping content (strip and bell). Acceptable: the same
+              relationship as Recents vs. the full history in any mail app — but the strip must cap hard at
+              <b>5 rows</b> or it becomes a second Activity with worse ergonomics.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 5 · TRANSCRIPT ═══════════════ -->
+  <h2 class="sec">5 · The structural move — failures belong in the conversation</h2>
+  <p class="secnote">
+    makit is a chat app. It already owns a surface that is durable, timestamped, infinitely scrollable,
+    selectable and copyable, and that you already scroll to remember what happened: <strong>the
+    transcript</strong>. When a failure belongs to a session, the strongest version of “reviewable and
+    copyable” is not a second record — it is a row in the first one.
+  </p>
+
+  <div class="card">
+    <header><h3>A session-scoped failure lands inline, as a system row</h3><span class="later">THE BIG ONE</span>
+      <p>the strip still flashes it · the transcript keeps it</p></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:0 0 340px">
+          <p class="cap">in the transcript, where you were</p>
+          <div style="background:var(--bg);border:1px solid var(--hairline);border-radius:12px;
+               padding:14px;display:flex;flex-direction:column;gap:10px">
+            <div class="msg user">make a worktree for the toast work</div>
+            <div class="think">Creating the worktree…</div>
+            <div class="sysrow">
+              <div class="h">
+                <svg class="i s13" style="color:var(--error)"><use href="#g-warncirc"/></svg>
+                <span class="who">makit</span>
+                <span style="flex:1">Could not create worktree</span>
+                <span style="font-size:10px;color:#6f6f6f">12:34</span>
+              </div>
+              <div class="mono">FileSystemException: Creation failed,
+path = '/Users/le/.worktrees/makit/feat-status'
+(OS Error: File exists, errno = 17)</div>
+              <div class="acts">
+                <span class="act pri"><svg class="i s13"><use href="#g-copy"/></svg>Copy</span>
+                <span class="act"><svg class="i s13"><use href="#g-refresh"/></svg>Retry</span>
+                <span class="act"><svg class="i s13"><use href="#g-out"/></svg>Diagnostics</span>
+              </div>
+            </div>
+            <div class="msg">The path already exists — want me to reuse it?</div>
+          </div>
+          <p class="why">Selectable by the same gesture as any message. Scrollable forever. Timestamped and
+            positioned <b>in the causal order</b> — the one thing no separate record can give you.</p>
+        </div>
+
+        <div style="flex:1 1 480px;min-width:460px">
+          <table class="t">
+            <tr><th>Notice kind</th><th>Example</th><th>Where it goes</th></tr>
+            <tr><td class="k">Session-scoped failure</td>
+              <td class="m">worktree create/delete, session quit, send failed, port kill refused</td>
+              <td class="m"><b>Transcript row</b> + strip flash. The agent’s own transcript is where you
+                will look, because that is where you asked for it.</td></tr>
+            <tr><td class="k">Global failure</td>
+              <td class="m">pair failed, server unreachable, push registration</td>
+              <td class="m">Strip + record only — there is no conversation it belongs to.</td></tr>
+            <tr><td class="k">Trivial success</td>
+              <td class="m">copied URL, killed a port, archived</td>
+              <td class="m">Strip line, 3 s, no transcript row. These must stay cheap.</td></tr>
+            <tr><td class="k">Agent asks you something</td>
+              <td class="m"><code>askUserQuestion</code></td>
+              <td class="m"><b>Already inline</b> (SPEC-25 <code>ask_card.dart</code>) — precedent for this
+                whole idea, and proof the pattern reads well.</td></tr>
+          </table>
+          <ul class="why">
+            <li class="plus"><b>The precedent is shipped.</b> SPEC-25 already puts a machine-generated,
+              interactive card in the transcript and settles it into a quiet resolved state. A failure row
+              is the same shape with a smaller ask.</li>
+            <li class="plus"><b>It makes “Retry” natural.</b> Retry in a floating toast is a race against a
+              timer; retry on a transcript row is just a button that is still there tomorrow.</li>
+            <li class="minus"><b>The transcript is server-backed; these events are client-only</b>
+              (SPEC-48 D9: nothing persisted). So the row is <em>local and ephemeral</em> — it survives
+              scrollback but not a relaunch, and it must be visibly the app talking (the <code>makit</code>
+              label), never mistaken for agent output.</li>
+            <li class="minus"><b>Pollution risk is real.</b> Strictly failures and warnings that the user
+              caused by an action in that session — never progress, never success, never lifecycle.
+              Get this wrong and the transcript becomes a log.</li>
+            <li class="minus">Needs a decision on ordering when the transcript is mid-stream. Simplest
+              correct answer: append at the current tail, never interleave into history.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 6 · KEYBOARD ═══════════════ -->
+  <h2 class="sec">6 · macOS — a notice you can reach without a mouse</h2>
+  <div class="card">
+    <header><h3>Three keys, and the pointer rules</h3><span class="rec">CHEAP</span></header>
+    <div class="body">
+      <div class="grid">
+        <div style="flex:1 1 420px;min-width:400px">
+          <table class="t">
+            <tr><th>Input</th><th>Does</th><th>Why it matters</th></tr>
+            <tr><td class="k"><span class="kbd">⌘⇧C</span></td><td class="m">copy the newest notice, with context</td>
+              <td class="m">The complaint verbatim: something flashed, you want it on the clipboard.
+                Works whether or not the card is still on screen — it reads the record, not the pixels.</td></tr>
+            <tr><td class="k"><span class="kbd">⌘⇧C</span> ×2</td><td class="m">copy the last 10 as a report</td>
+              <td class="m">Press it again within a second and you get the sequence. Same key, escalating
+                scope — no second shortcut to remember.</td></tr>
+            <tr><td class="k"><span class="kbd">esc</span></td><td class="m">dismiss the strip / close the rewind</td>
+              <td class="m">Never destroys anything — the record holds it.</td></tr>
+            <tr><td class="k">hover</td><td class="m">freeze + expand (Rule 1)</td>
+              <td class="m">The single most missed behaviour in every Material toast on desktop.</td></tr>
+            <tr><td class="k">right-click</td><td class="m">the copy-format menu (Rule 2)</td>
+              <td class="m">Desktop users look for this first; there is nothing there today.</td></tr>
+          </table>
+        </div>
+        <div style="flex:1 1 300px;min-width:290px">
+          <ul class="why">
+            <li class="plus"><b><span class="kbd">⌘⇧C</span> is the whole feature for a keyboard user</b> —
+              and it is perhaps 20 lines, because <code>StatusCenter</code> already holds the events and
+              already knows how to format them for the clipboard.</li>
+            <li class="plus">It also makes the notice <b>accessible</b>: a screen reader announcing a card
+              that disappears in 4 s is a joke; one that can be re-read and copied on demand is not.</li>
+            <li class="minus">Shortcut collisions must be checked against the composer and the existing
+              desktop map (<code>shortcuts_section.dart</code>) before claiming <span class="kbd">⌘⇧C</span>.</li>
+          </ul>
+          <p class="why"><b>The iOS parallel</b> is the drag in Rule 4 plus touch-and-hold in Rule 1 —
+            both gestures the platform already teaches, neither needing a visible control.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 7 · ORDER ═══════════════ -->
+  <h2 class="sec">7 · What I would ship, in order</h2>
+  <div class="card">
+    <header><h3>Each row is independently shippable and independently useful</h3>
+      <p>1–3 are small and remove the complaint; 4–5 are the design</p></header>
+    <div class="body">
+      <table class="t">
+        <tr><th>#</th><th>Change</th><th>Where</th><th>Size</th><th>Removes</th></tr>
+        <tr><td class="k">1</td><td class="k">Hover / touch freezes the dwell and unfolds the detail</td>
+          <td class="m"><code>status/status_toast.dart</code> — wrap the card in
+            <code>MouseRegion</code> + <code>Listener</code>, pause the <code>Timer</code></td>
+          <td class="m">~15 lines</td>
+          <td class="m">“I cannot review what popped”, for the case where you were looking at it</td></tr>
+        <tr><td class="k">2</td><td class="k">Whole card = copy, with context; confirm in place</td>
+          <td class="m"><code>status/status_toast.dart</code> +
+            <code>StatusEvent.toClipboardText()</code> gains the three context lines</td>
+          <td class="m">~40 lines</td>
+          <td class="m">“Impossible to copy” — and the 13 px target</td></tr>
+        <tr><td class="k">3</td><td class="k"><span class="kbd">⌘⇧C</span> copies the newest / last 10</td>
+          <td class="m">desktop shortcut map + <code>StatusCenter</code></td>
+          <td class="m">~20 lines</td>
+          <td class="m">the “it already vanished” case, entirely</td></tr>
+        <tr><td class="k">4</td><td class="k">Dock the notice: hairline → line → card</td>
+          <td class="m">new <code>status/notice_strip.dart</code>; mounted under the glass bar and the
+            pane header instead of floating over them</td>
+          <td class="m">medium</td>
+          <td class="m">“covers the composer”, “terrible on mobile”</td></tr>
+        <tr><td class="k">5</td><td class="k">Pull the strip for the last five</td>
+          <td class="m"><code>status/notice_strip.dart</code> — reuses
+            <code>ActivityView</code>’s row widget, capped at 5</td>
+          <td class="m">medium</td>
+          <td class="m">“I cannot review” for good, with no navigation</td></tr>
+        <tr><td class="k">6</td><td class="k">Session failures also land in the transcript</td>
+          <td class="m"><code>ui/session/chat_transcript.dart</code> + a local ephemeral row kind</td>
+          <td class="m">larger</td>
+          <td class="m">makes review <em>free</em> — it is just scrollback</td></tr>
+      </table>
+      <p class="note good"><b>The shape of the fix.</b> Rules 1–3 are under 80 lines together and between
+        them kill both complaints outright — I would do those before touching layout. Rules 4–6 are the
+        part that makes the notice stop feeling like an interruption: <em>it never covers anything, it is
+        always in the same place, and the last few are always one gesture behind it.</em></p>
+      <p class="note"><b>What is unchanged.</b> SPEC-48’s <code>StatusCenter</code>, the severity model,
+        Activity, and the OS-notification layer all stand — this is the presentation of the notice, not the
+        record behind it. And nothing here re-opens the bottom-centre slot: that belongs to the composer.</p>
+    </div>
+  </div>
+
+  <p class="sub" style="margin-top:34px">
+    <code>mockups/notice-copy-and-review.html</code> · siblings:
+    <code>mockups/activity-ios-macos.html</code> (where the record lives) ·
+    <code>mockups/status-language-ios-macos.html</code> (statuses &amp; attention)
+  </p>
+</div>
+</body>
+</html>

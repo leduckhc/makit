@@ -72,8 +72,17 @@ class SessionStatusSnapshot {
 
 /// A notification that should be shown for a given session.
 class PendingNotification {
-  const PendingNotification({required this.sessionId, required this.content});
+  const PendingNotification({
+    required this.sessionId,
+    required this.status,
+    required this.content,
+  });
   final String sessionId;
+
+  /// The status the session moved *into*. Carried so consumers can classify the
+  /// change (SPEC-48 maps it to a severity for the Activity record) without
+  /// pattern-matching on [content]'s prose.
+  final SessionStatus status;
   final NotificationContent content;
 }
 
@@ -92,7 +101,13 @@ List<PendingNotification> diffStatusNotifications({
       sessionLabel: snap.label,
     );
     if (content != null) {
-      out.add(PendingNotification(sessionId: snap.sessionId, content: content));
+      out.add(
+        PendingNotification(
+          sessionId: snap.sessionId,
+          status: snap.status,
+          content: content,
+        ),
+      );
     }
   }
   return out;

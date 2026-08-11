@@ -428,7 +428,7 @@ void main() {
 
   /// Hosts the button where the REAL footer puts it: at the bottom of a
   /// left-hand sidebar of [sidebarWidth], with the icon third from the right
-  /// (Add repo / archive / gear sit to its right, 32px each).
+  /// (Add repo / closed / gear sit to its right, 32px each).
   Widget hostInFooter({
     required GithubBudget? budget,
     double sidebarWidth = kSidebarDefaultWidth,
@@ -459,7 +459,7 @@ void main() {
                       children: [
                         Spacer(),
                         GithubBudgetButton(),
-                        // Add repo / archive / gear sit to its right, 32px each.
+                        // Add repo / closed / gear sit to its right, 32px each.
                         SizedBox(width: 32),
                         SizedBox(width: 32),
                         SizedBox(width: 32),

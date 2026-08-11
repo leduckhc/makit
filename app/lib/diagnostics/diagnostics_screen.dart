@@ -13,6 +13,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../app/theme.dart';
+import '../status/status_event.dart';
+import '../status/status_providers.dart';
 import 'diagnostics_providers.dart';
 import 'log.dart';
 
@@ -77,26 +79,32 @@ class _DiagnosticsScreenState extends ConsumerState<DiagnosticsScreen> {
       _records.where((r) => r.level.index >= _filter.index).toList();
 
   Future<void> _copyAll() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final status = ref.status;
     final text = _visible.map((r) => r.toLine()).join('\n');
     await Clipboard.setData(ClipboardData(text: text));
-    messenger.showSnackBar(
-      SnackBar(content: Text('Copied ${_visible.length} lines')),
+    status.info(
+      'Copied ${_visible.length} lines',
+      source: StatusSources.diagnostics,
     );
   }
 
   Future<void> _sendToServer() async {
-    final messenger = ScaffoldMessenger.of(context);
+    final status = ref.status;
     try {
       final sent = await ref.read(logUploaderProvider).flush();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(sent ? 'Logs sent to server' : 'Nothing to send'),
-        ),
-      );
+      if (sent) {
+        status.success(
+          'Logs sent to server',
+          source: StatusSources.diagnostics,
+        );
+      } else {
+        status.info('Nothing to send', source: StatusSources.diagnostics);
+      }
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Send failed: not connected ($e)')),
+      status.failure(
+        'Could not send logs to the server',
+        error: e,
+        source: StatusSources.diagnostics,
       );
     }
   }

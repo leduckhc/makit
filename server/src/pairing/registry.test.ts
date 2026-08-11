@@ -11,6 +11,8 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { hostname } from "node:os";
+
 import { DeviceRegistry } from "./registry.js";
 
 async function withHome(fn: (home: string) => void | Promise<void>) {
@@ -97,4 +99,53 @@ test("authenticate scans all devices (constant-time, no early exit)", () =>
     assert.equal(reg.authenticate(b.bearer)?.id, b.id);
     assert.equal(reg.authenticate(c.bearer)?.id, c.id);
     assert.equal(reg.authenticate("nope"), null);
+  }));
+
+// ---------------------------------------------------------------------------
+// SPEC-46 D2 — grantCli is idempotent in SHAPE as well as identity
+//
+// The CLI device is the subject every capability gate reads. `grantCli` returns
+// an existing `cli@<host>` row as-is, so a row that reached devices.json without
+// caps — a hand edit, or a pair token crafted with that label — came back with
+// `caps: undefined`, which every gate reads as FULL access. That is the opposite
+// of the least-privilege subject D2 exists to create, and it is silent.
+// ---------------------------------------------------------------------------
+
+test("grantCli mints the CLI device with the client cap", () =>
+  withHome(() => {
+    const reg = new DeviceRegistry();
+    const { device, created } = reg.grantCli();
+    assert.equal(created, true);
+    assert.deepEqual(device.caps, ["client"]);
+    assert.match(device.label, /^cli@/);
+  }));
+
+test("grantCli is idempotent: the second call returns the same device", () =>
+  withHome(() => {
+    const reg = new DeviceRegistry();
+    const first = reg.grantCli();
+    const second = reg.grantCli();
+    assert.equal(second.created, false);
+    assert.equal(second.device.id, first.device.id);
+    assert.equal(second.device.bearer, first.device.bearer);
+  }));
+
+test("grantCli repairs a cli@ row that somehow has no caps, rather than granting full access", () =>
+  withHome((home) => {
+    // A device with the CLI's label but no caps — full access by the protocol's
+    // own reading of an absent `caps`.
+    const label = `cli@${hostname()}`;
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, "devices.json"),
+      JSON.stringify([{ id: "hand-edited", label, bearer: "b".repeat(64), pairedAt: 1, lastSeenAt: 1 }]),
+    );
+    const reg = new DeviceRegistry();
+    const { device, created } = reg.grantCli();
+
+    assert.equal(created, false, "identity is preserved — no second row appears");
+    assert.equal(device.id, "hand-edited");
+    assert.deepEqual(device.caps, ["client"], "but the capability is repaired");
+    // And the repair is durable, or the next process reads full access again.
+    assert.deepEqual(new DeviceRegistry().grantCli().device.caps, ["client"]);
   }));

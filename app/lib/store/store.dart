@@ -9,6 +9,7 @@ import '../transport/protocol.dart';
 import '../transport/ws_client.dart';
 import 'cached_commands.dart';
 import 'connection.dart';
+import 'docs.dart';
 import 'metrics.dart';
 import 'models.dart';
 import 'ports.dart';
@@ -62,7 +63,7 @@ class SessionsState {
   final List<Session> sessions;
 
   List<Session> forProject(String projectId) =>
-      sessions.where((s) => s.projectId == projectId && !s.archived).toList()
+      sessions.where((s) => s.projectId == projectId && !s.closed).toList()
         ..sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
 
   Session? byId(String id) => sessions.firstWhereOrNull((s) => s.id == id);
@@ -93,6 +94,7 @@ class StoreState {
     this.githubBudget,
     this.metrics = const [],
     this.ports,
+    this.docs,
     this.sessionsLoaded = false,
     this.historyLoaded = const {},
   });
@@ -144,6 +146,11 @@ class StoreState {
   /// wholesale (it is the complete picture, not a delta).
   final PortsSnapshot? ports;
 
+  /// Latest host-wide docs snapshot (SPEC-46), or null before the first
+  /// `docs.snapshot` frame. Latest-wins: a snapshot replaces the last one
+  /// wholesale (it is the complete picture, not a delta).
+  final DocsSnapshot? docs;
+
   /// Whether a `sessions.snapshot` has been received. Distinguishes "the server
   /// has no sessions" from "we haven't heard from the server yet", which an
   /// empty [sessions] list alone cannot.
@@ -168,6 +175,7 @@ class StoreState {
     GithubBudget? githubBudget,
     List<MetricsSample>? metrics,
     PortsSnapshot? ports,
+    DocsSnapshot? docs,
     bool? sessionsLoaded,
     Set<String>? historyLoaded,
   }) => StoreState(
@@ -183,6 +191,7 @@ class StoreState {
     githubBudget: githubBudget ?? this.githubBudget,
     metrics: metrics ?? this.metrics,
     ports: ports ?? this.ports,
+    docs: docs ?? this.docs,
     sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
     historyLoaded: historyLoaded ?? this.historyLoaded,
   );
@@ -211,6 +220,8 @@ StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
   // Latest-wins: a ports snapshot is the whole picture, so it replaces the
   // last one wholesale rather than merging (SPEC-41, like `metrics` history).
   PortsSnapshotFrame(:final snapshot) => state.copyWith(ports: snapshot),
+  // Latest-wins: a docs snapshot is the whole picture (SPEC-46 D11).
+  DocsSnapshotFrame(:final snapshot) => state.copyWith(docs: snapshot),
   SessionsSnapshot(:final sessions) => state.copyWith(
     sessions: sessions,
     sessionsLoaded: true,
@@ -889,30 +900,30 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
-  /// Archive a session (SPEC-29): a soft, recoverable hide. The server drops it
+  /// Close a session (SPEC-29): release the agent, keep the session. The server drops it
   /// from the active `sessions.snapshot` (it stays resumable + restorable) and
   /// broadcasts a fresh snapshot so the list updates.
-  Future<void> archiveSession(String sessionId) async {
+  Future<void> closeSession(String sessionId) async {
     await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.archive', 'sessionId': sessionId},
+      {'kind': 'session.close', 'sessionId': sessionId},
     );
   }
 
-  /// Restore an archived session to the active list (SPEC-29).
-  Future<void> unarchiveSession(String sessionId) async {
+  /// Reopen a closed session: it returns to the active list and resumes on next open (SPEC-29).
+  Future<void> reopenSession(String sessionId) async {
     await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.unarchive', 'sessionId': sessionId},
+      {'kind': 'session.reopen', 'sessionId': sessionId},
     );
   }
 
-  /// Fetch the archived sessions (SPEC-29). Not part of the active snapshot;
-  /// loaded on demand for the "Show archived sessions" list.
-  Future<List<Session>> listArchivedSessions() async {
+  /// Fetch the closed sessions (SPEC-29). Not part of the active snapshot;
+  /// loaded on demand for the "Show closed sessions" list.
+  Future<List<Session>> listClosedSessions() async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.listArchived'},
+      {'kind': 'session.listClosed'},
     );
     return WireCodec.decodeSessions(ack['sessions']) ?? const [];
   }
@@ -1230,6 +1241,77 @@ class StoreController extends StateNotifier<StoreState> {
     } catch (_) {
       // Swallow: a failed pause leaves polling as it was, which is safe.
     }
+  }
+
+  /// SPEC-46 D7: read one markdown document's text over the WSS channel.
+  /// Errors for `kind == "html"` server-side; the caller only invokes this for
+  /// markdown. Throws on transport error or a server `err` so the preview can
+  /// show the reason rather than a blank body.
+  Future<String> readDoc(String worktreePath, String relPath) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'docs.read', 'worktreePath': worktreePath, 'relPath': relPath},
+    );
+    final text = ack['text'];
+    if (text is! String) throw StateError('docs.read returned no text');
+    return text;
+  }
+
+  /// SPEC-46 D8 rev 2: open the doc on the machine holding it, via the host's
+  /// OS opener. Only valid for a local client — a remote one is refused by the
+  /// server with a stated reason, which propagates as a thrown error.
+  Future<void> openDoc(String worktreePath, String relPath) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'docs.open', 'worktreePath': worktreePath, 'relPath': relPath},
+    );
+  }
+
+  /// SPEC-46 D9/D15: publish one document over the tailnet, returning the
+  /// grant. Never invents a URL — a server `err` (no usable address,
+  /// `tailscale serve` unavailable) throws with the stated reason so the share
+  /// sheet degrades loudly instead of offering a dead link.
+  Future<DocGrant> publishDoc(String worktreePath, String relPath) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'docs.publish',
+        'worktreePath': worktreePath,
+        'relPath': relPath,
+      },
+    );
+    // The grant is nested under `grant`; `fromAck` owns that shape so it is
+    // stated (and tested) in one place instead of inline here.
+    final grant = DocGrant.fromAck(ack);
+    if (grant == null) {
+      throw StateError('docs.publish returned an unusable grant');
+    }
+    return grant;
+  }
+
+  /// SPEC-46 D9: revoke a publication by `grantId` (Stop sharing).
+  Future<void> unpublishDoc(String grantId) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'docs.unpublish', 'grantId': grantId},
+    );
+  }
+
+  /// SPEC-46: list active publications, so the app can say "3 docs are shared".
+  Future<List<DocGrant>> listDocGrants() async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'docs.grants'},
+    );
+    // Tolerant, like ports.dart: a malformed payload yields an empty list, not
+    // a cast error thrown into the caller's Future.
+    final grants = ack['grants'];
+    final raw = grants is List ? grants : const <dynamic>[];
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map((m) => DocGrant.fromJson(Map<String, dynamic>.from(m)))
+        .whereType<DocGrant>()
+        .toList();
   }
 
   @override

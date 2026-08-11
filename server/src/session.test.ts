@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 import { Session, type SessionLifecycle } from "./session.js";
+import { TurnStatusTracker } from "./adapters/turn-status.js";
 import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
 import type { SessionEvent } from "./protocol.js";
 
@@ -341,6 +342,42 @@ test("SPEC-35: a non-empty queue takes priority even if the adapter looks idle",
   assert.deepEqual(f.steered, [], "no steering while a queue exists");
 });
 
+test("SPEC-35: a queue built behind an approval gate drains when the gate closes", async () => {
+  // The wedge, end to end. pi's `ask_user` opens the gate, then the ACP prompt
+  // resolves BEFORE the answer arrives, so the gate closes with no turn to
+  // resume. Nothing else emits `idle` for this session, so unless the closing
+  // gate settles it the session is "busy" forever: every message queues (pi
+  // cannot steer) and the queue never flushes.
+  const a = fakeAdapter();
+  const sent: string[] = [];
+  (a as any).send = async (input: { text: string }) => {
+    sent.push(input.text);
+  };
+  (a as any).steer = async () => false;
+  const tracker = new TurnStatusTracker({
+    emitStatus: (s) => a.emit("status", s),
+    emitSessionStatus: (status) =>
+      a.emit("event", { ts: Date.now(), kind: "session.status", payload: { status } }),
+    isExited: () => false,
+  });
+  const session = new Session({ projectId: "p", agent: "pi", adapter: a });
+
+  const turn = tracker.enterTurn();
+  tracker.enterApproval("awaiting-approval");
+  tracker.leaveTurn(turn);
+  assert.equal(session.status, "awaiting-approval", "still blocked on the question");
+
+  await session.sendUserMessage("and now this");
+  assert.equal(session.queuedMessages.length, 1, "busy → queued");
+
+  tracker.leaveApproval();
+  await settle();
+
+  assert.equal(session.status, "idle");
+  assert.deepEqual(sent, ["and now this"], "the queue drained");
+  assert.equal(session.queuedMessages.length, 0);
+});
+
 test("SPEC-35: cancelQueued removes one message; clearQueue empties it", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
@@ -615,6 +652,40 @@ test("replaceAdapter unbinds only the session's own listeners, not a third party
   // ...while the third party keeps hearing it.
   assert.deepEqual(foreignExits, [0], "a foreign exit listener survived the swap");
   assert.equal(foreignEvents.length, 1, "a foreign event listener survived the swap");
+});
+
+test("toDTO projects SPEC-46 lineage hydrated from meta (D10)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const session = new Session({
+    projectId: "p",
+    agent: "pi",
+    adapter: fakeAdapter(),
+    store,
+    parentId: "parent-1",
+    handoffReason: "out of context",
+    origin: "agent",
+  });
+
+  const dto = session.toDTO();
+  assert.equal(dto.parentId, "parent-1");
+  assert.equal(dto.handoffReason, "out of context");
+  assert.equal(dto.origin, "agent");
+
+  // Lineage is persisted on meta too, so a rehydrated session still reports it.
+  const meta = store.loadSessions()[0];
+  assert.equal(meta.parentId, "parent-1");
+  assert.equal(meta.handoffReason, "out of context");
+  assert.equal(meta.origin, "agent");
+  store.close();
+});
+
+test("toDTO omits lineage for a session with no parent (pre-SPEC-46 / app-spawned)", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+  const dto = session.toDTO();
+  assert.equal(dto.parentId, undefined);
+  assert.equal(dto.handoffReason, undefined);
+  assert.equal(dto.origin, undefined);
 });
 
 test("SPEC-47 D12: toDTO exposes createdAt so the app can show session age", () => {

@@ -8,6 +8,8 @@ import '../../app/theme.dart';
 import '../../store/elicitation.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../composer/attachment_controller.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
@@ -126,9 +128,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     ) {
       if (next == null) return;
       if (prev?.seq == next.seq) return;
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${next.action} failed: ${next.reason}')),
+      ref.status.failure(
+        '${next.action} failed',
+        detail: next.reason,
+        source: StatusSources.session,
+        sessionId: widget.sessionId,
       );
     });
 
@@ -542,8 +546,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   sessionId: widget.sessionId,
                   jumper: _jumper,
                 );
-              case 'archive':
-                _confirmArchive();
+              case 'close':
+                _confirmClose();
             }
           },
           itemBuilder: (context) {
@@ -570,7 +574,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               // gated — it reads the transcript the client already holds, so it
               // works on every agent. Sitting above the rule also keeps that
               // rule's contract intact: it separates *configuration* from
-              // Archive and disappears when there is no configuration.
+              // Close and disappears when there is no configuration.
               themedMenuItem(
                 value: 'messages',
                 icon: PhosphorIconsLight.listMagnifyingGlass,
@@ -588,13 +592,13 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   icon: PhosphorIconsLight.brain,
                   label: 'Thinking',
                 ),
-              // The rule separates configuration from Archive, so it only earns
+              // The rule separates configuration from Close, so it only earns
               // its place when there is configuration above it.
               if (canModel || canThink) const PopupMenuDivider(),
               themedMenuItem(
-                value: 'archive',
-                icon: PhosphorIconsLight.archiveBox,
-                label: 'Archive session',
+                value: 'close',
+                icon: PhosphorIconsLight.moon,
+                label: 'Close session',
               ),
             ];
           },
@@ -603,14 +607,18 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     );
   }
 
-  Future<void> _confirmArchive() async {
+  Future<void> _confirmClose() async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: const Text('Archive session?'),
+        title: const Text('Close session?'),
         content: const Text(
-          'This stops the agent process and removes the session from the active list. '
-          'The transcript stays on disk and can be restored later.',
+          'This releases the agent and frees its memory, and removes the session '
+          'from the active list. The transcript is kept — reopen it any time to '
+          'resume where you left off.',
         ),
         actions: [
           TextButton(
@@ -619,20 +627,24 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dctx, true),
-            child: const Text('Archive'),
+            child: const Text('Close'),
           ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref
           .read(storeControllerProvider.notifier)
-          .archiveSession(widget.sessionId);
+          .closeSession(widget.sessionId);
       if (mounted) context.go(kRouteRepos);
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not archive: $e')));
+      status.failure(
+        'Could not close session',
+        error: e,
+        source: StatusSources.session,
+        sessionId: widget.sessionId,
+      );
     }
   }
 

@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:makit/ui/home/session_tile.dart';
 
@@ -33,17 +35,17 @@ class _KillConnection extends ConnectionController {
 
   final bool killFails;
 
-  /// How many archives were requested — the only thing a non-swipe quit can be
-  /// held to, since removing the row is `Dismissible`'s job, not the archive's.
-  int archiveCalls = 0;
+  /// How many closes were requested — the only thing a non-swipe quit can be
+  /// held to, since removing the row is `Dismissible`'s job, not the close's.
+  int closeCalls = 0;
 
   @override
   Future<Map<String, dynamic>> request(
     MsgType type,
     Map<String, dynamic> body,
   ) async {
-    if (body['kind'] == 'session.archive') {
-      archiveCalls++;
+    if (body['kind'] == 'session.close') {
+      closeCalls++;
       if (killFails) throw StateError('kill refused');
       return const {};
     }
@@ -51,7 +53,7 @@ class _KillConnection extends ConnectionController {
   }
 }
 
-Session _session() => Session(
+Session _session({String? parentId, String? handoffReason}) => Session(
   id: 's1',
   projectId: 'p1',
   agent: 'pi',
@@ -60,16 +62,38 @@ Session _session() => Session(
   policy: ApprovalPolicy.askOnRisky,
   lastPreview: '',
   lastActivityAt: 0,
+  parentId: parentId,
+  handoffReason: handoffReason,
 );
+
+Future<void> _pumpSession(WidgetTester tester, Session session) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        connectionControllerProvider.overrideWith(
+          (ref) => _KillConnection(killFails: false),
+        ),
+      ],
+      child: MaterialApp(
+        home: Scaffold(body: SessionTile(session: session)),
+      ),
+    ),
+  );
+  await tester.pump();
+}
 
 Future<_KillConnection> _pumpTile(
   WidgetTester tester, {
   required bool killFails,
+  StatusCenter? status,
 }) async {
   final conn = _KillConnection(killFails: killFails);
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [connectionControllerProvider.overrideWith((ref) => conn)],
+      overrides: [
+        connectionControllerProvider.overrideWith((ref) => conn),
+        if (status != null) statusCenterProvider.overrideWithValue(status),
+      ],
       child: MaterialApp(
         home: Scaffold(body: SessionTile(session: _session())),
       ),
@@ -92,16 +116,16 @@ void main() {
   testWidgets('a failed kill keeps the row (no optimistic removal)', (
     tester,
   ) async {
-    await _pumpTile(tester, killFails: true);
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    await _pumpTile(tester, killFails: true, status: center);
 
     await _swipeAndConfirm(tester);
 
     // The kill was refused, so confirmDismiss returned false and the row stays.
     expect(find.text('Wire up pairing'), findsOneWidget);
-    expect(
-      find.text('Could not quit: Bad state: kill refused'),
-      findsOneWidget,
-    );
+    expect(center.events.single.title, 'Could not quit session');
+    expect(center.events.single.detail, contains('kill refused'));
   });
 
   testWidgets('a successful kill dismisses the row', (tester) async {
@@ -125,11 +149,61 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
     await tester.pumpAndSettle();
 
-    // Confirming actually archives. The row is NOT asserted gone: the swipe
+    // Confirming actually closes. The row is NOT asserted gone: the swipe
     // tests' removal comes from `Dismissible`, and a long-press has no dismiss
     // gesture to trigger it — in the app the row leaves when sessionsProvider
     // drops the session, which this standalone tile is not driven by.
-    expect(conn.archiveCalls, 1);
+    expect(conn.closeCalls, 1);
+  });
+
+  // SPEC-46 D10: a handed-off session appears in the list on its own, so the
+  // row must explain its lineage — including the outgoing agent's reason.
+  testWidgets('a session with lineage captions the handoff reason', (
+    tester,
+  ) async {
+    await _pumpSession(
+      tester,
+      _session(parentId: 's0', handoffReason: 'ran out of context'),
+    );
+
+    expect(find.textContaining('Handed off'), findsOneWidget);
+    expect(find.textContaining('ran out of context'), findsOneWidget);
+  });
+
+  // Most sessions are not handoffs; a caption on all of them would be noise.
+  testWidgets('a session with no lineage shows no caption', (tester) async {
+    await _pumpSession(tester, _session());
+
+    expect(find.textContaining('Handed off'), findsNothing);
+    // And not the fork wording either. Asserting only on 'Handed off' passed
+    // against a _handoffCaption that stopped checking `parentId == null` and
+    // captioned every session 'Continued from another session'.
+    expect(find.textContaining('Continued from'), findsNothing);
+  });
+
+  // The parent may be archived or simply uncached, so the caption must still
+  // render — it is absent exactly when the user is most confused otherwise.
+  testWidgets('lineage to an unknown parent still captions', (tester) async {
+    await _pumpSession(
+      tester,
+      _session(parentId: 'not-in-app', handoffReason: 'stuck on a rebase'),
+    );
+
+    expect(find.textContaining('Handed off'), findsOneWidget);
+    expect(find.textContaining('stuck on a rebase'), findsOneWidget);
+  });
+
+  // SPEC-46 U4: a *fork* sets `parentId` with no `handoffReason` — it is an
+  // adapter-native branch of the conversation, not a written handoff (D6). The
+  // fallback wording must therefore not claim a handoff happened, or every forked
+  // session is mislabelled in the one place the user meets it.
+  testWidgets('lineage without a reason does not claim a handoff', (
+    tester,
+  ) async {
+    await _pumpSession(tester, _session(parentId: 's0'));
+
+    expect(find.textContaining('Continued from'), findsOneWidget);
+    expect(find.textContaining('Handed off'), findsNothing);
   });
 
   testWidgets('quit is published as a semantics action for screen readers', (

@@ -9,6 +9,8 @@ import '../../store/store.dart';
 import '../widgets/menu_item.dart';
 import '../widgets/searchable_list_sheet.dart';
 import '../widgets/sheet_header.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'repo_chips.dart';
 import 'start_session.dart';
 import 'session_tile.dart';
@@ -336,12 +338,15 @@ class _RepoCardState extends ConsumerState<RepoCard> {
   /// the branch name is left to the server (as desktop's default does), so the
   /// flow is one tap per decision.
   Future<void> _newWorktree(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final store = ref.read(storeControllerProvider.notifier);
     final branches = branchOptionsForRepo(repo);
     if (branches.isEmpty) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('No branches to fork from')),
+      status.warning(
+        'No branches to fork from',
+        source: StatusSources.worktree,
       );
       return;
     }
@@ -370,18 +375,23 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     if (base == null) return;
     try {
       final wt = await store.createWorktree(repo.id, baseBranch: base);
-      messenger.showSnackBar(
-        SnackBar(content: Text('Created ${wt.branch ?? wt.path}')),
+      status.success(
+        'Created ${wt.branch ?? wt.path}',
+        source: StatusSources.worktree,
       );
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not create worktree: $e')),
+      status.failure(
+        'Could not create worktree',
+        error: e,
+        source: StatusSources.worktree,
       );
     }
   }
 
   Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final store = ref.read(storeControllerProvider.notifier);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -406,23 +416,29 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     if (confirmed != true) return;
     try {
       await store.removeProject(repo.id);
-      messenger.showSnackBar(SnackBar(content: Text('Removed ${repo.name}')));
+      status.success('Removed ${repo.name}', source: StatusSources.repo);
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not remove repo: $e')),
+      status.failure(
+        'Could not remove repo',
+        error: e,
+        source: StatusSources.repo,
       );
     }
   }
 
   Future<void> _attachPast(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final store = ref.read(storeControllerProvider.notifier);
     List<PiSessionMeta> metas;
     try {
       metas = await store.listPiSessions(repo.id);
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not list past sessions: $e')),
+      status.failure(
+        'Could not list past sessions',
+        error: e,
+        source: StatusSources.session,
       );
       return;
     }
@@ -490,8 +506,10 @@ class _RepoCardState extends ConsumerState<RepoCard> {
       if (!context.mounted) return;
       context.go(routeForSession(sid));
     } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not attach session: $e')),
+      status.failure(
+        'Could not attach session',
+        error: e,
+        source: StatusSources.session,
       );
     }
   }

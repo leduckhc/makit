@@ -10,6 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/ports.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/ui/ports/port_forward.dart';
 
 PortInfo _port() => const PortInfo(
@@ -73,6 +75,7 @@ void main() {
       WidgetTester tester, {
       required Map<String, dynamic> Function(Map<String, dynamic>) reply,
       PairedServer? server,
+      StatusCenter? status,
     }) async {
       final sent = <Map<String, dynamic>>[];
       await tester.pumpWidget(
@@ -90,6 +93,7 @@ void main() {
                 activeId: server?.id,
               ),
             ),
+            if (status != null) statusCenterProvider.overrideWithValue(status),
           ],
           child: MaterialApp(
             home: Scaffold(
@@ -160,17 +164,20 @@ void main() {
     testWidgets('a refusal is shown verbatim — it names the actual rule', (
       tester,
     ) async {
+      final center = StatusCenter();
+      addTearDown(center.dispose);
       await run(
         tester,
         server: _server(),
+        status: center,
         reply: (_) =>
             throw StateError('database and shell ports are never forwarded'),
       );
       await tester.tap(find.widgetWithText(FilledButton, 'Open'));
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('database and shell ports are never forwarded'),
-        findsOneWidget,
+        center.events.single.detail,
+        contains('database and shell ports are never forwarded'),
       );
     });
 

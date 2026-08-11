@@ -323,6 +323,45 @@ Approval prompts include: tool name, target (file/command), short preview, and
 Delivery: APNs / FCM via server → relay → device. Per-session and per-type
 mute controls.
 
+### Activity — the record behind the notice (SPEC-48)
+
+An OS notification vanishes, and a `SnackBar` vanished faster: four seconds, no
+selection, one line of room for an error the user then could not quote. Both are
+now *views* of one in-memory record.
+
+| | Toast | Activity |
+|---|---|---|
+| What it is | the transient notice, top-anchored, severity-striped, max 3 | the durable list: newest first, filterable, copyable |
+| Where | above the Navigator on both shells, clear of the top bar and **never** over the composer | phone: Settings › Activity · desktop: the sidebar bell → a top-right panel |
+| Carries | the short human line + the first line of the detail, unfolding to the whole detail while hovered or focused | the whole record, with the exception in a selectable monospace block |
+| Lifetime | 3–8 s by severity, paused while you are reading it, nothing sticky | until cleared, or 200 events |
+
+Every event splits the **human sentence** from the **machine detail**: the toast
+says `Could not create worktree`, and the `FileSystemException` behind it is one
+tap from the clipboard (per row, or copy-all as one chronological block, the same
+shape `Diagnostics` uses). Repeats inside 8 s coalesce into `… ×3` rather than
+queueing three unskippable notices.
+
+**Taking the notice with you (SPEC-49).** The whole toast is the copy target —
+not a 13 px glyph, and no longer only for events that carry a detail: a bare
+`Paired!` still has a head line worth pasting. Point at it (or focus it with the
+keyboard) and two things happen: the dwell **stops**, because a clock that
+expires while you are reading is the original complaint, and the detail unfolds
+in full as selectable monospace. Look away and the *whole* dwell starts over.
+`Enter` / `Space` copy the focused notice, assistive tech is offered a named
+`Copy` action, and `⌘⇧C` copies the newest notice from the **record** — so the
+answer to “what was that?” survives the notice itself. Copying confirms in the
+card and posts nothing: a notice about a notice is a hall of mirrors.
+
+The unread signal is a **bell with a count** tinted by the loudest unread
+severity — on desktop in the sidebar footer, on the phone a dot on the Settings
+button, because four glass circles and the connection chip already fill a 320 pt
+bar and a phone has no screen to spend on permanent chrome.
+
+Session transitions (finished a turn, needs you, errored) land here too, but
+**silently** — no toast, no badge: a session you are watching already shows its
+own status dot, and what was missing was the history.
+
 ---
 
 ## 8. Offline behavior

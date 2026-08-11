@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../app/theme.dart';
+import '../status/status_event.dart';
+import '../status/status_providers.dart';
 import '../store/connection.dart';
 import '../ui/widgets/sheet_header.dart';
 import 'device_name.dart';
@@ -28,7 +30,7 @@ class AddServerSheet extends ConsumerStatefulWidget {
   const AddServerSheet({super.key, required this.parentContext});
 
   /// The screen's context, not the sheet's own context. Used by [pairAndReport]
-  /// and error handling to access the screen's navigator/messenger, so they
+  /// and error handling to access the screen's navigator, so they
   /// survive the sheet's dismissal.
   final BuildContext parentContext;
 
@@ -149,21 +151,26 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
   }
 
   Future<void> _pasteUrl() async {
+    // Resolved before the first await: `ref` throws once its widget is
+    // unmounted, and the record must survive the thing that reported to it.
+    final status = ref.status;
     final navigator = Navigator.of(context);
     final url = await showDialog<String>(
       context: context,
       builder: (_) => const _PasteUrlDialog(),
     );
     // Both the sheet and the screen it was opened from must still be there:
-    // the sheet owns `navigator`, the screen owns the messenger that outlives it.
+    // the sheet owns `navigator`, the screen is the pairing target that outlives it.
     if (url == null || url.isEmpty || !mounted) return;
     final parent = widget.parentContext;
     if (!parent.mounted) return;
     final info = PairInfo.tryParse(url);
     if (info == null) {
-      ScaffoldMessenger.of(
-        parent,
-      ).showSnackBar(const SnackBar(content: Text('Not a makit pairing URL.')));
+      status.warning(
+        'Not a makit pairing URL',
+        source: StatusSources.pairing,
+        detail: url,
+      );
       return;
     }
     navigator.pop();
@@ -226,7 +233,7 @@ Future<bool> pairAndReport(
   WidgetRef ref,
   PairInfo info,
 ) async {
-  final messenger = ScaffoldMessenger.of(context);
+  final status = ref.status;
   final navigator = Navigator.of(context);
   showDialog<void>(
     context: context,
@@ -241,8 +248,8 @@ Future<bool> pairAndReport(
     if (navigator.mounted) {
       navigator.pop(); // close spinner
     }
+    status.success('Paired!', source: StatusSources.pairing);
     if (context.mounted) {
-      messenger.showSnackBar(const SnackBar(content: Text('Paired!')));
       // Navigate to the repo list. This fires redirect checks, but make it explicit
       // so first-time users never get stuck on the pairing screen.
       context.go('/repos');
@@ -252,9 +259,7 @@ Future<bool> pairAndReport(
     if (navigator.mounted) {
       navigator.pop();
     }
-    if (context.mounted) {
-      messenger.showSnackBar(SnackBar(content: Text('Pair failed: $e')));
-    }
+    status.failure('Pairing failed', error: e, source: StatusSources.pairing);
     return false;
   }
 }

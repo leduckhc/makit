@@ -107,6 +107,24 @@ Print a fresh pairing QR without restarting:
 kill -USR1 "$(pgrep -f 'tsx.*index.ts serve' || pgrep -f 'node.*makit')"
 ```
 
+### Idle auto-close (memory hygiene)
+
+makit runs **one agent process per session**, so live sessions cost real
+memory (60–450 MB each). Any session idle longer than the window is closed
+automatically: its agent is released (ACP `session/close` / codex
+`thread/unsubscribe`) and the process reaped (`SIGTERM` → `SIGKILL` after a
+grace period). This is always reversible — the transcript and resume handle are
+kept, the session moves to the **Closed** list, and simply sending a message
+reopens and resumes it. Opening a closed session to *read* it does not respawn
+an agent.
+
+| Env var | Default | Meaning |
+| --- | --- | --- |
+| `MAKIT_IDLE_CLOSE_MIN` | `60` | Minutes of inactivity before a session is auto-closed. `0` disables it. |
+
+Sessions that are mid-turn, awaiting input/approval, still drafts, already cold,
+or lacking a native resume handle are never auto-closed.
+
 ### CLI subcommands
 
 `pnpm start`/`pnpm dev` always run `serve`. For the other subcommands invoke
@@ -297,6 +315,35 @@ cd /Users/le/Work/Vibe/makit
 ./app/tool/e2e.sh --mode=stub                # ~50s; boots sim, stub server on :9787
 ./app/tool/e2e.sh --mode=real                # slow; real pi, needs an LLM key
 ```
+
+### Keyless visual QA — real app, real server, scripted turn
+
+The stub adapter answers text triggers, so a live transcript can be driven with
+no LLM key and no agent binary. `TOOLS` is the one that produces **tool rows**
+(reasoning → read → multi-command shell → grep → edit → a failure → a
+destructive call, with real delays so the duration tokens fire):
+
+```sh
+# Terminal 1 — real daemon + StubAdapter, seeded pairing on :9787
+cd server
+export MAKIT_HOME=$(mktemp -d)
+pnpm exec tsx test/e2e-server.ts --mode stub --project /path/to/repo   # prints fp + bearer
+
+# Terminal 2 — the real app, paired to it
+cd app && flutter run -d "iPhone 17" \
+  --dart-define=MAKIT_TEST_HOST=127.0.0.1 --dart-define=MAKIT_TEST_PORT=9787 \
+  --dart-define=MAKIT_TEST_BEARER=e2e-token --dart-define=MAKIT_TEST_FP=<fp>
+
+# Terminal 3 — drive a turn; the app renders it live
+cd server && pnpm exec tsx test/drive-tools.ts             # sends TOOLS
+cd server && pnpm exec tsx test/drive-tools.ts --text THINK # or any other trigger
+```
+
+Other triggers: `STREAM`, `THINK`, `SLOW [ms]`, `MARKDOWN`, `ASK_QUESTION`,
+`ASK_MULTI`. The desktop app spawns its own daemon with the real adapter catalog
+(no stub), so this loop is iOS/simulator-only; for desktop-only row rendering use
+the widget harness `app/tool/tool_row_demo.dart`
+(`--dart-define=unfold=true` opens every row expanded).
 
 If a killed run leaks the stub server on port 9787:
 

@@ -12,6 +12,7 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/session/chat_transcript.dart';
 import 'package:makit/ui/session/session_screen.dart';
+import 'package:makit/ui/session/tool_renderers.dart' show ToolCodeBlock;
 import 'package:makit/ui/composer/composer_selectors.dart' show ModelConfigPill;
 import 'package:makit/ui/composer/context_usage.dart' show ContextUsageRing;
 import 'package:makit/ui/session/transcript_list.dart';
@@ -362,7 +363,7 @@ void main() {
       tester,
       initial: transcriptWithTool(),
     );
-    final header = find.text('Ran echo hi');
+    final header = find.text('Run echo', findRichText: true);
     await scrollIntoHistory(tester, controller, header);
 
     final beforeDy = tester.getTopLeft(header).dy;
@@ -372,7 +373,7 @@ void main() {
     // The row expands downward: the header the user tapped stays put instead of
     // sliding off the top of the viewport.
     expect(
-      tester.getTopLeft(find.text('Ran')).dy,
+      tester.getTopLeft(header).dy,
       moreOrLessEquals(beforeDy, epsilon: 1.0),
     );
   });
@@ -384,13 +385,13 @@ void main() {
       tester,
       initial: transcriptWithTool(),
     );
-    final header = find.text('Ran echo hi');
+    final header = find.text('Run echo', findRichText: true);
     await scrollIntoHistory(tester, controller, header);
     final at = controller.position.pixels;
 
     await tester.tap(header);
     await tester.pumpAndSettle();
-    expect(find.text('Output'), findsOneWidget);
+    expect(find.byType(ToolCodeBlock), findsOneWidget);
 
     // Scroll far away and back: the expansion is the user's state, not a
     // side effect of the row happening to be built.
@@ -399,7 +400,7 @@ void main() {
     controller.jumpTo(at);
     await tester.pumpAndSettle();
 
-    expect(find.text('Output'), findsOneWidget);
+    expect(find.byType(ToolCodeBlock), findsOneWidget);
   });
 
   testWidgets('a jump-to-newest button appears once the newest scrolls off', (

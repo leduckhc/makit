@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:makit/app/routes.dart';
 import 'package:makit/store/ports.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/ports/port_detail_sheet.dart';
 import 'package:makit/ui/ports/port_forward.dart';
@@ -42,7 +44,12 @@ PortInfo _port({
   watched: watched,
 );
 
-Widget _host(Widget child) => MaterialApp(home: Scaffold(body: child));
+Widget _host(Widget child, {StatusCenter? status}) => ProviderScope(
+  overrides: [
+    if (status != null) statusCenterProvider.overrideWithValue(status),
+  ],
+  child: MaterialApp(home: Scaffold(body: child)),
+);
 
 void main() {
   group('sheet 1 — the list', () {
@@ -186,8 +193,10 @@ void main() {
     });
 
     testWidgets(
-      'Open shows a SnackBar when the launcher cannot open the port',
+      'Open records a failure when the launcher cannot open the port',
       (tester) async {
+        final center = StatusCenter();
+        addTearDown(center.dispose);
         // A valid URI with no handler makes `launchUrl` return false WITHOUT
         // throwing (url_launcher's documented contract); only the thrown path
         // used to surface the failure, so the false result must be handled too.
@@ -212,14 +221,12 @@ void main() {
               sessionLabel: null,
               nowMs: 100000,
             ),
+            status: center,
           ),
         );
         await tester.tap(find.text('Open'));
         await tester.pump(); // flush the async launch
-        await tester.pump(
-          const Duration(milliseconds: 400),
-        ); // animate SnackBar
-        expect(find.text('Could not open the port'), findsOneWidget);
+        expect(center.events.single.title, 'Could not open the port');
       },
     );
 
@@ -691,6 +698,8 @@ void main() {
     testWidgets('a REFUSED write puts the switch back and says so', (
       tester,
     ) async {
+      final center = StatusCenter();
+      addTearDown(center.dispose);
       // A watch that silently failed to persist is a notification the user waits
       // for and never gets.
       await tester.pumpWidget(
@@ -702,6 +711,7 @@ void main() {
             nowMs: 100000,
             onWatchChanged: (_) async => false,
           ),
+          status: center,
         ),
       );
       await tester.tap(find.byKey(kPortWatchToggle));
@@ -711,10 +721,8 @@ void main() {
         isFalse,
         reason: 'reverted to the server truth',
       );
-      expect(
-        find.textContaining('Could not start watching :5173'),
-        findsOneWidget,
-      );
+      expect(center.events.single.title, 'Could not start watching the port');
+      expect(center.events.single.detail, ':5173');
     });
 
     testWidgets('an UNOWNED port offers no watch (nothing to key on)', (

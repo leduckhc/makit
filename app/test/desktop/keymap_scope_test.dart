@@ -10,6 +10,9 @@ import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/shortcuts/key_chord.dart';
+import 'package:makit/desktop/window_overlays.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/shortcuts/shortcut_action.dart';
 import 'package:makit/store/models.dart';
@@ -22,7 +25,7 @@ import 'package:makit/transport/protocol.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// A connection that answers every request instantly — so the fire-and-forget
-/// archive on tab close leaves no pending timeout Timer in widget tests.
+/// close on tab close leaves no pending timeout Timer in widget tests.
 class _FastConn extends ConnectionController {
   _FastConn() : super(const _NoStore());
   @override
@@ -114,6 +117,28 @@ GroupsController _wtGroups(String path) => GroupsController.ephemeral(
 /// Widget-level proof that [DesktopKeymapScope] turns a persisted [Keymap] into
 /// live global shortcuts. Uses Ctrl-primary defaults (cmdIsPrimary: false) so
 /// the combos are deterministic regardless of the test host platform.
+/// Records every `Clipboard.setData` payload for the duration of one test, and
+/// restores the channel afterwards. Three copy tests needed the same 14 lines.
+List<String> watchClipboard(WidgetTester tester) {
+  final copied = <String>[];
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+    SystemChannels.platform,
+    (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    },
+  );
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      null,
+    ),
+  );
+  return copied;
+}
+
 void main() {
   setUp(() {
     resetNodeIds();
@@ -651,5 +676,95 @@ void main() {
     await pressCtrl(tester, LogicalKeyboardKey.keyP, shift: true);
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(PortsScreen), findsOneWidget);
+  });
+  // ── SPEC-49 D8/D9: copy the newest notice from the record ──────────────────
+
+  testWidgets('Ctrl+Shift+C copies the newest notice', (tester) async {
+    final keymap = await controller();
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    final copied = watchClipboard(tester);
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        statusCenterProvider.overrideWithValue(center),
+      ],
+    );
+    addTearDown(container.dispose);
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+
+    center.failure(
+      'Could not create worktree',
+      detail: 'errno = 17',
+      source: 'worktree',
+    );
+    center.info('URL copied', source: 'ports');
+    await tester.pump();
+    await pressCtrl(tester, LogicalKeyboardKey.keyC, shift: true);
+    // Newest first: the info, not the failure.
+    expect(copied.single, center.events.first.toClipboardText());
+    expect(copied.single, contains('URL copied'));
+  });
+
+  testWidgets('Ctrl+Shift+C on an empty record copies nothing and throws '
+      'nothing', (tester) async {
+    final keymap = await controller();
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    final copied = watchClipboard(tester);
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        statusCenterProvider.overrideWithValue(center),
+      ],
+    );
+    addTearDown(container.dispose);
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+
+    await pressCtrl(tester, LogicalKeyboardKey.keyC, shift: true);
+    expect(copied, isEmpty);
+  });
+
+  testWidgets('no global action fires behind the Settings overlay, copy '
+      'included', (tester) async {
+    final keymap = await controller();
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    final copied = watchClipboard(tester);
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        statusCenterProvider.overrideWithValue(center),
+      ],
+    );
+    addTearDown(container.dispose);
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+    center.failure('Rename failed', source: 'worktree');
+    await tester.pump();
+    container.read(settingsOpenProvider.notifier).state = true;
+    await tester.pump();
+
+    // SPEC-49 D9: the gate is a principle, not a list of exceptions.
+    await pressCtrl(tester, LogicalKeyboardKey.keyC, shift: true);
+    expect(copied, isEmpty);
+    // The sibling assertion that proves the gate is intact rather than holed.
+    final before = container.read(sidebarCollapsedProvider);
+    await pressCtrl(tester, LogicalKeyboardKey.keyB);
+    expect(container.read(sidebarCollapsedProvider), before);
   });
 }

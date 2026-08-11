@@ -1,6 +1,6 @@
 /// SPEC-42 P2a — the global Ports screen ("everything, all repos").
 ///
-/// A new nav destination beside Home / Archived. It renders the
+/// A new nav destination beside Home / Closed. It renders the
 /// `ports.snapshot` the app already receives (no protocol, no scan): an
 /// `AppBar`, a filter row (*All / This repo / Mine / Exposed*), and a
 /// repo → worktree → port grouped list, with the collapsed "other / system"
@@ -359,7 +359,7 @@ class _DegradedBanner extends StatelessWidget {
 }
 
 /// A repo (or "other / system") section header — same shape as
-/// `archived_screen.dart`'s `_GroupHeader`.
+/// `closed_screen.dart`'s `_GroupHeader`.
 class _GroupHeader extends StatelessWidget {
   const _GroupHeader({
     required this.title,

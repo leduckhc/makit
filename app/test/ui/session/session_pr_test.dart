@@ -12,6 +12,8 @@ import 'package:url_launcher_platform_interface/link.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 
 import 'package:makit/app/theme.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/elicitation.dart';
 import 'package:makit/store/models.dart';
@@ -79,6 +81,7 @@ Future<void> _pumpSheet(
   void Function(PrRemedy remedy)? onRun,
   bool canInsertPrompt = true,
   bool expandDetail = true,
+  StatusCenter? status,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -86,6 +89,7 @@ Future<void> _pumpSheet(
         preferencesControllerProvider.overrideWith(
           (ref) => PreferencesController(null, const {}),
         ),
+        if (status != null) statusCenterProvider.overrideWithValue(status),
       ],
       child: MaterialApp(
         theme: makitDarkTheme,
@@ -266,13 +270,15 @@ void main() {
       // at all, which reads as a dead button.
       final saved = _stubUrlLauncher(succeed: false);
       addTearDown(saved);
-      await _pumpSheet(tester, pr: _pr());
+      final center = StatusCenter();
+      addTearDown(center.dispose);
+      await _pumpSheet(tester, pr: _pr(), status: center);
 
       await tester.tap(find.text('Open #42 on GitHub'));
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Could not open the PR'), findsOneWidget);
+      expect(center.events.single.title, 'Could not open the PR');
     });
 
     testWidgets('reports a PR url it cannot open instead of throwing', (
@@ -281,7 +287,13 @@ void main() {
       // `Uri.tryParse` rejects this outright; a real device can also refuse a
       // perfectly good URL with no handler. Either way the tap must not escape
       // as an unhandled framework error.
-      await _pumpSheet(tester, pr: _pr(url: 'http://['));
+      final center = StatusCenter();
+      addTearDown(center.dispose);
+      await _pumpSheet(
+        tester,
+        pr: _pr(url: 'http://['),
+        status: center,
+      );
 
       // No forge name: an unparseable URL identifies no forge, and the button
       // says "Open #42" rather than claiming a forge it could not read. The
@@ -290,7 +302,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Could not open the PR'), findsOneWidget);
+      expect(center.events.single.title, 'Could not open the PR');
     });
 
     testWidgets('opens on the decision: headline, then action, then detail', (

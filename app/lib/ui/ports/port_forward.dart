@@ -33,6 +33,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../store/media.dart';
 import '../../store/ports.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 
 /// Whether this port could be forwarded at all (the client-side mirror of the
 /// server's D4 rules, so a pointless control is never offered).
@@ -67,6 +69,9 @@ Future<ForwardGrant?> confirmAndForwardPort(
   WidgetRef ref,
   PortInfo port,
 ) async {
+  // Resolved before the first await: `ref` throws once its widget is
+  // unmounted, and the record must survive the thing that reported to it.
+  final status = ref.status;
   final worktreePath = port.worktreePath;
   if (worktreePath == null) return null;
 
@@ -75,7 +80,6 @@ Future<ForwardGrant?> confirmAndForwardPort(
   // `port_kill_confirm.dart`). Both of these outlive the widget.
   final forwarder = ref.read(portsForwarderProvider);
   final origin = ref.read(mediaEndpointProvider)?.base;
-  final messenger = ScaffoldMessenger.of(context);
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dctx) => AlertDialog(
@@ -109,10 +113,11 @@ Future<ForwardGrant?> confirmAndForwardPort(
   );
   final grant = result.grant;
   if (grant == null) {
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Cannot forward :${port.port} — ${result.refusal}'),
-      ),
+    status.warning(
+      'Could not forward :${port.port}',
+      detail: result.refusal,
+      source: StatusSources.ports,
+      sessionId: port.sessionId,
     );
     return null;
   }
@@ -121,10 +126,10 @@ Future<ForwardGrant?> confirmAndForwardPort(
   if (url == null) {
     // Nothing to open against: revoke rather than leave a live grant behind.
     await forwarder.stop(grant.grantId);
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('Not connected to a server, so there is nothing to open'),
-      ),
+    status.warning(
+      'Not connected to a server, so there is nothing to open',
+      source: StatusSources.ports,
+      sessionId: port.sessionId,
     );
     return null;
   }
@@ -132,12 +137,15 @@ Future<ForwardGrant?> confirmAndForwardPort(
   try {
     final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
     if (!launched) throw StateError('no handler');
-  } catch (_) {
+  } catch (e) {
     // A grant nobody can use is a grant worth revoking immediately, rather than
     // leaving it to time out.
     await forwarder.stop(grant.grantId);
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Could not open a browser')),
+    status.failure(
+      'Could not open a browser',
+      error: e,
+      source: StatusSources.ports,
+      sessionId: port.sessionId,
     );
     return null;
   }

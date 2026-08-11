@@ -1,0 +1,296 @@
+// SPEC-29: sidebar Active⇄Closed toggle + grouped closed view.
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/chat/closed_sidebar_view.dart';
+import 'package:makit/desktop/chat/desktop_sidebar.dart';
+import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_providers.dart';
+import 'package:makit/store/connection.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/store/secure_store.dart';
+import 'package:makit/store/store.dart';
+import 'package:makit/transport/protocol.dart';
+
+class _ClosedConn extends ConnectionController {
+  _ClosedConn(this.closed) : super(const _NoStore());
+  final List<Map<String, dynamic>> closed;
+  final sent = <Map<String, dynamic>>[];
+
+  /// Ids this fake has reopened — they must stop being reported as closed, as
+  /// the real server does, or a reopen test passes even when the row never left.
+  final reopened = <String>{};
+
+  @override
+  Future<Map<String, dynamic>> request(MsgType t, Map<String, dynamic> body) {
+    sent.add(body);
+    if (body['kind'] == 'session.reopen') {
+      reopened.add(body['sessionId'] as String);
+      return Future.value(const {});
+    }
+    if (body['kind'] == 'session.listClosed') {
+      return Future.value({
+        'sessions': [
+          for (final s in closed)
+            if (!reopened.contains(s['id'])) s,
+        ],
+      });
+    }
+    return Future.value(const {});
+  }
+}
+
+class _NoStore implements SecureStore {
+  const _NoStore();
+  @override
+  Future<String?> read({required String key}) async => null;
+  @override
+  Future<void> write({required String key, required String? value}) async {}
+  @override
+  Future<void> delete({required String key}) async {}
+}
+
+// A connection whose `session.listClosed` responses are completed manually,
+// so a test can observe the in-flight reload window (old rows must stay visible,
+// no spinner) before the new list arrives.
+class _DeferredClosedConn extends ConnectionController {
+  _DeferredClosedConn() : super(const _NoStore());
+  final pending = <Completer<Map<String, dynamic>>>[];
+  @override
+  Future<Map<String, dynamic>> request(MsgType t, Map<String, dynamic> body) {
+    if (body['kind'] == 'session.listClosed') {
+      final c = Completer<Map<String, dynamic>>();
+      pending.add(c);
+      return c.future;
+    }
+    return Future.value(const {});
+  }
+
+  void resolveLatest(List<Map<String, dynamic>> closed) =>
+      pending.last.complete({'sessions': closed});
+}
+
+Map<String, dynamic> _arch(
+  String id,
+  String title, {
+  String agent = 'pi',
+  String? branch,
+  bool orphaned = false,
+}) => {
+  'id': id,
+  'projectId': 'p1',
+  'agent': agent,
+  'title': title,
+  'status': 'exited',
+  'policy': 'ask-on-risky',
+  'closed': true,
+  'orphaned': orphaned,
+  'branch': ?branch,
+};
+
+RepoInfo _repo() => const RepoInfo(
+  id: 'p1',
+  name: 'makit',
+  path: '/repo',
+  pinned: false,
+  lastActivityAt: 0,
+  isGitRepo: true,
+  defaultBranch: 'main',
+  currentBranch: 'main',
+  worktrees: [],
+);
+
+Future<_ClosedConn> _pumpClosed(
+  WidgetTester tester,
+  List<Map<String, dynamic>> closed, {
+  StatusCenter? statusCenter,
+}) async {
+  final conn = _ClosedConn(closed);
+  final container = ProviderContainer(
+    overrides: [
+      connectionControllerProvider.overrideWith((_) => conn),
+      reposProvider.overrideWithValue(ReposState([_repo()])),
+      sidebarClosedProvider.overrideWith(
+        (_) => true,
+      ), // start in the closed view
+      if (statusCenter != null)
+        statusCenterProvider.overrideWithValue(statusCenter),
+    ],
+  );
+  addTearDown(container.dispose);
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(
+        home: Scaffold(body: SizedBox(width: 300, child: DesktopSidebar())),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return conn;
+}
+
+void main() {
+  testWidgets(
+    'closed view lists sessions grouped by repo with an orphaned chip',
+    (tester) async {
+      await _pumpClosed(tester, [
+        _arch('s1', 'Adapter resume', branch: 'feat/resume'),
+        _arch(
+          's2',
+          'Ghostty rebuild',
+          agent: 'codex',
+          branch: 'feat/gh',
+          orphaned: true,
+        ),
+      ]);
+
+      expect(find.text('CLOSED'), findsOneWidget);
+      expect(find.text('makit'), findsOneWidget); // repo group header
+      expect(find.text('Adapter resume'), findsOneWidget);
+      expect(find.text('Ghostty rebuild'), findsOneWidget);
+      // The orphaned session is flagged.
+      expect(find.text('worktree removed'), findsOneWidget);
+      // Harness + branch chips render.
+      expect(find.text('Codex'), findsOneWidget);
+      expect(find.text('feat/resume'), findsOneWidget);
+    },
+  );
+
+  testWidgets('empty closed list shows a message', (tester) async {
+    await _pumpClosed(tester, const []);
+    expect(find.text('No closed sessions.'), findsOneWidget);
+  });
+
+  testWidgets('Reopen sends session.reopen', (tester) async {
+    final conn = await _pumpClosed(tester, [_arch('s1', 'Adapter resume')]);
+    // Hover reveals the restore button.
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.text('Adapter resume')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Reopen'));
+    await tester.pumpAndSettle();
+
+    final u = conn.sent.firstWhere(
+      (b) => b['kind'] == 'session.reopen',
+      orElse: () => const {},
+    );
+    expect(u['sessionId'], 's1');
+    // What the user actually sees: the row must leave the list, not merely the
+    // request go out.
+    expect(
+      find.text('Adapter resume'),
+      findsNothing,
+      reason: 'the reopened row must leave the closed list',
+    );
+  });
+
+  testWidgets('Reopen reloads the list without surfacing an error', (
+    tester,
+  ) async {
+    final center = StatusCenter();
+    addTearDown(center.dispose);
+    final conn = await _pumpClosed(tester, [
+      _arch('s1', 'Adapter resume'),
+    ], statusCenter: center);
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.text('Adapter resume')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Reopen'));
+    await tester.pumpAndSettle();
+
+    // The buggy `setState(() => _future = _load())` returned a Future, whose
+    // assertion was caught by _reopen and recorded as a "Could not reopen"
+    // failure even though the reopen succeeded. Guard against regressing.
+    expect(center.events, isEmpty);
+    // And the list refetches so the reopened row drops out of the closed list.
+    final reloads = conn.sent
+        .where((b) => b['kind'] == 'session.listClosed')
+        .length;
+    expect(reloads, greaterThanOrEqualTo(2));
+  });
+
+  testWidgets('reload keeps prior rows visible instead of flashing a spinner', (
+    tester,
+  ) async {
+    final conn = _DeferredClosedConn();
+    final container = ProviderContainer(
+      overrides: [
+        connectionControllerProvider.overrideWith((_) => conn),
+        reposProvider.overrideWithValue(ReposState([_repo()])),
+        sidebarClosedProvider.overrideWith((_) => true),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 300, child: DesktopSidebar())),
+        ),
+      ),
+    );
+    // First load is in flight: no data yet, so the spinner IS shown.
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    conn.resolveLatest([_arch('s1', 'Adapter resume')]);
+    await tester.pumpAndSettle();
+    expect(find.text('Adapter resume'), findsOneWidget);
+
+    // Reopen triggers a reload; its listClosed stays pending.
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.text('Adapter resume')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Reopen'));
+    await tester.pump(); // reopen resolves; reload now in flight
+    await tester.pump();
+
+    // Guards the `&& !snap.hasData` clause: mid-reload the old row stays put and
+    // no spinner appears (a bare `== waiting` check would blank the list).
+    expect(find.text('Adapter resume'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    // Reload completes with the row gone — now it drops out.
+    conn.resolveLatest(const []);
+    await tester.pumpAndSettle();
+    expect(find.text('Adapter resume'), findsNothing);
+    expect(find.text('No closed sessions.'), findsOneWidget);
+  });
+
+  testWidgets('footer toggle flips into the closed view', (tester) async {
+    final conn = _ClosedConn(const []);
+    final container = ProviderContainer(
+      overrides: [
+        connectionControllerProvider.overrideWith((_) => conn),
+        reposProvider.overrideWithValue(ReposState([_repo()])),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 300, child: DesktopSidebar())),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(container.read(sidebarClosedProvider), isFalse);
+    await tester.tap(find.byTooltip('Show closed sessions'));
+    await tester.pumpAndSettle();
+    expect(container.read(sidebarClosedProvider), isTrue);
+    expect(find.text('CLOSED'), findsOneWidget);
+  });
+}

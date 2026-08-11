@@ -93,4 +93,69 @@ void main() {
     await tester.pump();
     expect(find.text('Thinking … 41s'), findsOneWidget);
   });
+
+  // Folded, the label and the preview share one line — the row is a one-liner.
+  // Unfolded, the reasoning is a paragraph, so the label gets its own line and
+  // the text starts fresh underneath it instead of being indented around it.
+  group('the unfolded layout gives the reasoning its own line', () {
+    Future<void> pump(WidgetTester tester) => tester.pumpWidget(
+      ProviderScope(
+        child: _wrap(
+          const ThinkingLine(
+            text:
+                'The risk tint fires on edit/write/bash, so it is on for '
+                'almost every row; monochrome loses nothing.',
+            expansionKey: 'k',
+            startTs: 0,
+            lastTs: 4000,
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('folded: label and preview sit on one line', (tester) async {
+      await pump(tester);
+      final label = tester.getTopLeft(find.text('Thought for 4s'));
+      final text = tester.getTopLeft(find.textContaining('The risk tint'));
+      expect(text.dy, label.dy, reason: 'same line');
+      expect(
+        text.dx,
+        greaterThan(label.dx),
+        reason: 'preview trails the label',
+      );
+    });
+
+    testWidgets('unfolded: the text starts below, flush with the label', (
+      tester,
+    ) async {
+      await pump(tester);
+      await tester.tap(find.textContaining('The risk tint'));
+      await tester.pumpAndSettle();
+
+      final label = tester.getTopLeft(find.text('Thought for 4s'));
+      final text = tester.getTopLeft(find.textContaining('The risk tint'));
+      expect(text.dy, greaterThan(label.dy), reason: 'on its own line');
+      expect(
+        text.dx,
+        moreOrLessEquals(label.dx, epsilon: 0.5),
+        reason: 'left edge aligns with the label, not indented past it',
+      );
+    });
+
+    testWidgets('unfolded: the text keeps the full column width', (
+      tester,
+    ) async {
+      await pump(tester);
+      final foldedWidth = tester
+          .getSize(find.textContaining('The risk tint'))
+          .width;
+      await tester.tap(find.textContaining('The risk tint'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.textContaining('The risk tint')).width,
+        greaterThan(foldedWidth),
+        reason: 'no longer sharing the line with the label',
+      );
+    });
+  });
 }

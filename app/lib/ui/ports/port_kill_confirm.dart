@@ -15,6 +15,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../store/ports.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'ports_vocabulary.dart';
 
 /// Whether a Kill control may be offered for [port] at all (D1).
@@ -33,6 +35,9 @@ Future<PortKillOutcome?> confirmAndKillPort(
   PortInfo port, {
   String? branchLabel,
 }) async {
+  // Resolved before the first await: `ref` throws once its widget is
+  // unmounted, and the record must survive the thing that reported to it.
+  final status = ref.status;
   final target = PortKillTarget.of(port);
   // Defensive, and cheap: the two call sites already hide the control, so
   // reaching here with an unverifiable port would be a bug, not user input.
@@ -43,7 +48,6 @@ Future<PortKillOutcome?> confirmAndKillPort(
   // popover unpinned, a snapshot rebuilt the row) then `ref.read` throws into a
   // button handler. The killer itself is a plain object and outlives the widget.
   final killer = ref.read(portsKillerProvider);
-  final messenger = ScaffoldMessenger.of(context);
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dctx) => AlertDialog(
@@ -68,9 +72,20 @@ Future<PortKillOutcome?> confirmAndKillPort(
   if (confirmed != true) return null;
 
   final outcome = await killer.kill(target);
-  messenger.showSnackBar(
-    SnackBar(content: Text(portKillOutcomeMessage(outcome, port: port.port))),
-  );
+  final message = portKillOutcomeMessage(outcome, port: port.port);
+  if (outcome.releasedThePort) {
+    status.success(
+      message,
+      source: StatusSources.ports,
+      sessionId: port.sessionId,
+    );
+  } else {
+    status.warning(
+      message,
+      source: StatusSources.ports,
+      sessionId: port.sessionId,
+    );
+  }
   return outcome;
 }
 
@@ -87,10 +102,12 @@ Future<void> confirmAndKillOrphans(
   WidgetRef ref,
   List<PortInfo> orphans,
 ) async {
+  // Resolved before the first await: `ref` throws once its widget is
+  // unmounted, and the record must survive the thing that reported to it.
+  final status = ref.status;
   if (orphans.isEmpty) return;
   // Same rule as the single kill: resolve the provider before the confirm.
   final killer = ref.read(portsKillerProvider);
-  final messenger = ScaffoldMessenger.of(context);
   final ports = orphans.map((p) => ':${p.port}').join(', ');
   final confirmed = await showDialog<bool>(
     context: context,
@@ -123,7 +140,5 @@ Future<void> confirmAndKillOrphans(
   if (confirmed != true) return;
 
   final outcomes = await killer.killOrphans();
-  messenger.showSnackBar(
-    SnackBar(content: Text(portKillOrphansMessage(outcomes))),
-  );
+  status.info(portKillOrphansMessage(outcomes), source: StatusSources.ports);
 }

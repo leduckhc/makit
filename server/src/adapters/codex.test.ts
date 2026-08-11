@@ -9,7 +9,13 @@ import type { UICall, UIResponse } from "../uicall.js";
  * A controllable fake `codex app-server`: auto-replies to the adapter's
  * requests and lets the test push notifications / server-requests in.
  */
-function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown } } = {}) {
+function fakeAppServer(
+  opts: {
+    steer?: () => { result?: unknown; error?: unknown };
+    fork?: () => { result?: unknown; error?: unknown };
+    unsubscribe?: () => { result?: unknown; error?: unknown };
+  } = {},
+) {
   let lineCb: (l: string) => void = () => {};
   const sent: any[] = [];
   const feed = (obj: unknown) => lineCb(JSON.stringify(obj));
@@ -26,6 +32,21 @@ function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown
         // shapes are load-bearing (SPEC-35 §Evidence).
         if (msg.method === "turn/steer" && opts.steer) {
           const scripted = opts.steer();
+          queueMicrotask(() => feed({ id: msg.id, ...scripted }));
+          return;
+        }
+        // `thread/fork` is scripted per-test: both its success shape (a NEW
+        // thread id) and its rollout-precondition error are load-bearing
+        // (SPEC-46 U4 §Evidence).
+        if (msg.method === "thread/fork" && opts.fork) {
+          const scripted = opts.fork();
+          queueMicrotask(() => feed({ id: msg.id, ...scripted }));
+          return;
+        }
+        // `thread/unsubscribe` is scripted per-test so a rejecting close can be
+        // proven not to block teardown.
+        if (msg.method === "thread/unsubscribe" && opts.unsubscribe) {
+          const scripted = opts.unsubscribe();
           queueMicrotask(() => feed({ id: msg.id, ...scripted }));
           return;
         }
@@ -56,6 +77,8 @@ function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown
         return { turn: { id: `t${++turnSeq}` } };
       case "turn/interrupt":
         return {};
+      case "thread/unsubscribe":
+        return { status: "unsubscribed" };
       case "model/list":
         return {
           data: [
@@ -595,7 +618,57 @@ test("start({resumeAgentSessionId}) resumes via thread/resume, not thread/start 
 
 test("codex advertises the full session lifecycle capability set (SPEC-29)", () => {
   const adapter = new CodexAppServerAdapter();
-  assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true });
+  assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true, close: true });
+});
+
+// ---------------------------------------------------------------------------
+// SPEC-46 U4 — thread/fork. The wire is settled (spiked against codex-cli
+// 0.146.0): `thread/fork {threadId}` → `{thread:{id, forkedFromId, …}}` with a
+// NEW id, and forking a thread with no completed turn fails
+// `-32600 no rollout found for thread id <id>`. Both are asserted here so a
+// protocol change shows up as a failure, and the fake is truthful about both.
+// ---------------------------------------------------------------------------
+test("forkSession() forks the live thread at its head and returns the NEW thread id (U4)", async () => {
+  const fake = fakeAppServer({
+    fork: () => ({ result: { thread: { id: "th-forked", forkedFromId: "th1" } } }),
+  });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/repo", sessionId: "m1" });
+  const forked = await adapter.forkSession!();
+  const fork = fake.sent.find((m: any) => m.method === "thread/fork");
+  assert.ok(fork, "must call thread/fork");
+  assert.equal(fork.params.threadId, "th1", "forks the thread the adapter is on");
+  assert.equal(forked.agentSessionId, "th-forked", "returns the forked thread's id, not the source's");
+  await adapter.kill();
+});
+
+test("forkSession() releases the new thread so the child's own process can resume it (U4)", async () => {
+  // The forking process keeps the new thread loaded as its *active writer*, so the
+  // child's codex process was refused: "thread <id> already has an active writer".
+  // The fork is created here but belongs to the child, so this process must let go
+  // of it immediately — otherwise every fork produces a session that cannot start.
+  const fake = fakeAppServer({
+    fork: () => ({ result: { thread: { id: "th-forked", forkedFromId: "th1" } } }),
+  });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/repo", sessionId: "m1" });
+  await adapter.forkSession!();
+  const unsub = fake.sent.find((m: any) => m.method === "thread/unsubscribe");
+  assert.ok(unsub, "must release the forked thread");
+  assert.equal(unsub.params.threadId, "th-forked", "releases the FORK, never the source thread");
+});
+
+test("forkSession() rejects with ForkPreconditionError when there is no rollout yet (U4)", async () => {
+  const fake = fakeAppServer({
+    fork: () => ({ error: { code: -32600, message: "no rollout found for thread id th1" } }),
+  });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/repo", sessionId: "m1" });
+  await assert.rejects(() => adapter.forkSession!(), (e: Error) => {
+    assert.equal(e.name, "ForkPreconditionError");
+    return true;
+  });
+  await adapter.kill();
 });
 
 /**
@@ -825,4 +898,43 @@ test("steer(): a TIMED-OUT steer still echoes, so the message is not lost silent
   );
   assert.equal((echoes.at(-1)!.payload as { steered?: boolean }).steered, true);
   await adapter.kill();
+});
+
+/**
+ * codex's equivalent of ACP `session/close` is `thread/unsubscribe`: it unloads
+ * the thread server-side while leaving it in `thread/list` and resumable via
+ * `thread/resume`. Sent before the process is reaped so codex can flush and
+ * release rather than being SIGTERMed mid-write.
+ */
+test("close() unsubscribes the thread so it stays listable and resumable", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/tmp" });
+  assert.equal(adapter.capabilities.close, true);
+
+  await adapter.close();
+  assert.deepEqual(
+    fake.sent.filter((m) => m.method === "thread/unsubscribe").map((m) => m.params.threadId),
+    ["th1"],
+  );
+});
+
+test("close() before start is a no-op (no thread to unsubscribe)", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+
+  await adapter.close(); // must not throw
+  assert.deepEqual(fake.sent.filter((m) => m.method === "thread/unsubscribe"), []);
+});
+
+/**
+ * As with ACP: the adapter just issues `thread/unsubscribe`. Bounding and
+ * swallowing belong to `SessionManager.closeSession`, which reaps either way.
+ */
+test("close() propagates a failing thread/unsubscribe for the manager to absorb", async () => {
+  const fake = fakeAppServer({ unsubscribe: () => ({ error: { code: -32603, message: "boom" } }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/tmp" });
+
+  await assert.rejects(() => adapter.close());
 });

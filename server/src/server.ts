@@ -36,25 +36,30 @@ import type {
   Envelope,
   RepoDTO,
   GithubBudgetDTO,
+  SessionDTO,
   PortKillTarget,
   ForwardGrantDTO,
 } from "./protocol.js";
 import { PROTOCOL_VERSION, newId } from "./protocol.js";
 import { decodeFrame, encodeFrame, WireErrorCode } from "./protocol/codec.js";
 import type { SessionManager } from "./manager.js";
+import { IdleReaper, resolveIdleCloseMs } from "./idle_reaper.js";
 import type { Session } from "./session.js";
 import type { DeviceRegistry } from "./pairing/registry.js";
 import type { ServerCert } from "./pairing/cert.js";
 import { log } from "./log.js";
 import type { OutgoingFrame, WsClient } from "./ws/client.js";
 import { AuthGate } from "./ws/auth_gate.js";
+import { sessionTokens } from "./ws/session_tokens.js";
 import { SubscriptionHub } from "./ws/subscription_hub.js";
+import { canReadSession } from "./ws/read_access.js";
 import { CommandRouter } from "./ws/command_router.js";
+import type { CommandDeps } from "./ws/commands/deps.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
 import { WakeCoordinator } from "./push/wake_coordinator.js";
 import { NoopPushSender, type PushSender } from "./push/sender.js";
 import { buildPortDownPayload, buildWakePayload } from "./push/payload.js";
-import { registerPushCommands } from "./push/register_cmd.js";
+import { registerPushCommands, type PushTokenRegistry } from "./push/register_cmd.js";
 import { register as registerSessionCommands } from "./ws/commands/session.js";
 import { register as registerProjectCommands } from "./ws/commands/project.js";
 import { register as registerWorktreeCommands } from "./ws/commands/worktree.js";
@@ -84,6 +89,7 @@ import { createSelfProbe } from "./metrics/self.js";
 import { WireMeter } from "./metrics/wire_meter.js";
 import { CpuLedger } from "./metrics/ledger.js";
 import { register as registerPortsCommands } from "./ws/commands/ports.js";
+import { register as registerDocsCommands } from "./ws/commands/docs.js";
 import { PortsService } from "./ports/service.js";
 import { ForwardGrants } from "./ports/forward_grants.js";
 import { attachForwardRoute, FORWARD_PREFIX } from "./ports/forward_route.js";
@@ -125,6 +131,12 @@ export interface ServerOpts {
    * the default unhandled-'error' crash buries the cause in a stack trace.
    */
   onListenError?: (err: NodeJS.ErrnoException, where: string) => void;
+  /**
+   * Idle auto-close window in ms (SPEC-29 option D). Production reads
+   * `MAKIT_IDLE_CLOSE_MIN` via `resolveIdleCloseMs()`; tests pass `0` to keep the
+   * reaper disarmed, so no interval outlives the test.
+   */
+  idleCloseMs?: number;
   /**
    * SPEC-37 metrics collector seams, injected only by tests so a sample can be
    * driven deterministically without spawning `ps` or waiting on real timers.
@@ -490,6 +502,18 @@ export function startWsServer(opts: ServerOpts) {
   if (metricsBackgroundOn) metricsCollector.start();
   https.on("close", () => metricsCollector.stop());
 
+  // -------- SPEC-29 idle auto-close ----------------------------------------
+  // Reclaims the agent process of any session that has gone quiet. Disabled when
+  // `MAKIT_IDLE_CLOSE_MIN=0`. Stopped with the server so an in-process restart
+  // (tests) leaves no stray interval behind.
+  const idleReaper = new IdleReaper({
+    sessions: () => manager.allSessions(),
+    close: (id: string) => manager.closeSession(id),
+    idleCloseMs: opts.idleCloseMs ?? resolveIdleCloseMs(),
+  });
+  idleReaper.start();
+  https.on("close", () => idleReaper.stop());
+
   // -------- SPEC-41 ports scanner -----------------------------------------
   // A watch-gated `lsof`/`ps` scan (nothing runs while no client watches). Like
   // the metrics collector it takes closures for its data sources so `ports/`
@@ -687,10 +711,21 @@ export function startWsServer(opts: ServerOpts) {
     const cached = portsService.cachedSnapshot();
     if (cached !== undefined) client.send(emitPortsSnapshot(cached));
   };
+  // Stubs for docs watcher — not yet implemented in CLI branch
+  const recomputeDocsWatchers = (): void => {};
+  const sendDocsSnapshot = (client: WsClient): void => {
+    client.send({ t: "event", kind: "docs.snapshot", docs: [] });
+  };
+  const docsService = { snapshot: () => [] } as any;
 
   // -------- collaborators -------------------------------------------------
 
-  const hub = new SubscriptionHub({ manager });
+  const hub = new SubscriptionHub({
+    manager,
+    // D17 needs lineage to allow an agent its descendants (the sessions it
+    // handed work off to) without opening the rest of the machine.
+    parentOf: (id) => manager.getSession(id)?.parentId,
+  });
   // SPEC-07: the WakeCoordinator is built HERE (not in index.ts) because
   // `connectedDeviceIds` is a server.ts closure. When `askDevice` finds no live
   // subscribed socket, `onUndeliverable` wakes every paired token-bearing
@@ -703,11 +738,63 @@ export function startWsServer(opts: ServerOpts) {
   });
   const rpc = new ReverseRpc({
     clients: () => clients.values(),
+    // SPEC-46 D13a: climb the lineage when a spawned session has no watcher of
+    // its own. `parentId` is persisted on the session (D10); a missing/archived
+    // ancestor returns undefined and ends the walk.
+    parentOf: (sessionId) => manager.getSession(sessionId)?.parentId,
+    // SPEC-46 D14: caption a stranded prompt from the session's own metadata
+    // (title, agent, D10 handoff origin), so a client reached at rung 3 sees
+    // what it is approving. Undefined for an unknown/archived session.
+    sessionCaption: (sessionId) => {
+      const s = manager.getSession(sessionId);
+      if (!s) return undefined;
+      return {
+        title: s.title,
+        agent: s.agent,
+        parentId: s.parentId,
+        handoffReason: s.handoffReason,
+        origin: s.origin,
+      };
+    },
     onUndeliverable: (env, ctx) => wakeCoordinator.wake(env, ctx),
   });
   const askDevice = rpc.askDevice.bind(rpc);
-  const authGate = new AuthGate({ registry, onAuthenticated });
-  const router = buildCommandRouter();
+  const authGate = new AuthGate({ registry, onAuthenticated, sessionTokens });
+  const router = buildCommandRouter(
+    {
+      manager,
+      gateway,
+      budgetWatch,
+      broadcastSnapshots,
+      broadcastReposSnapshot,
+      broadcastBudget,
+      askDevice,
+      onMetricsWatchersChanged: recomputeMetricsWatchers,
+      sendMetricsHistory,
+      onPortsWatchersChanged: recomputePortsWatchers,
+      sendPortsSnapshot,
+      onDocsWatchersChanged: recomputeDocsWatchers,
+      sendDocsSnapshot,
+      docs: docsService,
+      killPort: (target: PortKillTarget, deviceId?: string) =>
+        portsService.killPort(target, { deviceId }),
+      killOrphans: (deviceId?: string) => portsService.killOrphans({ deviceId }),
+      setWatchedPort,
+      forwardPort,
+      stopForward: (grantId: string, deviceId?: string) =>
+        void forwardGrants.stop(grantId, ownerOf(deviceId)),
+      rescanPorts: () => void portsService.rescanNow(),
+      // A per-repo settings write or a re-point changed the projects. BOTH snapshots
+      // go out: `repos.snapshot` carries the settings, and `projects.snapshot`
+      // carries `path`/`name`, which a re-point also changes -- sending only the
+      // first left every client showing the old location.
+      onProjectsChanged: () => {
+        broadcastSnapshots();
+        void broadcastReposSnapshot();
+      },
+    },
+    registry,
+  );
 
   // -------- session wiring ------------------------------------------------
 
@@ -824,7 +911,7 @@ export function startWsServer(opts: ServerOpts) {
         // being opened, so it is where the agent comes back — and it must be the
         // SERVER's call: on reconnect the client still holds its pre-restart
         // status, so it cannot know the session went cold. No-op for live,
-        // history-only, archived and draft sessions.
+        // history-only, closed and draft sessions.
         //
         // AFTER the replay, deliberately: history must reach the client before
         // the resumed agent's first live events, and `handleSub` stays sync so a
@@ -841,7 +928,7 @@ export function startWsServer(opts: ServerOpts) {
         state.send({ t: "pong", id: env.id, ts: env.ts });
         return;
       case "srv.response":
-        rpc.handleResponse(env);
+        rpc.handleResponse(env, state);
         return;
       default:
         return;
@@ -850,54 +937,8 @@ export function startWsServer(opts: ServerOpts) {
 
   // -------- command handlers (OCP registry) -------------------------------
 
-  function buildCommandRouter(): CommandRouter {
-    const r = new CommandRouter();
-    const deps = {
-      manager,
-      gateway,
-      budgetWatch,
-      broadcastSnapshots,
-      broadcastReposSnapshot,
-      broadcastBudget,
-      askDevice,
-      onMetricsWatchersChanged: recomputeMetricsWatchers,
-      sendMetricsHistory,
-      onPortsWatchersChanged: recomputePortsWatchers,
-      sendPortsSnapshot,
-      killPort: (target: PortKillTarget, deviceId?: string) =>
-        portsService.killPort(target, { deviceId }),
-      killOrphans: (deviceId?: string) => portsService.killOrphans({ deviceId }),
-      setWatchedPort,
-      forwardPort,
-      stopForward: (grantId: string, deviceId?: string) =>
-        void forwardGrants.stop(grantId, ownerOf(deviceId)),
-      rescanPorts: () => void portsService.rescanNow(),
-      // Per-repo settings changed: the repos snapshot is what carries them, so
-      // re-broadcast it rather than only the projects list.
-      onProjectsChanged: () => void broadcastReposSnapshot(),
-    };
-
-    registerSessionCommands(r, deps);
-    registerProjectCommands(r, deps);
-    registerWorktreeCommands(r, deps);
-    registerRepoCommands(r, deps);
-    registerRepoSettingsCommands(r, deps);
-    registerGithubCommands(r, deps);
-    registerMetricsCommands(r, deps);
-    registerPortsCommands(r, deps);
-
-    // In-app logging: ingest client diagnostics into the server log. Always on
-    // (not dev-gated) — field crash reports from iOS are a production need.
-    registerDiagnosticsCommands(r);
-
-    // SPEC-07: register the device's content-free wake push token.
-    registerPushCommands(r, registry);
-
-    // B9b: dev-only debug commands, registered only when MAKIT_DEV is set.
-    if (process.env.MAKIT_DEV) registerDebugCommands(r, deps);
-
-    return r;
-  }
+  // (registration is delegated to the module-level `buildCommandRouter` so the
+  // capability-map completeness test can build the real router -- see below.)
 
   // -------- session fan-out + snapshots -----------------------------------
 
@@ -933,9 +974,23 @@ export function startWsServer(opts: ServerOpts) {
     });
   }
 
+  /**
+   * SPEC-46 D17: the snapshot is a **read path**, and it is pushed the instant a
+   * socket authenticates — so an unfiltered one handed an agent token every
+   * session's id, title, preview, worktree and lineage before it sent a single
+   * command. A session-scoped principal sees only what `canReadSession` allows
+   * (its own session and its descendants); a human sees everything, unchanged.
+   */
+  function visibleSessions(client: WsClient): SessionDTO[] {
+    const all = manager.listSessions();
+    return all.filter((s) =>
+      canReadSession(client.principal, s.id, (id) => manager.getSession(id)?.parentId),
+    );
+  }
+
   function sendSnapshots(client: WsClient) {
     client.send({ t: "event", id: newId("snap"), kind: "projects.snapshot", projects: manager.listProjects() });
-    client.send({ t: "event", id: newId("snap"), kind: "sessions.snapshot", sessions: manager.listSessions() });
+    client.send({ t: "event", id: newId("snap"), kind: "sessions.snapshot", sessions: visibleSessions(client) });
     // Include the current budget so a freshly-connected client renders the
     // footer immediately, without waiting for the next level change (spec §6.6).
     client.send({ t: "event", id: newId("gh"), kind: "github.budget", budget: budgetDto() });
@@ -1023,14 +1078,22 @@ export function startWsServer(opts: ServerOpts) {
     for (const c of clients.values()) if (c.authed) sendSnapshots(c);
   }
 
+  /**
+   * D17: one shared frame cannot serve two principals with different visibility,
+   * so the live snapshot is built per client like the one pushed on auth. Humans
+   * (the overwhelming majority of sockets) all get the same array; only a
+   * session-scoped principal pays for a filter.
+   */
   function broadcastSessionsSnapshot() {
-    const frame: OutgoingFrame = {
-      t: "event",
-      id: newId("snap"),
-      kind: "sessions.snapshot",
-      sessions: manager.listSessions(),
-    };
-    for (const c of clients.values()) if (c.authed) c.send(frame);
+    for (const c of clients.values()) {
+      if (!c.authed) continue;
+      c.send({
+        t: "event",
+        id: newId("snap"),
+        kind: "sessions.snapshot",
+        sessions: visibleSessions(c),
+      });
+    }
   }
 
   // -------- concrete client ------------------------------------------------
@@ -1042,6 +1105,7 @@ export function startWsServer(opts: ServerOpts) {
       isLocal,
       watchingMetrics: false,
       watchingPorts: false,
+      watchingDocs: false,
       subscribed: new Set<string>(),
       send(frame: OutgoingFrame) {
         if (ws.readyState !== ws.OPEN) return;
@@ -1055,4 +1119,39 @@ export function startWsServer(opts: ServerOpts) {
       },
     };
   }
+}
+
+/**
+ * Build the real command router (SPEC-19 OCP registry). Module-level and
+ * exported so the capability-map completeness test (SPEC-46 C1) can build the
+ * SAME router the server runs — not a toy with two handlers. `deps` is used
+ * only at dispatch, so the test may pass a stub; registration is what matters.
+ */
+export function buildCommandRouter(
+  deps: CommandDeps,
+  registry: PushTokenRegistry,
+): CommandRouter {
+  const r = new CommandRouter();
+
+  registerSessionCommands(r, deps);
+  registerProjectCommands(r, deps);
+  registerWorktreeCommands(r, deps);
+  registerRepoCommands(r, deps);
+  registerRepoSettingsCommands(r, deps);
+  registerGithubCommands(r, deps);
+  registerMetricsCommands(r, deps);
+  registerPortsCommands(r, deps);
+  registerDocsCommands(r, deps);
+
+  // In-app logging: ingest client diagnostics into the server log. Always on
+  // (not dev-gated) — field crash reports from iOS are a production need.
+  registerDiagnosticsCommands(r);
+
+  // SPEC-07: register the device's content-free wake push token.
+  registerPushCommands(r, registry);
+
+  // B9b: dev-only debug commands, registered only when MAKIT_DEV is set.
+  if (process.env.MAKIT_DEV) registerDebugCommands(r, deps);
+
+  return r;
 }

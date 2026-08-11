@@ -30,6 +30,7 @@ function fakeClient(isLocal: boolean): FakeClient {
     subscribed: new Set<string>(),
     watchingMetrics: false,
     watchingPorts: false,
+    watchingDocs: false,
     isLocal,
     send: (frame) => sent.push(frame),
     close: () => {},

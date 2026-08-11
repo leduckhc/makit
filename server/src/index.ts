@@ -74,11 +74,17 @@ function makeDaemon() {
 async function main() {
   const cmd = process.argv[2];
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-  const KNOWN = new Set(["serve", "pair", "qr", "devices", "sessions", "attach", ...LIFECYCLE]);
+  const KNOWN = new Set([
+    "serve", "pair", "qr", "devices", "ls", "sessions",
+    "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "fork", "ask", "tree",
+    "approve", "answer", "attach",
+    ...LIFECYCLE,
+  ]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
-        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|sessions|attach [...]`,
+        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|` +
+        `ls|tree|new|send|ask|tail|resume|rm|wait|run|handoff|fork|approve|answer|attach [...]`,
     );
     process.exit(2);
   }
@@ -99,9 +105,92 @@ async function main() {
     return;
   }
 
-  if (cmd === "sessions") {
-    const { runSessions } = await import("./cli/sessions.js");
-    await runSessions(process.argv.slice(3));
+  // `ls` lists sessions over WSS — the app's own `sessions.snapshot` (SPEC-46
+  // D1), so the terminal cannot drift from the phone. `sessions` is the
+  // deprecated control-socket spelling, kept for one release.
+  if (cmd === "ls" || cmd === "sessions") {
+    if (cmd === "sessions") console.error("[makit] `makit sessions` is deprecated — use `makit ls`");
+    const { runLs } = await import("./cli/ls.js");
+    await runLs(process.argv.slice(3));
+    return;
+  }
+
+  // `new` starts a session from the terminal: a worktree, a draft session, and
+  // (with -m) the first message that promotes it (SPEC-46 D4/D15).
+  if (cmd === "new") {
+    const { runNew } = await import("./cli/new.js");
+    await runNew(process.argv.slice(3));
+    return;
+  }
+
+  // `ask` is send + wait + print-just-the-answer, for one agent delegating to
+  // another; `tree` is a projection of D10 lineage — who spawned whom, and why.
+  if (cmd === "ask") {
+    const { runAsk } = await import("./cli/ask.js");
+    await runAsk(process.argv.slice(3));
+    return;
+  }
+  if (cmd === "tree") {
+    const { runTree } = await import("./cli/tree.js");
+    await runTree(process.argv.slice(3));
+    return;
+  }
+
+  // `wait` blocks until a session's turn ends, and says how in its exit code
+  // (SPEC-46 D8). `run` is `new` + `wait` + print, the shape automation wants.
+  if (cmd === "wait") {
+    const { runWait } = await import("./cli/wait.js");
+    await runWait(process.argv.slice(3));
+    return;
+  }
+  if (cmd === "run") {
+    const { runRun } = await import("./cli/run.js");
+    await runRun(process.argv.slice(3));
+    return;
+  }
+
+  // `handoff` is `new`'s sibling for an agent that is out of context: it
+  // inherits the parent's tree and carries a manifest as the first message
+  // (SPEC-46 D5/D15/D16). Identity comes from the environment, not argv.
+  if (cmd === "handoff") {
+    const { runHandoff } = await import("./cli/handoff.js");
+    await runHandoff(process.argv.slice(3));
+    return;
+  }
+
+  // `fork` is `handoff`'s high-fidelity sibling (SPEC-46 U4/D6): an
+  // adapter-native branch of the SAME conversation (codex thread/fork), gated
+  // on the harness's fork capability and refused in a sentence where
+  // unsupported. Inherits the source's tree (D15 inverse) unless --worktree.
+  if (cmd === "fork") {
+    const { runFork } = await import("./cli/fork.js");
+    await runFork(process.argv.slice(3));
+    return;
+  }
+
+  // `send` posts a message to a session (SPEC-46 T14) — a thin client of
+  // `send.message`.
+  if (cmd === "send") {
+    const { runSend } = await import("./cli/send.js");
+    await runSend(process.argv.slice(3));
+    return;
+  }
+  // `tail` replays a session's events and, with -f, keeps streaming (T14).
+  if (cmd === "tail") {
+    const { runTail } = await import("./cli/tail.js");
+    await runTail(process.argv.slice(3));
+    return;
+  }
+  // `resume` brings a cold, resumable session back to a live agent (T14).
+  if (cmd === "resume") {
+    const { runResume } = await import("./cli/resume.js");
+    await runResume(process.argv.slice(3));
+    return;
+  }
+  // `rm` ends a session: close by default (recoverable), kill only with --kill.
+  if (cmd === "rm") {
+    const { runRm } = await import("./cli/rm.js");
+    await runRm(process.argv.slice(3));
     return;
   }
 
@@ -110,6 +199,20 @@ async function main() {
   if (cmd === "attach") {
     const { runAttach } = await import("./cli/attach.js");
     await runAttach(process.argv.slice(3));
+    return;
+  }
+
+  // `approve`/`answer` unblock a session's pending prompt from the terminal
+  // (SPEC-46 U3): subscribe, receive the replayed `srv.request`, and answer it.
+  // The only authorization is the server-side D13 check — none is duplicated here.
+  if (cmd === "approve") {
+    const { runApprove } = await import("./cli/approve.js");
+    await runApprove(process.argv.slice(3));
+    return;
+  }
+  if (cmd === "answer") {
+    const { runAnswer } = await import("./cli/answer.js");
+    await runAnswer(process.argv.slice(3));
     return;
   }
 

@@ -18,12 +18,20 @@ const kRouteRoot = '/';
 const kRouteRepos = '/repos';
 
 const kRouteSettings = '$kRouteRepos/settings';
-const kRouteArchived = '$kRouteRepos/archived';
+const kRouteClosed = '$kRouteRepos/closed';
 const kRouteDiagnostics = '$kRouteRepos/diagnostics';
+
+/// The Activity feed (SPEC-48) — every outcome the app has reported, with the
+/// error text still attached.
+const kRouteActivity = '$kRouteRepos/activity';
 
 /// The global Ports screen (SPEC-42 P2a) — "everything, all repos". Accepts an
 /// optional `?repo=<id>` that pre-selects the *This repo* filter.
 const kRoutePorts = '$kRouteRepos/ports';
+
+/// The global Docs screen (SPEC-46 P1) — the repo's mockups and specs, grouped
+/// repo → worktree.
+const kRouteDocs = '$kRouteRepos/docs';
 
 /// A single session's screen.
 String routeForSession(String sessionId) => '$kRouteRepos/session/$sessionId';

@@ -21,18 +21,20 @@ import '../../store/models.dart';
 import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
 import '../../store/store.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import 'pr_actions.dart';
 import 'pr_signals.dart';
 import 'pr_tone.dart';
 
-/// What a direct op did, for the snackbar.
+/// What a direct op did, for the activity record.
 class PrOpOutcome {
   const PrOpOutcome(this.message, {this.detail});
 
   final String message;
 
   /// Extra explanation the user could not have predicted (e.g. why the base
-  /// branch was left alone), surfaced behind a "Why?" action.
+  /// branch was left alone), surfaced as the event's copyable detail.
   final String? detail;
 }
 
@@ -122,6 +124,9 @@ Future<void> runPrRemedy(
   String? branch,
   int uncommittedFiles = 0,
 }) async {
+  // Resolved before the first await: `ref` throws once its widget is
+  // unmounted, and the record must survive the thing that reported to it.
+  final activity = ref.status;
   // The sheet or dialog holding this callback can outlive the widget that opened
   // it — a repos snapshot can drop the worktree row while its sheet is still up.
   // Everything below touches `ref` and `context`, both of which throw on a
@@ -145,15 +150,12 @@ Future<void> runPrRemedy(
         ]),
       );
     case DirectRemedy(op: final op):
-      final messenger = ScaffoldMessenger.of(context);
       // Resolved before any await: the widget that owns `ref` can be disposed
       // while the confirm dialog is up (its row may vanish on a snapshot), and
       // reading a disposed ref throws.
       final run = ref.read(prOpRunnerProvider);
       if (projectId == null || worktreePath == null) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('No worktree to act on')),
-        );
+        activity.warning('No worktree to act on', source: StatusSources.pr);
         return;
       }
       // Both branch-deleting ops end in `git branch -D`, and the server resolves
@@ -162,12 +164,9 @@ Future<void> runPrRemedy(
       // the command — so the guard against deleting the *wrong* branch is off at
       // exactly the moment the app is least sure which branch that is. Refuse.
       if (deletesBranch(op) && branch == null) {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Not sure which branch this worktree is on — refresh and try again',
-            ),
-          ),
+        activity.warning(
+          'Not sure which branch this worktree is on — refresh and try again',
+          source: StatusSources.pr,
         );
         return;
       }
@@ -198,23 +197,20 @@ Future<void> runPrRemedy(
             expectBranch: branch,
           ),
         );
-        if (!messenger.mounted) return;
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(outcome.message),
-            action: outcome.detail == null
-                ? null
-                : SnackBarAction(
-                    label: 'Why?',
-                    onPressed: () => messenger.showSnackBar(
-                      SnackBar(content: Text(outcome.detail!)),
-                    ),
-                  ),
-          ),
+        // One event carries the whole outcome: the detail that used to hide
+        // behind a second "Why?" snackbar is now one tap away in the toast and
+        // permanently copyable in Activity (SPEC-48).
+        activity.success(
+          outcome.message,
+          detail: outcome.detail,
+          source: StatusSources.pr,
         );
       } catch (e) {
-        if (!messenger.mounted) return;
-        messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
+        activity.failure(
+          'Could not complete the action',
+          error: e,
+          source: StatusSources.pr,
+        );
       }
   }
 }
@@ -361,11 +357,11 @@ Future<bool?> showPrDirectConfirm(
                 icon: PhosphorIconsLight.folderMinus,
                 emphasis: worktreePath,
               ),
-              // Live sessions are archived, not stopped: the transcript and the
+              // Live sessions are closed, not stopped: the transcript and the
               // resume handle survive (SPEC-29). Drafts have neither, so they go.
               const _Step(
-                'Archive the sessions running in it (drafts are discarded)',
-                icon: PhosphorIconsLight.archive,
+                'Close the sessions running in it (drafts are discarded)',
+                icon: PhosphorIconsLight.moon,
               ),
               if (branch != null)
                 _Step(

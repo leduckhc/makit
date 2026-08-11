@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — the expanded tool body</title>
+<style>
+  :root{
+    --bg:#171717;--lowest:#121212;--low:#1E1E1E;--container:#242424;
+    --high:#2E2E2E;--highest:#383838;
+    --text:#F5F5F5;--muted:#9E9E9E;--hairline:#333333;
+    --a70:#767676;                /* muted @ .70 over #171717 — the row glyph */
+    --accent:#4ADE80;--warning:#E0A72E;--error:#FFB4AB;--destructive:#E5544B;
+    --codebg:#282C34;             /* atom-one-dark, as ToolCodeBlock uses */
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    /* light theme tokens, for the strip that mirrors the pasted screenshot */
+    --lbg:#FAFAFA;--lcontainer:#EDEDED;--ltext:#1B1B1B;--lmuted:#636363;
+    --lhairline:#DEDEDE;--lcodebg:#F0F1F4;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);font-family:var(--sans);
+    font-size:14px;line-height:1.5;padding:32px 24px 120px}
+  main{max-width:1180px;margin:0 auto}
+  h1{font-size:28px;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin:0 0 10px;max-width:680px}
+  code{font-family:var(--mono);background:#000;padding:1px 5px;border-radius:4px;font-size:12px;color:#cfcfcf}
+  b,strong{color:var(--text);font-weight:600}
+  h2.sec{font-size:20px;margin:44px 0 4px;padding-top:20px;border-top:1px solid #202020;font-weight:600}
+  h2.sec .n{color:var(--muted);font-weight:400;margin-right:8px}
+  p.secsub{color:var(--muted);font-size:13px;margin:0 0 16px;max-width:700px}
+
+  .note{max-width:700px;margin:14px 0 12px;padding:12px 14px;border-radius:8px;font-size:13px}
+  .note.gap{border:1px solid #6b5d2a;background:#241f10;color:#e8d9a8}
+  .note.decide{border:1px solid #2f4f5c;background:#102024;color:#bcd9e2}
+  .note.win{border:1px solid #2c5136;background:#101e15;color:#bfe3c9}
+  .note ul{margin:8px 0 0;padding-left:20px}.note li{margin:4px 0}.note strong{color:#fff}
+
+  .grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(440px,100%),1fr))}
+  .card{border:1px solid var(--hairline);border-radius:12px;background:#141414;overflow:hidden;
+    display:flex;flex-direction:column;min-width:0}
+  .card > header{padding:11px 14px;border-bottom:1px solid var(--hairline);display:flex;
+    align-items:baseline;gap:8px;flex-wrap:wrap}
+  .card h3{font-size:15px;margin:0;font-weight:600}
+  .card .why{margin:10px 14px 0;color:var(--muted);font-size:12px}
+  .card .cost{margin:6px 14px 12px;color:#c98f8f;font-size:12px}
+  .card .why b,.card .cost b{color:#d4d4d4}
+  .card .why:last-child,.card .cost:last-child{margin-bottom:14px}
+  .badge{font-size:9.5px;border-radius:4px;padding:2px 6px;font-weight:700;letter-spacing:.04em;
+    text-transform:uppercase;flex:none}
+  .badge.rec{color:#0e0e0e;background:var(--accent)}
+  .badge.no{color:#0e0e0e;background:#8a8a8a}
+  .badge.now{color:#0e0e0e;background:#7f9cc0}
+  .badge.ask{color:#0e0e0e;background:var(--warning)}
+
+  /* ── transcript surface ─────────────────────────────────────────────── */
+  .tr{background:var(--bg);padding:8px 20px 14px;flex:1}
+  .tr.light{background:var(--lbg);color:var(--ltext)}
+
+  /* the collapsed/expanded row header (as shipped) */
+  .row{display:flex;align-items:center;gap:6px;padding:2px 0}
+  .row .ic{width:15px;height:15px;flex:none;color:var(--a70)}
+  .tr.light .row .ic{color:#8e8e8e}
+  .row .line{flex:1;min-width:0;font-size:13px;color:var(--muted);line-height:1.3;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tr.light .row .line{color:var(--lmuted)}
+  .row .verb{font-weight:500}
+  .row .st{width:13px;height:13px;color:var(--a70);flex:none}
+  .row .ct{width:13px;height:13px;color:var(--muted);opacity:.7;flex:none}
+
+  /* ── AS BUILT body: heavy mono heading + box inside a box ───────────── */
+  .ab .sect{padding-bottom:16px}
+  .ab .sect > .t{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--text);
+    line-height:1.4}
+  .tr.light .ab .sect > .t{color:var(--ltext)}
+  .ab .sect > .outer{margin-top:6px;background:var(--container);border-radius:10px;padding:12px}
+  .tr.light .ab .sect > .outer{background:var(--lcontainer)}
+  .ab .param{display:flex;gap:0;font-family:var(--mono);font-size:12px;padding-bottom:4px}
+  .ab .param .k{width:72px;flex:none;color:var(--muted)}
+  .tr.light .ab .param .k{color:var(--lmuted)}
+  .ab .param .v{flex:1;min-width:0;word-break:break-all}
+  .ab .code{position:relative;background:var(--codebg);border:.5px solid var(--hairline);
+    border-radius:8px;padding:12px 40px 12px 12px;font-family:var(--mono);font-size:12px;
+    color:#abb2bf;white-space:pre;overflow:hidden}
+  .tr.light .ab .code{background:var(--lcodebg);border-color:var(--lhairline);color:#383a42}
+  .ab .code .num{color:#56B6C2}
+  .tr.light .ab .code .num{color:#0184BC}
+  .ab .code .cp{position:absolute;top:2px;right:2px;width:26px;height:26px;border-radius:6px;
+    display:flex;align-items:center;justify-content:center;color:var(--muted)}
+
+  /* ── PROPOSED body ─────────────────────────────────────────────────── */
+  .pb{padding-top:2px}
+  .pb .facts{display:flex;flex-wrap:wrap;gap:4px 14px;padding:1px 0 5px 21px;
+    font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .tr.light .pb .facts{color:var(--lmuted)}
+  .pb .facts .k{opacity:.72}
+  .pb .facts b{color:#c9c9c9;font-weight:500;font-family:var(--mono);font-size:11px}
+  .tr.light .pb .facts b{color:#3d3d3d}
+  .pb .cap{padding:6px 0 3px 21px;font-size:10px;letter-spacing:.07em;text-transform:uppercase;
+    color:var(--muted);opacity:.85}
+  .tr.light .pb .cap{color:var(--lmuted)}
+  .pb .payload{position:relative;margin-left:21px;background:var(--lowest);
+    border:.5px solid #262626;border-radius:8px;padding:9px 34px 9px 11px;
+    font-family:var(--mono);font-size:12px;color:#b8b8b8;white-space:pre;overflow:hidden}
+  .tr.light .pb .payload{background:#fff;border-color:var(--lhairline);color:#3d3d3d}
+  .pb .payload.err{border-color:#5a2b28;color:var(--error)}
+  .pb .payload .cp{position:absolute;top:4px;right:5px;width:20px;height:20px;color:var(--muted);
+    opacity:0;transition:opacity .12s}
+  .pb:hover .payload .cp{opacity:.75}
+  .pb .add{color:#3FB950}.pb .del{color:#F85149}.pb .hunk{color:#7f9cc0}
+  .pb .kw{color:#c678dd}.pb .str{color:#98c379}.pb .num{color:#56B6C2}
+  .tr.light .pb .kw{color:#a626a4}.tr.light .pb .str{color:#50a14f}.tr.light .pb .num{color:#0184BC}
+
+  /* height ruler */
+  .h{display:flex;align-items:center;gap:8px;padding:6px 14px 12px;font-size:11.5px;
+    color:var(--muted);font-variant-numeric:tabular-nums}
+  .h .bar{height:6px;border-radius:3px;background:var(--accent);opacity:.75}
+  .h .bar.bad{background:var(--destructive)}
+  .h b{color:var(--text)}
+
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:7px 12px;border-bottom:1px solid #232323;font-size:12.5px;vertical-align:top}
+  th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.mono,td .mono{font-family:var(--mono);font-size:11.5px;color:#c9c9c9}
+  td.was{color:#8a8a8a}
+  .tbl{border:1px solid var(--hairline);border-radius:12px;overflow:hidden;background:#141414}
+  .tbl tr:last-child td{border-bottom:0}
+  .tbl caption{caption-side:top;text-align:left;padding:11px 14px;border-bottom:1px solid var(--hairline);
+    font-size:15px;font-weight:600}
+
+  ol.defects{max-width:860px;padding-left:0;list-style:none;counter-reset:d}
+  ol.defects li{counter-increment:d;position:relative;padding:9px 0 9px 42px;
+    border-bottom:1px solid #1d1d1d;font-size:13px}
+  ol.defects li::before{content:"D" counter(d);position:absolute;left:0;top:9px;font-family:var(--mono);
+    font-size:11px;color:var(--destructive);border:1px solid #5a2b28;border-radius:5px;padding:2px 6px}
+  ol.defects li .src{display:block;margin-top:4px;font-family:var(--mono);font-size:11px;color:#8f8f8f}
+</style>
+</head>
+<body>
+<main>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <style>.i{fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+    .dot{fill:currentColor;stroke:none}</style>
+  <symbol id="g-book" viewBox="0 0 24 24"><path class="i" d="M12 7.2v12.4"/>
+    <path class="i" d="M12 7.2C10.4 5.6 7.9 5 3 5v12.2c4.9 0 7.4.6 9 2.2 1.6-1.6 4.1-2.2 9-2.2V5c-4.9 0-7.4.6-9 2.2Z"/></symbol>
+  <symbol id="g-terminal" viewBox="0 0 24 24"><rect class="i" x="3" y="4" width="18" height="16" rx="2.5"/>
+    <path class="i" d="M7.5 10.5 10 13l-2.5 2.5M13 15.5h4"/></symbol>
+  <symbol id="g-pencil" viewBox="0 0 24 24"><path class="i" d="M4.5 19.5h4L20 8a2.83 2.83 0 0 0-4-4L4.5 15.5v4Z"/>
+    <path class="i" d="M14.5 5.5 18.5 9.5"/></symbol>
+  <symbol id="g-glass" viewBox="0 0 24 24"><circle class="i" cx="10.5" cy="10.5" r="6.2"/>
+    <path class="i" d="M15.2 15.2 20 20"/></symbol>
+  <symbol id="g-check" viewBox="0 0 24 24"><circle class="i" cx="12" cy="12" r="8.8"/>
+    <path class="i" d="m8 12.3 2.9 2.9L16.2 9.6"/></symbol>
+  <symbol id="g-warn" viewBox="0 0 24 24"><circle class="i" cx="12" cy="12" r="8.8"/>
+    <path class="i" d="M12 7.4v6"/><circle class="dot" cx="12" cy="16.6" r="1.05"/></symbol>
+  <symbol id="g-caret" viewBox="0 0 24 24"><path class="i" d="m9.5 5 7 7-7 7"/></symbol>
+  <symbol id="g-copy" viewBox="0 0 24 24"><rect class="i" x="8.5" y="8.5" width="11" height="11" rx="2"/>
+    <path class="i" d="M15.5 5.5h-9a2 2 0 0 0-2 2v9"/></symbol>
+</defs></svg>
+
+<h1>The expanded tool body</h1>
+<p class="sub">The collapsed row is done (see <code>mockups/tool-one-liner.html</code>). Unfolding one still lands you
+  in the old design: <b>a black monospace heading over a box inside a box</b>, repeated per section. This board
+  diagnoses why it reads as clutter and offers two ways out, plus the one rule that fixes most of it.</p>
+<p class="sub" style="font-size:12px">Every grey is a real <code>theme.dart</code> token; the light strip in §2 is the
+  same theme the pasted screenshot was taken in. Code-block colours are the actual
+  <code>atom-one-dark</code> / <code>github</code> highlight themes the app loads.</p>
+
+<!-- ═══════════════════════════ 1. DIAGNOSIS ═══════════════════════════ -->
+<h2 class="sec"><span class="n">1</span>Six causes, not one bad taste</h2>
+<p class="secsub">All six live in two widgets, so all six are fixable in one pass.</p>
+
+<ol class="defects">
+  <li><b>The section title is a heading, in a code face.</b> <code>titleSmall.mono</code> = 14&nbsp;px
+    <b>w600</b> at full <code>onSurface</code> — heavier and larger than the content it labels, and monospace for a word
+    that is not code. Two of them stack up per body.
+    <span class="src">tool_renderers.dart:158 — Text(title, style: titleSmall?.mono)</span></li>
+
+  <li><b>A box inside a box.</b> <code>ToolSection</code> wraps its child in a <code>surfaceContainer</code> panel at
+    radius&nbsp;10 with 12&nbsp;px padding; <code>ToolCodeBlock</code> is <em>itself</em> a panel — different fill,
+    its own hairline, radius&nbsp;8, another 12&nbsp;px padding. Two frames and 24&nbsp;px of inset around one line of
+    output.
+    <span class="src">tool_renderers.dart:160-172 + 205-215</span></li>
+
+  <li><b>A short result is rendered as source code.</b> <code>307 lines</code> goes through
+    <code>ToolCodeBlock</code>, so a highlighter tints the digits teal and a copy button rides on top of it. It is a
+    fact, not a payload.
+    <span class="src">_ReadRenderer.body → ToolSection('Content', ToolCodeBlock(...))</span></li>
+
+  <li><b>The key/value column is 72&nbsp;px wide, always.</b> <code>path</code> ends up marooned four characters into a
+    72&nbsp;px gutter, and its value wraps at whatever width is left — three ragged lines for one path.
+    <span class="src">tool_renderers.dart:263 — SizedBox(width: 72, …)</span></li>
+
+  <li><b>The body re-states what the header just threw away.</b> Expanding replaces
+    <code>Read app/lib/…/tool_call_card.dart</code> with <code>Read</code>, so the very first thing the body must do is
+    print the path again — as a titled box.
+    <span class="src">tool_call_card.dart:_line() — expanded ? toolLabel(item) : toolSummaryLine(item)</span></li>
+
+  <li><b>The path is not compacted here.</b> The collapsed row shows it relative to the worktree; the body prints
+    <code>/Users/le/.worktrees/makit/feat-chat-content/app/lib/…</code> in full, which is what forces the wrap in D4.
+    <span class="src">compactPathsIn() is applied to the summary line only</span></li>
+</ol>
+
+<div class="note gap">
+  <strong>Measured, from the running app.</strong> An expanded <code>bash</code> row's accessibility frame is
+  <b>249&nbsp;px</b> tall for a one-line command and a one-line output. The chrome — two headings, two outer panels,
+  two sets of padding, the 16&nbsp;px inter-section gap — is about <b>120&nbsp;px</b> of that. The content is ~34.
+</div>
+
+<!-- ═══════════════════════════ 2. AS BUILT ═══════════════════════════ -->
+<h2 class="sec"><span class="n">2</span>As built, rebuilt faithfully</h2>
+<p class="secsub">Left: the light theme, matching the pasted screenshot. Right: the same body in dark. Nothing here is
+  exaggerated — the heading weight, both frames, the teal <code>307</code> and the 72&nbsp;px column are what the code
+  produces today.</p>
+
+<div class="grid">
+  <div class="card">
+    <header><h3>Read — light</h3><span class="badge now">today</span></header>
+    <div class="tr light">
+      <div class="row"><svg class="ic"><use href="#g-book"/></svg>
+        <span class="line"><span class="verb">Read</span></span>
+        <svg class="st"><use href="#g-check"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="ab">
+        <div class="sect"><div class="t">Arguments</div>
+          <div class="outer"><div class="param"><span class="k">path</span>
+            <span class="v">/Users/le/.worktrees/makit/feat-chat-content/app/lib/ui/session/tool_call_card.dart</span></div></div>
+        </div>
+        <div class="sect"><div class="t">Content</div>
+          <div class="outer"><div class="code"><span class="num">307</span> lines<span class="cp">
+            <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="h"><span class="bar bad" style="width:250px"></span><span><b>~250 px</b></span></div>
+  </div>
+
+  <div class="card">
+    <header><h3>Ran — dark</h3><span class="badge now">today</span></header>
+    <div class="tr">
+      <div class="row"><svg class="ic"><use href="#g-terminal"/></svg>
+        <span class="line"><span class="verb">Run</span></span>
+        <svg class="st"><use href="#g-check"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="ab">
+        <div class="sect"><div class="t">Command</div>
+          <div class="outer"><div class="code">cd /Users/le/.worktrees/makit/feat-chat-content &amp;&amp; grep -rn "risk" server/src<span class="cp">
+            <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div></div>
+        </div>
+        <div class="sect"><div class="t">Output</div>
+          <div class="outer"><div class="code">server/src/pi-sessions.ts:<span class="num">259</span>:function classifyRisk(name: string)<span class="cp">
+            <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="h"><span class="bar bad" style="width:249px"></span><span><b>249 px</b> — measured via AX</span></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ 3. VARIANT A ═══════════════════════════ -->
+<h2 class="sec"><span class="n">3</span>A — the header keeps the subject; the body is just the payload</h2>
+<p class="secsub">One idea does most of the work: <b>stop emptying the header on expand</b>. If the row still reads
+  <code>Read app/lib/ui/session/tool_call_card.dart</code> while open, the body never needs an “Arguments” box — and
+  what is left is one payload, which already knows how to draw itself. Captions appear only when a body has two
+  payloads; short facts become a dim strip, never a panel.</p>
+
+<div class="grid">
+  <div class="card">
+    <header><h3>Read</h3><span class="badge rec">recommended</span></header>
+    <div class="tr">
+      <div class="row"><svg class="ic"><use href="#g-book"/></svg>
+        <span class="line"><span class="verb">Read</span> app/lib/ui/session/tool_call_card.dart</span>
+        <svg class="st"><use href="#g-check"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="pb">
+        <div class="facts"><span><span class="k">lines</span> <b>307</b></span><span><span class="k">offset</span> <b>1</b></span></div>
+        <div class="payload">import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+<span class="kw">class</span> ToolCallCard <span class="kw">extends</span> ConsumerStatefulWidget {
+  <span class="kw">const</span> ToolCallCard({<span class="kw">super</span>.key, <span class="kw">required</span> <span class="kw">this</span>.item});<span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+      </div>
+    </div>
+    <div class="h"><span class="bar" style="width:118px"></span><span><b>~118 px</b> for 5 lines of file</span></div>
+    <p class="why">No caption at all: a <code>read</code> has exactly one payload, and the row above already says what
+      was read. The <code>offset</code>/<code>lines</code> facts sit in the strip — legible, unboxed, one line.</p>
+  </div>
+
+  <div class="card">
+    <header><h3>Run — two payloads, so captions</h3><span class="badge rec">recommended</span></header>
+    <div class="tr">
+      <div class="row"><svg class="ic"><use href="#g-terminal"/></svg>
+        <span class="line"><span class="verb">Run</span> grep, head</span>
+        <svg class="st"><use href="#g-check"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="pb">
+        <div class="cap">command</div>
+        <div class="payload">grep -rn <span class="str">"risk"</span> server/src | head -20<span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+        <div class="cap">output · exit 0</div>
+        <div class="payload">server/src/pi-sessions.ts:<span class="num">259</span>:function classifyRisk(name: string)
+server/src/adapters/acp-map.ts:<span class="num">540</span>:function riskFromKind(kind)<span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+      </div>
+    </div>
+    <div class="h"><span class="bar" style="width:132px"></span><span><b>~132 px</b> · was 249</span></div>
+    <p class="why">A caption is 10&nbsp;px uppercase <code>onSurfaceVariant</code> — a label, not a heading. It carries
+      the cheap facts too (<code>exit 0</code>), so “Result” never needs a section of its own.</p>
+  </div>
+
+  <div class="card">
+    <header><h3>Edit — the diff <em>is</em> the body</h3><span class="badge rec">recommended</span></header>
+    <div class="tr">
+      <div class="row"><svg class="ic"><use href="#g-pencil"/></svg>
+        <span class="line"><span class="verb">Edit</span> app/lib/ui/session/tool_call_card.dart</span>
+        <svg class="st"><use href="#g-check"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="pb">
+        <div class="facts"><span><b class="add">+14</b> <span class="k">added</span></span><span><b class="del">−3</b> <span class="k">removed</span></span></div>
+        <div class="payload"><span class="hunk">@@ -71,7 +71,9 @@</span>
+   final renderer = rendererFor(item);
+<span class="del">-  final (riskColor, riskIcon) = switch (item.risk) {</span>
+<span class="add">+  // Monochrome, matching ThinkingLine's brain glyph.</span>
+<span class="add">+  final (riskColor, riskIcon) = switch (item.risk) {</span><span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+      </div>
+    </div>
+    <p class="why">Today this row shows <em>two</em> boxed sections (“Changes”, then “Diff”) for one edit. One diff,
+      one caption-less block, with the <code>+14 −3</code> shape in the facts strip where it can be read at a glance.</p>
+  </div>
+
+  <div class="card">
+    <header><h3>Grep — many small facts</h3><span class="badge rec">recommended</span></header>
+    <div class="tr">
+      <div class="row"><svg class="ic"><use href="#g-glass"/></svg>
+        <span class="line"><span class="verb">Grep</span> kToolRiskyColor</span>
+        <svg class="st"><use href="#g-check"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="pb">
+        <div class="facts"><span><span class="k">pattern</span> <b>kToolRiskyColor</b></span><span><span class="k">glob</span> <b>*.dart</b></span><span><span class="k">path</span> <b>app/lib</b></span><span><span class="k">matches</span> <b>1</b></span></div>
+        <div class="payload">app/lib/ui/session/chat_metrics.dart:<span class="num">46</span>:const Color kToolRiskyColor<span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+      </div>
+    </div>
+    <p class="why">The 72&nbsp;px column is gone: keys wrap naturally as <code>key value</code> pairs, so four arguments
+      cost one line instead of four rows inside a panel.</p>
+  </div>
+
+  <div class="card">
+    <header><h3>A failure</h3><span class="badge rec">recommended</span></header>
+    <div class="tr">
+      <div class="row"><svg class="ic"><use href="#g-terminal"/></svg>
+        <span class="line"><span class="verb">Run</span> sed, grep</span>
+        <svg class="st" style="color:var(--error)"><use href="#g-warn"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="pb">
+        <div class="cap">command</div>
+        <div class="payload">sed -i '' 's/Ran/Run/g' app/lib/ui/session/tool_renderers.dart<span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+        <div class="cap" style="color:var(--error);opacity:1">error · exit 1</div>
+        <div class="payload err">sed: 1: "s/Ran/Run/g": invalid command code R<span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+      </div>
+    </div>
+    <p class="why">Failure keeps its one splash of colour: the caption turns <code>error</code> and the payload takes an
+      error-tinted hairline. Same structure, no extra chrome.</p>
+  </div>
+
+  <div class="card">
+    <header><h3>A one-line result — no payload at all</h3><span class="badge rec">recommended</span></header>
+    <div class="tr">
+      <div class="row"><svg class="ic"><use href="#g-terminal"/></svg>
+        <span class="line"><span class="verb">Run</span> mkdir</span>
+        <svg class="st"><use href="#g-check"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="pb">
+        <div class="cap">command</div>
+        <div class="payload">mkdir -p app/test/sim/images<span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+        <div class="facts" style="padding-top:6px"><span><span class="k">result</span> <b>exit 0, no output</b></span></div>
+      </div>
+    </div>
+    <p class="why"><b>The rule:</b> a result with no newline and under ~80 characters is a <em>fact</em> — it goes in the
+      strip. <code>307 lines</code>, <code>No matches found</code>, <code>exit 0</code> never get a syntax highlighter
+      or a copy button again.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ 4. VARIANT B ═══════════════════════════ -->
+<h2 class="sec"><span class="n">4</span>B — keep the sections, just stop shouting</h2>
+<p class="secsub">If “the header keeps the subject” feels like too much change, this is the cheap subset: same
+  <code>ToolSection</code> structure and same “Arguments / Content” vocabulary, but the title becomes a caption and the
+  outer panel is deleted (the code block was always the only box that earned its frame).</p>
+
+<div class="grid">
+  <div class="card">
+    <header><h3>B — caption + single frame</h3><span class="badge ask">cheaper</span></header>
+    <div class="tr">
+      <div class="row"><svg class="ic"><use href="#g-book"/></svg>
+        <span class="line"><span class="verb">Read</span></span>
+        <svg class="st"><use href="#g-check"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="pb">
+        <div class="cap">arguments</div>
+        <div class="facts" style="padding-top:2px"><span><span class="k">path</span> <b>app/lib/ui/session/tool_call_card.dart</b></span></div>
+        <div class="cap">content</div>
+        <div class="payload">import 'package:flutter/material.dart';
+
+<span class="kw">class</span> ToolCallCard <span class="kw">extends</span> ConsumerStatefulWidget {<span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+      </div>
+    </div>
+    <div class="h"><span class="bar" style="width:150px"></span><span><b>~150 px</b> · was 250</span></div>
+    <p class="why"><b>Change:</b> two lines in <code>ToolSection</code> (title style, drop the <code>Container</code>).
+      Nothing else moves — every renderer keeps its section list.</p>
+    <p class="cost"><b>Left on the table:</b> the header still empties on expand, so “Arguments” still exists purely to
+      re-print what you were just looking at, and the path is still the long one.</p>
+  </div>
+
+  <div class="card">
+    <header><h3>C — rejected: tabs</h3><span class="badge no">rejected</span></header>
+    <div class="tr">
+      <div class="row"><svg class="ic"><use href="#g-terminal"/></svg>
+        <span class="line"><span class="verb">Run</span> grep, head</span>
+        <svg class="st"><use href="#g-check"/></svg><svg class="ct"><use href="#g-caret"/></svg></div>
+      <div class="pb">
+        <div style="display:flex;gap:14px;margin-left:21px;padding:4px 0 7px;font-size:11px;
+          color:var(--muted);border-bottom:1px solid #262626">
+          <span style="color:var(--accent);border-bottom:1.5px solid var(--accent);padding-bottom:5px">output</span>
+          <span>command</span><span>result</span></div>
+        <div class="payload" style="margin-top:7px">server/src/pi-sessions.ts:<span class="num">259</span>:function classifyRisk<span class="cp">
+          <svg class="ic" style="width:15px;height:15px"><use href="#g-copy"/></svg></span></div>
+      </div>
+    </div>
+    <p class="cost"><b>Why not:</b> it is the shortest body on the board and the worst. A transcript is a document you
+      scan and copy out of; hiding the command behind a tab means the thing you most often want to re-read costs a click,
+      and it adds a second interactive control to a row whose whole point is one tap = one disclosure.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════ 5. THE RULES ═══════════════════════════ -->
+<h2 class="sec"><span class="n">5</span>The five rules behind A</h2>
+
+<div class="tbl" style="max-width:960px">
+  <table>
+    <thead><tr><th style="width:20%">rule</th><th style="width:40%">as built</th><th style="width:40%">proposed</th></tr></thead>
+    <tbody>
+      <tr><td><b>The subject stays put</b></td>
+        <td class="was">Expanding swaps the one-liner for the bare verb, so the body opens with an
+          <code>Arguments</code> box repeating it.</td>
+        <td>The header keeps its full line while open. Single-argument tools (read/write/edit/grep) lose their arguments
+          section entirely.</td></tr>
+      <tr><td><b>One frame per payload</b></td>
+        <td class="was"><code>ToolSection</code> panel (radius 10, pad 12) wrapping a <code>ToolCodeBlock</code> panel
+          (radius 8, pad 12, hairline).</td>
+        <td>The payload block is the only box. Sections contribute a caption and nothing else.</td></tr>
+      <tr><td><b>Facts are text, payloads are blocks</b></td>
+        <td class="was">Everything is a box: <code>307 lines</code> gets a highlighter and a copy button.</td>
+        <td>No newline and &lt;80 chars → a dim <code>key value</code> in the facts strip. Exit code, match count and
+          line count live there too.</td></tr>
+      <tr><td><b>The payload sits in the app's ramp</b></td>
+        <td class="was"><code>#282C34</code> (dark) / <code>#F0F1F4</code> (light) — atom-one-dark's and github's own
+          panel colours, a blue-grey that belongs to neither theme's neutral ramp. Part of why the body reads as
+          foreign to the transcript around it.</td>
+        <td><code>surfaceContainerLowest</code> (<code>#121212</code> / <code>#FFFFFF</code>) with a hairline. Token
+          colours keep highlighting the <em>code</em>; the panel stops being a guest.</td></tr>
+      <tr><td><b>A caption, not a heading</b></td>
+        <td class="was"><code>titleSmall.mono</code> — 14&nbsp;px w600 mono at full <code>onSurface</code>.</td>
+        <td><code>labelSmall</code> 10&nbsp;px uppercase, <code>onSurfaceVariant</code>, letter-spacing 0.07em — and only
+          when a body has two or more payloads.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="note win" style="max-width:960px">
+  <strong>What this is worth.</strong> The <code>bash</code> body measured <b>249&nbsp;px</b> for one line of command and
+  one line of output; variant A draws the same information in about <b>132</b>, and a <code>read</code> goes from ~250
+  to ~118 — while showing <em>more</em> content, because the space freed is given back to the payload (which is still
+  capped at <code>kToolExpandedMaxHeight</code> = 340 and scrolls).
+</div>
+
+<div class="note win">
+  <strong>✓ Shipped — and five things found by running it.</strong>
+  Verified on macOS (dark, 430 pt) and the iPhone 17 simulator with
+  <code>flutter run -t tool/tool_row_demo.dart --dart-define=unfold=true</code>.
+  <ul>
+    <li><b>Rule 5 needed a second fix that a passing test hid.</b> Colouring <code>ToolCodeBlock</code>'s container was
+      not enough: <code>HighlightView</code> paints <code>theme['root'].backgroundColor</code> <em>inside</em> it, so the
+      real app still rendered atom-one-dark's <code>#282C34</code> while a widget test asserting the container's colour
+      was green. The highlight theme's own panel is now stripped (<code>_withoutPanel</code>), and the test asserts the
+      theme map, not just the box. Measured after: <code>#131313</code> — the app's ramp.</li>
+    <li><b>A maximum-length fact overflowed by 147 px.</b> <code>isFactResult</code> allows 80 characters, which is
+      wider than a 430 pt pane, and the <code>Wrap → Row</code> could not shrink. Values are <code>Flexible</code> now,
+      pinned by a sweep that renders a max-length fact through the whole row at <b>320 / 430 / 560 / 760 pt</b> — the
+      class of bug, not the one instance.</li>
+    <li><b>A diff payload lost its frame.</b> <code>DiffText</code> and <code>DiffLineRow</code> never drew one — they
+      borrowed it from the old <code>ToolSection</code> container, so once that went away an <code>edit</code> body
+      rendered as full-bleed tinted bands beside neatly panelled neighbours. The frame now lives in one
+      <code>ToolPanel</code> applied by <code>ToolBlock</code>, so “one frame per payload” holds <em>by construction</em>
+      for code and diffs alike, and <code>ToolCodeBlock</code> draws only code.</li>
+    <li><b>The panel-count test was measuring nothing.</b> It counted every coloured <code>DecoratedBox</code> — and a
+      diff <em>row</em> is a coloured box, so the assertion was vacuous exactly where it mattered. It now counts
+      <code>ToolPanel</code> widgets. Second time on this board that a green test hid a visual defect; both times the
+      test asserted a mechanism instead of the outcome.</li>
+    <li><b>The “one-line result” card contradicted rule 1.</b> It drew a <code>command</code> caption over a single
+      payload. Shipped behaviour is the uniform rule: <em>a caption only when two or more payloads render</em>, so a
+      shell row whose output is a fact shows the command block bare — shell text needs no label saying it is a command.</li>
+  </ul>
+</div>
+
+<!-- ═══════════════════════════ 6. DELTAS ═══════════════════════════ -->
+<h2 class="sec"><span class="n">6</span>Deltas</h2>
+
+<div class="tbl">
+  <table>
+    <thead><tr><th style="width:4%">#</th><th style="width:30%">file</th><th style="width:11%">size</th>
+      <th style="width:55%">change</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">1</td><td class="mono">app/lib/ui/session/tool_renderers.dart</td><td class="mono">~40 lines</td>
+        <td><code>ToolSection</code> → caption + no outer panel; new <code>ToolFacts</code> (wrapping
+          <code>key value</code> strip) replacing <code>ParamRow</code>'s 72&nbsp;px column; new
+          <code>toolFactsFor(item)</code> so “short result → fact” is one rule in one place, not per renderer.</td></tr>
+      <tr><td class="mono">2</td><td class="mono">app/lib/ui/session/tool_renderers.dart</td><td class="mono">~50 lines</td>
+        <td>Each renderer's <code>body()</code> drops its arguments section and returns
+          <code>[facts?, payload]</code> — read/write/grep/memory/skill get shorter; <code>bash</code> and
+          <code>apply_patch</code> keep captions because they have two payloads (or N files).</td></tr>
+      <tr><td class="mono">3</td><td class="mono">app/lib/ui/session/tool_call_card.dart</td><td class="mono">2 lines</td>
+        <td>Keep the full summary line when expanded (drop the <code>expanded ? toolLabel : toolSummaryLine</code>
+          switch). This is the change that deletes the most body chrome.</td></tr>
+      <tr><td class="mono">4</td><td class="mono">app/lib/ui/session/tool_renderers.dart</td><td class="mono">6 lines</td>
+        <td><code>ToolCodeBlock</code>'s panel fill moves from the highlight theme's <code>#282C34</code>/
+          <code>#F0F1F4</code> to <code>surfaceContainerLowest</code>; copy button becomes hover-revealed on pointer and
+          stays visible on touch.</td></tr>
+      <tr><td class="mono">5</td><td class="mono">app/test/… (2 files)</td><td class="mono">~60 lines</td>
+        <td>The five rules as tests: no <code>Container</code> between a section and its payload; a short result renders
+          as a fact not a <code>ToolCodeBlock</code>; the expanded header still shows the path; caption style is
+          <code>labelSmall</code>.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="note win">
+  <strong>Asked before building — and answered.</strong> Variant A deletes the “Arguments” section for single-argument
+  tools by keeping the path in the header, which also means <b>the expanded header no longer shrinks to the bare verb</b>.
+  That was a visible change to a row already signed off, so it was put to the author, who chose A <em>without</em> a
+  <code>path</code> fact: the path would only duplicate the line directly above it. The fallback (A plus a
+  <code>path</code> fact, one line taller, as drawn in the <em>B</em> card) was not taken.
+</div>
+
+</main>
+</body>
+</html>

@@ -5,6 +5,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../../store/elicitation.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -224,9 +226,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       next,
     ) {
       if (next == null || prev?.seq == next.seq) return;
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${next.action} failed: ${next.reason}')),
+      ref.status.failure(
+        '${next.action} failed',
+        source: StatusSources.session,
+        detail: next.reason,
+        sessionId: sessionId,
       );
     });
 
