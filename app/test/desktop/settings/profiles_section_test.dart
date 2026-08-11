@@ -224,6 +224,37 @@ void main() {
     expect(find.text('Review…'), findsOneWidget);
   });
 
+  // A stale profile is represented by the stale group. Listing it in the main
+  // group as well showed it TWICE, and on a real machine (27 orphans measured)
+  // the dead profiles crowd the live ones off the screen entirely.
+  testWidgets('a stale profile is listed once, in the stale group only', (
+    tester,
+  ) async {
+    final w = _wiring(
+      profiles: [_legacy(), _dev()],
+      activeId: 'work',
+      disk: const {'a1b2c3d4': 4600000},
+      existingOrigins: const {}, // the dev profile's origin is gone → stale
+    );
+    await _pump(
+      tester,
+      controller: w.controller,
+      deleter: w.deleter,
+      lifecycle: w.lifecycle,
+    );
+
+    // The stale one is summarised...
+    expect(find.text('1 orphaned dev profile'), findsOneWidget);
+    // ...and does NOT also appear as an ordinary row.
+    expect(
+      find.text('feat-profiles'),
+      findsNothing,
+      reason: 'a stale profile appeared in the main list as well',
+    );
+    // The live profile is unaffected.
+    expect(find.text('Work'), findsOneWidget);
+  });
+
   testWidgets('a protected profile offers no Delete in its menu', (
     tester,
   ) async {

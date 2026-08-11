@@ -17,7 +17,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/legacy.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../../store/prefs/profile_scoped_prefs.dart';
 
 import '../panes/split_node.dart';
 import '../panes/workspace_controller.dart';
@@ -172,10 +173,10 @@ class GroupsController extends StateNotifier<GroupsState> {
 
   /// Builds a controller from persisted state, migrating the SPEC-28 single
   /// workspace when this is the first run with groups.
-  static GroupsController load(SharedPreferences prefs) =>
+  static GroupsController load(ScopedPrefs prefs) =>
       GroupsController(prefs, decode(prefs));
 
-  final SharedPreferences? _prefs;
+  final ScopedPrefs? _prefs;
 
   /// The group with [id], or null.
   Group? groupById(String id) {
@@ -422,7 +423,7 @@ class GroupsController extends StateNotifier<GroupsState> {
   /// Decodes persisted state, migrating the SPEC-28 single workspace on first
   /// run and falling back to [GroupsState.fresh] for anything unusable.
   @visibleForTesting
-  static GroupsState decode(SharedPreferences prefs) {
+  static GroupsState decode(ScopedPrefs prefs) {
     final raw = prefs.getString(kGroupsPrefsKey);
     if (raw == null || raw.isEmpty) return _migrateLegacy(prefs);
     Object? decoded;
@@ -485,7 +486,7 @@ class GroupsController extends StateNotifier<GroupsState> {
   /// First run with groups: fold the SPEC-28 single workspace into one board so
   /// nobody loses their layout. Empty tabs are carried over verbatim (decision
   /// 21) and bound tabs become the board's membership.
-  static GroupsState _migrateLegacy(SharedPreferences prefs) {
+  static GroupsState _migrateLegacy(ScopedPrefs prefs) {
     final legacyRaw = prefs.getString(kWorkspacePrefsKey);
     if (legacyRaw == null || legacyRaw.isEmpty) return GroupsState.fresh();
     final tree = WorkspaceController.decodeWorkspace(legacyRaw);
@@ -611,7 +612,8 @@ class GroupsController extends StateNotifier<GroupsState> {
 }
 
 /// The groups layer. Defaults to a non-persisting controller; `runDesktopApp`
-/// overrides it with a [SharedPreferences]-backed one, and tests may too.
+/// overrides it with a profile-scoped [ScopedPrefs]-backed one, and tests may
+/// too.
 final groupsControllerProvider =
     StateNotifierProvider<GroupsController, GroupsState>(
       (ref) => GroupsController.ephemeral(),

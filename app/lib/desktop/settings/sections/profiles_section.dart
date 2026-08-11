@@ -59,8 +59,12 @@ class _ProfilesSectionState extends ConsumerState<ProfilesSection> {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        final rows = controller.rows;
         final stale = controller.staleSummary;
+        // Stale profiles are represented by the stale group below, so they are
+        // deliberately excluded here. Listing them in both places showed each
+        // one twice, and on a real machine (27 orphans measured) the dead
+        // profiles crowded the live ones off the screen.
+        final rows = controller.rows.where((r) => !r.stale).toList();
         return ListView(
           children: [
             const SettingsSectionHeaderLike(title: 'Profiles'),

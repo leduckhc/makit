@@ -1,12 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/settings/server_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:makit/store/prefs/profile_scoped_prefs.dart';
 
 void main() {
   test('defaults to myDevices, no LAN fallback, port 7777, no CLI', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final cfg = ServerConfigController.load(prefs);
+    final cfg = ServerConfigController.load(ProfileScopedPrefs.unscoped(prefs));
     expect(cfg.reachability, Reachability.myDevices);
     expect(cfg.allowLanFallback, isFalse);
     expect(cfg.customHost, '');
@@ -23,7 +24,7 @@ void main() {
       'desktop_server_cli_path': '/opt/makit/makit',
     });
     final prefs = await SharedPreferences.getInstance();
-    final cfg = ServerConfigController.load(prefs);
+    final cfg = ServerConfigController.load(ProfileScopedPrefs.unscoped(prefs));
     expect(cfg.reachability, Reachability.thisMacOnly);
     expect(cfg.allowLanFallback, isTrue);
     expect(cfg.customHost, '0.0.0.0');
@@ -35,7 +36,7 @@ void main() {
     Future<ServerConfig> migrate(Map<String, Object> values) async {
       SharedPreferences.setMockInitialValues(values);
       final prefs = await SharedPreferences.getInstance();
-      return ServerConfigController.load(prefs);
+      return ServerConfigController.load(ProfileScopedPrefs.unscoped(prefs));
     }
 
     test('auto → myDevices, no LAN fallback, no custom host', () async {
@@ -81,7 +82,7 @@ void main() {
     Future<ServerConfig> migrate(Map<String, Object> values) async {
       SharedPreferences.setMockInitialValues(values);
       final prefs = await SharedPreferences.getInstance();
-      return ServerConfigController.load(prefs);
+      return ServerConfigController.load(ProfileScopedPrefs.unscoped(prefs));
     }
 
     test('a deliberately-set non-loopback host → myDevices + custom', () async {
@@ -171,7 +172,10 @@ void main() {
   test('setters persist and blank/invalid falls back to defaults', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final controller = ServerConfigController(prefs, const ServerConfig());
+    final controller = ServerConfigController(
+      ProfileScopedPrefs.unscoped(prefs),
+      const ServerConfig(),
+    );
 
     await controller.setReachability(Reachability.thisMacOnly);
     await controller.setAllowLanFallback(true);
@@ -197,7 +201,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final controller = ServerConfigController(
-      prefs,
+      ProfileScopedPrefs.unscoped(prefs),
       const ServerConfig(port: 7842),
       defaultPort: 7842,
     );

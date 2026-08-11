@@ -21,7 +21,8 @@
 library;
 
 import 'package:flutter_riverpod/legacy.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../store/prefs/profile_scoped_prefs.dart';
 
 /// The default bind port. Matches the server's own default (`serve.ts`).
 const int kDefaultServerPort = 7777;
@@ -144,7 +145,13 @@ class ServerConfig {
       Object.hash(reachability, allowLanFallback, customHost, port, cliPath);
 }
 
-/// Reads + persists the [ServerConfig] via [SharedPreferences].
+/// Reads + persists the [ServerConfig] via a profile-scoped [ScopedPrefs].
+///
+/// Server config is **server-bound** (SPEC-50 D11): each profile's port and
+/// reachability belong to that profile alone, so writes go through a
+/// [ScopedPrefs] whose key prefix is the profile's own. Switching profiles
+/// rebuilds this controller against the target's scope, so the window never
+/// reads the previous profile's port and talks to the wrong server.
 class ServerConfigController extends StateNotifier<ServerConfig> {
   /// Creates a controller seeded from [initial]; writes go through [_prefs].
   ///
@@ -155,7 +162,7 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
     : _defaultPort = defaultPort ?? kDefaultServerPort,
       super(initial);
 
-  final SharedPreferences _prefs;
+  final ScopedPrefs _prefs;
   final int _defaultPort;
 
   /// The current config. Public accessor so non-widget composition code (the
@@ -170,7 +177,7 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
   /// single `desktop_server_host`. Each older layer is only consulted when the
   /// newer ones are absent, so an explicit choice always wins over stale data
   /// and no user silently loses a configured endpoint.
-  static ServerConfig load(SharedPreferences prefs, {int? defaultPort}) {
+  static ServerConfig load(ScopedPrefs prefs, {int? defaultPort}) {
     final fallbackPort = defaultPort ?? kDefaultServerPort;
     final port = prefs.getInt(_kPortKey);
     final cliPath = prefs.getString(_kCliPathKey) ?? '';
@@ -262,7 +269,7 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
 }
 
 /// The active server config. Overridden at the app root (`runDesktopApp`) with
-/// a controller backed by real [SharedPreferences]; tests override it too.
+/// a controller backed by a profile-scoped [ScopedPrefs]; tests override it too.
 final serverConfigProvider =
     StateNotifierProvider<ServerConfigController, ServerConfig>(
       (ref) => throw UnimplementedError('overridden in runDesktopApp'),

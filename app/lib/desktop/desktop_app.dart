@@ -55,6 +55,7 @@ import '../store/prefs/navigator_preference_bridge.dart';
 import '../store/prefs/preference_entries.dart';
 import '../store/prefs/preferences_controller.dart';
 import '../store/prefs/preferences_providers.dart';
+import '../store/prefs/profile_scoped_prefs.dart';
 import '../ui/session/navigator/navigator_style.dart';
 import 'settings/server_config.dart';
 import 'settings/settings_window.dart';
@@ -112,16 +113,19 @@ Future<void> runDesktopApp() async {
     connect: (c) => (c as MakitControlClient).connect(),
     dispose: (c) => (c as MakitControlClient).dispose(),
   );
-  // Namespace SharedPreferences per profile (non-legacy profiles only) so a
-  // worktree window's settings don't overwrite the installed app's. Must run
-  // before getInstance(). Retired by SPEC-50 D11 when in-place switching lands.
-  if (profile.storage != ProfileStorage.legacy) {
-    SharedPreferences.setPrefix(profile.prefsPrefix);
-  }
+  // Namespace only SERVER-BOUND preferences per profile (SPEC-50 D11): server
+  // config, groups and the pane layouts groups persist. Appearance, shortcuts,
+  // recent models and cached commands are user-level and stay SHARED across
+  // profiles — the old blanket `SharedPreferences.setPrefix` is why a worktree
+  // build opened with a default theme and empty shortcuts. Because the plugin
+  // composes keys by plain concatenation, `profile.prefsKeyPrefix` lands on the
+  // byte-identical stored key the retired `setPrefix` produced, so no migration
+  // is needed (asserted in profile_registry_test.dart).
   final prefs = await SharedPreferences.getInstance();
+  final scoped = ProfileScopedPrefs(prefs, profile.prefsKeyPrefix);
   final configController = ServerConfigController(
-    prefs,
-    ServerConfigController.load(prefs, defaultPort: profile.port),
+    scoped,
+    ServerConfigController.load(scoped, defaultPort: profile.port),
     defaultPort: profile.port,
   );
   final lifecycle = DaemonLifecycle(
@@ -162,7 +166,7 @@ Future<void> runDesktopApp() async {
   // SPEC-45: the starter pane's slash palette, remembered across restarts —
   // otherwise every relaunch shows it empty until a session has run.
   final cachedCommandsController = CachedCommandsController.load(prefs);
-  final groupsController = GroupsController.load(prefs);
+  final groupsController = GroupsController.load(scoped);
   final controller = DesktopController(
     client: client,
     lifecycle: lifecycle,

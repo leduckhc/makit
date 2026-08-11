@@ -19,6 +19,7 @@ import 'package:makit/status/status_event.dart';
 import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/connection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:makit/store/prefs/profile_scoped_prefs.dart';
 
 /// Records pushed routes so a test can assert no page was navigated to.
 class _RecordingObserver extends NavigatorObserver {
@@ -119,7 +120,10 @@ void main() {
 
   Future<ServerConfigController> makeConfig() async {
     final prefs = await SharedPreferences.getInstance();
-    return ServerConfigController(prefs, const ServerConfig());
+    return ServerConfigController(
+      ProfileScopedPrefs.unscoped(prefs),
+      const ServerConfig(),
+    );
   }
 
   testWidgets('renders the four-row Server group and subsection headers', (

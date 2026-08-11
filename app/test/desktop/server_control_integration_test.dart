@@ -15,6 +15,7 @@ import 'package:makit/desktop/desktop_controller.dart';
 import 'package:makit/desktop/screens/fake_control_client.dart';
 import 'package:makit/desktop/settings/server_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:makit/store/prefs/profile_scoped_prefs.dart';
 
 const _cliPath = '/usr/local/bin/makit';
 
@@ -38,7 +39,7 @@ void main() {
   ]) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    return ServerConfigController(prefs, initial);
+    return ServerConfigController(ProfileScopedPrefs.unscoped(prefs), initial);
   }
 
   DesktopController build(ServerConfigController config) {
