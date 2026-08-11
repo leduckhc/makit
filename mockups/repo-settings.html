@@ -95,6 +95,10 @@
   .srow .val{font-size:12px;color:var(--osv);display:flex;align-items:center;gap:6px;white-space:nowrap;max-width:52%;overflow:hidden;text-overflow:ellipsis}
   .srow .val.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
   /* The value column: right-aligned, ellipsised, ahead of the badge. */
+  .seg{display:inline-flex;border:1px solid var(--hairline);border-radius:8px;overflow:hidden;font-size:10.5px}
+  .seg b,.seg i{padding:3px 10px;font-style:normal;font-weight:500;color:var(--osv)}
+  .seg b{background:rgba(74,222,128,.15);color:var(--primary);font-weight:600}
+  .seg i+i,.seg b+i{border-left:1px solid var(--hairline)}
   .vcol{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--osv);
         text-align:right;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* SettingsResetButton: collapses to a fixed box so rows stay aligned */
@@ -153,11 +157,14 @@
   the pattern it grows into, not the first row.
 </p>
 <div class="note">
-  <strong>Card 1 has been corrected against the built section</strong>, screenshotted from the real macOS
-  app: values sit right-aligned in a column (not in the subtitle), badges use the shipped
-  <code>TagChip</code> treatment (tinted fill, no border), descriptive subtitles are gone, and the cut
-  Lifecycle Scripts group is no longer advertised. The monogram hue is whatever the name hashes to —
-  Diana is blue, makit green — because it is deterministic, not chosen per repo.
+  <strong>Card 1 tracks the built section</strong>, screenshotted from the real macOS app. All four
+  identity rows are editable, the provider is a segmented control in the <code>Endpoint</code> idiom, and
+  <strong>the provenance badges are gone</strong>: <code>from name</code> beside a monogram,
+  <code>from remote</code> beside <code>main</code>, and <code>detected</code> beside a subtitle already
+  reading “Auto: Forgejo · …” are each the same sentence twice — and once every row became editable, where
+  a value came from stopped being actionable. The copy button went with them: copying a path is not a
+  configuration task. What survives is <code>inherited</code> / <code>overridden</code> on Worktree root,
+  the one row with no subtitle, where the distinction is the whole point.
   <br><br>
   <strong>Provider auto-detection is already built and verified</strong> (<code>server/src/forge/detect.ts</code>).
   It probes <code>/api/forgejo/v1/version</code>, <code>/api/v1/version</code> and <code>/api/v4/version</code>,
@@ -205,20 +212,21 @@
               <div class="sgroup">
                 <div class="srow"><span class="logo" style="background:#38BDF8">D</span>
                   <div class="lbl">Logo</div>
-                  <span class="val"><span class="inh">from name</span></span>
-                  <span class="reset hidden"></span></div>
+                  <span class="reset"><svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
                 <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-folder"/></svg>
                   <div class="lbl">Root path</div>
                   <span class="vcol">~/Work/XDent/Diana</span>
-                  <span class="reset"><svg class="g" width="13" height="13"><use href="#g-copy"/></svg></span></div>
+                  <span class="reset"><svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
                 <div class="srow"><svg class="g" width="15" height="15" style="color:#4ADE80"><use href="#g-forgejo"/></svg>
-                  <div class="lbl">Git provider<div class="sub">forgejo.internal.xdent.ai · token set</div></div>
-                  <span class="vcol">Forgejo</span><span class="auto" style="margin-left:8px">detected</span>
+                  <div class="lbl">Git provider<div class="sub">Auto: Forgejo · forgejo.internal.xdent.ai · token set</div></div>
+                  <span class="reset hidden"></span></div>
+                <div class="srow" style="padding-top:0"><div class="lbl"></div>
+                  <span class="seg"><b>Auto</b><i>Forgejo</i><i>Gitea</i><i>GitHub</i></span>
                   <span class="reset hidden"></span></div>
                 <div class="srow"><svg class="g" width="15" height="15" style="color:#9E9E9E"><use href="#g-branch"/></svg>
                   <div class="lbl">Default branch</div>
-                  <span class="vcol">main</span><span class="inh" style="margin-left:8px">from remote</span>
-                  <span class="reset hidden"></span></div>
+                  <span class="vcol">main</span>
+                  <span class="reset"><svg class="g" width="13" height="13"><use href="#g-caret"/></svg></span></div>
               </div>
 
               <div class="shdr">worktrees</div>
@@ -245,8 +253,8 @@
           <div style="padding-top:6px">
             <div class="shdr">identity</div>
             <div class="sgroup">
-              <div class="srow"><span class="logo" style="background:#4ADE80">D</span><div class="lbl">Logo</div><span class="val"><span class="auto">from name</span></span><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
-              <div class="srow"><div class="lbl">Git provider</div><span class="val">Forgejo <span class="auto">detected</span></span><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+              <div class="srow"><span class="logo" style="background:#38BDF8">D</span><div class="lbl">Logo</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+              <div class="srow"><div class="lbl">Git provider<div class="sub">Auto: Forgejo</div></div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
               <div class="srow"><div class="lbl">Default branch</div><span class="val mono">main</span><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
             </div>
             <div class="shdr">worktrees</div>
@@ -296,20 +304,20 @@
   <header><h2>2 · Inheritance: show the effective value and where it came from</h2><span class="rec">RECOMMENDED</span></header>
   <div class="body">
     <table>
-      <thead><tr><th style="width:23%">setting</th><th>resolution order (first hit wins)</th><th style="width:18%">badge shown</th></tr></thead>
+      <thead><tr><th style="width:23%">setting</th><th>resolution order (first hit wins)</th><th style="width:22%">badge shown</th></tr></thead>
       <tbody>
         <tr><td>Worktree root</td>
             <td class="mono">repo override → global setting → <code>MAKIT_WORKTREE_DIR</code> → <code>~/.worktrees</code></td>
             <td><span class="inh">inherited</span> / <span class="ovr">overridden</span></td></tr>
         <tr><td>Git provider</td>
             <td class="mono">repo override → detection (<code>detect.ts</code>) → unsupported</td>
-            <td><span class="auto">detected</span> / <span class="ovr">overridden</span></td></tr>
+            <td>none — the subtitle says it</td></tr>
         <tr><td>Default branch</td>
             <td class="mono">repo override → <code>origin/HEAD</code> → <code>main</code></td>
-            <td><span class="auto">from remote</span></td></tr>
+            <td>none — <code>main</code> is the fact</td></tr>
         <tr><td>Logo</td>
             <td class="mono">repo override (image) → deterministic monogram from the name</td>
-            <td><span class="auto">from name</span></td></tr>
+            <td>none — the monogram is the value</td></tr>
         <tr><td>Access token</td>
             <td class="mono">per <em>instance</em>, never per repo — see forge-provider-per-repo.html</td>
             <td>—</td></tr>
@@ -342,9 +350,9 @@
         <p class="cap">default: deterministic monogram</p>
         <div class="phone" style="padding:14px 0">
           <div class="sgroup" style="margin-top:0">
-            <div class="srow"><span class="logo" style="background:#4ADE80">D</span><div class="lbl">Diana</div><span class="val"><span class="auto">from name</span></span></div>
-            <div class="srow"><span class="logo" style="background:#A371F7">m</span><div class="lbl">makit</div><span class="val"><span class="auto">from name</span></span></div>
-            <div class="srow"><span class="logo" style="background:#E0A72E">l</span><div class="lbl">legacy-tools</div><span class="val"><span class="auto">from name</span></span></div>
+            <div class="srow"><span class="logo" style="background:#38BDF8">D</span><div class="lbl">Diana</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+            <div class="srow"><span class="logo" style="background:#A371F7">m</span><div class="lbl">makit</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
+            <div class="srow"><span class="logo" style="background:#E0A72E">l</span><div class="lbl">legacy-tools</div><svg class="g reset" width="13" height="13"><use href="#g-caret"/></svg></div>
             <div class="srow"><span class="logo" style="background:#242424;border:1px solid #333"><svg class="g" width="13" height="13" style="color:#9E9E9E"><use href="#g-img"/></svg></span><div class="lbl">infra-prod</div><span class="val"><span class="ovr">custom image</span></span></div>
           </div>
           <div class="hint">Hue is derived from the repo name, so it is stable across devices without syncing anything.</div>

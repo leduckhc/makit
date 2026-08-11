@@ -1,6 +1,6 @@
 # SPEC-48 — Per-repo settings: one Settings section per repository
 
-**Status:** Draft (rev 3) — rows 1–4 made editable; see *Rev 3* · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
+**Status:** Draft (rev 3.1) — editable rows; provenance badges cut · **Priority:** P2 · **Branch:** `feat/forgejo-git-provider`
 **Depends on:** SPEC-11 (repo-centric home — `RepoDTO`, `repos.snapshot`, the repo card and its
 `dotsThree` menu), SPEC-19 (`SettingsResetButton` as the one shared "reset to default" widget, and
 `SettingsGroup` as the grouped-list idiom), and the forge-detection work already on this branch
@@ -279,3 +279,24 @@ macOS app with `cua-driver` did not work: a sidebar row *and* a 107×28pt segmen
 returned `"effect":"unverifiable"` and left the UI unchanged, on two separate builds. The real-app pass
 therefore covers appearance only. 15 widget tests cover behaviour, two proven to bite by reverting the
 read-only gate and by making reset freeze the detected forge instead of asking for `Auto`.
+
+
+## Rev 3.1 — the provenance badges and the copy button are cut
+
+**D6″ supersedes D6′.** Rev 2 split badges into two families and kept both. Only the *resolution*
+family survives, and only where nothing else in the row already says it:
+
+| Row | Rev 2 | Rev 3.1 | Why |
+| --- | --- | --- | --- |
+| Logo | `from name` | — | The monogram **is** the value. A chip explaining it is a caption on a caption. |
+| Root path | copy button | — (chevron) | Copying a path is not a configuration task — round 1 said so and was overruled at the time. The row is editable now, so the slot belongs to the chevron like its neighbours. |
+| Git provider | `detected` / `overridden` | — | The subtitle already reads `Auto: GitHub · …` or `Set to Gitea · …`. The badge was the same sentence twice. The reset button stays: it is an action, not a label. |
+| Default branch | `from remote` | — | `main` is the fact. Once the row is editable, where it came from stops being actionable. |
+| Worktree root | `inherited` / `overridden` | **kept** | The only row with no subtitle, and the distinction is the whole point of the feature. |
+
+The rule, stated once: **a badge appears only where nothing else in the row says it.** This is what
+round 1 was reaching for — *"they are not one abstraction"* — and rev 2's compromise of keeping both
+families kept the chrome round 1 objected to. Rev 3.1 finishes the cut.
+
+Pinned by a negative test (`provenance badges are absent`) so they cannot creep back, and by one
+asserting that with **two** things overridden there are two reset buttons but exactly **one** badge.

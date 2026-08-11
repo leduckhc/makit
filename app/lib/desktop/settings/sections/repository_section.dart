@@ -1,7 +1,6 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../app/theme.dart';
@@ -95,6 +94,15 @@ enum ForgeChoice {
 
 /// One repository's Settings section.
 ///
+/// **A badge appears only where nothing else in the row says it.** The provenance
+/// family (`from name`, `detected`, `from remote`) was cut: the monogram *is* the
+/// logo, `main` *is* the branch, and the provider row's subtitle already reads
+/// `Auto: GitHub · …` or `Set to Gitea · …`. Restating that in a chip beside it is
+/// the same sentence twice, and once every row became editable the provenance
+/// stopped being actionable. What survives is `inherited` / `overridden` on
+/// Worktree root, which has no subtitle and where the distinction is the whole
+/// point — paired with the reset button, which is an action rather than a label.
+///
 /// Built from the shipped settings atoms — [SettingsSectionHeader],
 /// [SettingsGroup], [SettingsResetButton] — so it inherits the window's spacing,
 /// the green uppercase headers and, crucially, the reset button's fixed-width
@@ -137,7 +145,6 @@ class RepositorySettingsSection extends StatelessWidget {
               title: 'Logo',
               enabled: view.editable,
               onTap: onEditLogo,
-              badge: _Badge(label: 'from name', color: cs.outline),
               // A chevron, not a text field: the choice is a colour and a glyph
               // from a fixed set. Two repos that hash to the same hue are
               // indistinguishable in the sidebar, which is the one thing the
@@ -155,11 +162,7 @@ class RepositorySettingsSection extends StatelessWidget {
               // when a repo MOVES on disk, remove-and-re-add loses its persisted
               // id and everything keyed to it (settings, session history).
               // Re-pointing keeps the id, which is the whole reason the id exists.
-              action: IconButton(
-                tooltip: 'Copy path',
-                icon: Icon(PhosphorIconsLight.copy, size: 18, color: cs.outline),
-                onPressed: () => Clipboard.setData(ClipboardData(text: view.path)),
-              ),
+              action: _Chevron(enabled: view.editable),
             ),
             // Row + segmented control below, exactly as `Endpoint` does it: the
             // subtitle says what `Auto` resolved to, so the default is legible
@@ -183,7 +186,6 @@ class RepositorySettingsSection extends StatelessWidget {
                 onTap: onChooseDefaultBranch,
                 value: view.defaultBranch,
                 mono: true,
-                badge: _Badge(label: 'from remote', color: cs.outline),
                 action: _Chevron(enabled: view.editable && view.branches.isNotEmpty),
               ),
           ],
@@ -351,18 +353,9 @@ class _ProviderRow extends StatelessWidget {
                 ),
           title: const Text('Git provider'),
           subtitle: Text(RepositorySettingsSection.forgeSubtitle(view)),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _Badge(
-                label: overridden ? 'overridden' : 'detected',
-                color: overridden ? cs.primary : cs.outline,
-              ),
-              SettingsResetButton(
-                visible: overridden && view.editable,
-                onPressed: () => onChoose?.call(ForgeChoice.auto),
-              ),
-            ],
+          trailing: SettingsResetButton(
+            visible: overridden && view.editable,
+            onPressed: () => onChoose?.call(ForgeChoice.auto),
           ),
         ),
         Padding(

@@ -108,6 +108,19 @@ void main() {
       await _pump(t, _view(forgeAuthed: false));
       expect(find.textContaining('no token'), findsOneWidget);
     });
+
+    testWidgets('provenance badges are absent — the row already says it', (t) async {
+      // Pinned as a negative: `from name` beside a monogram, `from remote` beside
+      // `main`, and `detected` beside a subtitle reading "Auto: Forgejo …" are all
+      // the same sentence twice. Only resolution state earns a badge.
+      await _pump(t, _view());
+      expect(find.text('from name'), findsNothing);
+      expect(find.text('from remote'), findsNothing);
+      expect(find.text('detected'), findsNothing);
+      expect(find.byTooltip('Copy path'), findsNothing);
+      // …and the one badge that carries state is still there.
+      expect(find.text('inherited'), findsOneWidget);
+    });
   });
 
   group('inheritance', () {
@@ -121,6 +134,17 @@ void main() {
       await _pump(t, _view(worktreeRootOverridden: true));
       expect(find.text('overridden'), findsOneWidget);
       expect(find.byTooltip('Reset to default'), findsOneWidget);
+    });
+
+    testWidgets('only the row with no subtitle badges its override', (t) async {
+      await _pump(
+        t,
+        _view(worktreeRootOverridden: true, providerChoice: ForgeChoice.gitea),
+      );
+      // Two things are overridden, but only Worktree root wears the chip; the
+      // provider says it in prose. Two resets, one badge.
+      expect(find.text('overridden'), findsOneWidget);
+      expect(find.byTooltip('Reset to default'), findsNWidgets(2));
     });
 
     testWidgets('reset calls back — it does not silently do nothing', (t) async {
@@ -144,8 +168,9 @@ void main() {
     testWidgets('an override relabels the row and offers a way back to Auto', (t) async {
       await _pump(t, _view(providerChoice: ForgeChoice.gitea));
       expect(find.textContaining('Set to Gitea'), findsOneWidget);
-      expect(find.text('overridden'), findsOneWidget);
-      // The reset returns to Auto rather than freezing today's detected value.
+      // No badge: the subtitle already says it. The reset button is the only
+      // trailing element, because it is an action rather than a restatement — and
+      // it returns to Auto rather than freezing today's detected value.
       expect(find.byTooltip('Reset to default'), findsOneWidget);
     });
 
