@@ -17,6 +17,7 @@ library;
 import 'dart:io';
 
 import 'daemon_lifecycle.dart';
+import 'daemon_result_utils.dart';
 import 'server_profile.dart';
 
 /// Runs an executable with an explicit [environment], resolving to its
@@ -43,16 +44,6 @@ const Duration _kDefaultStopTimeout = Duration(seconds: 5);
 /// on **stdout** (the daemon is spawned detached), so both streams are consulted,
 /// stderr first, duplicates collapsed, and the separator dropped when neither
 /// stream said anything so the message never ends in a dangling colon.
-String _failureMessage(String verb, ProcessResult res) {
-  final head = 'makit $verb exited ${res.exitCode}';
-  final parts = <String>[];
-  for (final stream in [res.stderr, res.stdout]) {
-    if (stream is! String) continue;
-    final text = stream.trim();
-    if (text.isNotEmpty && !parts.contains(text)) parts.add(text);
-  }
-  return parts.isEmpty ? head : '$head: ${parts.join(' — ')}';
-}
 
 /// Starts, stops, and probes the daemon of any [ServerProfile].
 class ProfileLifecycle {
@@ -70,13 +61,13 @@ class ProfileLifecycle {
     bool Function(String path)? socketExists,
     Future<bool> Function(ServerProfile profile)? statusProbe,
     Future<void> Function(Duration duration)? sleep,
-    int? Function(ServerProfile profile)? readPid,
-    bool Function(int pid)? processAlive,
+    Future<int?> Function(ServerProfile profile)? readPid,
+    Future<bool> Function(int pid)? processAlive,
   }) : run = run ?? _defaultRun,
        _socketExists = socketExists ?? _fileExists,
        _statusProbe = statusProbe ?? _connectProbe,
        _sleep = sleep ?? Future<void>.delayed,
-       _readPid = readPid ?? _readPidFile,
+       _readPid = readPid ?? _readPidFileAsync,
        _processAlive = processAlive ?? _posixProcessAlive;
 
   /// Locates the `makit` executable.
@@ -88,8 +79,8 @@ class ProfileLifecycle {
   final bool Function(String path) _socketExists;
   final Future<bool> Function(ServerProfile profile) _statusProbe;
   final Future<void> Function(Duration duration) _sleep;
-  final int? Function(ServerProfile profile) _readPid;
-  final bool Function(int pid) _processAlive;
+  final Future<int?> Function(ServerProfile profile) _readPid;
+  final Future<bool> Function(int pid) _processAlive;
 
   /// Runs `MAKIT_HOME=<profile.home> makit start`.
   Future<DaemonActionResult> start(ServerProfile profile) =>
@@ -132,7 +123,7 @@ class ProfileLifecycle {
     ServerProfile profile, {
     Duration timeout = _kDefaultStopTimeout,
   }) async {
-    final pid = _readPid(profile);
+    final pid = await _readPid(profile);
     final stopResult = await stop(profile);
     if (stopResult.outcome == DaemonActionOutcome.failed ||
         stopResult.outcome == DaemonActionOutcome.cliNotFound) {
@@ -152,11 +143,11 @@ class ProfileLifecycle {
     // check above is all we have.
     if (pid == null) return true;
     while (elapsed < timeout) {
-      if (!_processAlive(pid)) return true;
+      if (!await _processAlive(pid)) return true;
       await _sleep(_kSocketPollInterval);
       elapsed += _kSocketPollInterval;
     }
-    return !_processAlive(pid);
+    return !await _processAlive(pid);
   }
 
   Future<DaemonActionResult> _invoke(
@@ -177,7 +168,7 @@ class ProfileLifecycle {
       if (res.exitCode == 0) return DaemonActionResult(onSuccess);
       return DaemonActionResult(
         DaemonActionOutcome.failed,
-        message: _failureMessage(verb, res),
+        message: formatDaemonError(verb, res),
       );
     } on ProcessException catch (e) {
       return DaemonActionResult(
@@ -197,11 +188,12 @@ class ProfileLifecycle {
 
   /// Reads the daemon pid from `$MAKIT_HOME/makit.pid`, or `null` when the file
   /// is absent or unparseable. Read before `makit stop`, which deletes it.
-  static int? _readPidFile(ServerProfile profile) {
+  static Future<int?> _readPidFileAsync(ServerProfile profile) async {
     try {
       final file = File(profile.pidFilePath);
-      if (!file.existsSync()) return null;
-      return int.tryParse(file.readAsStringSync().trim());
+      if (!await file.exists()) return null;
+      final raw = await file.readAsString();
+      return int.tryParse(raw.trim());
     } on FileSystemException {
       return null;
     }
@@ -210,10 +202,15 @@ class ProfileLifecycle {
   /// Whether an OS process [pid] is still alive, via POSIX `kill -0` (which only
   /// probes; it delivers no signal). Returns `false` off POSIX, where the pid
   /// wait is skipped and socket-liveness stands in.
-  static bool _posixProcessAlive(int pid) {
+  ///
+  /// Asynchronous (`Process.run`, not `runSync`): `stopAndConfirm` can poll this
+  /// up to ~100 times across the stop timeout, and a synchronous spawn each time
+  /// would block the UI isolate during a profile deletion.
+  static Future<bool> _posixProcessAlive(int pid) async {
     if (Platform.isWindows) return false;
     try {
-      return Process.runSync('/bin/kill', ['-0', '$pid']).exitCode == 0;
+      final res = await Process.run('/bin/kill', ['-0', '$pid']);
+      return res.exitCode == 0;
     } on ProcessException {
       return false;
     }

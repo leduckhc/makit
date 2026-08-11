@@ -138,12 +138,29 @@ class ProfilesController extends ChangeNotifier {
   }
 
   /// Refreshes running state and disk usage for every profile.
+  ///
+  /// Both probes read the live world and can throw. A throw must not abort the
+  /// remaining profiles nor skip [notifyListeners] (three call sites treat a
+  /// throw here as a failed delete), so each probe is guarded individually and
+  /// listeners are always notified.
   Future<void> refresh() async {
     final probeRunning = _isRunning;
     final probeDisk = _diskUsage;
     for (final p in _registry.profiles) {
-      if (probeRunning != null) _running[p.id] = await probeRunning(p);
-      if (probeDisk != null) _disk[p.id] = await probeDisk(p);
+      if (probeRunning != null) {
+        try {
+          _running[p.id] = await probeRunning(p);
+        } catch (_) {
+          // Leave the last-known running state rather than dropping the row.
+        }
+      }
+      if (probeDisk != null) {
+        try {
+          _disk[p.id] = await probeDisk(p);
+        } catch (_) {
+          // Leave the last-known size rather than aborting the whole refresh.
+        }
+      }
     }
     notifyListeners();
   }

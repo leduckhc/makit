@@ -95,7 +95,7 @@ Future<({List<String> switched, StatusCenter center})> _pump(
           ServerProfile? deleteAfter,
         }) async {
           switched.add(target.id);
-          return switcher(target);
+          return (switchFailure: await switcher(target), deleteFailure: null);
         }),
       ],
       child: MaterialApp(

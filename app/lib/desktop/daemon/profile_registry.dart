@@ -250,14 +250,17 @@ class ProfileRegistry {
           merged[p.id] = p;
         }
       }
-      // Preserve this instance's order for the profiles it knows, then append
-      // any it learned about from disk, so the list does not shuffle under the
-      // user.
+      // Order on-disk profiles first, then append the ones only this instance
+      // knows (freshly created, not yet persisted). This ordering matters for
+      // the port reconcile below: `_dedupePorts` keeps the first occurrence of a
+      // port, so an already-persisted profile (whose daemon may be running on
+      // that port) keeps it, and a newly-created local profile that happened to
+      // allocate the same free port is the one reassigned.
       final ordered = <ServerProfile>[
-        for (final p in _profiles)
+        for (final p in diskProfiles)
           if (merged.containsKey(p.id)) merged[p.id]!,
         for (final entry in merged.entries)
-          if (!_profiles.any((p) => p.id == entry.key)) entry.value,
+          if (!diskProfiles.any((p) => p.id == entry.key)) entry.value,
       ];
       // Break any port collision the merge produced: two instances can each
       // allocate the same free port before either writes (SPEC-50 D1), so the
@@ -601,11 +604,17 @@ class FileSystemAdapter {
       lockFile.parent.createSync(recursive: true);
       raf = lockFile.openSync(mode: FileMode.write);
       raf.lockSync(FileLock.blockingExclusive);
-      return body();
     } on FileSystemException {
-      // If the lock cannot be taken (e.g. a filesystem that does not support
-      // advisory locks), fall back to running unlocked rather than refusing to
-      // persist — the union-by-id merge still protects the common case.
+      // The lock could not be taken (e.g. a filesystem that does not support
+      // advisory locks): fall back to running unlocked rather than refusing to
+      // persist — the union-by-id merge still protects the common case. Crucially
+      // this catch covers only lock ACQUISITION; [body] runs below, outside it,
+      // so a filesystem failure inside [body] (a failed `writeAtomic`) is never
+      // silently retried unlocked — which would re-run side effects and could
+      // race another process, the very lost-update the lock prevents.
+      raf = null;
+    }
+    try {
       return body();
     } finally {
       try {
@@ -651,9 +660,20 @@ class FileSystemAdapter {
     dir.createSync(recursive: true);
     _chmod(dir.path, homeMode);
     final tmp = File('$path.$pid.tmp');
-    tmp.writeAsStringSync(contents, flush: true);
-    _chmod(tmp.path, fileMode);
-    tmp.renameSync(path);
+    // Clean up the temp file if the write, chmod or rename throws, so a failed
+    // save does not litter ~/.makit with orphaned `*.tmp` files.
+    try {
+      tmp.writeAsStringSync(contents, flush: true);
+      _chmod(tmp.path, fileMode);
+      tmp.renameSync(path);
+    } catch (_) {
+      try {
+        if (tmp.existsSync()) tmp.deleteSync();
+      } on FileSystemException {
+        // Best effort.
+      }
+      rethrow;
+    }
   }
 
   /// Best-effort `chmod`. POSIX-only; a failure must not stop the app from

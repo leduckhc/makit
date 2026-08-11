@@ -37,10 +37,17 @@ final profileDeleterProvider = Provider<ProfileDeleter>(
 /// Switches the window to another profile, verifying the target is reachable
 /// before anything is torn down (SPEC-50 D10).
 ///
-/// Returns `null` on success, or a human-readable reason on failure — in which
-/// case nothing changed. Overridden in `runDesktopApp`; tests supply a fake.
+/// The outcome of a profile switch: [switchFailure] is a reason the switch
+/// itself failed (nothing changed), and [deleteFailure] is a reason an
+/// *optional* follow-up delete of `deleteAfter` failed **after** the switch
+/// already succeeded. They are separate facts so a caller never reports a
+/// completed switch as a failure just because the delete could not finish.
+typedef ProfileSwitchResult = ({String? switchFailure, String? deleteFailure});
+
+/// Switches to `target`, optionally deleting `deleteAfter` once the switch has
+/// landed. Overridden in `runDesktopApp`; tests supply a fake.
 typedef ProfileSwitcher =
-    Future<String?> Function(
+    Future<ProfileSwitchResult> Function(
       ServerProfile target, {
       ServerProfile? deleteAfter,
     });

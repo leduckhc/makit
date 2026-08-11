@@ -343,13 +343,12 @@ class ProfileDeleter {
     );
   }
 
-  /// True only when [home] is a concrete path under `~/.makit*`. This is the
-  /// guard that matters most: a corrupt registry entry pointing at `/` or `~`
-  /// must never be turned into a recursive delete of the user's disk.
   /// Why [profile]'s home must not be deleted, or `null` when it is safe.
   ///
   /// This is the guard that matters most: `profiles.json` is a plain
-  /// user-writable file, so `home` is attacker-influenced.
+  /// user-writable file, so `home` is attacker-influenced. A corrupt entry
+  /// pointing at `/` or `~` must never become a recursive delete of the
+  /// user's disk.
   ///
   /// **Canonicalise before comparing.** An earlier version compared raw strings
   /// and was defeated by a single trailing slash: `~/.makit/` is not `==` to

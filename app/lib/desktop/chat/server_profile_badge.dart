@@ -41,7 +41,11 @@ class ServerProfileBadge extends ConsumerWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        final rows = controller.rows.where((r) => !r.stale).toList();
+        final rows = controller.rows
+            .where(
+              (r) => !r.stale || r.profile.id == controller.activeProfileId,
+            )
+            .toList();
         return PopupMenuButton<ServerProfile>(
           tooltip: 'Switch profile',
           position: PopupMenuPosition.under,
@@ -94,8 +98,8 @@ class ServerProfileBadge extends ConsumerWidget {
     );
     if (!ok) return;
 
-    final failure = await switcher(target);
-    if (failure == null) {
+    final result = await switcher(target);
+    if (result.switchFailure == null) {
       status.success(
         'Switched to ${target.name}',
         source: StatusSources.settings,
@@ -104,7 +108,7 @@ class ServerProfileBadge extends ConsumerWidget {
       status.failure(
         'Could not switch to ${target.name}',
         source: StatusSources.settings,
-        detail: failure,
+        detail: result.switchFailure,
       );
     }
   }

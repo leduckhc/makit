@@ -101,20 +101,25 @@ void main() {
       expect(_dev.windowTitle, 'Makit — feat-profiles');
     });
 
-    // The invariant that makes the D11 switch-over a no-op rather than a
-    // migration: whatever key the running `setPrefix` mechanism produces, the
-    // future key-prefixing mechanism must produce byte-for-byte.
-    test('prefsPrefix and prefsKeyPrefix agree for every profile', () {
-      for (final p in [_legacy, _dev]) {
+    // The invariant that made the D11 switch-over a no-op rather than a
+    // migration: the effective stored key stays byte-for-byte what the old
+    // `SharedPreferences.setPrefix` mechanism produced (`flutter.<id>.<key>`,
+    // or `flutter.<key>` for the legacy profile).
+    test(
+      'prefsKeyPrefix yields the historical setPrefix key for every profile',
+      () {
         for (final key in ['desktop_server_port', 'groups.v2', 'a.b.c']) {
+          // Legacy: unprefixed, so the effective key is the shipped `flutter.<key>`.
+          expect('flutter.${_legacy.prefsKeyPrefix}$key', 'flutter.$key');
+          // Namespaced: `flutter.<id>.<key>`, identical to setPrefix('flutter.<id>.').
           expect(
-            '${p.prefsPrefix}$key',
-            'flutter.${p.prefsKeyPrefix}$key',
-            reason: 'mechanisms diverge for ${p.id}/$key',
+            'flutter.${_dev.prefsKeyPrefix}$key',
+            'flutter.${_dev.id}.$key',
+            reason: 'key layout diverged for ${_dev.id}/$key',
           );
         }
-      }
-    });
+      },
+    );
 
     test('json round-trips, and omits origin when absent', () {
       expect(ServerProfile.fromJson(_dev.toJson()), _dev);

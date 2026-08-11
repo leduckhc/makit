@@ -63,35 +63,37 @@ class _SwitchSheet extends StatelessWidget {
       ),
       content: SizedBox(
         width: 420,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'This window will reconnect to ${to.name}’s server.',
-              style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(height: kSpace16),
-            _Block(
-              label: 'What happens here',
-              tone: cs.error,
-              lines: [
-                if (!targetRunning) '${to.name}’s server starts',
-                'this window reloads — panes and scroll reset',
-                'unsent composer drafts in this window are discarded',
-              ],
-            ),
-            const SizedBox(height: kSpace12),
-            _Block(
-              label: 'What keeps running',
-              tone: cs.primary,
-              lines: [
-                '${from.name}’s server stays up',
-                '${from.name}’s agents are not interrupted',
-                'devices paired to ${from.name} stay paired',
-              ],
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'This window will reconnect to ${to.name}’s server.',
+                style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: kSpace16),
+              _Block(
+                label: 'What happens here',
+                tone: cs.error,
+                lines: [
+                  if (!targetRunning) '${to.name}’s server starts',
+                  'this window reloads — panes and scroll reset',
+                  'unsent composer drafts in this window are discarded',
+                ],
+              ),
+              const SizedBox(height: kSpace12),
+              _Block(
+                label: 'What keeps running',
+                tone: cs.primary,
+                lines: [
+                  '${from.name}’s server stays up',
+                  '${from.name}’s agents are not interrupted',
+                  'devices paired to ${from.name} stay paired',
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -128,35 +130,37 @@ Future<bool> confirmSwitchAwayAndDelete(
         title: Text('Delete “${victim.name}”?'),
         content: SizedBox(
           width: 430,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '“${victim.name}” is the profile this window is using, so the '
-                'window will switch to “${target.name}” first.',
-                style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-              ),
-              const SizedBox(height: kSpace16),
-              _Block(
-                label: 'What happens',
-                tone: cs.error,
-                lines: [
-                  'this window switches to “${target.name}”',
-                  '“${victim.name}” is stopped, then its server state is erased',
-                  'its sessions, transcripts, pairings and TLS identity go',
-                ],
-              ),
-              const SizedBox(height: kSpace12),
-              _Block(
-                label: 'What is kept',
-                tone: cs.primary,
-                lines: const [
-                  'your worktrees and repos are never touched',
-                  'every other profile is unaffected',
-                ],
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '“${victim.name}” is the profile this window is using, so the '
+                  'window will switch to “${target.name}” first.',
+                  style: text.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+                const SizedBox(height: kSpace16),
+                _Block(
+                  label: 'What happens',
+                  tone: cs.error,
+                  lines: [
+                    'this window switches to “${target.name}”',
+                    '“${victim.name}” is stopped, then its server state is erased',
+                    'its sessions, transcripts, pairings and TLS identity go',
+                  ],
+                ),
+                const SizedBox(height: kSpace12),
+                _Block(
+                  label: 'What is kept',
+                  tone: cs.primary,
+                  lines: const [
+                    'your worktrees and repos are never touched',
+                    'every other profile is unaffected',
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
         actions: [

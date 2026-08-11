@@ -190,8 +190,15 @@ class ProfileRuntime {
   ///
   /// Order matters: the controller's poll timer is cancelled *before* the client
   /// closes, because a poll firing against a closed client throws.
+  ///
+  /// [profilesController] is disposed here because it is injected via
+  /// `overrideWithValue` (see `desktop_app.dart`), which Riverpod does **not**
+  /// dispose — without this it leaks one listened-to controller per profile
+  /// switch. `configController` and `groupsController` use `overrideWith`, whose
+  /// created value Riverpod does dispose, so they are not touched here.
   Future<void> dispose() async {
     controller.dispose();
+    profilesController.dispose();
     await client.close();
   }
 }

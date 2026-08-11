@@ -118,6 +118,28 @@ void main() {
       );
     });
 
+    test('refresh survives a throwing probe and still notifies', () async {
+      // A probe reads the live world and can throw. One failure must not abort
+      // the loop (skipping later profiles) nor suppress notifyListeners, which
+      // three call sites depend on after a delete.
+      var notified = 0;
+      final c = build(
+        diskUsage: (p) async {
+          if (p.id == 'default') throw Exception('boom');
+          return 4096;
+        },
+        dirExists: (_) => true,
+      );
+      c.addListener(() => notified++);
+
+      await c.refresh();
+
+      // The later profile was still probed despite the earlier throw...
+      expect(c.rows.firstWhere((r) => r.profile.id == 'dev1').diskBytes, 4096);
+      // ...and listeners were notified exactly once.
+      expect(notified, 1);
+    });
+
     test('diskBytes is null before measurement, not zero', () {
       // A profile shown as "0 B" would be a lie; null lets the UI say nothing.
       expect(build().rows.every((r) => r.diskBytes == null), isTrue);

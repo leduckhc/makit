@@ -196,26 +196,14 @@ class ServerProfile {
 
   /// The prefix this profile's **own** preference keys carry.
   ///
+  /// This is the mechanism in use (SPEC-50 D11): `ProfileRuntime.create` wraps
+  /// the shared `SharedPreferences` in a `ProfileScopedPrefs` with this prefix.
   /// Deliberately *not* `SharedPreferences.setPrefix`, which throws once
-  /// `getInstance()` has run and so makes in-place switching impossible
-  /// (SPEC-50 D11). Because the plugin composes keys by plain concatenation,
-  /// `'flutter.' + '<id>.key'` and today's `setPrefix('flutter.<id>.') + 'key'`
-  /// produce a byte-identical stored key — so adopting this needs no migration.
-  ///
-  /// **Not yet in use.** [prefsPrefix] is still what runs; this getter exists so
-  /// the equivalence can be asserted by test before the switch-over lands.
+  /// `getInstance()` has run and so makes in-place switching impossible. Because
+  /// the plugin composes keys by plain concatenation, `'flutter.' + '<id>.key'`
+  /// is byte-identical to the key the old `setPrefix('flutter.<id>.')` produced,
+  /// so adopting it needed no migration (asserted in `profile_registry_test.dart`).
   String get prefsKeyPrefix => storage == ProfileStorage.legacy ? '' : '$id.';
-
-  /// The global `SharedPreferences.setPrefix` value used **today**.
-  ///
-  /// Interim: this is the mechanism [prefsKeyPrefix] replaces under SPEC-50 D11.
-  /// It cannot support in-place profile switching (the plugin throws if the
-  /// prefix changes after `getInstance()`), but it is what ships right now, and
-  /// swapping the two is a separate, testable step. The invariant tying them
-  /// together — `prefsPrefix + key == 'flutter.' + prefsKeyPrefix + key` — is
-  /// asserted in `profile_registry_test.dart`.
-  String get prefsPrefix =>
-      storage == ProfileStorage.legacy ? 'flutter.' : 'flutter.$id.';
 
   /// The secure-store namespace, or `null` for the legacy unsuffixed file.
   String? get secureStoreNamespace =>

@@ -243,7 +243,9 @@ void main() {
     // {"id":"x","storage":"namespaced","home":"~/.makit"} -- would otherwise be
     // neither protected nor active, and ~/.makit passes a bare prefix check, so
     // the delete would take the APNs key, the TLS keypair, devices.json, ota/,
-    // push.json and host.json with it. Protection must be by PATH, not by flag.
+    // push.json and host.json with it. Rule 2 of `_unsafeHomeReason` refuses it:
+    // a home must sit strictly inside ~/.makit/ or ~/.makit-dev/ with at least
+    // one further segment, and bare ~/.makit has none.
     final legacyHome = '${root.path}/.makit';
     Directory(legacyHome).createSync(recursive: true);
     File('$legacyHome/AuthKey_ABCD1234.p8').writeAsStringSync('APNS SECRET');
@@ -270,9 +272,9 @@ void main() {
       makitRoot: legacyHome,
       profiles: [
         // Registered somewhere else entirely, so the shared-home rule cannot
-        // fire and ONLY the by-path rule can refuse. An earlier version of this
-        // test registered both at the same home, and so stayed green even with
-        // the by-path rule deleted.
+        // fire and rule 2 (strictly-inside, one segment below ~/.makit/) is what
+        // refuses. An earlier version of this test registered both at the same
+        // home, and so stayed green even with rule 2 deleted.
         legacy.copyWith(home: '/somewhere/else/entirely'),
         rogue,
       ],
@@ -414,9 +416,9 @@ void main() {
   test(
     "refuses the legacy profile's registered home wherever it points",
     () async {
-      // The other half of the by-path rule: the legacy entry may legitimately live
-      // somewhere other than ~/.makit, and a rogue aiming at *that* must also be
-      // refused.
+      // Rule 3 of `_unsafeHomeReason` (shared-home refusal): the legacy entry
+      // may legitimately live somewhere other than ~/.makit, and a rogue aiming
+      // at *that* home is refused because the legacy entry claims it too.
       final legacyHome = '${root.path}/.makit-dev/relocated-legacy';
       Directory(legacyHome).createSync(recursive: true);
       File('$legacyHome/AuthKey_X.p8').writeAsStringSync('APNS');
@@ -548,8 +550,10 @@ void main() {
       storage: ProfileStorage.namespaced,
     );
 
-    await build(profile).deleter.delete(profile);
+    final result = await build(profile).deleter.delete(profile);
 
+    // The symlink resolves out of ~/.makit*, so the guard refuses it outright.
+    expect(result.outcome, ProfileDeletionOutcome.refusedUnsafePath);
     // Whatever happened to the link itself, the data it pointed at must survive.
     expect(
       File('${outside.path}/keepme.txt').existsSync(),

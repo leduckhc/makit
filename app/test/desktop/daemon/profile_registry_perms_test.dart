@@ -18,12 +18,10 @@ void main() {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
-  /// The octal mode string (e.g. `700`) of [path], via stat(1).
-  String modeOf(String path) => Process.runSync('/usr/bin/stat', [
-    '-f',
-    '%Lp',
-    path,
-  ]).stdout.toString().trim();
+  /// The octal permission bits (e.g. `700`) of [path]. Uses the Dart API so it
+  /// is portable — `stat -f %Lp` is BSD-only and fails on the Linux CI VM.
+  String modeOf(String path) =>
+      (FileStat.statSync(path).mode & 0xFFF).toRadixString(8).padLeft(3, '0');
 
   test('the registry file is 0600 and its directory 0700', () {
     final home = '${root.path}/.makit';

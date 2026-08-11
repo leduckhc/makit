@@ -378,22 +378,29 @@ class _RuntimeHolder {
   late ProfileRuntime runtime;
   TrayController? tray;
   VoidCallback? _trayListener;
+  DesktopController? _trayTarget;
 
   /// (Re)attaches the tray's sync listener to the current runtime's controller.
   void attachTray() {
     final t = tray;
     if (t == null) return;
     final previous = _trayListener;
-    if (previous != null) {
+    final previousTarget = _trayTarget;
+    // Detach from the EXACT controller the listener was added to. The caller has
+    // already swapped `runtime` to the new one, so `runtime.controller` is the
+    // wrong instance — removing from it is a no-op and leaks the listener on the
+    // old controller.
+    if (previous != null && previousTarget != null) {
       // Best effort: the old controller may already be disposed.
       try {
-        runtime.controller.removeListener(previous);
+        previousTarget.removeListener(previous);
       } on FlutterError {
         /* already disposed */
       }
     }
     void listener() => unawaited(t.update(runtime.controller.summary));
     _trayListener = listener;
+    _trayTarget = runtime.controller;
     runtime.controller.addListener(listener);
     unawaited(t.update(runtime.controller.summary));
   }
@@ -460,13 +467,19 @@ class _ProfileHostState extends State<_ProfileHost> {
   /// that offers it: the ProviderScope it lives in is disposed by the switch. The
   /// host survives that rebuild, so it runs the delete afterwards through the NEW
   /// runtime's deleter, which correctly sees the old profile as inactive.
-  Future<String?> switchTo(
+  Future<ProfileSwitchResult> switchTo(
     ServerProfile target, {
     ServerProfile? deleteAfter,
   }) async {
-    if (target.id == _runtime.profile.id) return null;
+    if (target.id == _runtime.profile.id) {
+      return (switchFailure: null, deleteFailure: null);
+    }
     if (_switching) {
-      return 'a profile switch is already in progress — wait for it to finish';
+      return (
+        switchFailure:
+            'a profile switch is already in progress — wait for it to finish',
+        deleteFailure: null,
+      );
     }
     _switching = true;
     try {
@@ -476,11 +489,13 @@ class _ProfileHostState extends State<_ProfileHost> {
     }
   }
 
-  Future<String?> _switchTo(
+  Future<ProfileSwitchResult> _switchTo(
     ServerProfile target, {
     ServerProfile? deleteAfter,
   }) async {
-    if (target.id == _runtime.profile.id) return null;
+    if (target.id == _runtime.profile.id) {
+      return (switchFailure: null, deleteFailure: null);
+    }
 
     final failure = await verifyThenHandOver(
       target: target,
@@ -500,7 +515,9 @@ class _ProfileHostState extends State<_ProfileHost> {
         await previous.dispose();
       },
     );
-    if (failure != null) return failure;
+    if (failure != null) {
+      return (switchFailure: failure, deleteFailure: null);
+    }
 
     if (widget.registry.setLastActive(target.id)) widget.registry.save();
     await windowManager.setTitle(target.windowTitle);
@@ -508,12 +525,18 @@ class _ProfileHostState extends State<_ProfileHost> {
     if (deleteAfter != null && deleteAfter.id != target.id) {
       final result = await holder.runtime.profileDeleter.delete(deleteAfter);
       if (result.outcome != ProfileDeletionOutcome.deleted) {
-        return 'switched to ${target.name}, but could not delete '
-            '${deleteAfter.name}: ${result.skipped.join('; ')}';
+        // The switch SUCCEEDED; only the follow-up delete failed. Report it as a
+        // separate fact so the caller does not show a "could not switch" error.
+        return (
+          switchFailure: null,
+          deleteFailure:
+              'could not delete ${deleteAfter.name}: '
+              '${result.skipped.join('; ')}',
+        );
       }
       holder.runtime.profilesController.notifyRegistryChanged();
     }
-    return null;
+    return (switchFailure: null, deleteFailure: null);
   }
 
   @override

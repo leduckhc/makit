@@ -9,6 +9,8 @@ library;
 
 import 'dart:io';
 
+import 'daemon_result_utils.dart';
+
 /// Runs an executable and resolves to its [ProcessResult]. Injected so tests
 /// can assert on the spawned command without touching real processes.
 typedef ProcessRunner =
@@ -133,16 +135,6 @@ enum DaemonActionOutcome {
 /// stderr comes first (it carries the lower-level cause), duplicates are
 /// collapsed, and the separator is dropped entirely when neither stream said
 /// anything -- so the message never ends in a dangling colon.
-String _failureMessage(String verb, ProcessResult res) {
-  final head = 'makit $verb exited ${res.exitCode}';
-  final parts = <String>[];
-  for (final stream in [res.stderr, res.stdout]) {
-    if (stream is! String) continue;
-    final text = stream.trim();
-    if (text.isNotEmpty && !parts.contains(text)) parts.add(text);
-  }
-  return parts.isEmpty ? head : '$head: ${parts.join(' — ')}';
-}
 
 /// Result of a lifecycle action, with an optional human-readable [message].
 class DaemonActionResult {
@@ -216,7 +208,7 @@ class DaemonLifecycle {
       if (res.exitCode == 0) return DaemonActionResult(onSuccess);
       return DaemonActionResult(
         DaemonActionOutcome.failed,
-        message: _failureMessage(verb, res),
+        message: formatDaemonError(verb, res),
       );
     } on ProcessException catch (e) {
       return DaemonActionResult(

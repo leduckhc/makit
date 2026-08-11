@@ -96,6 +96,10 @@ class _NoWriteFs extends FileSystemAdapter {
   String? readOrNull(String path) => null;
   @override
   void writeAtomic(String path, String contents) {}
+  // Without this, the base withLock creates `<path>.lock` on disk, breaking the
+  // no-write guarantee.
+  @override
+  T withLock<T>(String path, T Function() body) => body();
 }
 
 /// Sizes chosen to exercise the formatter: bytes, KB, MB and a big one.

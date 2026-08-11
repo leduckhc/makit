@@ -262,9 +262,9 @@ class _ProfileRow extends ConsumerWidget {
   }
 }
 
-/// The overflow (⋯) menu. Delete is **absent** for a protected profile, and for
-/// the active profile it is present-but-disabled with the "switch away & delete"
-/// wording and a tooltip explaining that switching is not wired yet.
+/// The overflow (⋯) menu. Delete is **absent** for a protected profile. For the
+/// active profile it reads "Switch away & delete…" and runs that flow, because
+/// [ProfileDeleter] refuses to delete the profile the window is using (D8).
 class _ProfileMenu extends ConsumerWidget {
   const _ProfileMenu({
     required this.status,
@@ -708,10 +708,17 @@ Future<void> switchAwayAndDelete(
       controller.rows
           .where((r) => r.profile.id != victim.id && !r.stale)
           .toList()
+        // A total order: protected profiles first, then stable by name. A
+        // comparator returning -1 for `isProtected` on both sides breaks the
+        // contract and leaves the order unspecified.
         ..sort((a, b) {
-          if (a.profile.isProtected) return -1;
-          if (b.profile.isProtected) return 1;
-          return 0;
+          final byProtected = (a.profile.isProtected ? 0 : 1).compareTo(
+            b.profile.isProtected ? 0 : 1,
+          );
+          if (byProtected != 0) return byProtected;
+          return a.profile.name.toLowerCase().compareTo(
+            b.profile.name.toLowerCase(),
+          );
         });
   if (candidates.isEmpty) {
     status.failure(
@@ -730,17 +737,26 @@ Future<void> switchAwayAndDelete(
   );
   if (!ok) return;
 
-  final failure = await switcher(target, deleteAfter: victim);
-  if (failure == null) {
+  final result = await switcher(target, deleteAfter: victim);
+  if (result.switchFailure != null) {
+    // The switch itself failed, so nothing changed and the victim is untouched.
+    status.failure(
+      'Could not switch to ${target.name}',
+      source: StatusSources.settings,
+      detail: result.switchFailure,
+    );
+  } else if (result.deleteFailure != null) {
+    // The switch succeeded; only the delete failed — report that honestly rather
+    // than claiming the whole operation failed.
+    status.failure(
+      'Switched to ${target.name}, but could not delete ${victim.name}',
+      source: StatusSources.settings,
+      detail: result.deleteFailure,
+    );
+  } else {
     status.success(
       'Deleted ${victim.name} and switched to ${target.name}',
       source: StatusSources.settings,
-    );
-  } else {
-    status.failure(
-      'Could not delete ${victim.name}',
-      source: StatusSources.settings,
-      detail: failure,
     );
   }
 }
