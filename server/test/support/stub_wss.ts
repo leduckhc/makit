@@ -178,6 +178,13 @@ export async function startStubWss(opts: StubWssOpts = {}): Promise<StubWss> {
     close: () =>
       new Promise<void>((resolve) => {
         for (const ws of live) ws.terminate();
+        // `server.close()` stops accepting but WAITS for connections that are still
+        // open, and a test may deliberately leave a request unanswered — that is
+        // exactly what `mediaStall` is for. Without forcing the sockets shut, such
+        // a test wedges teardown, and because the whole file then never finishes,
+        // the symptom is a suite that goes silent until CI's job timeout kills it
+        // rather than a failing assertion anyone can read.
+        https.closeAllConnections();
         wss.close(() => https.close(() => resolve()));
       }),
   };
