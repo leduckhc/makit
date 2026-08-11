@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_event.dart';
 import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
@@ -38,11 +39,18 @@ Session _session({String? agentSessionId = kAgentId}) => Session(
 class _Clipboard {
   final List<String> writes = [];
 
+  /// Make the platform channel throw, the way a real clipboard does when another
+  /// process holds it (Windows) or the host denies the write.
+  bool fail = false;
+
   void install(WidgetTester tester) {
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       SystemChannels.platform,
       (call) async {
         if (call.method == 'Clipboard.setData') {
+          if (fail) {
+            throw PlatformException(code: 'copy_failed', message: 'denied');
+          }
           writes.add((call.arguments as Map)['text'] as String);
         }
         return null;
@@ -161,6 +169,49 @@ void main() {
     expect(
       status.events.map((e) => e.title),
       contains('No agent session id yet'),
+    );
+  });
+
+  testWidgets('/session id reports a clipboard failure instead of throwing', (
+    tester,
+  ) async {
+    // A `Clipboard.setData` that throws (another process holds the clipboard on
+    // Windows; the host denies the write) must not escape the handler: the user
+    // would then get neither the id nor any word about why. Asserted against the
+    // STATUS BUS, because the test host has no toast overlay — a rendered-text
+    // assertion here could never fail.
+    clipboard
+      ..install(tester)
+      ..fail = true;
+    addTearDown(() => clipboard.remove(tester));
+    final status = StatusCenter();
+    addTearDown(status.dispose);
+    final r = await _run(
+      tester,
+      '/session id',
+      session: _session(),
+      status: status,
+    );
+    expect(await r.handled, isTrue);
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'the PlatformException must not escape the handler',
+    );
+    expect(clipboard.writes, isEmpty);
+    expect(
+      status.events.map((e) => e.title),
+      isNot(contains('Session id copied')),
+      reason: 'a failed write must never claim success',
+    );
+    final failed = status.events.where(
+      (e) => e.title == 'Could not copy session id',
+    );
+    expect(failed, hasLength(1));
+    expect(
+      failed.single.severity,
+      StatusSeverity.failure,
+      reason: 'an action the user asked for did not happen',
     );
   });
 

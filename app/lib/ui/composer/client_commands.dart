@@ -295,7 +295,21 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
           );
           return;
         }
-        await Clipboard.setData(ClipboardData(text: id));
+        // A clipboard write can throw for real (another process holds it on
+        // Windows; the host denies it). Unreported, the user gets neither the id
+        // nor a reason — so the write is waited on, and only a write that landed
+        // is allowed to claim success. Same contract as the panel's `Copy all`.
+        try {
+          await Clipboard.setData(ClipboardData(text: id));
+        } catch (e) {
+          status.failure(
+            'Could not copy session id',
+            error: e,
+            source: StatusSources.session,
+            sessionId: sessionId,
+          );
+          return;
+        }
         status.info(
           'Session id copied',
           source: StatusSources.session,

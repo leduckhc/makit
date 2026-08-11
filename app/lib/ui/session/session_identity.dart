@@ -412,10 +412,14 @@ class _CopyAllRow extends ConsumerWidget {
     try {
       await Clipboard.setData(ClipboardData(text: payload));
     } catch (e) {
-      status.warning(
+      // `failure`, not `warning`: an action the user asked for did not happen.
+      // All three copy paths in this feature (panel `Copy all`, `/session id`,
+      // the tab menu) report the same way, so severity is a property of the
+      // event rather than of which door was used.
+      status.failure(
         'Could not copy session details',
+        error: e,
         source: StatusSources.session,
-        detail: '$e',
       );
       return;
     }

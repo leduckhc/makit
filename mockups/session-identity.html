@@ -218,8 +218,8 @@
 </div>
 
 <div class="note warn">
-  <strong>✎ Amended in planning, before a line was written (SPEC-51).</strong> Three things on this page were
-  wrong, and all three are corrected above — the frames now show what will ship.
+  <strong>✎ Amended in planning, before a line was written (SPEC-51).</strong> Six things on this page were
+  wrong, and all six are corrected above — the frames now show what will ship.
   <ul>
     <li><b>The short resume id was unsafe.</b> This page showed <code>pi --session 019ff121</code>, leaning on
       pi's documented “partial UUID” support. pi session ids are <b>UUIDv7</b>, whose first 48 bits are a
@@ -416,9 +416,11 @@
 <span class="lb">transcript:</span>   /Users/le/.pi/agent/sessions/--Users-le-.worktrees-makit-feat-get-session-id--/2026-08-11T14-01-46-945Z_019ff121-1cc1-7c60-bc40-65890c87e6ff.jsonl
 <span class="lb">resume:</span>       pi --session 019ff121-1cc1-7c60-bc40-65890c87e6ff
 <span class="lb">makit session:</span> 7c9e6d5a-1f42-4b8e-9a01-2d3f4e5a6b7c</div>
-        <p class="why"><b>Labelled plain lines, and the path is absolute.</b> The panel <em>displays</em>
-          <code>~/</code> because it is narrow; the clipboard carries the real path, because the thing that
-          receives it is another agent's shell, and <code>~</code> only expands if a shell gets there first.
+        <p class="why"><b>Labelled plain lines, and the path is absolute — on screen and on the clipboard.</b>
+          The panel shows the same absolute path it copies: <code>~/</code> was dropped everywhere (see the
+          amendment above, spec D4), because the path belongs to the <em>server host</em> and the app cannot
+          know that host's home directory. It is also the right payload regardless: what receives it is
+          another agent's shell or prompt, and <code>~</code> only expands if a shell gets there first.
           One <code>key: value</code> per line survives being pasted into a prompt, a commit message, an issue
           or a terminal comment — no markdown, no JSON, no fences to escape.</p>
         <p class="why"><b>What one button costs, honestly:</b> when you want <em>only</em> the id, you now get
@@ -665,8 +667,10 @@
           <code>/session id</code> copies the bare id and toasts. Sits with <code>/name</code>: not
           capability-gated, reads only what the client holds.</td></tr>
       <tr><td class="n">7</td><td class="p">app/lib/desktop/chat/split_view.dart</td><td class="n">+14</td>
-        <td>Two items in the tab context menu: <b>Copy session id</b> (bare id, zero dialogs — the fastest
-          door, and the counterweight to “Copy all”) and <b>Session details…</b>.</td></tr>
+        <td><b>Copy session id</b> in the tab context menu (bare id, zero dialogs — the fastest door, and the
+          counterweight to “Copy all”). <em>Only</em> that: a <b>Session details…</b> item here was cut on
+          review (D13) as a third door onto the same sheet, one pixel from the pane-header kebab on the same
+          platform — see the tab menu above.</td></tr>
       <tr><td class="n">8</td><td class="p">app/lib/desktop/chat/panes/pane_header.dart</td><td class="n">+6</td>
         <td><b>Session details</b> in the kebab, above the rule.</td></tr>
       <tr><td class="n">9</td><td class="p">app/lib/ui/session/session_screen.dart</td><td class="n">+6</td>

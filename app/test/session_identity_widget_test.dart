@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:makit/app/theme.dart';
 import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_event.dart';
 import 'package:makit/status/status_providers.dart';
 import 'package:makit/ui/session/session_identity.dart';
 
@@ -173,9 +174,14 @@ void main() {
         status.events.map((e) => e.title),
         isNot(contains('Session details copied')),
       );
+      final failed = status.events.where(
+        (e) => e.title == 'Could not copy session details',
+      );
+      expect(failed, hasLength(1));
       expect(
-        status.events.map((e) => e.title),
-        contains('Could not copy session details'),
+        failed.single.severity,
+        StatusSeverity.failure,
+        reason: 'all three copy paths report a failed write the same way',
       );
     });
 

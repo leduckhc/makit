@@ -685,6 +685,20 @@ class _TabChip extends ConsumerWidget {
     // Resolved before the `showMenu` await (SPEC-48 D3): `ref` dies with its
     // widget, and the copy path reports its outcome after an await.
     final status = ref.status;
+    // The identity is hoisted for the SAME reason, and it is not optional care:
+    // this menu lives in the Navigator's overlay, so it outlives the tab chip
+    // that opened it. Close the tab while the menu is open — a server snapshot
+    // dropping the session does it for real — and a `ref.read` down in the
+    // `copyId` branch would run on a dead `ref` and throw `Cannot use "ref"
+    // after the widget was disposed`, i.e. crash instead of copying.
+    //
+    // The cost is that the id is sampled at menu-open rather than at click. That
+    // is sub-second for a right-click → click, and it is the RIGHT trade here:
+    // the live-filling surface is the panel, which watches (D19). Rejected
+    // alternative: guarding the late read with `context.mounted`, which keeps the
+    // read fresh but leaves `ref` use after an await — the hazard SPEC-48 D3
+    // exists to remove.
+    final identity = ref.read(sessionIdentityProvider(sessionId));
     final selected = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
@@ -708,7 +722,7 @@ class _TabChip extends ConsumerWidget {
     if (selected == 'copyId') {
       // The BARE agent session id (D6), not `sessionIdentityText` — that whole
       // label:value payload is `Copy all`'s job in the panel. No dialog.
-      final id = ref.read(sessionIdentityProvider(sessionId)).agentSessionId;
+      final id = identity.agentSessionId;
       if (id == null) {
         status.warning(
           'No agent session id yet',
@@ -717,7 +731,20 @@ class _TabChip extends ConsumerWidget {
         );
         return;
       }
-      await Clipboard.setData(ClipboardData(text: id));
+      // A clipboard write can throw for real (another process holds it on
+      // Windows; the host denies it). Unreported, the user gets neither the id
+      // nor a reason. Same contract as the panel's `Copy all` and `/session id`.
+      try {
+        await Clipboard.setData(ClipboardData(text: id));
+      } catch (e) {
+        status.failure(
+          'Could not copy session id',
+          error: e,
+          source: StatusSources.session,
+          sessionId: sessionId,
+        );
+        return;
+      }
       status.info(
         'Session id copied',
         source: StatusSources.session,
