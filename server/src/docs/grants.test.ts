@@ -13,7 +13,7 @@ function mint(store: DocGrantStore, relPath = "mockups/board.html") {
     worktreePath: "/wt",
     relPath,
     reach: "tailnet",
-    buildUrl: (grantId) => `https://host.ts.net/docs/${grantId}/${relPath}`,
+    buildUrl: (grantId) => `http://100.92.14.7:53187/docs/${grantId}/${relPath}`,
   });
 }
 
@@ -29,7 +29,7 @@ test("mint builds the url from the freshly-minted grantId and sets expiry", () =
   let clock = 1_000;
   const store = new DocGrantStore({ now: () => clock });
   const g = mint(store);
-  assert.equal(g.url, `https://host.ts.net/docs/${g.grantId}/mockups/board.html`);
+  assert.equal(g.url, `http://100.92.14.7:53187/docs/${g.grantId}/mockups/board.html`);
   assert.equal(g.reach, "tailnet");
   assert.equal(g.expiresAt, 1_000 + DOC_GRANT_TTL_MS);
 });
@@ -88,7 +88,7 @@ test("revoke by a non-owner is a no-op indistinguishable from an unknown id", ()
     relPath: "a.md",
     reach: "tailnet",
     ownerDeviceId: "owner",
-    buildUrl: (id) => `https://host.ts.net/docs/${id}/a.md`,
+    buildUrl: (id) => `http://100.92.14.7:53187/docs/${id}/a.md`,
   });
 
   assert.equal(store.revoke(g.grantId, "someone-else"), false, "a foreign device cannot revoke it");
@@ -107,7 +107,7 @@ test("listOwnedBy returns only the caller's grants, never another device's", () 
       relPath: rel,
       reach: "tailnet",
       ownerDeviceId: owner,
-      buildUrl: (id) => `https://host.ts.net/docs/${id}/${rel}`,
+      buildUrl: (id) => `http://100.92.14.7:53187/docs/${id}/${rel}`,
     });
   mintFor("a", "a1.md");
   mintFor("a", "a2.md");

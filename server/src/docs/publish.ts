@@ -18,7 +18,13 @@ import type { DocGrantDTO } from "../protocol.js";
 
 /** A verified origin that fronts the doc listener, plus how it was reached. */
 export interface DocReach {
-  /** e.g. `https://host.ts.net` or `http://192.168.1.9:8123` — no trailing slash. */
+  /**
+   * No trailing slash. `DocListener` builds this as `http://<bindHost>:<port>`
+   * from the tailnet IP it bound to — plain HTTP is deliberate (D10 rev 2):
+   * WireGuard already encrypts the tailnet, and a self-signed cert would make
+   * the URL unopenable in Safari. So in P1 this is always e.g.
+   * `http://100.92.14.7:53187`, never an `https://` MagicDNS origin.
+   */
   origin: string;
   /**
    * How the origin is reachable. Per D15 rev 2 the tailnet is the ONLY reach

@@ -40,7 +40,7 @@ function makeService(overrides: {
     listWorktrees: overrides.listWorktrees ?? (() => [{ worktreePath: "/wt", baseBranch: "main", currentBranch: "feat" }]),
     exec: overrides.exec ?? (async () => ({ code: 0, stdout: "", stderr: "" })),
     grants,
-    reach: async () => ({ origin: "https://host.ts.net", reach: "tailnet" }),
+    reach: async () => ({ origin: "http://100.92.14.7:53187", reach: "tailnet" }),
     scan: overrides.scan ?? defaultScan,
     changedPaths: overrides.changed ?? (async () => new Set<string>()),
     onSnapshot: (s) => snapshots.push(s),

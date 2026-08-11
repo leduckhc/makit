@@ -27,7 +27,7 @@ const GRANT: DocGrantDTO = {
   grantId: "g1",
   worktreePath: "/wt",
   relPath: "mockups/board.html",
-  url: "https://host.ts.net/docs/g1/mockups/board.html",
+  url: "http://100.92.14.7:53187/docs/g1/mockups/board.html",
   reach: "tailnet",
   expiresAt: 123,
 };

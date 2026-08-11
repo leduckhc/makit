@@ -15,7 +15,12 @@ function fixture(): string {
   return root;
 }
 
-const tailnet = async (): Promise<DocReach> => ({ origin: "https://host.ts.net", reach: "tailnet" });
+// The shape `DocListener` really produces: plain HTTP on the tailnet IP with
+// an explicit port (D10 rev 2), never an `https://` MagicDNS origin.
+const tailnet = async (): Promise<DocReach> => ({
+  origin: "http://100.92.14.7:53187",
+  reach: "tailnet",
+});
 // `lan` is an INJECTED-ONLY reach: per D15 rev 2 `DocListener` never emits it in
 // P1 (the tailnet is the only publishable reach). It is retained in the DocReach
 // union so the wire contract needs no change if LAN is ever reinstated behind an
@@ -35,7 +40,7 @@ test("publishes a resolvable doc, minting a tailnet grant with the reachable url
   assert.equal(result.grant.reach, "tailnet");
   assert.equal(
     result.grant.url,
-    `https://host.ts.net/docs/${result.grant.grantId}/mockups/board.html`,
+    `http://100.92.14.7:53187/docs/${result.grant.grantId}/mockups/board.html`,
   );
   // The grant is enumerable afterwards.
   assert.equal(grants.list().length, 1);
@@ -105,7 +110,7 @@ test("does not consult reach when the doc cannot be resolved", async () => {
       grants,
       reach: async () => {
         reachCalls++;
-        return { origin: "https://host.ts.net", reach: "tailnet" };
+        return { origin: "http://100.92.14.7:53187", reach: "tailnet" };
       },
     },
   );
