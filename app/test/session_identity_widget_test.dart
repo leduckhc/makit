@@ -313,6 +313,77 @@ void main() {
       expect(find.text(kId), findsOneWidget);
     });
 
+    testWidgets('desktop opens a centred, window-clamped panel — not a sheet', (
+      tester,
+    ) async {
+      // The desktop host had NO test at all: every case here passed
+      // `desktop: false`, which is how the panel came to be documented as an
+      // "anchored MenuAnchor popover" (D11) while shipping a centred dialog. It
+      // is centred on purpose — both desktop doors are transient MENU ITEMS, so
+      // by the time one is chosen the menu is gone and there is nothing left on
+      // screen to anchor to (unlike SPEC-37's ContextUsageButton, a persistent
+      // control in the composer). This test pins the presentation that actually
+      // ships, so the doc and the code cannot drift apart again.
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _host(
+          Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showSessionIdentity(
+                context: context,
+                identity: identity(),
+                desktop: true,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byType(SessionIdentityDetails), findsOneWidget);
+      // Centred: the panel's centre sits on the window's centre, both axes.
+      final panel = tester.getRect(find.byType(SessionIdentityDetails));
+      expect(panel.center.dx, moreOrLessEquals(700, epsilon: 1));
+      expect(panel.center.dy, moreOrLessEquals(450, epsilon: 1));
+      // Window-clamped, never wider than the fixed panel width (SPEC-37).
+      expect(panel.width, lessThanOrEqualTo(kIdentityPanelWidth));
+    });
+
+    testWidgets('a desktop panel in a narrow window is clamped to the window', (
+      tester,
+    ) async {
+      // The SPEC-37 lesson for the desktop host: a fixed-width panel opened from
+      // a narrow split pane hung off-screen. 300pt is narrower than the panel's
+      // 340pt, so the clamp is what keeps both margins.
+      tester.view.physicalSize = const Size(300, 700);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _host(
+          Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showSessionIdentity(
+                context: context,
+                identity: identity(),
+                desktop: true,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      final panel = tester.getRect(find.byType(SessionIdentityDetails));
+      expect(panel.left, greaterThanOrEqualTo(0));
+      expect(panel.right, lessThanOrEqualTo(300));
+      expect(panel.width, lessThanOrEqualTo(300 - 2 * 12));
+    });
+
     testWidgets(
       'at 320x360 nothing paints off-screen and Copy all is still reachable',
       (tester) async {

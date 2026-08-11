@@ -431,8 +431,25 @@ class _CopyAllRow extends ConsumerWidget {
   }
 }
 
-/// Opens the identity panel: a modal bottom sheet on mobile, an anchored
-/// popover on desktop. Same split as `ContextUsageButton` (SPEC-37).
+/// Opens the identity panel: a modal bottom sheet on mobile, a **centred,
+/// window-clamped** panel on desktop.
+///
+/// Centred on purpose, and NOT the `MenuAnchor` popover D11 first specified.
+/// D11 said "verbatim the `ContextUsageButton` split", but the mechanism cannot
+/// transfer, because the door topology is different: `ContextUsageButton` is a
+/// persistent control in the composer, so a `MenuAnchor` has something to anchor
+/// to for as long as the popover is open. Both of this panel's desktop doors are
+/// transient MENU ITEMS (the pane-header kebab, the mobile glass menu) — by the
+/// time an item is chosen its menu has been dismissed, so there is nothing left
+/// on screen to anchor to, and anchoring to where a vanished item used to be is
+/// arbitrary placement dressed up as precision.
+///
+/// What was kept from SPEC-37 is the part that matters and is testable: the
+/// window-clamped width and the `SingleChildScrollView`, so a panel opened from a
+/// narrow split pane cannot hang off-screen. Both properties are pinned by tests
+/// in `test/session_identity_widget_test.dart` ("desktop opens a centred,
+/// window-clamped panel"), which exist because the desktop host previously had no
+/// test at all — which is exactly how the code and this comment drifted apart.
 ///
 /// Pass EXACTLY ONE of [sessionId] or [identity]:
 ///
