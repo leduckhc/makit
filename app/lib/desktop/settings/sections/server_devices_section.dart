@@ -16,6 +16,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../../app/theme.dart';
 import '../../../store/connection.dart'
     show connectionControllerProvider, connectionProvider;
+import '../../daemon/daemon_lifecycle.dart' show DaemonActionResult;
 import '../../desktop_app.dart'
     show desktopControllerProvider, makitInstallCommand;
 import '../../screens/devices_screen.dart';
@@ -167,7 +168,17 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
     }
     _applyPort(_port.text);
     if (_portError != null) return;
-    await ref.read(desktopControllerProvider).restart();
+    // Resolved before the await: `ref` throws once the widget is unmounted, and
+    // the record must outlive the thing reporting to it.
+    final status = ref.status;
+    final result = await ref.read(desktopControllerProvider).restart();
+    if (!result.ok) {
+      status.failure(
+        'Could not restart the server',
+        source: StatusSources.settings,
+        detail: result.message,
+      );
+    }
   }
 
   void _reset() {
@@ -302,6 +313,27 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
 class _LifecycleRow extends ConsumerWidget {
   const _LifecycleRow();
 
+  /// Runs a lifecycle [action] and reports a non-`ok` outcome.
+  ///
+  /// These results were previously discarded, so a daemon that refused to start
+  /// -- most often because its port is already held by another build -- failed
+  /// with no feedback whatsoever.
+  static Future<void> _report(
+    WidgetRef ref,
+    String title,
+    Future<DaemonActionResult> Function() action,
+  ) async {
+    // Captured before the await: `ref` throws once its widget is unmounted.
+    final status = ref.status;
+    final result = await action();
+    if (result.ok) return;
+    status.failure(
+      title,
+      source: StatusSources.settings,
+      detail: result.message,
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
@@ -329,19 +361,35 @@ class _LifecycleRow extends ConsumerWidget {
             children: [
               if (!running)
                 FilledButton.icon(
-                  onPressed: starting ? null : () => controller.start(),
+                  onPressed: starting
+                      ? null
+                      : () => unawaited(
+                          _report(
+                            ref,
+                            'Could not start the server',
+                            controller.start,
+                          ),
+                        ),
                   icon: const Icon(PhosphorIconsLight.play, size: 18),
                   label: const Text('Start'),
                 ),
               if (running) ...[
                 OutlinedButton.icon(
-                  onPressed: () => controller.restart(),
+                  onPressed: () => unawaited(
+                    _report(
+                      ref,
+                      'Could not restart the server',
+                      controller.restart,
+                    ),
+                  ),
                   icon: const Icon(PhosphorIconsLight.arrowClockwise, size: 18),
                   label: const Text('Restart'),
                 ),
                 const SizedBox(width: kSpace8),
                 OutlinedButton.icon(
-                  onPressed: () => controller.stop(),
+                  onPressed: () => unawaited(
+                    _report(ref, 'Could not stop the server', controller.stop),
+                  ),
                   icon: const Icon(PhosphorIconsLight.stop, size: 18),
                   label: const Text('Stop'),
                 ),

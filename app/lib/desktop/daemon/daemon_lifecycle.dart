@@ -119,6 +119,31 @@ enum DaemonActionOutcome {
   failed,
 }
 
+/// Builds the human-readable detail for a non-zero `makit <verb>` exit.
+///
+/// Both streams are consulted, because `makit start` reports *why* it failed on
+/// **stdout**, not stderr: the daemon is spawned detached with its own output
+/// redirected into the log file, so the parent process's only diagnostic is
+/// `deps.out(...)` -> `console.log` (see `start` in
+/// `server/src/daemon/service.ts` and `out:` in `server/src/index.ts`).
+/// Reading stderr alone yielded the bare, useless `makit start exited 1: ` for
+/// every real start failure -- including the common "port already in use" case,
+/// whose message names the log file and the fix.
+///
+/// stderr comes first (it carries the lower-level cause), duplicates are
+/// collapsed, and the separator is dropped entirely when neither stream said
+/// anything -- so the message never ends in a dangling colon.
+String _failureMessage(String verb, ProcessResult res) {
+  final head = 'makit $verb exited ${res.exitCode}';
+  final parts = <String>[];
+  for (final stream in [res.stderr, res.stdout]) {
+    if (stream is! String) continue;
+    final text = stream.trim();
+    if (text.isNotEmpty && !parts.contains(text)) parts.add(text);
+  }
+  return parts.isEmpty ? head : '$head: ${parts.join(' — ')}';
+}
+
 /// Result of a lifecycle action, with an optional human-readable [message].
 class DaemonActionResult {
   /// Creates a result.
@@ -189,10 +214,9 @@ class DaemonLifecycle {
     try {
       final res = await run(path, [verb, ...extraArgs]);
       if (res.exitCode == 0) return DaemonActionResult(onSuccess);
-      final stderr = (res.stderr is String) ? res.stderr as String : '';
       return DaemonActionResult(
         DaemonActionOutcome.failed,
-        message: 'makit $verb exited ${res.exitCode}: ${stderr.trim()}',
+        message: _failureMessage(verb, res),
       );
     } on ProcessException catch (e) {
       return DaemonActionResult(

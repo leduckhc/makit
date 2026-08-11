@@ -14,6 +14,7 @@ import 'package:makit/desktop/screens/providers.dart'
 import 'package:makit/desktop/settings/sections/server_devices_section.dart';
 import 'package:makit/desktop/settings/server_config.dart';
 import 'package:makit/status/status_center.dart';
+import 'package:makit/status/status_event.dart';
 import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/connection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -36,6 +37,34 @@ DesktopController _controller() => DesktopController(
       exists: (path) => path == '/opt/homebrew/bin/makit',
       shellLookup: () async => null,
     ),
+  ),
+);
+
+/// A controller whose CLI always succeeds, without touching a real binary.
+DesktopController _okController() => DesktopController(
+  client: FakeControlClient(),
+  lifecycle: DaemonLifecycle(
+    resolver: MakitCliResolver(
+      candidatePaths: const ['/opt/homebrew/bin/makit'],
+      exists: (path) => path == '/opt/homebrew/bin/makit',
+      shellLookup: () async => null,
+    ),
+    run: (exe, args) async => ProcessResult(0, 0, '', ''),
+  ),
+);
+
+/// A controller whose CLI always fails, reporting [stdout] the way the real
+/// `makit start` does -- on stdout, with stderr empty (see `_failureMessage` in
+/// `daemon_lifecycle.dart`).
+DesktopController _failingController(String stdout) => DesktopController(
+  client: FakeControlClient(),
+  lifecycle: DaemonLifecycle(
+    resolver: MakitCliResolver(
+      candidatePaths: const ['/opt/homebrew/bin/makit'],
+      exists: (path) => path == '/opt/homebrew/bin/makit',
+      shellLookup: () async => null,
+    ),
+    run: (exe, args) async => ProcessResult(0, 1, stdout, ''),
   ),
 );
 
@@ -78,7 +107,6 @@ void main() {
     tester,
   ) async {
     await _pump(tester, config: await makeConfig());
-
     expect(find.text('SERVER & DEVICES'), findsOneWidget);
     expect(find.text('SERVER'), findsOneWidget);
     expect(find.text('Endpoint'), findsOneWidget);
@@ -381,6 +409,81 @@ void main() {
       await scrollToCli(tester);
 
       expect(find.text('Install CLI'), findsNothing);
+    });
+  });
+
+  group('daemon action failures', () {
+    // `restart()`'s DaemonActionResult used to be discarded by both call sites,
+    // so a daemon that refused to start (the common case: its port is already
+    // held by another build) failed completely silently in the UI.
+    testWidgets('a failed "Save & restart server" is reported', (tester) async {
+      final center = StatusCenter();
+      addTearDown(center.dispose);
+      final controller = _failingController(
+        'makit: failed to start \u2014 no response within 3000ms '
+        '(see /Users/le/.makit-dev/a1b2c3d4/makit.log)',
+      );
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        config: await makeConfig(),
+        controller: controller,
+        statusCenter: center,
+      );
+
+      await tester.tap(find.text('Save & restart server'));
+      await tester.pumpAndSettle();
+
+      expect(center.events, isNotEmpty);
+      final event = center.events.last;
+      expect(event.severity, StatusSeverity.failure);
+      expect(event.detail, contains('failed to start'));
+      expect(event.detail, contains('makit.log'));
+    });
+
+    testWidgets('a successful restart posts no failure', (tester) async {
+      final center = StatusCenter();
+      addTearDown(center.dispose);
+      final controller = _okController();
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        config: await makeConfig(),
+        controller: controller,
+        statusCenter: center,
+      );
+
+      await tester.tap(find.text('Save & restart server'));
+      await tester.pumpAndSettle();
+
+      expect(
+        center.events.where((e) => e.severity == StatusSeverity.failure),
+        isEmpty,
+      );
+    });
+    testWidgets('a failed Lifecycle "Start" is reported', (tester) async {
+      final center = StatusCenter();
+      addTearDown(center.dispose);
+      final controller = _failingController(
+        'makit: failed to start \u2014 no response within 3000ms',
+      );
+      addTearDown(controller.dispose);
+      await _pump(
+        tester,
+        config: await makeConfig(),
+        controller: controller,
+        statusCenter: center,
+      );
+
+      // The Lifecycle row offers Start while the daemon is not running.
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+
+      expect(
+        center.events.where((e) => e.severity == StatusSeverity.failure),
+        isNotEmpty,
+      );
+      expect(center.events.last.detail, contains('failed to start'));
     });
   });
 }

@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Server settings, simplified + real profiles</title>
+<style>
+  :root{
+    --bg:#171717;--lowest:#121212;--low:#1E1E1E;--cont:#242424;--high:#2E2E2E;
+    --text:#F5F5F5;--muted:#9E9E9E;--hairline:#333333;
+    --primary:#4ADE80;--warn:#E0A72E;--caution:#E07B39;--merged:#A371F7;
+    --variant:#C9C9C9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 96px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 20px;max-width:960px}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+
+  .card{border:1px solid var(--hairline);border-radius:14px;background:#141414;margin-bottom:28px;overflow:hidden}
+  .card > header{padding:12px 16px;border-bottom:1px solid var(--hairline);display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .card h2{font-size:15px;margin:0;font-weight:600}
+  .card > header > p{margin:0;color:var(--muted);font-size:12.5px;flex:1 1 300px}
+  .body{padding:18px 16px}
+  .rec,.rej,.built,.fu{font-size:10px;color:#0e0e0e;border-radius:5px;padding:2px 6px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+  .rec{background:var(--primary)} .rej{background:var(--caution)}
+  .built{background:var(--muted)} .fu{background:var(--merged);color:#fff}
+  .cap{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 8px}
+
+  .grid{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  .prose{flex:1 1 440px;min-width:430px}
+  .prose p{margin:0 0 10px;font-size:13px;color:var(--variant)}
+  .prose p.m{color:var(--muted);font-size:12.5px}
+  .frame-mac{flex:0 0 620px}
+  .frame-mac.wide{flex:0 0 660px}
+  .frame-ios{flex:0 0 320px}
+
+  /* ---------- mac window ---------- */
+  .mac{border:1px solid var(--hairline);border-radius:10px;overflow:hidden;background:var(--bg);position:relative}
+  .mac.menuopen{overflow:visible}
+  .mac .tb{height:38px;background:var(--low);border-bottom:1px solid var(--hairline);display:flex;align-items:center;padding:0 12px;gap:8px}
+  .lights{display:flex;gap:6px}
+  .lights i{width:11px;height:11px;border-radius:50%;display:block}
+  .lights i:nth-child(1){background:#FF5F57}.lights i:nth-child(2){background:#FEBC2E}.lights i:nth-child(3){background:#28C840}
+  .tb .tt{font-size:12.5px;color:var(--variant);font-weight:500}
+  .tb .sp{flex:1}
+  .mac .split{display:flex;min-height:300px}
+  .navp{flex:0 0 200px;background:var(--lowest);border-right:1px solid var(--hairline);padding:10px 8px}
+  .navi{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font-size:12.5px;color:var(--variant)}
+  .navi.on{background:var(--cont);color:var(--text)}
+  .navi svg{width:15px;height:15px;flex:none;color:var(--muted)}
+  .navi.on svg{color:var(--text)}
+  .detail{flex:1;padding:14px 16px;min-width:0}
+  .ph{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--primary);font-weight:700;margin:0 0 8px}
+  .ph.g{color:var(--muted)}
+
+  /* settings rows */
+  .grp{border:1px solid var(--hairline);border-radius:11px;background:var(--lowest);overflow:hidden;margin-bottom:14px}
+  .row{padding:11px 13px;border-bottom:1px solid var(--hairline)}
+  .row:last-child{border-bottom:0}
+  .row .t{font-size:13px;color:var(--text)}
+  .row .h{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .rowflex{display:flex;align-items:center;gap:10px}
+  .rowflex .sp{flex:1;min-width:0}
+  .row svg{width:17px;height:17px;flex:none;color:var(--muted)}
+
+  /* controls */
+  .seg{display:inline-flex;border:1px solid #4a4a4a;border-radius:15px;overflow:hidden}
+  .seg b{font-size:12px;font-weight:500;padding:5px 13px;color:var(--variant);border-right:1px solid #4a4a4a}
+  .seg b:last-child{border-right:0}
+  .seg b.on{background:#2d3b30;color:var(--text);font-weight:600}
+  .fld{border:1px solid #4a4a4a;border-radius:7px;padding:6px 9px;font-size:12.5px;color:var(--text);background:transparent;display:inline-block;min-width:80px}
+  .fld.ph2{color:#6e6e6e}
+  .fldlbl{position:relative}
+  .fldlbl span.l{position:absolute;top:-6px;left:8px;background:var(--lowest);padding:0 4px;font-size:9.5px;color:var(--muted)}
+  .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid #4a4a4a;border-radius:15px;padding:5px 13px;font-size:12.5px;color:var(--primary)}
+  .btn svg{width:14px;height:14px;color:var(--primary)}
+  .btn.solid{background:var(--primary);color:#0e0e0e;border-color:var(--primary)}
+  .btn.solid svg{color:#0e0e0e}
+  .btn.q{color:var(--variant)}.btn.q svg{color:var(--variant)}
+  .dotst{width:8px;height:8px;border-radius:50%;background:var(--primary);flex:none;display:inline-block}
+  .dotst.off{background:#5a5a5a}
+  .radio{display:flex;gap:9px;padding:8px 10px;border-radius:8px;align-items:flex-start}
+  .radio.on{background:var(--cont)}
+  .radio .rr{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--muted);flex:none;margin-top:1px;position:relative}
+  .radio.on .rr{border-color:var(--primary)}
+  .radio.on .rr::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--primary)}
+  .radio .rt{font-size:13px}
+  .radio .rh{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .cb{width:14px;height:14px;border:1.5px solid var(--muted);border-radius:3.5px;flex:none;margin-top:2px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)}
+  .chev{width:15px;height:15px;color:var(--muted);flex:none}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:11px;font-size:11px;font-weight:600}
+
+  /* profile badge / switcher */
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:11px;font-size:11px;font-weight:600;
+    background:rgba(163,113,247,.16);color:#c9a6ff;border:1px solid rgba(163,113,247,.4)}
+  .badge svg{width:12px;height:12px;color:#c9a6ff}
+  .menu{border:1px solid var(--hairline);border-radius:10px;background:var(--cont);padding:5px;width:262px;box-shadow:0 12px 28px rgba(0,0,0,.55)}
+  .mi{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;font-size:12.5px}
+  .mi.on{background:var(--high)}
+  .mi .sp{flex:1;min-width:0}
+  .mi svg{width:15px;height:15px;color:var(--muted);flex:none}
+  .msep{height:1px;background:var(--hairline);margin:5px 2px}
+  .sw{width:9px;height:9px;border-radius:3px;flex:none;display:inline-block}
+  .mm{display:none;flex-direction:column;gap:2px}
+  .mm.open{display:flex}
+  .mmi{padding:6px 10px;font-size:12px;cursor:pointer;border-radius:5px;white-space:nowrap}
+  .mmi:hover{background:var(--high)}
+
+  /* ---------- iphone ---------- */
+  .ios{width:320px;border:1px solid var(--hairline);border-radius:34px;overflow:hidden;background:var(--bg);position:relative}
+  .ios .stat{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:11px;color:var(--text);font-weight:600;position:relative}
+  .sigs{display:inline-flex;align-items:flex-end;gap:2px;height:9px}
+  .sigs i{width:3px;border-radius:1px;background:var(--text);display:block}
+  .batt{display:inline-block;width:20px;height:10px;border:1.2px solid var(--text);border-radius:3px;position:relative;vertical-align:middle}
+  .batt::after{content:"";position:absolute;inset:1.6px;right:5px;background:var(--text);border-radius:1px}
+  .statr{display:inline-flex;align-items:center;gap:5px}
+  .island{position:absolute;left:50%;transform:translateX(-50%);top:5px;width:78px;height:17px;border-radius:9px;background:#000}
+  .ios .gbar{height:44px;border-bottom:1px solid var(--hairline);display:flex;align-items:center;gap:8px;padding:0 14px;background:rgba(30,30,30,.75)}
+  .ios .gbar .tt{font-size:14px;font-weight:600}
+  .ios .content{padding:12px 12px 16px}
+  .ioshome{width:104px;height:4px;border-radius:2px;background:#5a5a5a;margin:8px auto 7px}
+
+  /* annotations */
+  .ann{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--variant);margin:0 0 9px}
+  .ann .n{flex:none;width:19px;height:19px;border-radius:50%;background:var(--caution);color:#0e0e0e;font-size:11px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .ann.good .n{background:var(--primary)}
+  .ann b{color:var(--text);font-weight:600}
+  .tag{position:absolute;font-size:10px;font-weight:700;background:var(--caution);color:#0e0e0e;border-radius:4px;padding:1px 5px}
+
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid #222;vertical-align:top;font-size:12.5px}
+  th{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.n{color:var(--muted);width:24px;font-variant-numeric:tabular-nums}
+  td .p{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--variant)}
+  td .sz{color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .note{border:1px solid #6b5d2a;background:#241f10;border-radius:10px;padding:12px 14px;font-size:12.5px;color:#e8d9a8;margin:0 0 18px}
+  .note strong{color:#fff}
+  .note.ok{border-color:#2f5d3a;background:#0f2416;color:#bfe8cd}
+  .note.bad{border-color:#6b3a2a;background:#241310;color:#f0c7b5}
+  .note.bad strong{color:#fff}
+  .dlg{width:470px;border:1px solid #3d3d3d;border-radius:13px;background:var(--cont);padding:18px 20px 16px;box-shadow:0 22px 50px rgba(0,0,0,.6)}
+  .dlg h3{font-size:14.5px;margin:0 0 5px;font-weight:600}
+  .dlg .dsub{font-size:12.5px;color:var(--muted);margin:0 0 14px}
+  .dsec{font-size:10px;letter-spacing:.09em;text-transform:uppercase;font-weight:700;margin:0 0 6px;display:flex;justify-content:space-between}
+  .dsec.rm{color:#f0a58a} .dsec.kp{color:#8fd8a8}
+  .dlist{border:1px solid var(--hairline);border-radius:8px;background:#161616;padding:7px 9px;margin:0 0 13px}
+  .dl{display:flex;gap:8px;font-size:11.5px;padding:2.5px 0;align-items:baseline}
+  .dl .k{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--variant);flex:none}
+  .dl .d{color:var(--muted);flex:1;min-width:0}
+  .dl .v{color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+  .dact{display:flex;gap:9px;justify-content:flex-end;margin-top:4px}
+  .btn.danger{background:#B4341F;border-color:#B4341F;color:#fff}
+  .dz{border:1px solid #5c2b20;border-radius:11px;background:#1c110e;overflow:hidden;margin-bottom:14px}
+  .dz .row{border-bottom-color:#3a1f18}
+  .ck{width:14px;height:14px;border-radius:3.5px;flex:none;background:var(--primary);position:relative}
+  .ck::after{content:"";position:absolute;left:4px;top:1.5px;width:4px;height:7.5px;border:solid #0e0e0e;border-width:0 1.6px 1.6px 0;transform:rotate(40deg)}
+  .tot{display:flex;justify-content:space-between;font-size:12px;padding:8px 2px 0;border-top:1px solid var(--hairline);margin-top:6px;color:var(--variant)}
+  .kbd{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+  .mi.danger{color:#f0a58a}.mi.danger svg{color:#f0a58a}
+  .note.ok strong{color:#fff}
+</style>
+</head>
+<body>
+<h1>Server settings, simplified — and profiles that are real</h1>
+<p class="sub">Two problems, one shape. <strong>(a)</strong> The Server panel exposes ten controls to do one thing: run the server. <strong>(b)</strong> Profiles already exist in the code but are <em>derived</em> from the <code>.app</code>'s filesystem path, never persisted and never user-chosen — so they can't express Work / Personal, and they break when a worktree moves. Grounded in <code>server_profile.dart</code>, <code>server_config.dart</code>, <code>server_devices_section.dart</code>, <code>pairing/cert.ts</code>.</p>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="g-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" class="i"/><circle cx="12" cy="12" r="8" class="i" stroke-dasharray="2.2 2.4"/></symbol>
+  <symbol id="g-devices" viewBox="0 0 24 24"><rect x="2" y="5" width="13" height="9.5" rx="1.4" class="i"/><rect x="15.5" y="9.5" width="6.5" height="10" rx="1.4" class="i"/><path d="M5 18h7" class="i"/></symbol>
+  <symbol id="g-qr" viewBox="0 0 24 24"><rect x="3" y="3" width="6.5" height="6.5" rx="1" class="i"/><rect x="14.5" y="3" width="6.5" height="6.5" rx="1" class="i"/><rect x="3" y="14.5" width="6.5" height="6.5" rx="1" class="i"/><path d="M14.5 14.5h3v3M21 21h-3.5M21 17v.01" class="i"/></symbol>
+  <symbol id="g-term" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="16" rx="2" class="i"/><path d="M6.5 9.5l3 2.5-3 2.5M12 15h5" class="i"/></symbol>
+  <symbol id="g-fp" viewBox="0 0 24 24"><path d="M12 4.5c-4.1 0-7.5 3.4-7.5 7.5v3M12 8c-2.2 0-4 1.8-4 4v4.5M12 11.5c-.3 0-.5.2-.5.5v6M15.8 19.5V12c0-2.1-1.7-3.8-3.8-3.8M19.5 15.5V12c0-4.1-3.4-7.5-7.5-7.5" class="i"/></symbol>
+  <symbol id="g-caret" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6" class="i"/></symbol>
+  <symbol id="g-right" viewBox="0 0 24 24"><path d="M9.5 5.5l6.5 6.5-6.5 6.5" class="i"/></symbol>
+  <symbol id="g-refresh" viewBox="0 0 24 24"><path d="M20 5.5v5h-5M4 18.5v-5h5" class="i"/><path d="M19.3 13.5A7.6 7.6 0 0 1 6.4 16.9M4.7 10.5A7.6 7.6 0 0 1 17.6 7.1" class="i"/></symbol>
+  <symbol id="g-laptop" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="11" rx="1.5" class="i"/><path d="M2 19h20" class="i"/></symbol>
+  <symbol id="g-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" class="i"/><path d="M3.5 12h17M12 3.5c2.4 2.3 3.6 5.3 3.6 8.5s-1.2 6.2-3.6 8.5c-2.4-2.3-3.6-5.3-3.6-8.5S9.6 5.8 12 3.5z" class="i"/></symbol>
+  <symbol id="g-wifi" viewBox="0 0 24 24"><path d="M2.5 8.5a15 15 0 0 1 19 0M5.8 12.2a10 10 0 0 1 12.4 0M9 15.9a5 5 0 0 1 6 0" class="i"/><circle cx="12" cy="19.2" r="1.1" class="dot"/></symbol>
+  <symbol id="g-cube" viewBox="0 0 24 24"><path d="M12 2.8l8 4.4v9.6l-8 4.4-8-4.4V7.2z" class="i"/><path d="M4 7.2l8 4.4 8-4.4M12 11.6V21" class="i"/></symbol>
+  <symbol id="g-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" class="i"/></symbol>
+  <symbol id="g-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" class="i"/></symbol>
+  <symbol id="g-hist" viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4.5v4.2h4.2" class="i"/><path d="M12 8v4.4l3 1.8" class="i"/></symbol>
+  <symbol id="g-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="12" height="12" rx="1.6" class="i"/><path d="M15.5 8.5v-2a1.6 1.6 0 0 0-1.6-1.6H5.1A1.6 1.6 0 0 0 3.5 6.5v8.8a1.6 1.6 0 0 0 1.6 1.6h2" class="i"/></symbol>
+  <symbol id="g-list" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h16" class="i"/></symbol>
+  <symbol id="g-bell" viewBox="0 0 24 24"><path d="M6.5 10a5.5 5.5 0 0 1 11 0c0 4 1.5 5.5 1.5 5.5H5S6.5 14 6.5 10z" class="i"/><path d="M10 18.5a2.2 2.2 0 0 0 4 0" class="i"/></symbol>
+  <symbol id="g-paint" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" class="i"/><circle cx="12" cy="8.2" r="1.15" class="dot"/><circle cx="8.4" cy="13" r="1.15" class="dot"/><circle cx="15.6" cy="13" r="1.15" class="dot"/></symbol>
+  <symbol id="g-chat" viewBox="0 0 24 24"><path d="M20.5 11.5c0 4.1-3.8 7.4-8.5 7.4a9.7 9.7 0 0 1-2.6-.35L4.5 20.5l1.2-3.4a7 7 0 0 1-2.2-5.1c0-4.1 3.8-7.4 8.5-7.4s8.5 3.3 8.5 7.4z" class="i"/></symbol>
+  <symbol id="g-warn" viewBox="0 0 24 24"><path d="M12 3.8L21.2 20H2.8z" class="i"/><path d="M12 9.5v4.6" class="i"/><circle cx="12" cy="16.9" r="1" class="dot"/></symbol>
+  <symbol id="g-dots" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.3" class="dot"/><circle cx="12" cy="12" r="1.3" class="dot"/><circle cx="18.5" cy="12" r="1.3" class="dot"/></symbol>
+  <symbol id="g-trash" viewBox="0 0 24 24"><path d="M4 6.5h16M9.5 6.5V4.2h5v2.3M6 6.5l1 13.3h10l1-13.3M10.2 10v6M13.8 10v6" class="i"/></symbol>
+  <symbol id="g-power" viewBox="0 0 24 24"><path d="M12 3.5v7.5" class="i"/><path d="M7.5 6.2a7.2 7.2 0 1 0 9 0" class="i"/></symbol>
+  <symbol id="g-folder" viewBox="0 0 24 24"><path d="M3 6.8a1.6 1.6 0 0 1 1.6-1.6h4.1l1.9 2.4h7.8A1.6 1.6 0 0 1 20 9.2v8.2a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 17.4z" class="i"/></symbol>
+  <symbol id="g-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5 10-11" class="i"/></symbol>
+</defs></svg>
+<style>
+  .i{fill:none;stroke:currentColor;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round}
+  .dot{fill:currentColor;stroke:none}
+</style>
+
+<!-- ============ 1. TODAY ============ -->
+<div class="card" id="c-today">
+  <header><h2>1 · Today — ten controls to run one server</h2><span class="built">as built</span>
+    <p>Redrawn to scale from <code>server_devices_section.dart</code>.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div class="frame-mac">
+        <div class="mac">
+          <div class="tb"><div class="lights"><i></i><i></i><i></i></div><span class="tt" style="margin-left:8px">Settings</span><span class="sp"></span></div>
+          <div class="split">
+            <div class="navp">
+              <div class="navi"><svg><use href="#g-gear"/></svg>General</div>
+              <div class="navi"><svg><use href="#g-paint"/></svg>Appearance</div>
+              <div class="navi"><svg><use href="#g-chat"/></svg>Agents &amp; Chat</div>
+              <div class="navi on"><svg><use href="#g-devices"/></svg>Server &amp; Devices</div>
+              <div class="navi"><svg><use href="#g-bell"/></svg>Notifications</div>
+            </div>
+            <div class="detail">
+              <p class="ph">Server</p>
+              <div class="grp">
+                <div class="row">
+                  <div class="rowflex"><div class="sp"><div class="t">Endpoint</div>
+                    <div class="h">Auto: Tailscale if available, else loopback. Reachable by your other devices over Tailscale.</div></div>
+                    <svg style="width:15px;height:15px"><use href="#g-hist"/></svg></div>
+                  <div style="margin-top:9px"><span class="seg"><b class="on">Auto</b><b>LAN</b><b>Loopback</b><b>Custom</b></span></div>
+                  <div style="margin-top:11px" class="fldlbl"><span class="fld" style="min-width:104px">7808</span><span class="l">Port</span></div>
+                  <div style="margin-top:10px"><span class="btn"><svg><use href="#g-refresh"/></svg>Save &amp; restart server</span></div>
+                  <div class="h" style="margin-top:7px">A running server keeps its current settings until restarted.</div>
+                </div>
+                <div class="row rowflex">
+                  <span class="dotst"></span>
+                  <div class="sp"><div class="t">Lifecycle</div><div class="h">Running · pid 82738</div></div>
+                  <span class="btn"><svg><use href="#g-refresh"/></svg>Restart</span>
+                  <span class="btn"><svg><use href="#g-stop"/></svg>Stop</span>
+                </div>
+                <div class="row">
+                  <div class="rowflex"><svg><use href="#g-term"/></svg>
+                    <div class="sp"><div class="t">CLI</div>
+                      <div class="h mono" style="word-break:break-all">/Users/le/Work/Vibe/makit/app/build/macos/Build/Products/Release/Makit.app/Contents/MacOS/../Resources/makit/makit</div></div>
+                    <svg style="width:15px;height:15px"><use href="#g-copy"/></svg></div>
+                  <div style="margin-top:9px"><span class="btn">Install CLI</span></div>
+                  <div style="margin-top:9px"><span class="fld ph2" style="display:block">Override path (optional)</span></div>
+                </div>
+                <div class="row rowflex"><svg><use href="#g-fp"/></svg>
+                  <div class="sp"><div class="t">Fingerprint / TLS trust</div><div class="h mono">d3e73b15ac380e583d588c5f…</div></div>
+                  <svg style="width:15px;height:15px"><use href="#g-copy"/></svg></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="cap">What's actually wrong</p>
+        <div class="ann"><span class="n">1</span><div><b>“LAN” and “Auto” are the same thing whenever Tailscale is up.</b> <code>chooseBindHost()</code> (<code>pairing/cert.ts:188</code>) returns the Tailscale IP <em>before</em> it looks at <code>allowLan</code>, so <code>--lan</code> only adds a fallback for when Tailscale is <em>down</em>. <b>Corrected after re-reading the code — this is not a server bug.</b> The subtitle states the contract accurately (“allow access over the local network <em>when Tailscale is off</em>”), and <code>--host</code> bypasses the decision entirely (<code>serve.ts:82</code>), so <em>Loopback</em> and <em>Custom</em> are exact. The real defect is the <b>4-segment exclusive control</b>: it promises four distinct outcomes when only three exist, rendering a fallback as a mode. The fix belongs in the UI (card 3), not in <code>cert.ts</code>.</div></div>
+        <div class="ann"><span class="n">2</span><div><b>Port is a derived value presented as a decision.</b> It's <code>7800 + fnv1a(repoRoot) % 100</code>. The user has no basis to choose 7808 over anything else.</div></div>
+        <div class="ann"><span class="n">3</span><div><b>Two-phase commit.</b> “Save &amp; restart server” plus <em>“a running server keeps its current settings until restarted”</em> makes the user model process lifetime to change a setting.</div></div>
+        <div class="ann"><span class="n">4</span><div><b>pid, CLI path and fingerprint are evidence, not settings.</b> The fingerprint is already shipped to the phone inside the pairing QR (<code>makit://pair?…&amp;fp=</code>, <code>pairing/url.ts:19</code>) and pinned automatically — nobody needs to read it here.</div></div>
+        <p class="m" style="margin-top:14px">Net: <strong>6 concepts, ~10 controls, 4 of them read-only trivia</strong> — plus a segmented control with two labels for one behaviour.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2. ORCA ============ -->
+<div class="card" id="c-orca">
+  <header><h2>2 · Orca, for reference — one decision, stated as a consequence</h2>
+    <p>Not a style to copy wholesale; a framing to copy.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div class="frame-mac" style="flex:0 0 400px">
+        <div class="grp" style="margin:0">
+          <div class="row"><div class="t" style="font-weight:600">Pair a phone</div>
+            <div class="h">Generate a QR code, then scan it in Orca Mobile under Pair Desktop.</div></div>
+          <div class="row">
+            <p class="cap" style="margin-bottom:6px">Connection</p>
+            <div class="radio"><span class="rr"></span><div><div class="rt">Orca Relay</div>
+              <div class="rh">Phone can be on cellular or any Wi-Fi. Sign-in required for Relay only.</div></div></div>
+            <div class="radio on"><span class="rr"></span><div><div class="rt">LAN</div>
+              <div class="rh">Phone must be on this Wi-Fi or connected through Tailscale. No account needed.</div></div></div>
+          </div>
+          <div class="row">
+            <p class="cap" style="margin-bottom:6px">This computer's address</p>
+            <div class="rowflex"><span class="fld" style="flex:1;display:flex;align-items:center;justify-content:space-between">100.119.58.97 (utun13)<svg class="chev"><use href="#g-caret"/></svg></span>
+              <svg style="width:16px;height:16px"><use href="#g-refresh"/></svg></div>
+            <div class="h" style="margin-top:6px">The phone must be able to reach this address on Tailscale or Wi-Fi.</div>
+            <div style="margin-top:10px"><span class="btn solid"><svg><use href="#g-qr"/></svg>Generate QR code</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="cap">The framing difference is the whole story</p>
+        <p>Orca asks <b>“how will my phone reach this computer?”</b> — a user goal. makit asks <b>“how shall the daemon bind?”</b> — an implementation detail.</p>
+        <p>Three things it does that we don't:</p>
+        <div class="ann good"><span class="n">1</span><div><b>Every option states its consequence</b>, not its mechanism. “Phone must be on this Wi-Fi…” beats “Loopback: this Mac only”.</div></div>
+        <div class="ann good"><span class="n">2</span><div><b>The address is picked from reality</b> — a dropdown of detected interfaces with a refresh, not a host you type. We already advertise host/port/fp over mDNS (<code>pairing/mdns.ts</code>), so we have this data.</div></div>
+        <div class="ann good"><span class="n">3</span><div><b>No port, no pid, no start/stop, no cert hex.</b> The server is an implementation of pairing, not a thing you administer.</div></div>
+        <p class="m" style="margin-top:12px">Where Orca is <em>worse</em>: it has no profile concept at all, so it can't do the develop-server case. We should take its framing and keep our isolation.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3. RECOMMENDED ============ -->
+<div class="card" id="c-new">
+  <header><h2>3 · Recommended — Server collapses to three rows</h2><span class="rec">recommended</span>
+    <p>Same panel, same nav slot. Everything that isn't a decision moves under Diagnostics.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div class="frame-mac">
+        <div class="mac">
+          <div class="tb"><div class="lights"><i></i><i></i><i></i></div><span class="tt" style="margin-left:8px">Settings</span><span class="sp"></span></div>
+          <div class="split">
+            <div class="navp">
+              <div class="navi"><svg><use href="#g-gear"/></svg>General</div>
+              <div class="navi"><svg><use href="#g-paint"/></svg>Appearance</div>
+              <div class="navi"><svg><use href="#g-chat"/></svg>Agents &amp; Chat</div>
+              <div class="navi on"><svg><use href="#g-devices"/></svg>Server &amp; Devices</div>
+              <div class="navi"><svg><use href="#g-cube"/></svg>Profiles</div>
+              <div class="navi"><svg><use href="#g-bell"/></svg>Notifications</div>
+            </div>
+            <div class="detail">
+              <p class="ph">Server</p>
+              <div class="grp">
+                <div class="row rowflex">
+                  <svg><use href="#g-cube"/></svg>
+                  <div class="sp"><div class="t">Work</div>
+                    <div class="h">Projects, agents, devices and sessions are separate per profile.</div></div>
+                  <span class="dotst"></span><span style="font-size:11.5px;color:var(--muted)">Running</span>
+                  <svg class="chev"><use href="#g-caret"/></svg>
+                </div>
+                <div class="row">
+                  <div class="t" style="margin-bottom:5px">Who can reach this server?</div>
+                  <div class="radio"><span class="rr"></span><div><div class="rt">Just this Mac</div>
+                    <div class="rh">Nothing else can connect.</div></div></div>
+                  <div class="radio on"><span class="rr"></span><div><div class="rt">My devices</div>
+                    <div class="rh">Reachable from your phone over Tailscale. No account needed.</div>
+                    <div class="rowflex" style="margin-top:8px;gap:7px"><span class="cb"></span>
+                      <span style="font-size:11.5px;color:var(--variant)">Also allow plain Wi-Fi when Tailscale is off</span></div>
+                  </div></div>
+                  <div class="rowflex" style="margin-top:9px">
+                    <span style="font-size:11.5px;color:var(--muted);flex:none">Address</span>
+                    <span class="fld" style="flex:1;display:flex;align-items:center;justify-content:space-between">100.119.58.97 (Tailscale)<svg class="chev"><use href="#g-caret"/></svg></span>
+                    <svg style="width:16px;height:16px;color:var(--muted)"><use href="#g-refresh"/></svg></div>
+                </div>
+                <div class="row rowflex">
+                  <svg><use href="#g-qr"/></svg>
+                  <div class="sp"><div class="t">Pair a phone</div><div class="h">2 devices paired</div></div>
+                  <svg class="chev"><use href="#g-right"/></svg>
+                </div>
+                <div class="row rowflex">
+                  <svg class="chev"><use href="#g-right"/></svg>
+                  <div class="sp"><div class="t">Diagnostics</div>
+                    <div class="h mono">pid 82738 · port 7813 · fp d3e73b… · log</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="cap">What changed, and why it's safe</p>
+        <div class="ann good"><span class="n">1</span><div><b>Four bind modes → two answers + a checkbox.</b> Because <em>Auto</em> and <em>LAN</em> are the same thing when Tailscale is up, the honest model is: loopback-only, or reachable — with LAN as a <em>fallback preference</em>, which is exactly what <code>allowLan</code> already is. The checkbox names it correctly.</div></div>
+        <div class="ann good"><span class="n">2</span><div><b>Port disappears.</b> Allocated per profile, persisted, with an <code>EADDRINUSE</code> retry. Visible in Diagnostics; editable in Advanced.</div></div>
+        <div class="ann good"><span class="n">3</span><div><b>No “Save &amp; restart”.</b> Changing reachability restarts the daemon itself and shows a 1.5s inline “Applied” — the same immediate-effect contract every other settings row already has.</div></div>
+        <div class="ann good"><span class="n">4</span><div><b>Lifecycle, CLI, fingerprint → Diagnostics</b> (one collapsed row, read-only, copyable). <code>Install CLI</code> becomes a one-time action in <em>General</em>, where one-time actions live.</div></div>
+        <div class="ann good"><span class="n">5</span><div><b>Custom host survives</b> as <em>Diagnostics → Advanced</em>. Nobody loses an escape hatch; it just stops being the fourth thing a new user reads.</div></div>
+        <p class="m" style="margin-top:12px"><strong>10 controls → 4 rows.</strong> The nav's item anchors (<code>server_devices.endpoint</code>, <code>.lifecycle</code>, <code>.cli</code>, <code>.fingerprint</code>) stay resolvable so deep links and search keep working — they just point into Diagnostics.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4. PROFILES ============ -->
+<div class="card" id="c-profiles">
+  <header><h2>4 · Profiles — persisted identity, not a path hash</h2><span class="rec">recommended</span>
+    <p>New nav section. Each profile is a full server instance; all can run at once.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div class="frame-mac">
+        <div class="mac">
+          <div class="tb"><div class="lights"><i></i><i></i><i></i></div><span class="tt" style="margin-left:8px">Settings</span><span class="sp"></span></div>
+          <div class="split">
+            <div class="navp">
+              <div class="navi"><svg><use href="#g-gear"/></svg>General</div>
+              <div class="navi"><svg><use href="#g-paint"/></svg>Appearance</div>
+              <div class="navi"><svg><use href="#g-chat"/></svg>Agents &amp; Chat</div>
+              <div class="navi"><svg><use href="#g-devices"/></svg>Server &amp; Devices</div>
+              <div class="navi on"><svg><use href="#g-cube"/></svg>Profiles</div>
+              <div class="navi"><svg><use href="#g-bell"/></svg>Notifications</div>
+            </div>
+            <div class="detail">
+              <p class="ph">Profiles</p>
+              <div class="grp">
+                <div class="row rowflex"><span class="sw" style="background:#4ADE80"></span>
+                  <div class="sp"><div class="t">Work <span class="pill" style="background:var(--high);color:var(--muted);margin-left:4px">active</span></div>
+                    <div class="h">3 projects &middot; 2 devices &middot; <span class="mono">~/.makit</span></div></div>
+                  <span class="mono" style="white-space:nowrap">122 MB</span>
+                  <span class="dotst"></span><span style="font-size:11.5px;color:var(--muted);white-space:nowrap">Running</span>
+                  <svg class="chev"><use href="#g-dots"/></svg></div>
+                <div class="row rowflex"><span class="sw" style="background:#A371F7"></span>
+                  <div class="sp"><div class="t">Personal</div>
+                    <div class="h">1 project &middot; 1 device &middot; <span class="mono">~/.makit/profiles/personal</span></div></div>
+                  <span class="mono" style="white-space:nowrap">3.2 MB</span>
+                  <span class="dotst off"></span><span style="font-size:11.5px;color:var(--muted);white-space:nowrap">Stopped</span>
+                  <svg class="chev"><use href="#g-dots"/></svg></div>
+                <div class="row rowflex"><span class="sw" style="background:#E0A72E"></span>
+                  <div class="sp"><div class="t">feat-profiles <span class="pill" style="background:var(--high);color:var(--muted);margin-left:4px">dev build</span></div>
+                    <div class="h">auto-created &middot; <span class="mono">~/.makit-dev/a1b2c3d4</span></div></div>
+                  <span class="mono" style="white-space:nowrap">4.4 MB</span>
+                  <span class="dotst"></span><span style="font-size:11.5px;color:var(--muted);white-space:nowrap">Running</span>
+                  <svg class="chev"><use href="#g-dots"/></svg></div>
+                <div class="row"><span class="btn"><svg><use href="#g-plus"/></svg>New profile</span></div>
+              </div>
+              <p class="ph g">Stale &mdash; source folder is gone</p>
+              <div class="grp">
+                <div class="row rowflex"><svg><use href="#g-warn"/></svg>
+                  <div class="sp"><div class="t">27 orphaned dev profiles</div>
+                    <div class="h">Their worktrees no longer exist. 82.5 MB.</div></div>
+                  <span class="btn q">Review&hellip;</span></div>
+              </div>
+              <p class="ph g">Registry</p>
+              <div class="grp"><div class="row"><div class="h mono" style="word-break:break-all">~/.makit/profiles.json &nbsp;·&nbsp; id minted once, never re-derived</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="cap">The two robustness bugs this fixes</p>
+        <div class="ann"><span class="n">1</span><div><b>Port collisions have no auto-recovery.</b> <code>7800 + (h % 100)</code> gives 100 slots for an unbounded number of worktrees, and nothing reallocates on conflict. <b>Corrected: server-side the failure is not silent</b> — <code>onListenError</code> (<code>server.ts:199</code>) logs the port, the cause and the fix, and <code>service.ts</code> waits for the control socket before claiming success, then clears the stale pid file and exits 1. What <em>was</em> broken is that the app discarded that reason (it read stderr; the CLI writes it to stdout), so the user saw the bare <code>makit start exited 1:</code> — now <span class="pill" style="background:var(--primary);color:#0e0e0e">fixed</span>. Remaining: reallocate the port automatically instead of asking the user to.</div></div>
+        <div class="ann"><span class="n">2</span><div><b>Identity is the filesystem path.</b> <code>id = fnv1a(repoRoot)</code>, so moving or renaming a worktree mints a <em>new</em> profile and silently orphans its <code>MAKIT_HOME</code>, pairings, projects and prefs. <em>Fix:</em> mint <code>id</code> once into <code>profiles.json</code>; store <code>origin</code> as a <em>relocation hint</em>, so a moved build re-binds to its existing profile instead of forking one.</div></div>
+        <p class="cap" style="margin-top:14px">Registry shape</p>
+        <div class="grp" style="background:#0d0d0d"><div class="row"><pre class="mono" style="margin:0;white-space:pre-wrap;font-size:11px;line-height:1.55">{ "profiles": [
+  { "id":"work", "name":"Work", "kind":"user",
+    "home":"~/.makit", "port":7777,
+    "storage":"legacy" },              &larr; at most one
+  { "id":"a1b2c3d4", "name":"feat-profiles", "kind":"dev",
+    "home":"~/.makit-dev/a1b2c3d4", "port":7813,
+    "storage":"namespaced",
+    "origin":"/Users/le/.worktrees/makit/feat-profiles" }
+] }</pre></div></div>
+        <p class="m" style="margin-top:10px"><code>kind:"user"</code> profiles are created by hand and never garbage-collected. <code>kind:"dev"</code> ones are still auto-created for worktrees — the zero-config behaviour survives, it just becomes <em>visible and nameable</em>.</p>
+        <div class="note ok" style="margin:12px 0 0"><strong>Decided: name it, pin its storage.</strong> The old <code>isDefault</code> boolean fused two unrelated ideas &mdash; <em>what is this called</em> (a UI fact, editable) and <em>which storage layout does it use</em> (a compatibility fact, frozen). Splitting them into <code>name</code> + <code>storage</code> lets <code>~/.makit</code> become an ordinary, renameable <b>&ldquo;Work&rdquo;</b> while <code>storage:"legacy"</code> keeps its prefs under <code>flutter.</code> and its secret file unsuffixed &mdash; nobody&rsquo;s settings move a byte. <code>storage:"legacy"</code> also <em>implies protected</em> (it is the profile holding <code>AuthKey_*.p8</code>, <code>ota/</code>, <code>push.json</code>), so no separate <code>protected</code> flag is needed.</div>
+        <div class="note ok" style="margin:14px 0 0"><strong>Per-profile pairing is already free.</strong> The QR encodes <code>makit://pair?host=&amp;port=&amp;fp=&amp;t=</code> (<code>pairing/url.ts</code>), so every profile's QR already carries its own endpoint and cert pin. The phone simply ends up with several paired servers — no protocol change needed.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 5. PROFILE DETAIL / LIFECYCLE ============ -->
+<div class="card" id="c-detail">
+  <header><h2>5 &middot; Profile detail &mdash; where lifecycle actually belongs</h2><span class="rec">recommended</span>
+    <p>Stop / start / delete attach to <em>a profile</em>, not to "the server".</p></header>
+  <div class="body">
+    <div class="grid">
+      <div class="frame-mac">
+        <div class="mac">
+          <div class="tb"><div class="lights"><i></i><i></i><i></i></div><span class="tt" style="margin-left:8px">Settings</span><span class="sp"></span></div>
+          <div class="split">
+            <div class="navp">
+              <div class="navi"><svg><use href="#g-gear"/></svg>General</div>
+              <div class="navi"><svg><use href="#g-devices"/></svg>Server &amp; Devices</div>
+              <div class="navi on"><svg><use href="#g-cube"/></svg>Profiles</div>
+              <div class="navi"><svg><use href="#g-bell"/></svg>Notifications</div>
+            </div>
+            <div class="detail">
+              <p class="ph">Profiles <span style="color:var(--muted)">&rsaquo;</span> feat-profiles</p>
+              <div class="grp">
+                <div class="row rowflex"><div class="sp"><div class="t">Name</div></div>
+                  <span class="fld" style="min-width:150px">feat-profiles</span></div>
+                <div class="row rowflex"><span class="dotst"></span>
+                  <div class="sp"><div class="t">Running</div><div class="h mono">pid 91204 &middot; port 7813</div></div>
+                  <span class="btn"><svg><use href="#g-power"/></svg>Stop</span></div>
+                <div class="row rowflex"><svg><use href="#g-folder"/></svg>
+                  <div class="sp"><div class="t">Data</div><div class="h mono">~/.makit-dev/a1b2c3d4</div></div>
+                  <span class="btn q">Reveal</span></div>
+                <div class="row rowflex"><svg><use href="#g-cube"/></svg>
+                  <div class="sp"><div class="t">Created from</div>
+                    <div class="h mono">~/.worktrees/makit/feat-profiles</div></div></div>
+              </div>
+              <p class="ph g">Contents &mdash; 4.4 MB</p>
+              <div class="grp">
+                <div class="row rowflex"><div class="sp"><div class="t" style="font-size:12.5px">Sessions &amp; transcripts</div>
+                  <div class="h mono">makit.db + &minus;wal</div></div><span class="mono">3.9 MB</span></div>
+                <div class="row rowflex"><div class="sp"><div class="t" style="font-size:12.5px">Ingested media</div>
+                  <div class="h mono">media/</div></div><span class="mono">412 KB</span></div>
+                <div class="row rowflex"><div class="sp"><div class="t" style="font-size:12.5px">Pairings &amp; projects</div>
+                  <div class="h mono">devices.json &middot; projects.json</div></div><span class="mono">2 &middot; 1</span></div>
+              </div>
+              <p class="ph g" style="color:#e0846a">Danger zone</p>
+              <div class="dz">
+                <div class="row rowflex"><svg style="color:#e0846a"><use href="#g-trash"/></svg>
+                  <div class="sp"><div class="t">Delete profile</div>
+                    <div class="h">Removes this profile&rsquo;s server state. Your code is untouched.</div></div>
+                  <span class="btn danger">Delete&hellip;</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="cap">This corrects card 3</p>
+        <p>I said lifecycle should leave Settings. That was half right. <b>Stopping the server you are currently talking to</b> is a self-defeating action &mdash; that is why the old <code>Stop</code> button felt odd. <b>Stopping a profile you are not using</b> is a real, ordinary task.</p>
+        <p class="m">So lifecycle does not get deleted; it <em>moves to the object it acts on</em>. The Server section shows the active profile and never offers Stop; the Profiles section offers Stop/Start per profile, because there the profile is a thing in a list rather than the ground you stand on.</p>
+        <p class="cap" style="margin-top:14px">Guards</p>
+        <div class="ann good"><span class="n">1</span><div><b>Stop is offered for any profile; Delete is not.</b> Deleting the <em>active</em> profile offers <em>&ldquo;Switch to Work &amp; delete&rdquo;</em> as one action instead of a dead button, so finishing a dev cycle is one click.</div></div>
+        <div class="ann good"><span class="n">2</span><div><b>The default profile can never be deleted.</b> <code>~/.makit</code> holds shared, partly irreplaceable material &mdash; the APNs key <code>AuthKey_4GVCUB3YYU.p8</code>, <code>ota/</code>, <code>push.json</code>, <code>host.json</code>. Delete is absent for it, not merely disabled.</div></div>
+        <div class="ann good"><span class="n">3</span><div><b>Stop already exists as a verb.</b> <code>makit stop</code> is wired at <code>server/src/index.ts:130</code> &rarr; <code>daemon.stop()</code>, and the app already spawns the CLI with <code>MAKIT_HOME</code> set. So per-profile Stop is <code>MAKIT_HOME=&lt;home&gt; makit stop</code> &mdash; no new server code, just aiming an existing verb at a different home.</div></div>
+        <div class="ann good"><span class="n">4</span><div><b>Delete stops the daemon first</b> (SIGTERM &rarr; SIGKILL after 300 ms, the pattern already used for session close), then unlinks. Never unlink under a live daemon holding <code>makit.db-wal</code>.</div></div>
+        <div class="ann good"><span class="n">5</span><div><b>Running sessions block a silent delete.</b> Agents may hold uncommitted work; the dialog names the count and requires an explicit <em>Stop &amp; delete</em>.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 6. DELETE DIALOG ============ -->
+<div class="card" id="c-del">
+  <header><h2>6 &middot; Delete &mdash; say exactly what goes, and what stays</h2><span class="rec">recommended</span>
+    <p>Drawn to scale (470 px sheet). The &ldquo;kept&rdquo; half is the part that makes the button usable.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div style="flex:0 0 470px">
+        <div class="dlg">
+          <h3>Delete &ldquo;feat-profiles&rdquo;?</h3>
+          <p class="dsub">This removes makit&rsquo;s state for this profile only.</p>
+          <p class="dsec rm"><span>Will be deleted</span><span>4.4 MB</span></p>
+          <div class="dlist">
+            <div class="dl"><span class="k">makit.db</span><span class="d">sessions, transcripts</span><span class="v">3.9 MB</span></div>
+            <div class="dl"><span class="k">media/</span><span class="d">ingested images</span><span class="v">412 KB</span></div>
+            <div class="dl"><span class="k">devices.json</span><span class="d">2 paired devices</span><span class="v"></span></div>
+            <div class="dl"><span class="k">projects.json</span><span class="d">1 project</span><span class="v"></span></div>
+            <div class="dl"><span class="k">server.crt/.key</span><span class="d">this profile&rsquo;s TLS identity</span><span class="v"></span></div>
+            <div class="dl"><span class="k">prefs</span><span class="d"><code>flutter.a1b2c3d4.*</code></span><span class="v">38 keys</span></div>
+            <div class="dl"><span class="k">keychain</span><span class="d">pairing bearer</span><span class="v"></span></div>
+            <div class="dl"><span class="k">profiles.json</span><span class="d">registry entry</span><span class="v"></span></div>
+          </div>
+          <p class="dsec kp"><span>Will be kept</span></p>
+          <div class="dlist">
+            <div class="dl"><span class="k">your code</span><span class="d">worktrees and repos are never touched</span></div>
+            <div class="dl"><span class="k">other profiles</span><span class="d">Work, Personal unaffected</span></div>
+          </div>
+          <div class="note bad" style="margin:0 0 14px;padding:9px 11px;font-size:11.5px">
+            <strong>2 sessions are running.</strong> They will be stopped before the profile is removed.</div>
+          <div class="dact"><span class="btn q">Cancel</span><span class="btn danger"><svg><use href="#g-trash"/></svg>Stop &amp; delete</span></div>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="cap">Why enumerate at all</p>
+        <p>A profile is not one directory &mdash; it is <b>four stores</b>. Delete only the folder and you leak the other three:</p>
+        <div class="ann"><span class="n">1</span><div><code>$MAKIT_HOME/</code> &mdash; <code>makit.db</code> (+<code>-shm</code>/<code>-wal</code>), <code>media/</code>, <code>devices.json</code>, <code>projects.json</code>, <code>server.crt</code>/<code>.key</code>, <code>port-history.json</code>, <code>watched-ports.json</code>, <code>capability-cache.json</code>, <code>worktree-targets.json</code>, <code>makit.log</code>, <code>control.sock</code>.</div></div>
+        <div class="ann"><span class="n">2</span><div><b><code>NSUserDefaults</code></b> keys under the <code>flutter.&lt;id&gt;.</code> prefix (<code>server_profile.dart</code> <code>prefsPrefix</code>). Orphaned prefs are invisible and survive forever.</div></div>
+        <div class="ann"><span class="n">3</span><div><b>Secure store</b> namespace &mdash; <code>defaultSecureStore(namespace: profile.id)</code> holds the loopback pairing bearer. On macOS that is a file; on iOS a keychain item.</div></div>
+        <div class="ann"><span class="n">4</span><div><b>The registry entry</b> in <code>profiles.json</code>. Removing the folder but not the entry yields a profile that resurrects itself empty on next launch.</div></div>
+        <p class="m" style="margin-top:12px">Stating the <em>kept</em> half is not padding. The word &ldquo;delete&rdquo; next to a path that sits beside your worktree reads as &ldquo;deletes my branch&rdquo;. One line removes that fear permanently.</p>
+        <div class="note ok" style="margin-top:12px"><strong>Stop is not destructive and says so.</strong> A stopped profile keeps every byte; only the daemon exits. Stop &rarr; Start is lossless, so the safe action needs no confirmation and the destructive one always gets a sheet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 7. RECLAIM ============ -->
+<div class="card" id="c-reclaim">
+  <header><h2>7 &middot; The pile-up this fixes &mdash; measured on your machine</h2><span class="rec">recommended</span>
+    <p>Not hypothetical: numbers below are from <code>~/.makit-dev</code> right now.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div style="flex:0 0 470px">
+        <div class="dlg">
+          <h3>Stale profiles</h3>
+          <p class="dsub">These dev profiles were created from folders that no longer exist.</p>
+          <div class="dlist" style="padding:9px 10px">
+            <div class="dl" style="padding:4px 0"><span class="ck"></span><span class="k" style="margin-left:4px">5600c573</span><span class="d">folder gone</span><span class="v">7.6 MB</span></div>
+            <div class="dl" style="padding:4px 0"><span class="ck"></span><span class="k" style="margin-left:4px">bb806071</span><span class="d">folder gone</span><span class="v">7.2 MB</span></div>
+            <div class="dl" style="padding:4px 0"><span class="ck"></span><span class="k" style="margin-left:4px">985570e6</span><span class="d">folder gone</span><span class="v">6.2 MB</span></div>
+            <div class="dl" style="padding:4px 0"><span class="ck"></span><span class="k" style="margin-left:4px">db91190d</span><span class="d">folder gone</span><span class="v">6.2 MB</span></div>
+            <div class="dl" style="padding:4px 0"><span class="ck"></span><span class="k" style="margin-left:4px">98e0d35f</span><span class="d">folder gone</span><span class="v">6.2 MB</span></div>
+            <div class="dl" style="padding:4px 0;color:var(--muted)"><span style="width:14px;flex:none"></span><span class="d" style="margin-left:4px">&hellip; 22 more</span><span class="v">49.1 MB</span></div>
+            <div class="tot"><span>27 profiles selected</span><span>82.5 MB</span></div>
+          </div>
+          <div class="dact"><span class="btn q">Keep all</span><span class="btn danger"><svg><use href="#g-trash"/></svg>Delete 27 profiles</span></div>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="cap">Measured, not guessed</p>
+        <p>I enumerated <code>~/.makit-dev</code> and recomputed <code>fnv1a(repoRoot)</code> for every repo and worktree that still exists, then matched ids:</p>
+        <div class="grp" style="background:#0d0d0d;margin-bottom:12px"><div class="row"><pre class="mono" style="margin:0;white-space:pre-wrap;font-size:11.5px;line-height:1.6">33 dev profile homes      732 MB total
+ &nbsp;6 map to a live folder   649.6 MB
+ 27 ORPHANED (82%)          82.5 MB   &larr; unreachable</pre></div></div>
+        <div class="ann"><span class="n">1</span><div><b>82% of your dev profiles are unreachable.</b> Their <code>.app</code> is gone, so <code>ServerProfile.resolve()</code> will never mint their id again &mdash; no UI can currently show them, stop them, or delete them. They are pure sediment.</div></div>
+        <div class="ann"><span class="n">2</span><div><b>The honest headline is the count, not the bytes.</b> 82.5 MB is not a crisis; <em>27 invisible servers-worth of state, including 27 stale device pairings and TLS keys,</em> is. I am not going to sell this as a disk-space win.</div></div>
+        <div class="ann"><span class="n">3</span><div><b>The 648 MB is a different problem.</b> One <em>live</em> profile (<code>~/Work/Vibe/makit</code>) holds a 544 MB <code>makit.db</code> plus 99 MB of <code>media/</code>. Deleting profiles will not touch it. That is session pruning/retention &mdash; out of scope here, worth its own spec. <span class="fu">follow-up</span></div></div>
+        <p class="m" style="margin-top:10px">Because <code>origin</code> is persisted (card 4), orphan detection is a cheap <code>existsSync(origin)</code> per entry &mdash; no hashing, no guessing. That is the payoff for storing the path instead of hashing it.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 8. SWITCHER ============ -->
+<div class="card" id="c-switch">
+  <header><h2>8 · The switcher — the badge you already ship</h2><span class="rec">recommended</span>
+    <p><code>ServerProfileBadge</code> already derives a stable hue per profile id and already sits in the title-bar strip. Make it a button.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div class="frame-mac wide">
+        <div class="mac menuopen">
+          <div class="tb"><div class="lights"><i></i><i></i><i></i></div>
+            <span class="sp"></span>
+            <span class="badge" style="outline:2px solid rgba(163,113,247,.55);outline-offset:2px"><svg><use href="#g-cube"/></svg>Work<svg style="width:11px;height:11px"><use href="#g-caret"/></svg></span>
+          </div>
+          <div class="split" style="min-height:236px">
+            <div class="navp" style="flex:0 0 200px">
+              <div class="navi"><svg><use href="#g-list"/></svg>Sessions</div>
+              <div class="navi on"><svg><use href="#g-chat"/></svg>makit</div>
+              <div class="navi"><svg><use href="#g-chat"/></svg>diana</div>
+            </div>
+            <div class="detail"></div>
+          </div>
+          <div style="position:absolute;top:44px;right:10px;z-index:5">
+            <div class="menu">
+              <div class="mi on"><span class="sw" style="background:#4ADE80"></span><span class="sp">Work</span><svg style="width:14px;height:14px;color:var(--primary)"><use href="#g-check"/></svg></div>
+              <div class="mi"><span class="sw" style="background:#A371F7"></span><span class="sp">Personal</span><span style="font-size:11px;color:var(--muted)">stopped</span></div>
+              <div class="mi"><span class="sw" style="background:#E0A72E"></span><span class="sp">feat-profiles</span><span class="dotst"></span></div>
+              <div class="msep"></div>
+              <div class="mi"><svg><use href="#g-plus"/></svg><span class="sp">New profile…</span></div>
+              <div class="mi"><svg><use href="#g-gear"/></svg><span class="sp">Manage profiles…</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="cap">Why here and not a new surface</p>
+        <p><code>desktop_sidebar.dart:101</code> already renders <code>ServerProfileBadge</code> in <code>TitleBarStrip.trailing</code>, and the badge already computes a deterministic hue from the profile id. Turning it into a <code>PopupMenuButton</code> reuses the placement, the colour identity, and the muscle memory — <strong>no new surface, no new concept</strong>.</p>
+        <p>Two behavioural notes:</p>
+        <div class="ann good"><span class="n">1</span><div><b>The badge must stop hiding itself.</b> Today it returns <code>SizedBox.shrink()</code> for the default profile — correct when profiles were invisible plumbing, wrong once they're user-chosen. Show it always; a single-profile user sees one calm pill.</div></div>
+        <div class="ann good"><span class="n">2</span><div><b>Switching happens in this window</b> &mdash; see card 9. It is gated by a confirmation and a verified handover, so a target profile that cannot start leaves you exactly where you were.</div></div>
+        <div class="note ok" style="margin:14px 0 0"><strong>Decided.</strong> <code>~/.makit</code> becomes a named, renameable profile (&ldquo;Work&rdquo;) with <code>storage:"legacy"</code> pinning its prefs prefix and unsuffixed secret file. The badge therefore shows a name for <em>every</em> profile including the installed one, and its <code>isDefault</code> early-return disappears entirely.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 9. IN-PLACE HANDOVER ============ -->
+<div class="card" id="c-handover">
+  <header><h2>9 &middot; Switching in place &mdash; confirm, verify, then hand over</h2><span class="rec">recommended</span>
+    <p>The same window reconnects to the target profile. No relaunch.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div style="flex:0 0 470px">
+        <div class="dlg">
+          <h3>Switch to &ldquo;Personal&rdquo;?</h3>
+          <p class="dsub">This window will reconnect to Personal&rsquo;s server.</p>
+          <p class="dsec rm"><span>What happens here</span></p>
+          <div class="dlist">
+            <div class="dl"><span class="k">start</span><span class="d">Personal&rsquo;s server (currently stopped)</span></div>
+            <div class="dl"><span class="k">reload</span><span class="d">panes, selected session and scroll reset</span></div>
+            <div class="dl"><span class="k">discard</span><span class="d">unsent composer drafts in this window</span></div>
+          </div>
+          <p class="dsec kp"><span>What keeps running</span></p>
+          <div class="dlist">
+            <div class="dl"><span class="k">Work&rsquo;s server</span><span class="d">stays up &mdash; 2 sessions keep running</span></div>
+            <div class="dl"><span class="k">Work&rsquo;s agents</span><span class="d">not interrupted, not stopped</span></div>
+            <div class="dl"><span class="k">paired phones</span><span class="d">stay paired to Work</span></div>
+          </div>
+          <div class="dact"><span class="btn q">Cancel</span><span class="btn solid">Switch to Personal</span></div>
+        </div>
+        <div class="note ok" style="margin-top:14px"><strong>Verify before committing.</strong> The target daemon is started and its control socket confirmed <em>while the current profile is still live</em>. Only then is the old runtime torn down. If the target cannot come up, nothing changes and a failure is posted &mdash; you are never left staring at a dead window.</div>
+      </div>
+      <div class="prose">
+        <p class="cap">The sequence</p>
+        <div class="grp" style="background:#0d0d0d;margin-bottom:14px"><div class="row"><pre class="mono" style="margin:0;white-space:pre-wrap;font-size:11.5px;line-height:1.7">1. confirm          &leftarrow; the dialog
+2. ensure target up  MAKIT_HOME=&lt;home&gt; makit start
+                     + wait for control.sock
+                     (current profile untouched)
+3. commit            dispose old runtime
+                     ProviderScope(key: newId) rebuilds
+                     windowManager.setTitle(...)
+4. on failure        stay put + StatusCenter failure</pre></div></div>
+        <p class="cap">The one real blocker, and why it dissolves</p>
+        <div class="ann"><span class="n">1</span><div><b><code>SharedPreferences.setPrefix</code> cannot be re-called.</b> It throws <code>StateError('setPrefix cannot be called after getInstance')</code> (<code>shared_preferences_legacy.dart:57</code>), and today the profile lives in that global prefix (<code>desktop_app.dart:93</code>). <code>resetStatic()</code> exists but is <code>@visibleForTesting</code> &mdash; not a production option.</div></div>
+        <div class="ann good"><span class="n">2</span><div><b>Move the profile segment out of the global prefix and into our own keys.</b> Keys are plain concatenation &mdash; <code>final prefixedKey = '$_prefix$key'</code> (line 179). So <code>setPrefix('flutter.&lt;id&gt;.')</code> + <code>desktop_server_port</code> and the default <code>flutter.</code> + <code>&lt;id&gt;.desktop_server_port</code> both store <b><code>flutter.&lt;id&gt;.desktop_server_port</code></b>. <b>Byte-identical &mdash; the migration is a no-op.</b> The legacy profile keeps an empty segment, so its keys stay exactly as shipped.</div></div>
+        <div class="ann good"><span class="n">3</span><div><b>Scope only what is server-bound.</b> Today the global prefix namespaces <em>everything</em>, so a worktree build opens with a default theme and empty shortcuts. Server config (port, bind mode, CLI path), groups and pane layouts are genuinely per profile; <b>appearance, shortcuts, recent models and cached commands are user-level</b> and should stay shared. That shrinks the refactor and fixes an existing annoyance.</div></div>
+        <div class="ann"><span class="n">4</span><div><b>Cost, stated honestly.</b> 14 files reference <code>SharedPreferences</code>; on the scoping above only <code>server_config.dart</code>, <code>groups_controller.dart</code> and <code>workspace_controller.dart</code> need the scoped wrapper. The rest are untouched.</div></div>
+        <p class="m" style="margin-top:12px">Rebuilding <code>ProviderScope</code> under a new <code>key</code> is what makes this safe: Riverpod disposes the entire old container deterministically, so there is no half-switched state and no hand-written teardown list to forget an entry.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 10. iOS ============ -->
+<div class="card" id="c-ios">
+  <header><h2>10 · iOS — the phone just sees more than one server</h2>
+    <p>Drawn to scale: 320px frame, island, 44pt glass bar.</p></header>
+  <div class="body">
+    <div class="grid">
+      <div class="frame-ios">
+        <div class="ios">
+          <div class="stat"><div class="island"></div><span>9:41</span>
+            <span class="statr"><span class="sigs"><i style="height:4px"></i><i style="height:6px"></i><i style="height:7.5px"></i><i style="height:9px"></i></span><span class="batt"></span></span></div>
+          <div class="gbar"><span class="tt">Servers</span><span class="sp" style="flex:1"></span><svg style="width:19px;height:19px;color:var(--primary)"><use href="#g-qr"/></svg></div>
+          <div class="content">
+            <div class="grp" style="margin-bottom:10px">
+              <div class="row rowflex"><span class="sw" style="background:#4ADE80"></span>
+                <div class="sp"><div class="t">Work</div><div class="h mono">100.119.58.97:7777</div></div>
+                <span class="dotst"></span></div>
+              <div class="row rowflex"><span class="sw" style="background:#E0A72E"></span>
+                <div class="sp"><div class="t">feat-profiles</div><div class="h mono">100.119.58.97:7813</div></div>
+                <span class="dotst"></span></div>
+              <div class="row rowflex"><span class="sw" style="background:#A371F7"></span>
+                <div class="sp"><div class="t">Personal</div><div class="h">Not reachable</div></div>
+                <span class="dotst off"></span></div>
+            </div>
+            <div class="grp"><div class="row rowflex"><svg><use href="#g-qr"/></svg>
+              <div class="sp"><div class="t">Pair another server</div></div>
+              <svg class="chev"><use href="#g-right"/></svg></div></div>
+          </div>
+          <div class="ioshome"></div>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="cap">No protocol work required</p>
+        <p>The phone's existing paired-server list already stores <code>host</code>, <code>port</code> and <code>fp</code> per pairing. Three profiles = three entries. The only additions are cosmetic and small:</p>
+        <div class="ann good"><span class="n">1</span><div><b>Carry the profile name in the pair URL</b> — one extra query param (<code>&amp;n=Work</code>) so the phone can label the entry instead of showing a bare IP. Falls back to host:port when absent.</div></div>
+        <div class="ann good"><span class="n">2</span><div><b>Carry the profile hue</b> so the colour identity matches desktop. Derivable on-device from the id; no param needed if we send <code>&amp;id=</code>.</div></div>
+        <p class="m">This is what makes the develop-server case actually work end-to-end: pair the phone to <em>feat-profiles</em>, drive the new feature on a real device, and your <em>Work</em> sessions keep running untouched on 7777.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 7. REJECTED ============ -->
+<div class="card" id="c-rej">
+  <header><h2>11 · Considered and rejected</h2><span class="rej">rejected</span></header>
+  <div class="body"><table>
+    <tr><th>Option</th><th>Why not</th></tr>
+    <tr><td><b>Keep the 4-way segmented control, just fix the help text</b></td>
+      <td>Cheapest, and it does remove the lie. But it leaves <em>Auto</em> and <em>LAN</em> as two labels for one behaviour, and keeps port/pid/CLI/fingerprint in the user's face. Fixes the symptom, not the framing.</td></tr>
+    <tr><td><b>Profile = a scope inside one server</b> (one daemon, one port, one pairing; profiles only partition projects)</td>
+      <td>Simplest ops and the nicest phone story — but it gives <em>no</em> isolation, so the develop-server case dies, and a dev-server crash takes your real work server with it. This was the stated reason for wanting profiles.</td></tr>
+    <tr><td><b>Profile = own instance, but only one runs at a time</b></td>
+      <td>Lets every profile reuse the stable 7777, so the phone keeps one pairing forever. Genuinely attractive. Rejected for v1 because you lose the ability to watch Work while testing Dev — and per-profile QR already solves the pairing objection for free.</td></tr>
+    <tr><td><b>Concurrent instances with one designated “primary”</b> holding 7777 + the phone pairing</td>
+      <td>Right end state, wrong first step. Adds a promote/demote concept and a second class of profile before we know anyone wants it. <span class="fu">follow-up</span></td></tr>
+    <tr><td><b>Relaunch the window to switch profiles</b></td>
+      <td>My earlier recommendation, now rejected. It is ~20 lines and honest, but it flashes the app, loses window position, and is exactly the &ldquo;restart to apply&rdquo; friction this redesign exists to remove. Rebuilding <code>ProviderScope</code> under a new key turned out to be safer <em>and</em> barely larger, because Riverpod does the teardown.</td></tr>
+    <tr><td><b>Call <code>SharedPreferences.resetStatic()</code> to re-prefix in place</b></td>
+      <td>Would make in-place switching nearly free. Rejected: it is <code>@visibleForTesting</code>, it drops a cache other controllers still hold references through, and it leaves us one package bump from breakage. Moving the profile segment into our own keys is equivalent, supported, and needs no migration.</td></tr>
+    <tr><td><b>Namespace every preference per profile</b> (today&rsquo;s behaviour)</td>
+      <td>Isolation was right for the port and the pairing bearer, wrong for theme, shortcuts and recent models &mdash; which is why a worktree build opens looking unconfigured. Scope the server-bound keys; share the user-level ones.</td></tr>
+    <tr><td><b>Auto-delete a dev profile when its folder disappears</b></td>
+      <td>Would have prevented all 27 orphans &mdash; and silently destroyed pairings and transcripts the first time someone moved a worktree or unmounted a drive. Detect and <em>offer</em>; never reap unattended.</td></tr>
+    <tr><td><b>Archive / soft-delete before hard delete</b></td>
+      <td>A stopped profile already <em>is</em> the safe intermediate state: zero cost, keeps every byte, reversible with Start. A third state earns nothing.</td></tr>
+    <tr><td><b>Keep a global <code>Stop</code> button in Server</b></td>
+      <td>Stopping the server you are actively talking to disconnects the window you clicked in. Per-profile Stop covers the real need; the active profile keeps only <em>Restart</em>, in Diagnostics.</td></tr>
+    <tr><td><b>Drop <code>Custom</code> host entirely</b></td>
+      <td>Tempting for symmetry, but <code>0.0.0.0</code> / Docker / VM cases are real and cheap to keep. Demoted to Advanced instead of deleted.</td></tr>
+  </table></div>
+</div>
+
+<!-- ============ 8. DELTAS ============ -->
+<div class="card" id="c-delta">
+  <header><h2>12 · Deltas — ordered by value per line changed</h2>
+    <p>Paths are real; sizes are estimates.</p></header>
+  <div class="body"><table>
+    <tr><th>#</th><th>Change</th><th>File</th><th>Size</th><th>Why</th></tr>
+    <tr><td class="n">1</td><td>Surface daemon start/stop/restart failures: read the CLI's stdout as well as stderr, and post a <code>StatusCenter</code> failure from all four call sites</td><td class="p">app/lib/desktop/daemon/daemon_lifecycle.dart<br>app/lib/desktop/settings/sections/server_devices_section.dart</td><td class="sz">~60 L</td><td><span class="pill" style="background:var(--primary);color:#0e0e0e">shipped</span> Every daemon failure was invisible: the reason was dropped on the floor, and the result object was discarded by both call sites.</td></tr>
+    <tr><td class="n">2</td><td>Free-port probe at profile creation + <code>EADDRINUSE</code> retry on daemon start</td><td class="p">app/lib/desktop/daemon/daemon_lifecycle.dart</td><td class="sz">~50 L</td><td>Removes a silent hard failure for the 2nd colliding worktree.</td></tr>
+    <tr><td class="n">3</td><td><code>ProfileRegistry</code>: read/write <code>~/.makit/profiles.json</code>, mint ids once, relocate by <code>origin</code> hint</td><td class="p">app/lib/desktop/daemon/profile_registry.dart <span style="color:var(--primary)">(new)</span></td><td class="sz">~180 L</td><td>Turns identity from “hash of a path” into a persisted fact. Fixes orphaning.</td></tr>
+    <tr><td class="n">4</td><td>Split <code>isDefault</code> into <code>name</code> (editable UI fact) + <code>storage: legacy|namespaced</code> (frozen compatibility fact); <code>storage=="legacy"</code> implies <em>protected</em></td><td class="p">app/lib/desktop/daemon/server_profile.dart</td><td class="sz">~40 L &Delta;</td><td>One boolean was doing two unrelated jobs &mdash; the shape that produced both robustness bugs. Lets <code>~/.makit</code> be renamed without moving a byte of storage.</td></tr>
+    <tr><td class="n">5</td><td><code>ServerProfile.resolve</code> → consults the registry; keeps path-derivation only as the <em>bootstrap</em> for an unseen dev build</td><td class="p">app/lib/desktop/daemon/server_profile.dart</td><td class="sz">~70 L Δ</td><td>Zero-config worktree behaviour survives; it just becomes nameable.</td></tr>
+    <tr><td class="n">6</td><td>Rewrite the Server group: profile row, one reachability question, pair row, Diagnostics disclosure</td><td class="p">app/lib/desktop/settings/sections/server_devices_section.dart</td><td class="sz">~300 L Δ<br>(645 → ~450)</td><td>10 controls → 4 rows. The headline win.</td></tr>
+    <tr><td class="n">7</td><td><code>ServerBindMode</code> → <code>Reachability {thisMacOnly, myDevices}</code> + <code>allowLanFallback</code> bool; migrate persisted <code>auto/lan/loopback/custom</code></td><td class="p">app/lib/desktop/settings/server_config.dart</td><td class="sz">~90 L Δ</td><td>Model matches the two real answers. <code>custom</code> survives as an Advanced escape hatch.</td></tr>
+    <tr><td class="n">8</td><td><code>ProfileScopedPrefs</code>: a narrow key-prefixing wrapper over <code>SharedPreferences</code>; stop calling <code>setPrefix</code>. Applied to server config, groups and pane layouts only</td><td class="p">app/lib/store/prefs/profile_scoped_prefs.dart <span style="color:var(--primary)">(new)</span><br>app/lib/desktop/settings/server_config.dart<br>app/lib/desktop/chat/groups/groups_controller.dart<br>app/lib/desktop/chat/panes/workspace_controller.dart</td><td class="sz">~170 L</td><td>Unblocks in-place switching (<code>setPrefix</code> throws after <code>getInstance</code>). Keys stay byte-identical, so no migration. Also un-isolates theme/shortcuts, which never should have been per profile.</td></tr>
+    <tr><td class="n">9</td><td><code>ProfileRuntime</code>: bundle the per-profile client, controller and prefs controllers plus their Riverpod overrides behind one disposable object</td><td class="p">app/lib/desktop/daemon/profile_runtime.dart <span style="color:var(--primary)">(new)</span><br>app/lib/desktop/desktop_app.dart</td><td class="sz">~180 L &Delta;</td><td>Extracts the 11 hand-written overrides in <code>runDesktopApp</code> so a second one can be built at runtime.</td></tr>
+    <tr><td class="n">10</td><td>In-place switch: confirm sheet &rarr; verify the target is up &rarr; rebuild <code>ProviderScope(key: profileId)</code> &rarr; retitle the window; roll back and post a failure if the target will not start</td><td class="p">app/lib/desktop/desktop_app.dart<br>app/lib/desktop/chat/profile_switch_dialog.dart <span style="color:var(--primary)">(new)</span></td><td class="sz">~210 L</td><td>The behaviour you asked for. Verify-then-commit means a dead target never strands the window.</td></tr>
+    <tr><td class="n">11</td><td>Badge &rarr; <code>PopupMenuButton</code> switcher; stop returning <code>SizedBox.shrink()</code> for the default profile</td><td class="p">app/lib/desktop/chat/server_profile_badge.dart</td><td class="sz">~90 L &Delta;</td><td>Reuses existing placement + hue identity. No new surface.</td></tr>
+    <tr><td class="n">12</td><td>New <code>Profiles</code> section + nav entry; retire <code>server_devices.lifecycle</code>/<code>.cli</code>/<code>.fingerprint</code> anchors into Diagnostics</td><td class="p">app/lib/desktop/settings/registry/settings_registry.dart<br>app/lib/desktop/settings/sections/profiles_section.dart <span style="color:var(--primary)">(new)</span></td><td class="sz">~220 L</td><td>Keeps deep links + settings search resolvable while the rows move.</td></tr>
+    <tr><td class="n">13</td><td><code>ProfileLifecycle</code>: start/stop an <em>arbitrary</em> profile's daemon by <code>MAKIT_HOME</code> (today's controller only drives the active one)</td><td class="p">app/lib/desktop/daemon/daemon_lifecycle.dart</td><td class="sz">~70 L</td><td>Reuses the existing <code>makit stop</code> verb (<code>index.ts:130</code>) with a per-profile <code>MAKIT_HOME</code>; only the &ldquo;which profile&rdquo; plumbing is new.</td></tr>
+    <tr><td class="n">14</td><td><code>deleteProfile()</code>: stop daemon &rarr; rm <code>$MAKIT_HOME</code> &rarr; purge <code>flutter.&lt;id&gt;.</code> prefs &rarr; purge secure-store namespace &rarr; drop registry entry. Refuses the default and the active profile.</td><td class="p">app/lib/desktop/daemon/profile_registry.dart</td><td class="sz">~140 L</td><td>All four stores or none &mdash; a partial delete leaks invisible prefs + keychain entries forever.</td></tr>
+    <tr><td class="n">15</td><td>Profile detail pane: name, status + Stop/Start, size breakdown, Reveal, danger zone</td><td class="p">app/lib/desktop/settings/sections/profiles_section.dart <span style="color:var(--primary)">(new)</span></td><td class="sz">~200 L</td><td>Gives lifecycle an object to attach to, instead of a global Stop button.</td></tr>
+    <tr><td class="n">16</td><td>Delete sheet enumerating removed vs kept, with running-session count</td><td class="p">app/lib/desktop/settings/sections/profile_delete_dialog.dart <span style="color:var(--primary)">(new)</span></td><td class="sz">~150 L</td><td>&ldquo;Your code is untouched&rdquo; is what makes the button usable.</td></tr>
+    <tr><td class="n">17</td><td>Orphan scan (<code>existsSync(origin)</code>) + du-per-profile + bulk reclaim sheet</td><td class="p">app/lib/desktop/daemon/profile_registry.dart<br>app/lib/desktop/settings/sections/profiles_section.dart</td><td class="sz">~120 L</td><td>27 of your 33 dev homes are already unreachable. Nothing today can list them.</td></tr>
+    <tr><td class="n">18</td><td>Detected-address dropdown fed by existing interface enumeration</td><td class="p">server/src/pairing/cert.ts <span class="mono">(localIPv4s)</span> + new WS <code>net.interfaces</code></td><td class="sz">~70 L</td><td>Pick from reality instead of typing a host. Data already exists.</td></tr>
+    <tr><td class="n">19</td><td>Add <code>&amp;n=</code> (name) + <code>&amp;id=</code> to the pair URL; phone labels + colours servers</td><td class="p">server/src/pairing/url.ts</td><td class="sz">~12 L</td><td>Turns “three bare IPs” into three named servers on the phone.</td></tr>
+    <tr><td class="n">20</td><td>Move <code>Install CLI</code> to General; drop the path display from Server</td><td class="p">app/lib/desktop/settings/sections/general_section.dart</td><td class="sz">~40 L Δ</td><td>One-time actions belong with one-time actions.</td></tr>
+  </table></div>
+</div>
+
+<div class="card">
+  <header><h2>Explicitly not changed</h2></header>
+  <div class="body"><div class="grid"><div class="prose" style="flex:1 1 100%;min-width:0">
+    <p class="m">· <b>The wire protocol.</b> Flat frames, <code>v:1</code>, bearer auth, <code>makit://pair</code> — untouched apart from two optional query params (#15).</p>
+    <p class="m">· <b><code>MAKIT_HOME</code> as the isolation boundary.</b> Already correct, already used by every store (<code>daemon/paths.ts</code>, <code>pairing/registry.ts</code>, <code>project-store.ts</code>, <code>push/config.ts</code>). Profiles are a client concept; the server stays profile-agnostic.</p>
+    <p class="m">· <b>The daemon spawn path.</b> <code>desktop_app.dart:107</code> already passes <code>environment: profile.environment</code>. Nothing to add.</p>
+    <p class="m">· <b>Per-profile prefs namespacing.</b> <code>SharedPreferences.setPrefix(profile.prefsPrefix)</code> and the legacy <code>flutter.</code> prefix for shipped users both stand.</p>
+    <p class="m">· <b>Devices / Sessions / Danger-zone groups.</b> Out of scope; they were never the complexity.</p>
+    <p class="m">· <b>Your git worktrees, repos and code.</b> Profile deletion touches <code>$MAKIT_HOME</code>, prefs, secure store and the registry &mdash; never a path outside <code>~/.makit*</code>. The <code>origin</code> field is read to detect orphans and is never written to or removed.</p>
+    <p class="m">· <b>Session retention / db size.</b> The 544 MB <code>makit.db</code> + 99 MB <code>media/</code> in the live <code>~/Work/Vibe/makit</code> profile is a pruning problem, not a profiles problem. Deliberately deferred.</p>
+  </div></div></div>
+</div>
+
+</body>
+</html>

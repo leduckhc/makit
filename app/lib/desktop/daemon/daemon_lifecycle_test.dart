@@ -101,6 +101,42 @@ void main() {
       expect(result.message, contains('boom'));
     });
 
+    // `makit start` reports why it failed on STDOUT, not stderr: the daemon is
+    // spawned detached with its output redirected to the log file, so the
+    // parent's only diagnostic is `deps.out(...)` -> console.log (see
+    // server/src/daemon/service.ts `start` and server/src/index.ts `out:`).
+    // Reading stderr alone therefore produced the bare, useless string
+    // 'makit start exited 1: ' for every real-world start failure.
+    test('falls back to stdout when the CLI writes its reason there', () async {
+      final result = await build(
+        onRun: (_, _) => _exit(
+          1,
+          out:
+              'makit: failed to start — no response within 8000ms '
+              '(see /Users/le/.makit-dev/a1b2c3d4/makit.log)',
+        ),
+      ).start();
+      expect(result.outcome, DaemonActionOutcome.failed);
+      expect(result.message, contains('failed to start'));
+      expect(result.message, contains('makit.log'));
+    });
+
+    test('prefers stderr but keeps stdout when both are present', () async {
+      final result = await build(
+        onRun: (_, _) => _exit(1, out: 'see the log', err: 'EADDRINUSE'),
+      ).start();
+      expect(result.message, contains('EADDRINUSE'));
+      expect(result.message, contains('see the log'));
+    });
+
+    test('never leaves a dangling colon when both streams are empty', () async {
+      final result = await build(onRun: (_, _) => _exit(1)).start();
+      expect(result.outcome, DaemonActionOutcome.failed);
+      expect(result.message, isNotNull);
+      expect(result.message, isNot(endsWith(': ')));
+      expect(result.message, contains('exited 1'));
+    });
+
     test('reports failed when spawning throws', () async {
       final lifecycle = DaemonLifecycle(
         resolver: resolverReturning('/usr/local/bin/makit'),
