@@ -1,0 +1,1475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Target branch (v3): one field, forward-looking</title>
+<style>
+:root{
+  --bg:#171717; --lowest:#121212; --low:#1E1E1E; --cont:#242424;
+  --high:#2E2E2E; --highest:#383838;
+  --text:#F5F5F5; --muted:#9E9E9E; --hairline:#333333;
+  --primary:#4ADE80; --add:#3FB950; --del:#F85149;
+  --warn:#E0A72E; --caution:#E07B39; --merged:#A371F7;
+  --pass:#3FB950; --fail:#F85149; --pending:#D29922;
+  --r6:6px;--r8:8px;--r10:10px;--r12:12px;--r16:16px;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+}
+/* Frames render LIGHT — theme.dart's light ramp (:12-20, :132-138). */
+.lt{
+  --bg:#FAFAFA; --lowest:#FFFFFF; --low:#F3F3F3; --cont:#EDEDED;
+  --high:#E7E7E7; --highest:#E1E1E1;
+  --text:#1B1B1B; --muted:#636363; --hairline:#DEDEDE;
+  --primary:#316A41; --add:#156C2C; --del:#C7331F;
+  --warn:#7E5C00; --caution:#A64B1E; --merged:#6E40C9;
+  --dot-caution:#E07B39; --dot-warn:#E0A72E;
+  color:var(--text);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0e0e0e;color:var(--text);
+  font:400 14px/1.5 var(--sans);
+  padding:34px 26px 110px;-webkit-font-smoothing:antialiased}
+h1{font:600 23px/1.3 var(--sans);margin-bottom:7px}
+h2{font:600 17px/1.3 var(--sans);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lede{color:var(--muted);font-size:13px;max-width:1010px}
+code,.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px}
+code{background:#000;padding:1px 5px;border-radius:4px}
+.lt code{background:rgba(0,0,0,.07)}
+.i{fill:none;stroke:currentColor;stroke-width:1.45;stroke-linecap:round;stroke-linejoin:round}
+.i .dot{fill:currentColor;stroke:none}
+svg.g{width:16px;height:16px;display:block;flex:none}
+
+.card{border:1px solid var(--hairline);border-radius:var(--r12);background:#141414;
+  margin-top:26px;overflow:hidden}
+.card>header{padding:14px 18px;border-bottom:1px solid var(--hairline);
+  display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.card>header .sub{color:var(--muted);font-size:12px;flex:1 1 340px;min-width:300px}
+.card .body{padding:18px}
+.card.big{border-color:#2f5d43}
+.cap{font:700 9.5px/1.5 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);
+  margin-bottom:9px;display:flex;align-items:flex-end;gap:7px;flex-wrap:wrap;min-height:28px}
+.badge{font:700 9.5px/1 var(--sans);text-transform:uppercase;letter-spacing:.07em;
+  padding:4px 7px;border-radius:var(--r6);background:var(--highest);color:var(--muted);white-space:nowrap}
+.badge.now{background:#3a2a18;color:#E0A72E}
+.badge.rec{background:#17512b;color:#b4f1be}
+.badge.rej{background:#4a1f1c;color:#f9a19b}
+.badge.you{background:#123a3f;color:#9fe0e6}
+.badge.next{background:#1c3348;color:#a9cff0}
+.badge.gh{background:#1f2733;color:#adbac7}
+
+.grid{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.col{flex:1 1 430px;min-width:410px}
+.colnarrow{flex:1 1 300px;min-width:290px}
+.colwide{flex:1 1 620px;min-width:600px}
+/* Three-up: 3x410 + gaps overflows the 1250px body and silently wrapped the
+   third column onto its own row. 370 is the widest basis that fits three. */
+.col3{flex:1 1 370px;min-width:360px}
+.note{font-size:11.5px;color:var(--muted);margin-top:9px}
+.note b{color:var(--text);font-weight:600}
+ul{margin:6px 0 0 16px;font-size:12px;color:var(--muted)}
+li{margin:4px 0}li b{color:var(--text);font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--hairline);vertical-align:top}
+th{color:var(--muted);font:700 9.5px/1.4 var(--sans);text-transform:uppercase;letter-spacing:.09em}
+td.mono{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#cfe9d8}
+.pen{border-left:2px solid var(--fail);padding:3px 0 3px 10px;margin-top:9px;font-size:11.5px;color:#f9a19b}
+.pen b{color:#ffd5d2;font-weight:600}
+.pen.ok{border-color:#3FB950;color:#a9e7bb}.pen.ok b{color:#d9f7e2}
+.pen.you{border-color:#4bb3bd;color:#a8dfe4}.pen.you b{color:#d6f4f7}
+.pen.gh{border-color:#7d8fa3;color:#c3cfdb}.pen.gh b{color:#e6edf3}
+
+/* frames */
+.phone{flex:0 0 320px;width:320px;border:1px solid #2a2a2a;border-radius:26px;
+  background:var(--bg);overflow:hidden;padding-bottom:8px}
+.phone .status{height:26px;display:flex;align-items:center;justify-content:center}
+.phone .status::before{content:"";width:74px;height:17px;border-radius:9px;background:#111}
+.mac{flex:0 0 620px;width:620px;border:1px solid #2a2a2a;border-radius:var(--r10);
+  background:var(--bg);overflow:hidden}
+.mac.narrow{flex:0 0 470px;width:470px}
+.mac .tl{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid var(--hairline)}
+.mac .tl i{width:10px;height:10px;border-radius:50%;background:var(--highest);display:block}
+.mac .win{display:flex}
+.mac .side{flex:0 0 200px;background:var(--cont);padding:6px 0;border-right:1px solid var(--hairline)}
+.mac .pane{flex:1 1 auto;min-width:0;padding:10px;display:flex;flex-direction:column}
+
+/* composer strip (pr_bar.dart) */
+.composer{background:var(--high);border-radius:var(--r16);overflow:hidden}
+.composer .hdr{display:flex;align-items:center;gap:8px;padding:9px 10px 9px 14px;
+  border-bottom:1px solid rgba(0,0,0,.08)}
+.composer .sentence{display:flex;align-items:center;gap:7px;font-size:13px;min-width:0}
+.composer .sentence .id{font-weight:600;white-space:nowrap}
+.composer .sentence .sep{color:var(--muted);opacity:.55}
+.composer .sentence .loud{color:var(--caution);white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.dot.caution{background:var(--dot-caution)}.dot.warn{background:var(--dot-warn)}
+.dot.ok{background:var(--primary)}
+.splitbtn{margin-left:auto;display:inline-flex;align-items:stretch;height:28px;border-radius:var(--r8);
+  overflow:hidden;flex:none;background:#F0E2D2}
+.splitbtn .a{display:inline-flex;align-items:center;gap:6px;padding:0 12px;font:700 11px/1 var(--sans);color:var(--caution)}
+.splitbtn .a svg{width:13px;height:13px}
+.splitbtn .c{width:28px;display:grid;place-items:center;color:var(--caution);border-left:1px solid rgba(166,75,30,.22)}
+.splitbtn .c svg{width:12px;height:12px}
+.composer .txt{padding:12px 14px 4px;font-size:14px;color:var(--text)}
+.composer .foot{display:flex;align-items:center;gap:8px;padding:6px 10px 10px 14px}
+.composer .foot .model{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.composer .foot .rt{margin-left:auto;display:flex;align-items:center;gap:12px;color:var(--muted)}
+.composer .foot .send{width:30px;height:30px;border-radius:50%;background:var(--primary);
+  color:#fff;display:grid;place-items:center}
+.composer .foot .send svg{width:15px;height:15px}
+
+/* menu */
+.menu{background:var(--lowest);border:1px solid var(--hairline);border-radius:var(--r10);
+  padding:6px 0;box-shadow:0 14px 38px rgba(0,0,0,.22);width:300px}
+.menu .hd{font:700 9.5px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:9px 14px 6px}
+.menu .mi{display:flex;align-items:center;gap:10px;padding:7px 14px;font-size:13px;color:var(--text)}
+.menu .mi svg{width:16px;height:16px;color:var(--muted)}
+.menu .mi .tail{margin-left:auto;display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+.menu .mi .tail .nm{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--text)}
+.menu .mi.dis{opacity:.42}
+.menu .mi.hi{background:rgba(0,0,0,.055)}
+.menu .sep{height:1px;background:var(--hairline);margin:6px 0}
+.menu .why{font-size:11px;color:var(--muted);padding:0 14px 6px 40px;margin-top:-3px}
+
+/* sheet */
+.sheet{background:var(--low);border-radius:22px;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.28)}
+.sheet .shdr{display:flex;align-items:flex-start;gap:10px;padding:16px 16px 4px}
+.sheet .shdr .t{font:600 16px/1.25 var(--sans);flex:1 1 auto;min-width:0}
+.sheet .shdr .x{color:var(--muted);flex:none}
+.sheet .shdr .x svg{width:20px;height:20px}
+.sheet .sbody{padding:6px 16px 18px}
+.glabel{display:flex;align-items:center;gap:8px;margin:12px 0 4px;
+  font:700 10px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.glabel svg{width:15px;height:15px}
+.fact{display:flex;align-items:center;gap:10px;padding:7px 0}
+.fact .g{color:var(--dot-caution);flex:none}
+.fact .lbl{flex:1 1 auto;min-width:0;font-size:13.5px;color:var(--caution)}
+.fact .lbl.q{color:var(--muted)}
+.fact .lbl .nm{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text)}
+.fact .act{flex:none;border-radius:14px;padding:6px 12px;font:600 12px/1 var(--sans);background:#F0E2D2;color:var(--caution)}
+.divid{height:1px;background:var(--hairline);margin:12px 0 0}
+/* mobile action-sheet rows (ListTile) */
+.tile{display:flex;align-items:center;gap:14px;padding:11px 16px;min-height:48px}
+.tile.hi{background:rgba(0,0,0,.05)}
+.tile .lead{color:var(--muted);flex:none}
+.tile .tt{flex:1 1 auto;min-width:0;font-size:14px;display:flex;flex-direction:column;gap:2px}
+.tile .tt .sub2{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--muted)}
+.tile .trail{color:var(--muted);flex:none}
+.tile.dis{opacity:.45}
+
+/* ── THE FLOW LINE: `branch ≫ target` ─────────────────────────────────────
+   `.tgt` is the only interactive half: a hairline underline + caret, so the
+   pair does not read as two equal static facts. */
+.flowline{display:flex;align-items:center;gap:7px;margin-top:6px;flex-wrap:wrap;
+  font:400 12.5px/1.3 var(--sans)}
+.flowline .src{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--muted)}
+.flowline .chev{color:var(--muted);opacity:.75;display:flex;flex:none}
+.flowline .chev svg{width:15px;height:15px}
+.tgt{display:inline-flex;align-items:center;gap:5px;border-radius:var(--r6);
+  padding:2px 6px 2px 5px;margin-left:-3px;background:rgba(0,0,0,.045);
+  border-bottom:1px solid rgba(0,0,0,.22)}
+.tgt .nm{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text);font-weight:600}
+.tgt svg{width:11px;height:11px;color:var(--muted)}
+.tgt.warnt{background:#FBF3DE;border-bottom-color:#c9a94a}
+.tgt.warnt .nm{color:var(--warn)}
+.flowline.big{font-size:14px}
+.flowline.big .src{font-size:14px}
+.flowline.big .tgt .nm{font-size:14px}
+.flowline.big .chev svg{width:18px;height:18px}
+
+/* picker */
+.opt{display:flex;align-items:center;gap:10px;padding:9px 16px;min-height:44px}
+.opt.on{background:rgba(49,106,65,.10)}
+.opt .nm{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;flex:1 1 auto;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opt .why{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.opt .prev{font-family:ui-monospace,Menlo,monospace;font-size:11px;display:inline-flex;gap:5px}
+.opt .ck{color:var(--primary)}
+.opt.dis{opacity:.45}
+.opt svg{color:var(--muted)}
+.grp{font:700 9.5px/1 var(--sans);text-transform:uppercase;letter-spacing:.1em;color:var(--muted);padding:12px 16px 5px}
+.search{margin:0 12px 6px;background:var(--cont);border-radius:var(--r8);
+  padding:8px 10px;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12.5px}
+.add{color:var(--add)}.del{color:var(--del)}
+
+/* sidebar */
+.repohdr{display:flex;align-items:center;gap:8px;padding:12px 12px 5px 14px;
+  font:600 10.5px/1 var(--sans);letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+.wt{padding:6px 10px 6px 14px;position:relative}
+.wt.sel{background:rgba(0,0,0,.055)}
+.wt .accent{position:absolute;left:0;top:5px;bottom:5px;width:2px;border-radius:1px;background:var(--primary)}
+.wt .line{display:flex;align-items:center;gap:6px;min-width:0}
+.wt .br{font:500 13px/1.3 var(--sans);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wt .meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:22px;margin-top:3px;
+  font-size:11px;color:var(--muted)}
+.diff{font-family:ui-monospace,Menlo,monospace;font-size:11px;display:inline-flex;gap:5px}
+.tag{font:600 10px/1 var(--sans);border:1px solid var(--hairline);color:var(--muted);border-radius:var(--r6);padding:3px 5px}
+
+/* dialog */
+.dlg{background:var(--low);border-radius:var(--r12);padding:16px;width:100%}
+.dlg .t{font:600 15px/1.3 var(--sans);margin-bottom:6px}
+.dlg .p{font-size:12.5px;color:var(--muted);margin-bottom:9px}
+.dlg .p b{color:var(--text);font-weight:600}
+.warnbox{border:1px solid #E4D3A4;background:#FBF3DE;border-radius:var(--r8);
+  padding:9px 11px;font-size:11.5px;color:#6a4e07;display:flex;gap:8px;margin-bottom:12px}
+.warnbox svg{width:15px;height:15px;flex:none;margin-top:1px;color:#8a6a10}
+.btns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.btn{border-radius:var(--r8);padding:8px 13px;font:600 12px/1 var(--sans);
+  border:1px solid var(--hairline);color:var(--text);background:var(--lowest)}
+.btn.warnb{background:#F0E2D2;color:var(--caution);border-color:#E0C4A8}
+
+/* concept diagrams (dark) */
+.chain{display:flex;align-items:center;gap:0;flex-wrap:wrap;
+  background:var(--lowest);border:1px solid var(--hairline);border-radius:var(--r8);padding:14px 16px}
+.chain .n{font-family:ui-monospace,Menlo,monospace;font-size:12px;padding:6px 9px;
+  border-radius:var(--r6);background:var(--cont);white-space:nowrap}
+.chain .n.me{background:#1d3a29;color:#b4f1be}
+.chain .n.dead{background:#3a2020;color:#f9a19b;text-decoration:line-through;opacity:.85}
+.chain .n.dflt{background:#22303d;color:#a9cff0}
+.chain .ar{color:var(--muted);padding:0 9px;font-size:15px;display:flex;align-items:center}
+.chain .ar svg{width:17px;height:17px}
+.chain .ar.dash svg{opacity:.45}
+.chain .lbl{font-size:10.5px;color:var(--muted);padding-left:10px}
+.vs{display:flex;flex-direction:column;gap:10px}
+.vsrow{display:flex;gap:12px;background:var(--lowest);border:1px solid var(--hairline);
+  border-radius:var(--r8);padding:11px 13px;flex-wrap:wrap}
+.vsrow .k{flex:0 0 130px;font:700 10px/1.4 var(--sans);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.vsrow .b{flex:1 1 200px;min-width:190px;font-size:12px;color:#f0b8b2}
+.vsrow .t{flex:1 1 200px;min-width:190px;font-size:12px;color:#b4f1be}
+.vshdr{display:flex;gap:12px;padding:0 13px 2px}
+.vshdr .k{flex:0 0 130px}
+.vshdr .b,.vshdr .t{flex:1 1 200px;min-width:190px;font:700 9.5px/1 var(--sans);
+  text-transform:uppercase;letter-spacing:.1em}
+.vshdr .b{color:#f0b8b2}.vshdr .t{color:#b4f1be}
+</style>
+</head>
+<body>
+
+<h1>Target branch — one field, pointing forward</h1>
+<p class="lede">
+  <b>v3.</b> Your reframe is the actual design. I had been modelling <em>base</em> — a fact about the
+  past, which can be deleted and then poisons everything downstream. You want <em>target</em> — a
+  choice about the future, which is always live because it is the thing you are aiming at. Same
+  gesture, but the whole edge-case surface collapses.
+</p>
+<p class="lede" style="margin-top:8px">
+  Home 1 and Home 2 both stay. Home 2's line becomes
+  <span class="lt" style="display:inline-flex;vertical-align:-4px"><span class="flowline" style="margin:0"><span class="src">feat/base-branch</span><span class="chev"><svg class="i"><use href="#g-chev2"/></svg></span><span class="tgt"><span class="nm">main</span><svg class="i"><use href="#g-caret"/></svg></span></span></span>
+  as you asked. I have one refinement to the notation and one to the interaction, in §3.
+  Your landing question is answered in §5 — GitHub has a documented rule for it, and we should just
+  adopt it.
+</p>
+
+<!-- ══════════════════════════════════════════════════════════════════════ AS BUILT -->
+<section class="card big">
+  <header>
+    <h2><span class="badge rec">As built</span>What actually shipped, and where this document is now wrong</h2>
+    <div class="sub">The spec lives at
+      <code>docs/specs/2026-08-11-SPEC-51-target-branch.md</code>. This board keeps the rejected
+      directions and the review trail; the notes below stop it contradicting the code.</div>
+  </header>
+  <div class="body">
+    <div class="grid">
+      <div class="col">
+        <div class="cap">Superseded by the four rules</div>
+        <div class="pen"><b>&sect;5's &ldquo;nowhere to land&rdquo; is now rare, not the common case.</b>
+          This board treats a vanished target as a state the user must fix. It is not: a wrap-up
+          <b>hands its target down</b> (rule 3, recursively), and a disappearance we did not perform
+          <b>falls back to the repo default and announces it</b> (rule 4). The blocking
+          <code>PrSignal</code> survives only for the genuinely unanswerable case &mdash; nothing
+          left to fall back to at all.</div>
+        <div class="pen"><b>&sect;5's &ldquo;Pick a target&rdquo; remedy was not built.</b> Opening a
+          picker is navigation, and that remedy system is for server ops and canned prompts. The
+          announcement is a quiet fact instead, and the fix has three homes already.</div>
+        <div class="pen"><b>&sect;1's fork-point row was overstated</b> (see B6). No fork point is
+          <em>stored</em>; one is still <em>computed</em> for the picker's top suggestion &mdash; via
+          <code>closestAncestorBranch</code>, not <code>merge-base --fork-point</code>, whose reflog
+          is empty for a fresh worktree.</div>
+        <div class="pen"><b>B1 resolved as documented-upstream-metrics.</b> Ahead/behind stay
+          upstream-relative and were dropped from R6 rather than re-plumbed. No new field.</div>
+        <div class="pen"><b>B4 resolved by renaming, with a shim.</b> The wire key is
+          <code>targetBranch</code>; the old key is read for one release and has a test that fails
+          if it is removed too early.</div>
+      </div>
+      <div class="col">
+        <div class="cap">Found only by driving the real app</div>
+        <div class="pen ok"><b>The picker was dead in a repo with no remote.</b> Gating on
+          &ldquo;exists on the remote&rdquo; disabled <em>every</em> row in a plain
+          <code>git init</code> repo, because the rule was written for pull-request bases and there
+          was no remote for it to constrain. Now <code>anyRemote ? onRemote.has(b) : true</code>.</div>
+        <div class="pen ok"><b>A merged PR kept overriding the user's choice.</b> Resolution let any
+          PR's base win regardless of state, pinning a worktree to a destination already settled.
+          Only <code>OPEN</code> is authoritative now.</div>
+        <div class="pen ok"><b>The announcement stole the headline.</b>
+          <code>PrStatus.loud</code> is <code>signals.first</code>, so list position <em>is</em>
+          priority: inserted early, &ldquo;was X, now Y&rdquo; became the composer strip's headline
+          and pushed <code>1 commit unpushed</code> into <code>+1 more</code>. Added last now, like
+          <code>still a draft</code>.</div>
+        <div class="note">None of these were visible to unit tests. Two of the three were fixture
+          blind spots &mdash; the tests had no remote and only asserted the positive cases.</div>
+      </div>
+    </div>
+
+    <div class="cap" style="margin-top:20px">Shipped surfaces</div>
+    <table>
+      <thead><tr><th style="width:150px">Piece</th><th style="width:290px">Where</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>Persistence</td><td class="mono">server/src/worktree-target-store.ts</td>
+          <td>Path-keyed, atomic temp+rename, value is <code>{target, retargetedFrom?}</code> with a
+            legacy bare-string read. GC'd on worktree removal, because worktree paths are
+            deterministic and a reused path would inherit a dead target.</td></tr>
+        <tr><td>Resolution</td><td class="mono">server/src/repo_service.ts</td>
+          <td><code>resolveTargetBranch</code> (pure), plus <code>adoptLivePrTargets</code> and
+            <code>repairVanishedTargets</code> reconciling before the diff runs &mdash; so the
+            numbers and the label can never disagree inside one broadcast.</td></tr>
+        <tr><td>Candidates</td><td class="mono">server/src/target_candidates.ts</td>
+          <td>Ranked groups + previews capped at 4 through a bounded pool.
+            <code>resolveThroughChain</code> does rule 3's recursion.</td></tr>
+        <tr><td>Commands</td><td class="mono">worktree.setTarget · worktree.targetCandidates</td>
+          <td>Validate &rarr; persist &rarr; broadcast &rarr; ack. Candidates is a read, so no
+            broadcast.</td></tr>
+        <tr><td>Picker</td><td class="mono">app/lib/ui/widgets/lands_in_picker.dart</td>
+          <td><code>LandsInLine</code> + <code>showLandsInPicker</code>; sheet on touch, dialog on
+            desktop.</td></tr>
+        <tr><td>Three homes</td><td class="mono">worktree_actions.dart · desktop_sidebar.dart · pr_detail.dart</td>
+          <td>Worktree actions is canonical. &ldquo;Lands in&rdquo; is <b>enabled where Rename is
+            blocked</b> (open PR), which is the clearest signal that they are different kinds of
+            edit.</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>Gates at hand-off:</b> server <code>tsc --noEmit</code> clean and
+      1347 tests passing; app <code>flutter analyze --fatal-infos</code> clean, 319 tests across the
+      touched suites, <code>flutter build macos --debug</code> succeeds. The full
+      <code>flutter test</code> suite remains nondeterministic here (~40-60 &ldquo;loading&rdquo;
+      failures on a pristine baseline), so it certifies nothing either way &mdash; compare against a
+      stashed baseline before reading anything into it.</div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 0 -->
+<section class="card" style="border-color:#5a4020">
+  <header>
+    <h2><span class="badge now">Review</span>Findings from three independent reviews — read before implementing</h2>
+    <div class="sub">Design (adversarial), architecture (data model/protocol) and QA (testability) reviews,
+      each verified against the tree. <b>Five blockers</b> — the spec below is wrong in the places
+      flagged, and I have left the wrong claims visible with corrections rather than quietly editing
+      them.</div>
+  </header>
+  <div class="body">
+    <div class="cap"><span class="badge rej">Blockers</span>must be resolved before step 1</div>
+    <table>
+      <thead><tr><th style="width:38px">#</th><th style="width:250px">Finding</th><th>Detail &amp; what it changes</th></tr></thead>
+      <tbody>
+        <tr><td><b>B1</b></td>
+          <td><b>The ahead/behind counts do NOT follow the target.</b> §6b's “same ref, same meaning”
+            is <b>false</b>.</td>
+          <td><code>commitsAhead</code> (<code>git.ts:407-418</code>) tries
+            <code>@{upstream}..HEAD</code> <em>first</em> and only falls back to
+            <code>baseBranch..HEAD</code> — <b>two-dot</b>, not three — when the branch has no
+            upstream. <code>commitsBehind</code> (<code>git.ts:425</code>) takes <b>no base argument
+            at all</b>. So on any pushed worktree, retargeting moves the <code>DiffChip</code> and
+            <b>nothing else</b>: the <code>N commits unpushed</code> and <code>N commits behind</code>
+            signals keep telling an upstream-relative story <em>on the same row</em>.
+            <b>Decision needed:</b> add a genuinely target-relative commit count
+            (<code>rev-list --count target...HEAD</code>) as a <em>new</em> field, or drop ahead/behind
+            from R6 and say plainly that they are upstream metrics. Step 2's “fixes the pill
+            <em>and</em> the ahead count” over-promises.</td></tr>
+        <tr><td><b>B2</b></td>
+          <td><b>There is nowhere to persist <code>targetBranch</code>.</b> Step 1 says “persist it”
+            and no such store exists.</td>
+          <td><code>projects.json</code> holds <code>{id, path}</code> only
+            (<code>project-store.ts:26-33</code>); worktrees are enumerated <b>live</b> from
+            <code>git worktree list</code> on every snapshot (<code>repo_service.ts:100</code>,
+            <code>id: e.path</code>); SQLite carries sessions, events, media and ports — never
+            worktrees. Must be designed first. Path-keyed is the least-bad option (it survives
+            <code>renameBranch</code>, which keeps the path) but <b>it resurrects a stale target</b>
+            when a worktree is removed and recreated: <code>git.ts:587</code> derives the path
+            deterministically from repo + name, so the new worktree inherits the dead one's setting.
+            Needs explicit GC on <code>worktree.remove</code>.</td></tr>
+        <tr><td><b>B3</b></td>
+          <td><b>Step 3 wires the label but leaves the numbers stale.</b></td>
+          <td><code>enrichPrs</code> (<code>repo_service.ts</code>) only assigns <code>w.pr</code> —
+            it <b>never recomputes the diff</b> (verified: its only writes are <code>w.pr = …</code>).
+            <code>diffStat</code>/<code>commitsAhead</code> run once, earlier, in the git-only pass.
+            So if the PR's <code>baseRefName</code> differs from the persisted value, the pill's
+            numbers come from the <b>local</b> target while the label comes from the <b>PR</b> —
+            inside a single broadcast. <b>Fix:</b> resolve the target <em>before</em>
+            <code>repoSnapshot</code>'s <code>diffStat</code> call through one pure
+            <code>resolveTarget(worktree, pr, persisted)</code>; do not patch it in
+            <code>enrichPrs</code>.</td></tr>
+        <tr><td><b>B4</b></td>
+          <td><b>The wire-key rename can silently fast-forward the wrong branch.</b></td>
+          <td><code>worktree.wrapUp</code> reads <code>env.baseBranch</code>
+            (<code>ws/commands/worktree.ts:129</code> → <code>manager.ts:797</code>). Rename it and a
+            stale app still sends <code>baseBranch</code> → the server sees <code>undefined</code> →
+            <code>?? detectDefaultBranch()</code> (<code>manager.ts:803</code>) → <b>merges into the
+            wrong branch, with no error</b>. This is the one irreversible failure in the rename.
+            <b>Mitigation:</b> accept <code>env.targetBranch ?? env.baseBranch</code> for one release,
+            and keep emitting both report keys.</td></tr>
+        <tr><td><b>B5</b></td>
+          <td><b>R7 is undefined, and the real failure is worse than zeros.</b></td>
+          <td><code>diffStat</code> (<code>git.ts:192-230</code>) has no error channel. When the
+            <code>target...HEAD</code> leg fails, <b>only that leg is skipped</b> — working-tree and
+            untracked files still count. So an unresolvable target yields a <b>plausible small
+            number</b>, not zeros: strictly harder to notice than the bug R7 was written against.
+            “Suppressed” needs a wire representation (e.g. <code>DiffStat.targetResolved:false</code>,
+            or nullable <code>insertions</code>) before any test can tell it from “clean”.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="grid" style="margin-top:18px">
+      <div class="col">
+        <div class="cap">Corrections to specific claims</div>
+        <ul>
+          <li><b>Type name.</b> The TS interface is <code>WrapUpResult</code>
+            (<code>manager.ts:57</code>); the Dart mirror is <code>WrapUpReport</code>
+            (<code>models.dart:1224</code>). They <b>already disagree across the boundary</b> — §6b
+            cited only the Dart name against a TS line. Both get renamed, each under its own name.</li>
+          <li><b>Missed consumer:</b> <code>pr_signals.dart:788</code> passes
+            <code>baseBehind: primary?.behindCount</code> — the <b>primary checkout's</b> count, a
+            second and quite different <code>behindCount</code> consumer.</li>
+          <li><b>Sort is coarser than stated.</b> <code>repo_chips.dart:321-322</code> keys on
+            <code>hasChanges</code> <em>before</em> magnitude, so a retarget can flip a worktree
+            between the <b>active and inactive partitions</b> — not merely reorder within one.</li>
+          <li><b>Dead aggregates that would drift:</b> <code>models.dart:934-938</code>
+            <code>totalInsertions</code> / <code>totalDeletions</code> /
+            <code>activeWorktreeCount</code> have <b>no callers today</b> — and their docstring
+            already says “vs the default branch”, which is exactly the prose the rename must fix.</li>
+          <li><b>Say the quiet part:</b> <code>uncommittedFiles</code> is <em>correctly</em>
+            target-independent (working tree only). It was omitted silently; it should be listed as
+            explicitly unaffected — because <code>aheadCount</code> is <em>also</em> effectively
+            target-independent, and that inconsistency is what exposed B1.</li>
+        </ul>
+      </div>
+      <div class="col">
+        <div class="cap">Reframed, and one finding rejected</div>
+        <div class="pen"><b>Forge parity was backwards.</b> There is <b>no Forgejo/Gitea gateway</b> —
+          zero hits in <code>server/src</code>, and <code>manager.ts:199</code>'s
+          <code>opts.gateway ?? createGithubGateway(...)</code> is a <b>test-fake seam</b>, not a forge
+          substitution. So GitHub's automatic retargeting cannot be the primary mechanism §5 leans on:
+          build the <b>splice (step 7) as the primary path</b> and treat GitHub's auto-retarget as an
+          optimisation that happens to agree. That also removes the dependency on the unverified
+          auto-close hazard.</div>
+        <div class="note"><b>Picker previews need a bounded path.</b> N candidates = N
+          <code>git diff</code> shell-outs fired the moment a picker opens. Route them through a
+          concurrency limit (cf. <code>WORKTREE_CONCURRENCY</code>, <code>repo_service.ts</code>),
+          not the snapshot fan-out, or opening the picker storms git.</div>
+        <div class="note"><b>One-field lossiness, accepted knowingly.</b> You cannot show “my own
+          delta” independently of the merge destination. A stack targeting <code>main</code> with an
+          unlanded parent shows an inflated pill on <em>every</em> worktree until the parent lands.
+          §1 accepts this by fiat; if product later wants both numbers it is a schema migration, not a
+          tweak.</div>
+        <div class="pen ok"><b>Rejected: “citation from the future”.</b> The design review flagged
+          <code>github/community#198570 (Jun 2026)</code> as a fabricated future date. It is in the
+          <b>past</b> — this repo's own specs are dated <code>2026-08-*</code> — and the reference came
+          verbatim from a web search, not from invention. Kept, still marked unverified pending the
+          spike.</div>
+        <div class="note"><b>Upheld by all three reviews:</b> the core bug diagnosis
+          (<code>repo_service.ts:114</code> + three-dot <code>git.ts:216</code>), the
+          <code>startPoint</code> and <code>baseRefName</code> carve-outs, both staleness bugs
+          (§6c Bug 1 and Bug 2), the generation-guard analysis, and the three-entry-point UX.</div>
+      </div>
+    </div>
+
+    <div class="cap" style="margin-top:20px"><span class="badge rej">B6</span>The fork point is not actually gone — §1 contradicts §4 and B2</div>
+    <div class="pen"><b>§1 claims “Fork point: not needed — <code>git diff target...HEAD</code> is already three-dot.”</b>
+      True for the <em>diff</em>, and only for the diff. Two other places still need a fork point
+      <b>computed</b>: <b>(a)</b> §4's picker leads with a <code>Forked from</code> group as its
+      top-ranked suggestion, and <b>(b)</b> B2's upgrade seeding must choose a value for every worktree
+      that already exists. So what v3 removes is the <b>stored</b> fork point, not the computation —
+      §1's row is overstated.</div>
+    <div class="pen ok"><b>Which closes the open seeding question, against my earlier lean.</b> I had
+      argued for seeding existing worktrees from their computed fork point (“the shift <em>is</em> the
+      fix”). The architecture review makes the better case: seed from the <b>repo default</b>, because
+      it exactly matches today's behaviour (<code>repo_service.ts:114</code>) — so upgrading moves no
+      number until the user chooses, and it needs no fork-point pass at all. Fork point stays a
+      <em>suggestion</em> inside the picker, where it is cheap and opt-in.</div>
+
+    <div class="cap" style="margin-top:20px"><span class="badge rej">B7</span>PR lifecycle transitions are unspecified</div>
+    <div class="note">§5 says the PR's <code>baseRefName</code> is the source of truth when a PR exists
+      and the persisted value applies otherwise. The <em>transitions</em> are not specified, and each is
+      a visible wrong-value window:
+      <ul>
+        <li><b>PR created</b> — the local value must yield to <code>baseRefName</code>, but only on the
+          next poll. They can legitimately differ if the user ran <code>gh pr create --base</code> by
+          hand; specify what is shown during that window.</li>
+        <li><b>PR closed or reopened</b> — falls back to the persisted value, which may be stale
+          relative to where the PR actually pointed. Should closing adopt its <code>baseRefName</code>
+          into the persisted field?</li>
+        <li><b>The §5 auto-close hazard lands exactly here:</b> retarget → auto-close → fall back to a
+          local value that no longer matches.</li>
+      </ul>
+      All three collapse if <code>resolveTarget(worktree, pr, persisted)</code> (B3) is the single owner
+      of precedence <b>and</b> writes its result back to the persisted field on every PR state change.</div>
+
+    <div class="cap" style="margin-top:20px">Revised test order (QA)</div>
+    <ul>
+      <li><b>First:</b> the stacked end-to-end numbers test — it proves R1 behaviourally and would
+        have caught the original bug. Vehicle: the WS harness pattern in
+        <code>server/test/.../repos_refresh_on_turn_end.test.ts</code>.</li>
+      <li><b>Then:</b> R5 both sheets (fails today by construction), then R8 rejection.</li>
+      <li><b>Demote:</b> the R1-via-stub test (redundant with the end-to-end one) and the R4 generation
+        test (the guard already exists — regression-lock only).</li>
+      <li><b>Correct before writing:</b> the per-consumer rebuild test must <b>not</b> assert
+        ahead/behind movement until B1 is decided, or it encodes a false contract.</li>
+      <li><b>Add:</b> the ahead/behind divergence decision test; invalid-target suppression (blocked on
+        B5); concurrent <code>setTarget</code> + watcher race on the final frame; the
+        <code>pr_signals.dart:788</code> primary-checkout consumer; <b>R9 atomicity</b> under two
+        simultaneous clients; and <b>R10</b> rejection of a non-existent / unfetched ref.</li>
+      <li><b>Assert, don’t just accept:</b> when the target is deleted mid-flight the git-only pass
+        throws and returns <em>without emitting</em> (<code>server.ts:972-978</code>), so the app keeps
+        the <em>previous</em> numbers — stale but not wrong-zero. That is the correct behaviour; pin it
+        with a test so a later refactor cannot turn it into an emit-of-zeros.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 1 -->
+<section class="card big">
+  <header>
+    <h2><span class="badge rec">The reframe</span>“Base” was the wrong noun</h2>
+    <div class="sub">Why swapping the noun deletes most of v2's complexity rather than renaming it.</div>
+  </header>
+  <div class="body">
+    <div class="vshdr"><div class="k"></div><div class="b">Base (v1/v2)</div><div class="t">Target (v3)</div></div>
+    <div class="vs">
+      <div class="vsrow"><div class="k">Tense</div>
+        <div class="b">Past. Where this branch <em>came from</em>.</div>
+        <div class="t">Future. Where this branch <em>is going</em>.</div></div>
+      <div class="vsrow"><div class="k">Can it vanish?</div>
+        <div class="b">Yes — parents get merged and deleted constantly. Then the diff is uncomputable and <code>git.ts:189</code> returns zeros.</div>
+        <div class="t">Not meaningfully: if it dies we must re-point it, because you still have to land somewhere. A dangling target is a contradiction.</div></div>
+      <div class="vsrow"><div class="k">The diff means</div>
+        <div class="b">“How far I have come.” Interesting, but not a thing you act on.</div>
+        <div class="t">“What a PR into this branch would contain.” Exactly the number you are about to be judged on.</div></div>
+      <div class="vsrow"><div class="k">Fork point</div>
+        <div class="b">Had to be computed and stored (<code>merge-base --fork-point</code>) because creation discarded it.</div>
+        <div class="t">No <b>stored</b> fork point — <code>git diff target...HEAD</code> is already three-dot, so git finds the merge base live. <b style="color:#f0b8b2">See B6:</b> one is still <em>computed</em> for the picker’s top suggestion.</div></div>
+      <div class="vsrow"><div class="k">Parent lands</div>
+        <div class="b">Base disappears → broken state to design for.</div>
+        <div class="t">Diff <b>self-heals</b>: <code>main</code> now contains the parent's commits, so <code>main...HEAD</code> silently drops to your own delta.</div></div>
+      <div class="vsrow"><div class="k">Fields</div>
+        <div class="b">Two concepts fighting: local base for the diff, PR <code>baseRefName</code> for the merge — hence v2's awkward three-button “change locally only”.</div>
+        <div class="t">One: <code>targetBranch</code>. It <em>is</em> the PR's base. Two buttons.</div></div>
+    </div>
+    <div class="pen ok"><b>The collapse, concretely.</b> v2 needed: a stored base, a stored fork point,
+      a separate PR base, a 3-button scope dialog, a warn-tone “base is gone” state, and a rule for
+      silent zeros. v3 needs: <b>one nullable string</b>, and the diff command it already runs
+      (<code>git.ts:215</code>) pointed at it.</div>
+    <div class="note"><b>And the pill becomes definitionally right.</b> Today
+      <code>repo_service.ts:114-116</code> diffs against the repo default. Under target semantics the
+      pill answers “what would my PR contain?” — so for a stacked worktree targeting its parent it is
+      <span class="diff"><span class="add">+96</span> <span class="del">−12</span></span>, and if you
+      deliberately target <code>main</code> instead it is
+      <span class="diff"><span class="add">+1,204</span> <span class="del">−318</span></span> — which
+      is not a bug any more. That really is what such a PR would contain. <b>A badly-aimed branch is
+      allowed to look big.</b></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 2 -->
+<section class="card">
+  <header>
+    <h2><span class="badge rec">Home 1</span>The <span class="mono">Ship it ⌄</span> menu — kept, relabelled</h2>
+    <div class="sub">Unchanged from v2 except the noun. Strip above the fold is still untouched.</div>
+  </header>
+  <div class="body">
+    <div class="grid">
+      <div class="colwide">
+        <div class="cap">Strip at rest — zero pixels spent, exactly as shipped</div>
+        <div class="mac lt">
+          <div class="tl"><i></i><i></i><i></i></div>
+          <div class="win">
+            <div class="side">
+              <div class="repohdr"><svg class="g i"><use href="#g-folder"/></svg>makit</div>
+              <div class="wt sel"><div class="accent"></div>
+                <div class="line"><svg class="g i" style="color:var(--primary)"><use href="#g-branch"/></svg><span class="br">feat/base-branch</span></div>
+                <div class="meta"><span class="diff"><span class="add">+1.1k</span><span class="del">−306</span></span><span>4m</span></div></div>
+              <div class="wt"><div class="line"><svg class="g i"><use href="#g-branch"/></svg><span class="br">main</span></div>
+                <div class="meta"><span class="tag">default</span></div></div>
+            </div>
+            <div class="pane">
+              <div class="composer">
+                <div class="hdr">
+                  <div class="sentence"><span class="dot caution"></span>
+                    <span class="id">feat/base-branch</span><span class="sep">·</span>
+                    <span class="loud">1 file uncommitted</span></div>
+                  <span class="splitbtn"><span class="a"><svg class="i"><use href="#g-rocket"/></svg>Ship it</span>
+                    <span class="c"><svg class="i"><use href="#g-caret"/></svg></span></span>
+                </div>
+                <div class="txt">Why not use</div>
+                <div class="foot"><span class="model"><svg class="g i" style="width:15px;height:15px"><use href="#g-spark"/></svg>Claude Opus 5 (US)</span>
+                  <span class="rt"><svg class="g i"><use href="#g-clip"/></svg>
+                    <span class="send"><svg class="i"><use href="#g-up"/></svg></span></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="note">The sentence stays <code>status.identity · status.loud.label</code>
+          (<code>pr_bar.dart:176-196</code>). Nothing about the target competes with the fact that
+          wants you.</div>
+      </div>
+      <div class="colnarrow">
+        <div class="cap">The caret, opened</div>
+        <div class="menu lt">
+          <div class="hd">Do now</div>
+          <div class="mi"><svg class="i"><use href="#g-push"/></svg>Commit and push</div>
+          <div class="sep"></div>
+          <div class="hd">Ask the agent</div>
+          <div class="mi"><svg class="i"><use href="#g-rocket"/></svg>Ship it</div>
+          <div class="mi dis"><svg class="i"><use href="#g-wrench"/></svg>Fix PR</div>
+          <div class="why">there is no pull request yet</div>
+          <div class="sep"></div>
+          <div class="hd">This worktree</div>
+          <div class="mi hi"><svg class="i"><use href="#g-chev2"/></svg>Lands in
+            <span class="tail"><span class="nm">main</span>
+              <svg class="i" style="width:11px;height:11px"><use href="#g-caretright"/></svg></span></div>
+          <div class="mi"><svg class="i"><use href="#g-detail"/></svg>Show detail</div>
+        </div>
+        <div class="note"><b>“Lands in”, not “Target branch”.</b> The menu is a list of verbs; a noun
+          entry reads as a heading. “Lands in <code>main</code>” is a fact you can also click, and it
+          uses the same word the picker's own title uses.</div>
+        <div class="note">Still bottom-of-menu, below the divider, showing its value inline — so any
+          visit to the menu answers “where does this go?” for free.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 3 -->
+<section class="card">
+  <header>
+    <h2><span class="badge rec">Home 2</span><span class="mono">branch ≫ target</span> — accepted, with two refinements</h2>
+    <div class="sub">You asked for <code>feat/base-branch &gt;&gt; target-branch</code> with the target
+      selectable, and invited pushback. I am taking the idea; here is what I would change and why.</div>
+  </header>
+  <div class="body">
+    <div class="grid">
+      <div class="colnarrow">
+        <div class="cap"><span class="badge now">Today</span>as shipped</div>
+        <div class="sheet lt">
+          <div class="shdr"><div class="t">feat/base-branch</div>
+            <span class="x"><svg class="i"><use href="#g-x"/></svg></span></div>
+          <div class="sbody">
+            <div class="glabel"><svg class="i"><use href="#g-warn"/></svg>Needs you</div>
+            <div class="fact"><span class="g"><svg class="g i"><use href="#g-push"/></svg></span>
+              <span class="lbl">1 file uncommitted</span><span class="act">Commit &amp; push</span></div>
+          </div>
+        </div>
+        <div class="note">Nothing says where this lands.</div>
+      </div>
+
+      <div class="colnarrow">
+        <div class="cap"><span class="badge rec">v3</span>no PR yet</div>
+        <div class="sheet lt">
+          <div class="shdr"><div class="t">feat/base-branch
+              <div class="flowline"><span class="chev"><svg class="i"><use href="#g-chev2"/></svg></span>
+                <span class="tgt"><span class="nm">main</span><svg class="i"><use href="#g-caret"/></svg></span>
+                <span style="color:var(--muted)">·</span>
+                <span class="diff"><span class="add">+1.1k</span><span class="del">−306</span></span></div>
+            </div>
+            <span class="x"><svg class="i"><use href="#g-x"/></svg></span></div>
+          <div class="sbody">
+            <div class="glabel"><svg class="i"><use href="#g-warn"/></svg>Needs you</div>
+            <div class="fact"><span class="g"><svg class="g i"><use href="#g-push"/></svg></span>
+              <span class="lbl">1 file uncommitted</span><span class="act">Commit &amp; push</span></div>
+          </div>
+        </div>
+        <div class="note"><b>Refinement 1 — the chevron leads, the source does not repeat.</b> The
+          title already <em>is</em> <code>feat/base-branch</code>, so printing it again one line down
+          wastes the line. Starting with <code>≫ main</code> reads as a continuation of the title:
+          “feat/base-branch … lands in main”.</div>
+      </div>
+
+      <div class="colnarrow">
+        <div class="cap"><span class="badge rec">v3</span>PR open — the source <em>must</em> appear</div>
+        <div class="sheet lt">
+          <div class="shdr"><div class="t">#143
+              <div class="flowline"><span class="src">feat/base-branch</span>
+                <span class="chev"><svg class="i"><use href="#g-chev2"/></svg></span>
+                <span class="tgt"><span class="nm">main</span><svg class="i"><use href="#g-caret"/></svg></span></div>
+            </div>
+            <span class="x"><svg class="i"><use href="#g-x"/></svg></span></div>
+          <div class="sbody">
+            <div class="glabel"><svg class="i"><use href="#g-warn"/></svg>Needs you</div>
+            <div class="fact"><span class="g"><svg class="g i"><use href="#g-check2"/></svg></span>
+              <span class="lbl">2 checks failing</span><span class="act">Fix PR</span></div>
+          </div>
+        </div>
+        <div class="pen ok"><b>This is why the line earns its place.</b> With a PR,
+          <code>status.identity</code> is <code>'#${pr.number}'</code>
+          (<code>pr_signals.dart:346</code>) — the branch name is <b>nowhere in the sheet today</b>.
+          Your line is the only thing that shows head and target together, which is the one sentence
+          a PR is actually about.</div>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:20px">
+      <div class="col">
+        <div class="cap">On the <span class="mono">&gt;&gt;</span> notation — accepted, drawn as a glyph</div>
+        <ul>
+          <li><b>The concept is right and I would not change the direction.</b> Left-to-right
+            “mine flows into theirs” matches how you described it. GitHub prints it the other way
+            (<code>base ← compare</code>) and it is worse: it leads with the branch you did not write.</li>
+          <li><b>Refinement 2 — render it as <code>PhosphorIconsLight.caretDoubleRight</code></b>
+            (confirmed present, <code>phosphor_icons_light.dart:2387</code>) rather than two literal
+            <code>&gt;</code> characters. Everything else in this sheet is a Phosphor glyph; ASCII
+            here would be the only typographic exception, and at 12px the mono <code>&gt;&gt;</code>
+            sits low against the baseline of a proportional name.</li>
+          <li><b>Double, not single.</b> A single <code>→</code> is makit's generic “goes to”. The
+            doubled caret reads as <em>append into</em> — which is exactly the shell connotation you
+            were reaching for, and it distinguishes “lands in” from mere navigation.</li>
+          <li><b>One real risk, accepted.</b> <code>≫</code> is also the media-player
+            “skip forward”. In a git context next to two branch names I do not think it can be
+            misread — but if it ever needs a fallback, <code>into main</code> in words is the
+            unambiguous version and fits the same space.</li>
+        </ul>
+        <div class="note"><b>Asymmetry is deliberate.</b> The source is muted mono; the target has a
+          faint fill, a hairline underline and a caret. <code>A ≫ B</code> with both halves at equal
+          weight reads as two static facts — the whole point is that the right half is a control.</div>
+      </div>
+      <div class="col">
+        <div class="cap">Where else the same line goes, for free</div>
+        <ul>
+          <li><b>New-worktree dialog.</b> <code>new_worktree_dialog.dart</code> already asks for a
+            base; relabel it “Lands in” and it is the same value, chosen at the same moment, with the
+            same widget. <em>This</em> is the primary path — §3/§4 are corrections.</li>
+          <li><b>Wrap-up brief.</b> <code>wrap_up.dart:313</code> already writes
+            “Land $identity on ${base ?? 'its base branch'}” — that fallback string exists precisely
+            because the value was missing. It becomes unconditional.</li>
+          <li><b>Worktree actions</b> (§3b) — the canonical entry, and the only one that exists for a
+            worktree with no session.</li>
+          <li><b>Nowhere else.</b> Not the row, not the strip, not the repo card. §2's argument stands
+            and v3 does not reopen it.</li>
+        </ul>
+        <div class="pen you"><b>Where I would still push back on you slightly:</b> making the target
+          selectable directly in the sheet header means a picker can open from a header, which no
+          other makit sheet does. It is worth it here — but it is the one novelty in this design, so
+          if it feels wrong in the hand, the fallback is a tap that closes the sheet and opens the
+          menu's picker instead. Same destination, one more hop.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 3b -->
+<section class="card big">
+  <header>
+    <h2><span class="badge rec">Home 3</span>Worktree actions — and it should be the <em>canonical</em> one</h2>
+    <div class="sub">You are right, and it is a better home than either of the other two:
+      <code>targetBranch</code> is a property of a <b>worktree</b>, and this is the only menu that is
+      keyed to a worktree. It also covers a state I had left with no entry point at all.</div>
+  </header>
+  <div class="body">
+    <div class="grid">
+      <div class="colnarrow">
+        <div class="cap"><span class="badge now">Today</span>mobile — long-press the row</div>
+        <div class="sheet lt">
+          <div class="shdr"><div class="t">feat/stack-b</div></div>
+          <div class="sbody" style="padding:2px 0 10px">
+            <div class="tile"><span class="lead"><svg class="g i"><use href="#g-textaa"/></svg></span>
+              <span class="tt">Rename branch</span></div>
+            <div class="tile"><span class="lead" style="color:var(--del)"><svg class="g i"><use href="#g-trash"/></svg></span>
+              <span class="tt" style="color:var(--del)">Delete worktree</span></div>
+          </div>
+        </div>
+        <div class="note"><code>showWorktreeActions</code>,
+          <code>worktree_actions.dart:26</code>. Header is already
+          <code>worktree.branch ?? 'detached'</code> — the exact left-hand side of the
+          <span class="mono">≫</span> line.</div>
+      </div>
+
+      <div class="colnarrow">
+        <div class="cap"><span class="badge rec">v3</span>with the target</div>
+        <div class="sheet lt">
+          <div class="shdr"><div class="t">feat/stack-b
+              <div class="flowline"><span class="chev"><svg class="i"><use href="#g-chev2"/></svg></span>
+                <span class="tgt"><span class="nm">feat/base-branch</span><svg class="i"><use href="#g-caret"/></svg></span></div></div>
+          </div>
+          <div class="sbody" style="padding:2px 0 10px">
+            <div class="tile"><span class="lead"><svg class="g i"><use href="#g-textaa"/></svg></span>
+              <span class="tt">Rename branch</span></div>
+            <div class="tile hi"><span class="lead"><svg class="g i"><use href="#g-chev2"/></svg></span>
+              <span class="tt">Lands in<span class="sub2">feat/base-branch</span></span>
+              <span class="trail"><svg class="g i"><use href="#g-caretright"/></svg></span></div>
+            <div class="tile"><span class="lead" style="color:var(--del)"><svg class="g i"><use href="#g-trash"/></svg></span>
+              <span class="tt" style="color:var(--del)">Delete worktree</span></div>
+          </div>
+        </div>
+        <div class="note"><b>Sits next to Rename, above Delete.</b> Rename and Lands-in are siblings —
+          both edit a non-destructive branch property. Destructive stays last, which is the one
+          ordering rule this sheet already follows.</div>
+        <div class="note">The header carries the value <em>and</em> the row carries it, deliberately:
+          the header is where you read it, the row is where you reach it with a thumb.</div>
+      </div>
+
+      <div class="colnarrow">
+        <div class="cap"><span class="badge rec">v3</span>desktop — hover <span class="mono">⋯</span></div>
+        <div class="menu lt" style="width:262px">
+          <div class="mi">Rename branch</div>
+          <div class="sep"></div>
+          <div class="mi hi">Lands in
+            <span class="tail"><span class="nm">feat/base-branch</span>
+              <svg class="i" style="width:11px;height:11px"><use href="#g-caretright"/></svg></span></div>
+          <div class="sep"></div>
+          <div class="mi" style="color:var(--del)">Delete worktree</div>
+          <div class="sep"></div>
+          <div class="mi">Ports (2)…</div>
+        </div>
+        <div class="note"><code>_WorktreeMenuButton</code>,
+          <code>desktop_sidebar.dart:802</code>. Same items, tooltip already reads
+          <b>“Worktree actions”</b>. <b>No leading icons</b> — that menu is bare
+          <code>Text</code> in <code>PopupMenuItem</code>, unlike the mobile <code>ListTile</code>s,
+          so the new row must not introduce one.</div>
+        <div class="pen"><b>One wrinkle in the existing widget.</b> Its docstring says the
+          <code>⋯</code> button <b>replaces the diff pill on hover</b> — so reaching the target picker
+          hides the very number the target governs. Not a blocker, but it is why the menu item must
+          print its current value inline: you cannot glance back at the pill while the menu is open.</div>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:22px">
+      <div class="col">
+        <div class="cap">Why this is the canonical home, and Home 1 is the shortcut</div>
+        <div class="pen ok"><b>The gap I missed.</b> Home 1 lives in the <b>composer</b>. A worktree
+          with <b>no session</b> has no composer, so it has no <code>Ship it ⌄</code> and no
+          <code>Show detail</code> — which is exactly the moment after you create a worktree, when the
+          target is most likely wrong and most likely worth fixing. Worktree actions is the only
+          per-worktree menu that exists in every state, on both platforms, from both the home list
+          and the sidebar.</div>
+        <ul>
+          <li><b>Scope matches.</b> <code>targetBranch</code> is on <code>WorktreeDTO</code>, not on a
+            session. This menu takes a <code>Worktree</code>; the composer menu takes a
+            <code>PrStatus</code>. Putting a worktree setting in the worktree menu is the SOLID
+            answer.</li>
+          <li><b>Not three implementations.</b> One picker (§4), three entries pointing at it. The
+            re-ranking is: <b>worktree actions = canonical</b>, <code>Ship it ⌄</code> = convenience
+            while you are already shipping, sheet header <span class="mono">≫</span> line = display
+            that happens to be tappable.</li>
+          <li><b>If you wanted to cut one</b>, cut the <code>Ship it ⌄</code> entry — it is the most
+            redundant now. I would keep it anyway: it costs one <code>MenuItemButton</code> and it is
+            where your hand already is at ship time.</li>
+        </ul>
+      </div>
+      <div class="col">
+        <div class="cap">Disabled states — and one instructive asymmetry</div>
+        <table style="margin-top:2px">
+          <thead><tr><th style="width:132px">Worktree</th><th style="width:96px">Rename</th><th style="width:88px">Lands in</th><th>Reason shown</th></tr></thead>
+          <tbody>
+            <tr><td>Primary checkout</td><td style="color:#f0b8b2">blocked</td><td style="color:#f0b8b2">blocked</td>
+              <td>“This is where branches land, not one that lands.” Mirrors
+                <code>canRenameWorktree</code>'s primary guard.</td></tr>
+            <tr><td>Detached HEAD</td><td style="color:#f0b8b2">blocked</td><td style="color:#f0b8b2">blocked</td>
+              <td>“This worktree has no branch to land.”</td></tr>
+            <tr><td><b>Open PR</b></td><td style="color:#f0b8b2">blocked</td><td style="color:#b4f1be"><b>enabled</b></td>
+              <td>Renaming would orphan the PR head — but retargeting is a first-class
+                operation (<code>gh pr edit --base</code>, §6).</td></tr>
+            <tr><td>Target deleted, unmerged</td><td style="color:#b4f1be">enabled</td><td style="color:#b4f1be">enabled</td>
+              <td>The one state that actively wants this item (§5).</td></tr>
+          </tbody>
+        </table>
+        <div class="pen ok"><b>The open-PR row is the useful one.</b> It is the only entry in this menu
+          that is <em>enabled precisely where Rename is blocked</em> — which is the clearest possible
+          signal that changing where a branch lands is not the same kind of edit as changing its name.
+          Both guards already exist in code (<code>worktree_actions.dart:11</code>,
+          <code>desktop_sidebar.dart:819</code>); the new item just does not inherit the PR one.</div>
+        <div class="note">All disabled rows keep the existing “visible but disabled, with the reason”
+          convention — <code>subtitle</code> on mobile, <code>Tooltip</code> on desktop.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 4 -->
+<section class="card">
+  <header>
+    <h2>The picker — now “Lands in”, and it must say what is on the remote</h2>
+    <div class="sub">One thing genuinely changes under target semantics: a PR base has to
+      <em>exist on the remote</em>. That is your “what if it does not exist yet”.</div>
+  </header>
+  <div class="body">
+    <div class="grid">
+      <div class="colnarrow">
+        <div class="cap">iOS — sheet, 44pt rows</div>
+        <div class="phone lt">
+          <div class="status"></div>
+          <div class="sheet lt" style="border-radius:22px 22px 0 0;margin-top:34px;box-shadow:none">
+            <div class="shdr"><div class="t">Lands in
+                <div class="flowline"><span class="src">feat/stack-b</span>
+                  <span class="chev"><svg class="i"><use href="#g-chev2"/></svg></span>
+                  <span style="color:var(--muted)">?</span></div></div>
+              <span class="x"><svg class="i"><use href="#g-x"/></svg></span></div>
+            <div class="search" style="margin-top:10px"><svg class="g i" style="width:14px;height:14px"><use href="#g-search"/></svg>Filter branches</div>
+            <div class="grp">Forked from</div>
+            <div class="opt on"><svg class="g i" style="color:var(--primary)"><use href="#g-fork"/></svg>
+              <span class="nm">feat/base-branch</span>
+              <span class="prev"><span class="add">+96</span> <span class="del">−12</span></span>
+              <svg class="g i ck"><use href="#g-check"/></svg></div>
+            <div class="grp">Repo default</div>
+            <div class="opt"><svg class="g i"><use href="#g-branch"/></svg><span class="nm">main</span>
+              <span class="prev"><span class="add">+1.2k</span> <span class="del">−318</span></span></div>
+            <div class="grp">Other worktrees</div>
+            <div class="opt"><svg class="g i"><use href="#g-branch"/></svg><span class="nm">feat/ports-kill</span>
+              <span class="prev"><span class="add">+842</span> <span class="del">−1.9k</span></span></div>
+            <div class="opt dis"><svg class="g i"><use href="#g-cloudoff"/></svg>
+              <span class="nm">spike/local-only</span><span class="why">not pushed yet</span></div>
+            <div class="opt dis"><svg class="g i"><use href="#g-branch"/></svg>
+              <span class="nm">feat/stack-b</span><span class="why">this worktree</span></div>
+            <div class="grp">All branches · 37</div>
+            <div class="opt"><svg class="g i"><use href="#g-branch"/></svg><span class="nm">release/1.4</span>
+              <span class="prev"><span class="add">+3.4k</span> <span class="del">−2.2k</span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="cap">Your question 1 — “what if the target does not exist yet?”</div>
+        <ul>
+          <li><b>A PR base must exist on the remote.</b> So a local-only branch is listed but
+            <b>disabled with the reason</b> (<code>not pushed yet</code>) — the same
+            “explain the block, don't hide it” convention <code>_whyNot</code> already uses
+            (<code>pr_detail.dart:742</code>).</li>
+          <li><b>Not offered:</b> typing a brand-new branch name. Creating the branch you intend to
+            merge into is a separate act with its own consequences; a picker that silently
+            <code>git push -u</code>s a new remote branch would be doing something you did not ask
+            for.</li>
+          <li><b>Local-only is still a legal <em>diff</em> target.</b> If we ever want that, the row
+            can enable for the pill and stay disabled for PR creation — but I would not build the
+            split until someone asks.</li>
+          <li><b>“Forked from”, not “fork point”.</b> Under target semantics this group is just a
+            <em>suggestion source</em> — a good guess at where you probably want to land. It is no
+            longer a stored concept.</li>
+        </ul>
+        <div class="note">Previews stay one <code>git diff --numstat target...HEAD</code> each —
+          the same call <code>git.ts:215</code> already makes, now with the honest ref. Only the
+          ranked few compute eagerly.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 5 -->
+<section class="card big">
+  <header>
+    <h2><span class="badge you">Your question 2</span>The parent landed and was deleted. Where does this go?</h2>
+    <div class="sub">This has a documented answer, it is not ours to invent, and adopting it is
+      cheaper than any rule I would have written.</div>
+  </header>
+  <div class="body">
+    <div class="chain" style="margin-bottom:14px">
+      <span class="n me">feat/stack-b</span>
+      <span class="ar"><svg class="i"><use href="#g-chev2"/></svg></span>
+      <span class="n dead">feat/base-branch</span>
+      <span class="ar dash"><svg class="i"><use href="#g-chev2"/></svg></span>
+      <span class="n dflt">main</span>
+      <span class="lbl">the middle link merges and is auto-deleted — the chain must splice, not break</span>
+    </div>
+
+    <div class="grid">
+      <div class="col3">
+        <div class="cap"><span class="badge gh">GitHub's rule</span>PR open → already done</div>
+        <div class="pen gh"><b>Pull Request Retargeting</b> (GitHub changelog, 2020-05-19): when a
+          PR's head branch is merged and deleted, other open PRs whose base was that branch
+          “<em>will be retargeted — the base branch of each pull request will be updated to
+          <b>the merged pull request's base branch</b></em>”. Previously they were closed.</div>
+        <ul>
+          <li>So the answer is <b>not</b> “fall back to the repo default”. It is
+            <b>“wherever the parent itself landed”</b> — which for a stack aimed at
+            <code>release/1.4</code> is <code>release/1.4</code>, not <code>main</code>.</li>
+          <li><b>makit needs no logic here.</b> The PR watcher already reads
+            <code>baseRefName</code> (<code>github/queries.ts:143</code>). GitHub rewrites it; we
+            pick it up on the next poll and the target updates itself.</li>
+          <li><b>Rule:</b> when a PR exists, the PR's <code>baseRefName</code> is the source of
+            truth for <code>targetBranch</code> — makit mirrors it, never fights it.</li>
+        </ul>
+        <div class="pen"><b>One hazard, flagged not designed for.</b> A community report
+          (github/community#198570, Jun 2026) has GitHub emitting
+          <code>base_ref_deleted</code> → <code>automatic_base_change_succeeded</code> →
+          <b><code>closed</code></b> one second apart — the retargeted PR was auto-closed and had to
+          be reopened, most likely because the new base already contained every commit. If makit
+          treats that <code>closed</code> as a normal ending it will announce “merged/closed” for a
+          PR the user still wants. <b>Worth a probe against a real repo before step 6</b>; I have not
+          verified it first-hand.</div>
+      </div>
+
+      <div class="col3">
+        <div class="cap">No PR → makit splices it</div>
+        <div class="sheet lt">
+          <div class="shdr"><div class="t">feat/stack-b
+              <div class="flowline"><span class="chev"><svg class="i"><use href="#g-chev2"/></svg></span>
+                <span class="tgt"><span class="nm">main</span><svg class="i"><use href="#g-caret"/></svg></span></div></div>
+            <span class="x"><svg class="i"><use href="#g-x"/></svg></span></div>
+          <div class="sbody">
+            <div class="glabel"><svg class="i"><use href="#g-info"/></svg>Changed for you</div>
+            <div class="fact"><span class="g" style="color:var(--muted)"><svg class="g i"><use href="#g-merge"/></svg></span>
+              <span class="lbl q"><span class="nm">feat/base-branch</span> landed in
+                <span class="nm">main</span> and was deleted — now landing in
+                <span class="nm">main</span></span></div>
+            <div class="divid"></div>
+            <div class="glabel"><svg class="i"><use href="#g-warn"/></svg>Needs you</div>
+            <div class="fact"><span class="g"><svg class="g i"><use href="#g-push"/></svg></span>
+              <span class="lbl">1 file uncommitted</span><span class="act">Commit &amp; push</span></div>
+          </div>
+        </div>
+        <div class="note"><b>Splice, then say so once.</b> Resolution order: (1) the deleted
+          branch's own merged PR base — ask the forge; (2) failing that, the first live ancestor in
+          the chain; (3) failing that, the repo default. It never asks, because there is no state in
+          which “dangling” is a legal answer.</div>
+        <div class="pen ok"><b>And the numbers need no repair.</b> <code>main</code> now contains the
+          parent's commits, so <code>main...HEAD</code> is your own delta — the pill goes from
+          <span class="diff"><span class="add">+1.1k</span> <span class="del">−306</span></span> to
+          <span class="diff"><span class="add">+96</span> <span class="del">−12</span></span>
+          by itself. Under v2's base model this same event produced <em>zeros</em>.</div>
+      </div>
+
+      <div class="col3">
+        <div class="cap">The one real problem</div>
+        <div class="sheet lt">
+          <div class="shdr"><div class="t">feat/stack-b
+              <div class="flowline"><span class="chev"><svg class="i"><use href="#g-chev2"/></svg></span>
+                <span class="tgt warnt"><span class="nm">feat/base-branch</span><svg class="i"><use href="#g-caret"/></svg></span></div></div>
+            <span class="x"><svg class="i"><use href="#g-x"/></svg></span></div>
+          <div class="sbody">
+            <div class="glabel"><svg class="i"><use href="#g-warn"/></svg>Needs you</div>
+            <div class="fact"><span class="g" style="color:var(--dot-warn)"><svg class="g i"><use href="#g-cloudoff"/></svg></span>
+              <span class="lbl" style="color:var(--warn)">target <span class="nm">feat/base-branch</span>
+                was deleted without landing — nowhere to merge</span>
+              <span class="act" style="background:#FBF3DE;color:#6a4e07">Pick a target</span></div>
+          </div>
+        </div>
+        <div class="note"><b>Deleted <em>without</em> being merged</b> — abandoned, force-deleted,
+          renamed. Now there is genuinely no forward answer, so this is the only state that asks. It
+          is a <code>PrSignal</code> with a <code>DirectRemedy</code>, so it reaches
+          <code>Needs you</code>, the strip sentence and the CTA through the existing derivation —
+          and it is the one place the worktree row speaks up (option A from v2 §5, now with a much
+          narrower trigger).</div>
+        <div class="pen ok"><b>Net effect of your reframe on the edge cases:</b> v2 had one broken
+          state that was <em>common</em> (every landed parent). v3 has one broken state that is
+          <em>rare</em> (an abandoned target), and the common case fixes itself. That is the whole
+          argument for the noun change.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 6 -->
+<section class="card">
+  <header>
+    <h2>Retargeting an open PR — two buttons now, not three</h2>
+    <div class="sub">v2 needed “change locally only” because base and PR base were separate values.
+      With one field that option is incoherent, and the dialog gets simpler.</div>
+  </header>
+  <div class="body">
+    <div class="grid">
+      <div class="colnarrow">
+        <div class="cap"><span class="badge rec">Instant</span>No PR yet</div>
+        <div class="menu lt" style="width:100%">
+          <div class="hd">This worktree</div>
+          <div class="mi hi"><svg class="i"><use href="#g-chev2"/></svg>Lands in
+            <span class="tail"><span class="nm">feat/base-branch</span>
+              <svg class="i" style="width:13px;height:13px;color:var(--primary)"><use href="#g-check"/></svg></span></div>
+        </div>
+        <div class="pen ok"><b>No confirm.</b> One persisted field, two local <code>git</code>
+          re-reads, and <code>gh pr create --base</code> inherits it later. Undo is picking the old
+          value.</div>
+      </div>
+      <div class="col">
+        <div class="cap"><span class="badge now">Confirm</span>PR #143 is open</div>
+        <div class="mac narrow lt">
+          <div class="tl"><i></i><i></i><i></i></div>
+          <div style="padding:16px">
+            <div class="dlg">
+              <div class="t">Land #143 in <span class="mono" style="font-size:14px">main</span> instead?</div>
+              <div class="p">Retargets the pull request on GitHub from
+                <b class="mono">feat/base-branch</b> to <b class="mono">main</b>.</div>
+              <div class="warnbox"><svg class="i"><use href="#g-warn"/></svg>
+                <div>The PR would then contain <b>+1,204 −318</b> instead of <b>+96 −12</b> —
+                  <b>feat/base-branch</b>'s 41 commits come with it, because they are not in
+                  <b>main</b> yet. GitHub may dismiss approvals and re-request review.</div></div>
+              <div class="p" style="font-size:11.5px">Runs <code>gh pr edit 143 --base main</code>.
+                Checks re-run against the new target.</div>
+              <div class="btns"><span class="btn">Cancel</span>
+                <span class="btn warnb">Retarget</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="note"><b>Two buttons, and the warning is now the useful part.</b> It is no longer
+          “these two fields will disagree” — it is a straight statement of what the PR would become,
+          which is the thing a reviewer will see.</div>
+        <div class="note"><b>Stacking is unaffected.</b> Aim at the parent and your PR stays small;
+          that is the same act as before, just no longer described as a local override.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 6b -->
+<section class="card big">
+  <header>
+    <h2><span class="badge rec">Your call, applied</span>Rename <span class="mono">base</span> → <span class="mono">target</span>. Don't add a second field.</h2>
+    <div class="sub">v3's step 1 said “add <code>targetBranch</code>”, which would have left two nouns
+      in the tree forever. Every existing site, classified — and exactly two that must
+      <em>not</em> become “target”.</div>
+  </header>
+  <div class="body">
+    <table>
+      <thead><tr><th style="width:236px">Site</th><th style="width:112px">Today</th><th style="width:132px">Becomes</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">git.ts:192 diffStat()</td><td class="mono">baseBranch</td><td class="mono">targetBranch</td>
+          <td>The diff denominator <em>is</em> the target: <code>target...HEAD</code> = what a PR would contain.</td></tr>
+        <tr><td class="mono">git.ts:407 commitsAhead()</td><td class="mono">baseBranch</td><td class="mono">targetBranch</td>
+          <td style="color:#f0b8b2"><b>✗ See B1.</b> Claimed “same ref, same meaning” — false. <code>commitsAhead</code> prefers <code>@{upstream}..HEAD</code> and only falls back to <code>baseBranch..HEAD</code> (two-dot) when there is no upstream. Rename the parameter for consistency, but it does <b>not</b> become target-relative.</td></tr>
+        <tr><td class="mono">manager.ts:797 wrapUpWorktree()</td><td class="mono">baseBranch</td><td class="mono">targetBranch</td>
+          <td>Runs <code>git merge --ff-only origin/&lt;ref&gt;</code> — literally the destination.</td></tr>
+        <tr><td class="mono">manager.ts:57 <b>WrapUpResult</b> (TS)<br>models.dart:1224 <b>WrapUpReport</b> (Dart)</td><td class="mono">baseBranch<br>baseUpdated<br>baseReason</td><td class="mono">targetBranch<br>targetUpdated<br>targetReason</td>
+          <td>“The branch that was caught up.” All three fields move together. The two sides <b>already have different type names</b>; rename each under its own. See <b>B4</b> before touching the JSON keys.</td></tr>
+        <tr><td class="mono">manager.ts:521 createWorktree()</td><td class="mono">baseBranch</td><td class="mono">targetBranch</td>
+          <td>One user-facing answer (“Lands in”) that now also gets <b>persisted</b> instead of
+            discarded at <code>:559</code>.</td></tr>
+        <tr><td class="mono">ws/commands/worktree.ts:16,129</td><td class="mono">env.baseBranch</td><td class="mono">env.targetBranch</td>
+          <td>Wire key. App + server ship together so a coordinated rename is safe — but it <b>is</b>
+            a protocol break for an older client.</td></tr>
+        <tr><td class="mono">store.dart:899,1015 · new_session_sheet.dart:37 · new_worktree_dialog.dart:65 · repo_card.dart:372 · start_session.dart:99</td>
+          <td class="mono">baseBranch<br>_baseBranch</td><td class="mono">targetBranch<br>_targetBranch</td>
+          <td>Creation-path UI state and the command it sends. Visible label becomes “Lands in”.</td></tr>
+        <tr><td class="mono">pr_signals.dart:303-390,787 PrResidue</td><td class="mono">baseBranch<br>baseBehind</td><td class="mono">targetBranch<br>targetBehind</td>
+          <td>“<code>main</code> is N behind” — the branch wrap-up fast-forwards, i.e. the target.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="grid" style="margin-top:18px">
+      <div class="col">
+        <div class="cap"><span class="badge rej">Carve-out 1</span><span class="mono">addWorktree</span> takes a start point</div>
+        <div class="pen"><b><code>git.ts:582,589</code> must not become <code>targetBranch</code>.</b>
+          It is appended to <code>git worktree add -b &lt;branch&gt; &lt;path&gt; <b>&lt;commit-ish&gt;</b></code>
+          — git's own noun is a <em>start point</em>, and it legally takes a tag or a SHA, which no
+          merge destination may be (§4). Calling it “target” would make the one place that genuinely
+          means “fork from here” lie.</div>
+        <div class="pen"><b>And a collision is already waiting there.</b> <code>addWorktree</code> holds
+          <code>const target = join(base, repoName, opts.name)</code> at <code>git.ts:587</code> —
+          <code>target</code> is a <b>filesystem path</b> today, and <code>baseDir</code>/<code>base</code>
+          is the worktree root. Renaming the branch arg to <code>targetBranch</code> here would put
+          three unrelated “target”/“base” meanings inside twelve lines.</div>
+        <div class="pen ok"><b>So: <code>opts.baseBranch</code> → <code>opts.startPoint</code>.</b>
+          <code>createWorktree(targetBranch)</code> passes it down as
+          <code>startPoint: targetBranch</code> — one answer from the user, two honest git-level roles:
+          fork from it now, land back in it later.</div>
+      </div>
+      <div class="col">
+        <div class="cap"><span class="badge rej">Carve-out 2</span><span class="mono">baseRefName</span> stays</div>
+        <div class="pen"><b><code>protocol.ts:728</code> and <code>models.dart:420-478</code> keep the
+          name.</b> It mirrors GitHub's GraphQL field verbatim (<code>github/queries.ts:143</code>).
+          Renaming a wire mirror to match our own vocabulary is how you lose the ability to diff our
+          model against theirs.</div>
+        <div class="pen ok"><b>Its role gets sharper, not weaker.</b> Per §5,
+          <code>baseRefName</code> becomes the <em>source of truth that populates</em>
+          <code>targetBranch</code> whenever a PR exists — one arrow between the two vocabularies, in
+          one place. Everywhere else in the app, “base” stops existing.</div>
+        <div class="note"><b>Prose too, not just identifiers.</b> <code>repo_chips.dart:297</code>
+          (“Distinct base branches a new session can fork off”),
+          <code>pr_signals.dart:85,95,332,476</code>, <code>wrap_up.dart:313,340</code>
+          (“its base branch”, “the base branch”). Two of those are user-visible strings — and step 9
+          makes <code>wrap_up.dart:313</code>'s <code>?? 'its base branch'</code> fallback dead code.</div>
+      </div>
+    </div>
+    <div class="note"><b>Size:</b> ~44 sites across <code>server/src</code> + <code>app/lib</code>, plus
+      <code>server/test/ws/pr_commands.test.ts</code> and 8 app test files. Mechanical, but it changes
+      <code>WrapUpReport</code>'s JSON keys and one command's wire key — so server and app must land in
+      the same commit.</div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 6c -->
+<section class="card big">
+  <header>
+    <h2><span class="badge you">Normative</span>No stale state — what MUST update when the target changes</h2>
+    <div class="sub">Written as numbered requirements so they lift verbatim into the SPEC. The good
+      news: the existing broadcast path already does the hard part, so most of this is
+      “do not break it”, plus <b>two real bugs</b> that only appear once the picker exists.</div>
+  </header>
+  <div class="body">
+
+    <div class="cap">How a change actually reaches the screen today</div>
+    <div class="chain" style="margin-bottom:6px">
+      <span class="n">worktree.setTarget</span>
+      <span class="ar"><svg class="i"><use href="#g-chev2"/></svg></span>
+      <span class="n me">persist</span>
+      <span class="ar"><svg class="i"><use href="#g-chev2"/></svg></span>
+      <span class="n">broadcastReposSnapshot()</span>
+      <span class="ar"><svg class="i"><use href="#g-chev2"/></svg></span>
+      <span class="n">listRepos() re-runs diffStat + commitsAhead</span>
+      <span class="ar"><svg class="i"><use href="#g-chev2"/></svg></span>
+      <span class="n">repos.snapshot</span>
+      <span class="ar"><svg class="i"><use href="#g-chev2"/></svg></span>
+      <span class="n dflt">reposProvider</span>
+    </div>
+    <div class="note" style="margin-bottom:16px"><b>There is no diff-level cache to invalidate.</b>
+      <code>diffStat()</code> and <code>commitsAhead()</code> re-run from scratch on every
+      <code>listRepos</code> pass (<code>repo_service.ts:114-116</code>), and
+      <code>reposProvider</code> (<code>store.dart:1228</code>) is the app's single source of truth.
+      So <b>one broadcast refreshes every consumer</b> — the requirement is to guarantee the broadcast
+      happens, in the right order, and that nothing has captured a copy.</div>
+
+    <table>
+      <thead><tr><th style="width:38px">Req</th><th>Requirement</th><th style="width:250px">Where</th></tr></thead>
+      <tbody>
+        <tr><td><b>R1</b></td>
+          <td><code>worktree.setTarget</code> MUST persist the new value <b>before</b> calling
+            <code>broadcastReposSnapshot()</code>. Broadcasting first computes the snapshot with the
+            <em>old</em> target and ships stale numbers that then look correct until the next
+            unrelated event.</td>
+          <td class="mono">ws/commands/worktree.ts — join the existing pattern at :24, :54, :71, :87, :111, :142, :166</td></tr>
+        <tr><td><b>R2</b></td>
+          <td>The command MUST send its ack <b>after <code>broadcastReposSnapshot()</code> has been invoked</b> — call-order, which is testable; “queued” was not.</td>
+          <td class="mono">ws/commands/worktree.ts</td></tr>
+        <tr><td><b>R3</b></td>
+          <td>MUST NOT introduce a debounce or throttle on this path.
+            <code>throttledReposSnapshot</code> (1000ms trailing, <code>server.ts:721</code>) exists
+            for turn-end coalescing; a <em>user-initiated</em> change must be immediate.</td>
+          <td class="mono">server.ts:721,926</td></tr>
+        <tr><td><b>R4</b></td>
+          <td>The two-phase emit MUST stay correct: <code>broadcastReposSnapshot</code> emits
+            git-only first, then PR-enriched (<code>server.ts:979,997</code>). Both frames carry the
+            diff numbers, so <b>both</b> must be computed post-change. The existing
+            <code>reposSnapshotGeneration</code> guard (<code>server.ts:968,976,990</code>) already
+            drops a superseded in-flight pass — this MUST NOT regress, and
+            <code>lastEnrichedRepos</code> / <code>lastGitOnlyRepos</code>
+            (<code>server.ts:255,262</code>, no TTL) MUST NOT be re-emitted after a target change.</td>
+          <td class="mono">server.ts:964-1002</td></tr>
+        <tr><td><b>R5</b></td>
+          <td><b>Open sheets MUST re-derive, not re-use.</b> See the two bugs below — this is the only
+            place where “no stale state” needs new code rather than preservation.</td>
+          <td class="mono">pr_detail.dart:38-56<br>worktree_actions.dart:26</td></tr>
+        <tr><td><b>R6</b></td>
+          <td>Every consumer in the table below MUST reflect the new value without user action — no
+            pull-to-refresh, no reopen, no navigation.</td>
+          <td class="mono">see consumer table</td></tr>
+        <tr><td><b>R7</b></td>
+          <td>If the target is invalid at compute time the numbers MUST be suppressed. <b style="color:#f0b8b2">Blocked on B5</b>: “suppressed” has no wire representation yet, and the real failure is not zeros but a <em>plausible partial</em> number — only the <code>target...HEAD</code> leg is skipped, so working-tree and untracked files still count.</td>
+          <td class="mono">git.ts:189-227<br>repo_service.ts:114</td></tr>
+        <tr><td><b>R8</b></td>
+          <td>A failed <code>setTarget</code> MUST NOT leave the UI showing the attempted value:
+            revert to the persisted one and surface the error. The picker is optimistic-free — it
+            renders from <code>reposProvider</code>, never from local selection state.</td>
+          <td class="mono">store.dart · the picker widget</td></tr>
+        <tr><td><b>R9</b></td>
+          <td>The persist step MUST be <b>atomic</b>. Concurrent <code>setTarget</code> calls are safe
+            only because <code>listRepos</code> re-reads persisted state, so <b>last-persisted wins the
+            final frame</b> — a torn write (read-modify-write on a JSON map, two clients at once) breaks
+            that guarantee silently. No proposed test covered this.</td>
+          <td class="mono">the store chosen for B2</td></tr>
+        <tr><td><b>R10</b></td>
+          <td><code>setTarget</code> MUST <b>validate the ref server-side</b> — exists, and is fetched —
+            and reject otherwise. R8 specifies the <em>UI of a rejection</em> but never said what
+            causes one; without this the app can persist a target that no git command can resolve, which
+            is B5's partial-number failure arriving by the front door.</td>
+          <td class="mono">ws/commands/worktree.ts · git.ts</td></tr>
+      </tbody>
+    </table>
+
+    <div class="grid" style="margin-top:20px">
+      <div class="col">
+        <div class="cap"><span class="badge rej">Bug 1</span>The detail sheet snapshots its own facts</div>
+        <div class="pen"><b><code>showPrDetail(status:, pr:)</code> takes <code>PrStatus</code> as a
+          constructor parameter</b> (<code>pr_detail.dart:38-56</code>) and
+          <code>PrDetailBody</code> is a plain <code>StatelessWidget</code>
+          (<code>pr_detail.dart:76</code>). It is handed a value computed at open time and never looks
+          again.</div>
+        <div class="pen"><b>Which is precisely the surface that now hosts the control.</b> Home 2 puts
+          the <span class="mono">≫ target</span> picker <em>and</em> the diff numbers in this sheet's
+          header. Change the target from inside it and the sheet keeps painting the old
+          <span class="diff"><span class="add">+1.1k</span> <span class="del">−306</span></span> until
+          you close and reopen it. Guaranteed stale, on the one screen where the user just acted.</div>
+        <div class="pen ok"><b>Fix:</b> <code>PrDetailBody</code> becomes a <code>ConsumerWidget</code>
+          that takes an identity (<code>repoId</code> + <code>worktreePath</code>) and re-derives
+          <code>PrStatus</code> from <code>reposProvider</code> each build. Callers
+          (<code>repo_chips.dart:146</code>, <code>session_pr_chip.dart:60</code>,
+          <code>pr_bar.dart:120</code>) pass the identity instead of the derived value.</div>
+      </div>
+      <div class="col">
+        <div class="cap"><span class="badge rej">Bug 2</span>The worktree-actions sheet captures its <code>Worktree</code></div>
+        <div class="pen"><b><code>showWorktreeActions(..., worktree:)</code></b>
+          (<code>worktree_actions.dart:26</code>) closes over the <code>Worktree</code> instance and
+          renders <code>worktree.branch</code> into <code>SheetHeader</code>. Under §3b that header
+          also carries <span class="mono">≫ target</span>, and the sheet stays open across the change —
+          so the canonical home has the same defect as Bug 1.</div>
+        <div class="pen ok"><b>Fix:</b> same shape — resolve the <code>Worktree</code> from
+          <code>reposProvider</code> by <code>path</code> on each build. It is already a
+          <code>WidgetRef</code>-carrying function, so this is a lookup, not a signature change.</div>
+        <div class="note"><b>Deliberately NOT changed:</b>
+          <code>showPrDirectConfirm</code> (<code>wrap_up.dart:238</code>) passes
+          <code>uncommittedFiles</code> and <code>branch</code> by value on purpose — a confirmation
+          must describe what the user agreed to, and its <code>expectBranch</code> guard re-checks
+          server-side. Freezing a confirmation is correct; freezing a <em>display</em> is not.</div>
+      </div>
+    </div>
+
+    <div class="cap" style="margin-top:22px">Consumer table — “everywhere it is used”</div>
+    <table>
+      <thead><tr><th style="width:132px">Field</th><th style="width:290px">Consumer</th><th>Visible effect of a target change</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">insertions<br>deletions</td>
+          <td class="mono">worktree_row.dart:230 (mobile)<br>desktop_sidebar.dart:645 (sidebar)</td>
+          <td>The two <code>DiffChip</code> render sites. The headline effect.</td></tr>
+        <tr><td class="mono">hasChanges</td><td class="mono">worktree_row.dart:80</td>
+          <td>Row <b>expand/meta-line visibility</b> — a worktree can go from “has a meta line” to
+            “doesn't”, changing row height.</td></tr>
+        <tr><td class="mono">insertions+deletions</td><td class="mono">repo_chips.dart:321-324</td>
+          <td><b>Sort order.</b> Ranked by <code>hasChanges</code> <em>then</em> magnitude (<code>:321-322</code>, then <code>:324</code>), so a retarget can flip a worktree between the <b>active and inactive partitions</b> — not merely reorder within one. Rows MUST be keyed by <code>worktree.path</code> so they animate rather than swap identity.</td></tr>
+        <tr><td class="mono">aheadCount</td><td class="mono">pr_signals.dart:433-436 → :776</td>
+          <td style="color:#f0b8b2"><b>Does NOT move for a pushed branch</b> (B1). Only never-pushed branches fall through to the base ref, and then two-dot.</td></tr>
+        <tr><td class="mono">behindCount</td><td class="mono">pr_signals.dart:424-427 → :777</td>
+          <td style="color:#f0b8b2"><b>Never moves</b> (B1): <code>commitsBehind</code> takes no base argument — purely <code>HEAD..@{upstream}</code>. Missed second consumer: <code>pr_signals.dart:788</code> uses the <b>primary checkout’s</b> count. Re-pointing this at the target is the open design question.</td></tr>
+        <tr><td class="mono">PrStatus (derived)</td>
+          <td class="mono">repo_chips.dart:115 PrStatusChip<br>pr_bar.dart sentence + CTA<br>session_pr_chip.dart:60<br>wrap_up.dart:185</td>
+          <td>Tone dot, loud fact, <code>+n more</code> count, and <b>which verb the CTA offers</b> can
+            all change, because the signal list is rebuilt from the new counts.</td></tr>
+        <tr><td class="mono">uncommittedFiles</td>
+          <td class="mono">repo_chips.dart:161 · pr_signals.dart:775 · session_screen.dart:366 · desktop_chat_pane.dart:268 · worktree_starter.dart:356 · pr_bar.dart:137 · session_pr_chip.dart:75 · wrap_up.dart:185</td>
+          <td><b style="color:#b4f1be">Explicitly UNAFFECTED</b> — working-tree only, so a target change
+            must not move it. Listed on purpose: it was silently omitted before, and the fact that
+            <code>aheadCount</code> is <em>also</em> effectively target-independent yet <em>was</em>
+            listed is the inconsistency that exposed B1. Eight consumers, so a regression here is loud.</td></tr>
+        <tr><td class="mono">targetBranch</td>
+          <td class="mono">worktree_actions.dart (both) · pr_detail.dart header · buildPrActionMenu inline value</td>
+          <td>The three homes (§2, §3b, §3) each print the value; all three must show the new one.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="cap" style="margin-top:20px">Tests that prove it (TDD order)</div>
+    <ul>
+      <li><b>Server, R1 ordering:</b> stub the broadcast, assert the persisted target is already the
+        new value when the broadcast fires — not merely that both happened.</li>
+      <li><b>Server, R4:</b> fire <code>setTarget</code> while a snapshot is in flight; assert the
+        superseded pass emits nothing and the final frame carries the new numbers.</li>
+      <li><b>Server, end-to-end numbers:</b> a real stacked fixture — worktree off a parent, assert
+        <code>insertions</code> drops from parent-inclusive to own-delta after
+        <code>setTarget</code>. This is the test that would have caught the original
+        <code>repo_service.ts:114</code> bug.</li>
+      <li><b>App, R5 (both bugs):</b> pump the sheet open, push a new <code>repos.snapshot</code> with
+        different numbers, assert the <b>open sheet</b> shows the new ones. Fails today by
+        construction.</li>
+      <li><b>App, R6:</b> one widget test per consumer row above, asserting rebuild without any user
+        interaction.</li>
+      <li><b>App, R8:</b> make <code>setTarget</code> reject; assert the picker shows the old value and
+        an error, not the attempted one.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════════ 7 -->
+<section class="card">
+  <header>
+    <h2><span class="badge next">Build order</span>Smaller again than v2</h2>
+    <div class="sub">Steps 1-2 are still the whole bug fix and touch no UI.</div>
+  </header>
+  <div class="body">
+    <table>
+      <thead><tr><th style="width:26px">#</th><th style="width:198px">Change</th><th style="width:236px">File</th><th style="width:48px">Size</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><b>Rename <code>base</code> → <code>target</code></b> (§6b) and <b>persist it</b>: <code>targetBranch</code> on <code>WorktreeDTO</code> + Dart <code>Worktree</code></td>
+          <td class="mono">server/src/protocol.ts:713<br>app/lib/store/models.dart:837<br>+ ~44 sites (§6b)</td><td>M</td>
+          <td>One noun, not two. Carve-outs: <code>startPoint</code>, <code>baseRefName</code>. Seed from the creation-time answer (already collected, currently discarded at
+            <code>manager.ts:559</code>), else repo default. <b>No stored fork point</b> — three-dot
+            diff finds it live.</td></tr>
+        <tr><td>2</td><td><b>Point the git reads at it</b></td>
+          <td class="mono">server/src/repo_service.ts:114-116</td><td>XS</td>
+          <td>Two arguments. Pill + ahead count become “what a PR into target would contain”. Ship
+            alone if you want the wrong number gone this week.</td></tr>
+        <tr><td>3</td><td><b>PR is the source of truth</b> when one exists: mirror <code>baseRefName</code> into <code>targetBranch</code></td>
+          <td class="mono">server/src/repo_service.ts<br>server/src/github/queries.ts:143</td><td>XS</td>
+          <td>Buys GitHub's auto-retargeting for free (§5). No splice logic needed for the PR case.</td></tr>
+        <tr><td>4</td><td><b><code>worktree.setTarget</code></b> + ranked candidates, incl. <code>not pushed yet</code></td>
+          <td class="mono">server/src/ws/commands/worktree.ts<br>server/src/git.ts</td><td>M</td>
+          <td>One pure ranking function, two shells. Emits a repo snapshot so the pill re-renders
+            with no extra round trip.</td></tr>
+        <tr><td>5</td><td><b>Menu entry</b> “Lands in <code>main</code> ›” in a “This worktree” group</td>
+          <td class="mono">app/lib/ui/widgets/pr_detail.dart:674</td><td>S</td>
+          <td>Appends a group to <code>buildPrActionMenu</code>. <code>pr_bar.dart</code> untouched.</td></tr>
+        <tr><td>5b</td><td><b>Worktree actions entry</b> — “Lands in <code>x</code> ›” in both action menus, + the header flow line on mobile</td>
+          <td class="mono">app/lib/ui/home/worktree_actions.dart:26<br>app/lib/desktop/chat/desktop_sidebar.dart:802</td><td>S</td>
+          <td><b>The canonical home</b> (§3b): the only per-worktree menu, and the only entry that
+            exists with no session open. Reuses the existing disabled-with-reason guards but does
+            <em>not</em> inherit Rename's open-PR block.</td></tr>
+        <tr><td>6</td><td><b>Sheet header flow line</b> <code>[src] ≫ target ⌄</code>, target selectable</td>
+          <td class="mono">app/lib/ui/widgets/pr_detail.dart:226<br>app/lib/ui/widgets/sheet_header.dart</td><td>S</td>
+          <td><code>SheetHeader</code> gains an optional subtitle slot. Shows the head branch, which
+            a PR sheet does not show at all today.</td></tr>
+        <tr><td>7</td><td><b>Splice on delete</b> (no-PR case): merged-PR base → live ancestor → repo default</td>
+          <td class="mono">server/src/git.ts<br>server/src/manager.ts</td><td>S</td>
+          <td>Mirrors GitHub's own rule so both paths agree. Announced once as a
+            <code>Changed for you</code> fact, never a prompt.</td></tr>
+        <tr><td>8</td><td><b><code>target deleted without landing</code></b> as a <code>PrSignal</code> + <code>DirectRemedy</code></td>
+          <td class="mono">app/lib/ui/widgets/pr_signals.dart</td><td>S</td>
+          <td>The only genuinely broken state left. Reaches <code>Needs you</code>, the strip and the
+            row through the existing derivation.</td></tr>
+        <tr><td>8b</td><td><b>No-stale-state work</b> (§6c): broadcast on <code>setTarget</code>, and make the detail + worktree-action sheets re-derive from <code>reposProvider</code></td>
+          <td class="mono">server/src/ws/commands/worktree.ts<br>app/lib/ui/widgets/pr_detail.dart:38<br>app/lib/ui/home/worktree_actions.dart:26</td><td>S</td>
+          <td>R1-R8. The broadcast is one line joining an existing pattern; the two sheets currently
+            snapshot their facts and would show stale numbers on the very screen the user just acted on.</td></tr>
+        <tr><td>9</td><td><b>Target into PR + merge</b>: <code>gh pr create --base</code>, <code>gh pr edit --base</code>, <code>wrapUpWorktree</code></td>
+          <td class="mono">server/src/manager.ts:745,803</td><td>S</td>
+          <td>Kills the <code>?? detectDefaultBranch()</code> fallback that can ff the wrong branch,
+            and makes <code>wrap_up.dart:313</code>'s “its base branch” fallback string dead code.</td></tr>
+        <tr><td>10</td><td><b>Relabel the creation dialog</b> “Base branch” → “Lands in”</td>
+          <td class="mono">app/lib/desktop/chat/new_worktree_dialog.dart:65<br>app/lib/ui/home/new_session_sheet.dart:37</td><td>XS</td>
+          <td>Same value, same widget, honest noun — and it is the primary path, so it should use the
+            vocabulary the rest of the feature uses.</td></tr>
+      </tbody>
+    </table>
+    <div class="grid" style="margin-top:18px">
+      <div class="col">
+        <div class="cap">Deleted from v2 by the reframe</div>
+        <ul>
+          <li><b>The stored fork point</b> and its <code>merge-base --fork-point</code> seeding.</li>
+          <li><b>The 3-button scope dialog</b> — “change locally only” has nothing left to mean.</li>
+          <li><b>The <code>base is gone</code> warn state</b> for landed parents — the common case
+            now self-heals silently.</li>
+          <li><b>Two competing notions of base</b> in <code>manager.ts</code> and
+            <code>repo_service.ts</code> — now one noun, <code>target</code> (§6b).</li>
+        </ul>
+      </div>
+      <div class="col">
+        <div class="cap">Still open</div>
+        <ul>
+          <li><b>Verify the auto-close hazard</b> (§5) against a real repo before step 3 — a spike
+            with two stacked PRs would settle it in ten minutes.</li>
+          <li><s>Existing worktrees on upgrade</s> — <b>answered in B6:</b> seed from the repo
+            default (matches today’s behaviour, needs no fork-point pass, moves no number on upgrade).</li>
+          <li><b>Word choice</b>: “Lands in” everywhere, or “Target” in the menu and “lands in” in
+            prose? I have used “Lands in” throughout on the theory that one word beats two.</li>
+          <li><b><code>behindCount</code> semantics</b> (§6c consumer table): keep it measured against
+            the upstream, or re-point it at the target so it predicts conflicts?</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="g-branch" viewBox="0 0 24 24"><circle cx="7" cy="5" r="2.3"/><circle cx="7" cy="19" r="2.3"/><circle cx="17" cy="8" r="2.3"/><path d="M7 7.3v9.4M9.3 8h3.4a4 4 0 0 1 4 4v.5"/><path d="M17 10.3v2"/></symbol>
+  <symbol id="g-fork" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.3"/><circle cx="6" cy="6" r="2.3"/><circle cx="18" cy="6" r="2.3"/><path d="M6 8.3v7.4M8.3 6h7.4"/><path d="M18 8.3v1.2a4 4 0 0 1-4 4H8.3"/></symbol>
+  <symbol id="g-merge" viewBox="0 0 24 24"><circle cx="7" cy="5" r="2.3"/><circle cx="7" cy="19" r="2.3"/><circle cx="17" cy="12" r="2.3"/><path d="M7 7.3v9.4M14.7 12h-3.4a4 4 0 0 1-4-4"/></symbol>
+  <symbol id="g-chev2" viewBox="0 0 24 24"><path d="M6.5 6.5l5.5 5.5-5.5 5.5"/><path d="M13.5 6.5 19 12l-5.5 5.5"/></symbol>
+  <symbol id="g-caret" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+  <symbol id="g-caretright" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+  <symbol id="g-check" viewBox="0 0 24 24"><path d="M4.5 12.5l5 5L20 7"/></symbol>
+  <symbol id="g-check2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></symbol>
+  <symbol id="g-warn" viewBox="0 0 24 24"><path d="M12 3.5 22 20H2z"/><path d="M12 9.5v5"/><circle class="dot" cx="12" cy="17.2" r="1.1"/></symbol>
+  <symbol id="g-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle class="dot" cx="12" cy="8" r="1.05"/></symbol>
+  <symbol id="g-detail" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle class="dot" cx="12" cy="8" r="1.05"/></symbol>
+  <symbol id="g-folder" viewBox="0 0 24 24"><path d="M3 6.5h6l2 2.5h10V19H3z"/></symbol>
+  <symbol id="g-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.2 15.2 21 21"/></symbol>
+  <symbol id="g-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="g-rocket" viewBox="0 0 24 24"><path d="M13.5 3.5c3.5 0 7 3.5 7 7l-7 7-4-4z"/><path d="M9.5 13.5 6 17M4.5 14.5c-1 1.5-1 4-1 5 1 0 3.5 0 5-1"/><circle cx="15" cy="9" r="1.4"/></symbol>
+  <symbol id="g-wrench" viewBox="0 0 24 24"><path d="M15.5 3.5a5 5 0 0 0-4.3 7.5l-7.2 7.2 2.3 2.3 7.2-7.2A5 5 0 1 0 15.5 3.5z"/></symbol>
+  <symbol id="g-push" viewBox="0 0 24 24"><path d="M12 3.5v9"/><path d="M8.5 7 12 3.5 15.5 7"/><circle cx="12" cy="16" r="2.4"/><path d="M6 20h12"/></symbol>
+  <symbol id="g-cloudoff" viewBox="0 0 24 24"><path d="M7.5 18h9.2a3.8 3.8 0 0 0 .6-7.5A5.5 5.5 0 0 0 9 7.6"/><path d="M6.6 10.6A3.8 3.8 0 0 0 7.5 18"/><path d="M4 4l16 16"/></symbol>
+  <symbol id="g-textaa" viewBox="0 0 24 24"><path d="M3 18 8 6l5 12"/><path d="M4.6 14h6.8"/><path d="M21 11.5a3 3 0 0 0-5.6-1M21 10.5V18M21 14.5a9 9 0 0 1-3.4.6 2 2 0 0 0 0 3.4 4 4 0 0 0 3.4-1.2"/></symbol>
+  <symbol id="g-trash" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9.5 7V4.5h5V7"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></symbol>
+  <symbol id="g-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="g-clip" viewBox="0 0 24 24"><path d="M16.5 7.5 9 15a3 3 0 0 0 4.2 4.2l7.3-7.3a5 5 0 0 0-7-7L5.5 12.5a7 7 0 0 0 9.9 9.9"/></symbol>
+  <symbol id="g-spark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 14.5 12 8l3.5 6.5"/></symbol>
+</svg>
+
+</body>
+</html>

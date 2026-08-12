@@ -25,6 +25,10 @@ import {
   syncBaseBranch,
   deleteBranch,
   branchExists,
+  listLocalBranches,
+  listRemoteBranchNames,
+  hasOriginRemote,
+  closestAncestorBranch,
 } from "./git.js";
 
 /** Init a throwaway repo with one commit on `main`. Returns its path. */
@@ -48,7 +52,7 @@ test("renameBranch renames the worktree's checked-out branch", async () => {
       repoPath: repo,
       name: "feature-x",
       branch: "old-name",
-      baseBranch: "main",
+      startPoint: "main",
       baseDir: base,
     });
     await renameBranch(wtPath, "old-name", "new-name");
@@ -126,7 +130,7 @@ test("listWorktrees returns the primary tree, then added worktrees", async () =>
       repoPath: repo,
       name: "feature-x",
       branch: "makit/feature-x",
-      baseBranch: "main",
+      startPoint: "main",
       baseDir: base,
     });
 
@@ -153,7 +157,7 @@ test("diffStat counts committed + uncommitted + untracked changes vs base", asyn
       repoPath: repo,
       name: "work",
       branch: "makit/work",
-      baseBranch: "main",
+      startPoint: "main",
       baseDir: base,
     });
     const g = (...args: string[]) => execFileSync("git", args, { cwd: wtPath });
@@ -172,6 +176,79 @@ test("diffStat counts committed + uncommitted + untracked changes vs base", asyn
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(base, { recursive: true, force: true });
+  }
+});
+
+/**
+ * B5: `diffStat` used to have no error channel, so an unresolvable target
+ * silently degraded to a working-tree-only count that looks like a small,
+ * legitimate diff — strictly harder to notice than a zero. These pin the
+ * `targetResolved` flag that lets callers suppress rather than mislead.
+ */
+test("diffStat reports targetResolved=true when the target resolves", async () => {
+  const repo = makeRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  try {
+    const wtPath = await addWorktree({
+      repoPath: repo,
+      name: "resolves",
+      branch: "makit/resolves",
+      startPoint: "main",
+      baseDir: base,
+    });
+    const stat = await diffStat(wtPath, "main");
+    assert.equal(stat.targetResolved, true);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("diffStat flags an unresolvable target instead of returning a partial count", async () => {
+  const repo = makeRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  try {
+    const wtPath = await addWorktree({
+      repoPath: repo,
+      name: "gone",
+      branch: "makit/gone",
+      startPoint: "main",
+      baseDir: base,
+    });
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: wtPath });
+    // A committed change, so a resolvable target would report insertions.
+    writeFileSync(join(wtPath, "README.md"), "hello\nline2\n");
+    g("add", ".");
+    g("commit", "-q", "-m", "add line");
+    // ...and uncommitted work, which is the part that used to leak through as a
+    // plausible small number when the committed leg failed.
+    writeFileSync(join(wtPath, "dirty.txt"), "wip\n");
+
+    const stat = await diffStat(wtPath, "no-such-branch");
+    assert.equal(stat.targetResolved, false, "an absent target must be reported, not swallowed");
+    // Defence in depth: a consumer that forgets the flag must degrade to
+    // "nothing", not a plausible small working-tree figure. The working-tree
+    // truth still lives in `uncommittedFiles`, so no information is lost.
+    assert.deepEqual(
+      { i: stat.insertions, d: stat.deletions, f: stat.filesChanged },
+      { i: 0, d: 0, f: 0 },
+      "an unresolvable target must zero the counts, not ship a partial reading",
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("diffStat treats a null target as resolved (working-tree reading is intended)", async () => {
+  const repo = makeRepo();
+  try {
+    // The primary checkout has no target; its numbers legitimately mean
+    // "uncommitted", so nothing is unresolved and callers must not suppress.
+    const stat = await diffStat(repo, null);
+    assert.equal(stat.targetResolved, true);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });
 
@@ -201,7 +278,13 @@ test("read helpers degrade gracefully on a non-repo path", async () => {
     assert.equal(await detectDefaultBranch(plain), null);
     assert.equal(await detectCurrentBranch(plain), null);
     assert.deepEqual(await listWorktrees(plain), []);
-    assert.deepEqual(await diffStat(plain, "main"), { insertions: 0, deletions: 0, filesChanged: 0 });
+    assert.deepEqual(await diffStat(plain, "main"), {
+      insertions: 0,
+      deletions: 0,
+      filesChanged: 0,
+      // Not a repo at all: the target could not be resolved either.
+      targetResolved: false,
+    });
     assert.equal(await uncommittedFileCount(plain), 0);
   } finally {
     rmSync(plain, { recursive: true, force: true });
@@ -562,6 +645,22 @@ test("syncBaseBranch refuses when the branch is checked out in two worktrees", a
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Target-candidate primitives (phase 2: the picker)
+// ─────────────────────────────────────────────────────────────────────────────
+
+test("listLocalBranches returns every local branch, sorted", async () => {
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    g("branch", "feat/b");
+    g("branch", "feat/a");
+    assert.deepEqual(await listLocalBranches(repo), ["feat/a", "feat/b", "main"]);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // SPEC-48 — the default-branch override, and why it must be checked rather than
 // trusted.
@@ -621,6 +720,179 @@ test("an override rescues a repo whose origin/HEAD points at a branch that is go
     assert.equal(await resolveDefaultBranch(repo, "trunk"), "trunk");
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("listLocalBranches is empty for a non-repo", async () => {
+  const plain = mkdtempSync(join(tmpdir(), "makit-plain-"));
+  try {
+    assert.deepEqual(await listLocalBranches(plain), []);
+  } finally {
+    rmSync(plain, { recursive: true, force: true });
+  }
+});
+
+test("listRemoteBranchNames strips the remote prefix and skips HEAD", async () => {
+  const origin = makeRepo();
+  const clone = mkdtempSync(join(tmpdir(), "makit-clone-"));
+  try {
+    execFileSync("git", ["clone", "-q", origin, clone]);
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: clone });
+    g("config", "user.email", "t@t.io");
+    g("config", "user.name", "Test");
+    g("checkout", "-q", "-b", "pushed-branch");
+    g("push", "-q", "origin", "pushed-branch");
+    g("checkout", "-q", "-b", "local-only");
+    const remote = await listRemoteBranchNames(clone);
+    assert.equal(remote.has("pushed-branch"), true, "a pushed branch is on the remote");
+    assert.equal(remote.has("local-only"), false, "an unpushed branch is not");
+    // `origin/HEAD` is a symbolic alias, not a branch a PR can target.
+    assert.equal(remote.has("HEAD"), false);
+    // A branch that exists only on a NON-origin remote (e.g. `upstream`) is not a
+    // valid PR base — `gh` resolves against `origin` — so it must be excluded.
+    execFileSync("git", ["update-ref", "refs/remotes/upstream/upstream-only", "HEAD"], {
+      cwd: clone,
+    });
+    const remote2 = await listRemoteBranchNames(clone);
+    assert.equal(
+      remote2.has("upstream-only"),
+      false,
+      "a branch on a non-origin remote is not a PR base",
+    );
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(clone, { recursive: true, force: true });
+  }
+});
+
+test("hasOriginRemote is true only for an actual `origin`", async () => {
+  // Gates the whole "a PR base must exist on the remote" rule in the picker, and
+  // is origin-scoped to match `listRemoteBranchNames`. A repo whose only remote is
+  // `upstream` must read as NO origin: otherwise the gate switches on against an
+  // empty origin branch set and every candidate is disabled.
+  const origin = makeRepo();
+  const clone = mkdtempSync(join(tmpdir(), "makit-clone-"));
+  try {
+    assert.equal(await hasOriginRemote(origin), false, "a plain `git init` has no remote");
+    execFileSync("git", ["remote", "add", "upstream", "https://example.test/x/y.git"], {
+      cwd: origin,
+    });
+    assert.equal(
+      await hasOriginRemote(origin),
+      false,
+      "an upstream-only repo has a remote, but not origin",
+    );
+    execFileSync("git", ["clone", "-q", origin, clone]);
+    assert.equal(await hasOriginRemote(clone), true);
+  } finally {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(clone, { recursive: true, force: true });
+  }
+});
+
+test("closestAncestorBranch finds the branch a worktree forked from", async () => {
+  const repo = makeRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  try {
+    // main -> feat/parent -> feat/child. Both main and feat/parent are ancestors
+    // of the child, so "closest" is what distinguishes the real fork parent.
+    const parent = await addWorktree({
+      repoPath: repo,
+      name: "parent",
+      branch: "feat/parent",
+      startPoint: "main",
+      baseDir: base,
+    });
+    writeFileSync(join(parent, "p.txt"), "p\n");
+    execFileSync("git", ["add", "."], { cwd: parent });
+    execFileSync("git", ["commit", "-q", "-m", "parent"], { cwd: parent });
+
+    const child = await addWorktree({
+      repoPath: repo,
+      name: "child",
+      branch: "feat/child",
+      startPoint: "feat/parent",
+      baseDir: base,
+    });
+    writeFileSync(join(child, "c.txt"), "c\n");
+    execFileSync("git", ["add", "."], { cwd: child });
+    execFileSync("git", ["commit", "-q", "-m", "child"], { cwd: child });
+
+    const found = await closestAncestorBranch(child, ["main", "feat/parent", "feat/child"]);
+    assert.equal(found, "feat/parent");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("closestAncestorBranch ignores the worktree's own branch and non-ancestors", async () => {
+  const repo = makeRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  try {
+    const wt = await addWorktree({
+      repoPath: repo,
+      name: "solo",
+      branch: "feat/solo",
+      startPoint: "main",
+      baseDir: base,
+    });
+    writeFileSync(join(wt, "s.txt"), "s\n");
+    execFileSync("git", ["add", "."], { cwd: wt });
+    execFileSync("git", ["commit", "-q", "-m", "solo"], { cwd: wt });
+    // A sibling with its OWN commit is genuinely not an ancestor of feat/solo.
+    // (Branching at `main` without committing would leave it *equal* to main and
+    // therefore a legitimate ancestor — which is why this needs a real commit.)
+    const sib = await addWorktree({
+      repoPath: repo,
+      name: "sibling",
+      branch: "feat/sibling",
+      startPoint: "main",
+      baseDir: base,
+    });
+    writeFileSync(join(sib, "sib.txt"), "sib\n");
+    execFileSync("git", ["add", "."], { cwd: sib });
+    execFileSync("git", ["commit", "-q", "-m", "sibling"], { cwd: sib });
+    const found = await closestAncestorBranch(wt, ["feat/solo", "feat/sibling", "main"]);
+    assert.equal(found, "main");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("closestAncestorBranch returns null when nothing qualifies", async () => {
+  const plain = mkdtempSync(join(tmpdir(), "makit-plain-"));
+  try {
+    assert.equal(await closestAncestorBranch(plain, ["main"]), null);
+  } finally {
+    rmSync(plain, { recursive: true, force: true });
+  }
+});
+
+test("closestAncestorBranch breaks a distance tie by candidate order", async () => {
+  const repo = makeRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  try {
+    // `alias` points at the same commit as `main`, so both are ancestors at the
+    // same distance. The caller passes candidates in preference order, so the
+    // earlier one must win — deterministically, not by Object key order.
+    execFileSync("git", ["branch", "alias", "main"], { cwd: repo });
+    const wt = await addWorktree({
+      repoPath: repo,
+      name: "tie",
+      branch: "feat/tie",
+      startPoint: "main",
+      baseDir: base,
+    });
+    writeFileSync(join(wt, "t.txt"), "t\n");
+    execFileSync("git", ["add", "."], { cwd: wt });
+    execFileSync("git", ["commit", "-q", "-m", "tie"], { cwd: wt });
+    assert.equal(await closestAncestorBranch(wt, ["main", "alias"]), "main");
+    assert.equal(await closestAncestorBranch(wt, ["alias", "main"]), "alias");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
   }
 });
 

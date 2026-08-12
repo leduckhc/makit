@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../../store/store.dart';
 import '../widgets/pr_detail.dart';
 import '../widgets/pr_signals.dart';
 import '../widgets/pr_tone.dart';
@@ -61,20 +64,39 @@ class SessionPrChip extends ConsumerWidget {
         context,
         status: status,
         pr: pr,
+        // Identity, so the sheet re-derives its facts (it hosts the "Lands in"
+        // picker, which changes them) rather than painting open-time values.
+        projectId: projectId,
+        worktreePath: worktreePath,
         sheet: true,
         canInsertPrompt: onInsertPrompt != null,
-        onRun: (remedy) => runPrRemedy(
-          context,
-          ref,
-          remedy: remedy,
-          status: status,
-          pr: pr,
-          projectId: projectId,
-          worktreePath: worktreePath,
-          branch: branch,
-          uncommittedFiles: uncommittedFiles,
-          onInsertPrompt: onInsertPrompt ?? (_) {},
-        ),
+        onRun: (remedy) {
+          // Re-derive from the snapshot at invocation time: this sheet hosts the
+          // "Lands in" picker, so the PR base and the facts derived from it can
+          // change while it is open; a remedy run against the build-time values
+          // would target the stale base. Guard `context.mounted` first — the chip
+          // can be removed by a snapshot while the sheet is up, and reading `ref`
+          // (here and inside runPrRemedy's `ref.status`) on a defunct element
+          // throws. Falls back to open-time values when the row is gone.
+          if (!context.mounted) return;
+          final at = ref.read(reposProvider).locateWorktree(worktreePath);
+          unawaited(
+            runPrRemedy(
+              context,
+              ref,
+              remedy: remedy,
+              status: at == null ? status : prStatusFor(at),
+              pr: at == null ? pr : at.worktree.pr,
+              projectId: projectId,
+              worktreePath: worktreePath,
+              branch: at == null ? branch : at.worktree.branch,
+              uncommittedFiles: at == null
+                  ? uncommittedFiles
+                  : at.worktree.uncommittedFiles,
+              onInsertPrompt: onInsertPrompt ?? (_) {},
+            ),
+          );
+        },
       ),
       // The chip is the only way into the PR sheet from a session, so it is a
       // control and gets a control's target (kTouchRow). The tint stays painted

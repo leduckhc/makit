@@ -767,6 +767,38 @@ export interface WorktreeDTO {
   path: string;
   branch: string | null;
   isPrimary: boolean;
+  /**
+   * The branch this worktree's work lands in: what the diff below measures
+   * against (`git diff target...HEAD`, i.e. what a PR into it would contain),
+   * what `gh pr create --base` targets, and what a wrap-up fast-forwards.
+   *
+   * Null for the primary checkout (it *is* where branches land) and for a
+   * detached worktree (no branch to land). Resolved by `resolveTargetBranch`:
+   * an open PR's `baseRefName` outranks the persisted user choice, which
+   * outranks the repo default.
+   */
+  targetBranch: string | null;
+  /**
+   * False when {@link targetBranch} could not be resolved (deleted, never
+   * fetched), meaning the diff below is a working-tree-only figure and the
+   * committed delta is simply unknown.
+   *
+   * Clients MUST suppress the +/- pill in that case rather than render the
+   * numbers: the failure mode is not a zero but a *plausible small* count, which
+   * reads as "barely diverged" on a worktree that may be far ahead.
+   */
+  targetResolved: boolean;
+  /**
+   * The target this one replaced, when makit changed it automatically — the branch
+   * we were aiming at vanished without a wrap-up, so we fell back to the repo
+   * default (or to wherever the chain actually landed).
+   *
+   * Present so the change can be **announced**: a silent repoint moves a
+   * worktree's diff and its future pull request to a different destination, and
+   * doing that invisibly is how someone opens a PR against the wrong branch. Goes
+   * away once the user picks a target explicitly.
+   */
+  retargetedFrom: string | null;
   insertions: number;
   deletions: number;
   filesChanged: number;
@@ -1016,6 +1048,10 @@ export type CmdKind =
   | "queue.promote"
   // repos / projects / worktrees
   | "worktree.create"
+  /** Set the branch a worktree's work lands in (diff base, PR base, ff target). */
+  | "worktree.setTarget"
+  /** Ranked candidates for the "Lands in" picker (read-only, no broadcast). */
+  | "worktree.targetCandidates"
   | "worktree.createFromPr"
   | "worktree.remove"
   | "worktree.wrapUp"

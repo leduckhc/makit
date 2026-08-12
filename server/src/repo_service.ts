@@ -24,6 +24,8 @@ export type RepoSettingsLookup = (project: ProjectDTO) => RepoSettingsDTO | unde
 import {
   isGitRepo,
   resolveDefaultBranch,
+  listLocalBranches,
+  listRemoteBranchNames,
   detectCurrentBranch,
   listWorktrees,
   diffStat,
@@ -33,6 +35,13 @@ import {
   commitsBehind,
 } from "./git.js";
 import { mapLimit } from "./concurrency.js";
+import {
+  loadTargets,
+  putTarget,
+  worktreeTargetsFile,
+  type TargetMap,
+} from "./worktree-target-store.js";
+import { resolveThroughChain } from "./target_candidates.js";
 
 /**
  * Accessor for the previously-broadcast PR of a worktree, so a failed re-fetch
@@ -67,6 +76,269 @@ const PR_CONCURRENCY = 6;
  * result to add PR info without redoing the git work — so the numbers never
  * wait on the network.
  */
+/**
+ * Whether a cached pull request is **authoritative** about where its branch
+ * lands: it exists, it is OPEN, and it is fresh.
+ *
+ * `stale` matters as much as the state. `enrichPrs` deliberately retains the
+ * last-known PR when a lookup could not complete, so during a GitHub outage a
+ * stale record would otherwise let an unverified — possibly closed or
+ * since-retargeted — base overwrite a target the user just chose.
+ *
+ * One predicate, because two sites encoded it independently and a change to one
+ * silently diverged from the other.
+ */
+function isLivePr(pr: PullRequestDTO | null): pr is PullRequestDTO {
+  return pr !== null && !pr.stale && pr.state?.toUpperCase() === "OPEN";
+}
+
+/**
+ * Persist the base of any **live** pull request that disagrees with what we have
+ * stored, and return the effective map.
+ *
+ * This is what makes the "PR wins while it is open, the stored choice applies
+ * otherwise" rule survive its own transitions. Three cases it fixes:
+ *
+ *  * a PR opened by hand against a different base (`gh pr create --base …`) — the
+ *    stored value catches up rather than lying in wait,
+ *  * the PR closing or reopening — the fallback is now where it actually pointed,
+ *  * GitHub auto-retargeting a stacked PR and then auto-closing it, which would
+ *    otherwise drop us back onto a target that no longer matches.
+ *
+ * Announced via `retargetedFrom` only when it OVERRODE a value we already had:
+ * agreement is not news, and a first-time adoption of the base the user chose
+ * anyway would just be noise.
+ *
+ * Synchronous: `lastKnown` is the previous broadcast's PR, already in memory. It
+ * is null on the very first snapshot after a restart, so adoption happens one
+ * poll later -- the documented latency window, not a lost update.
+ */
+function adoptLivePrTargets(
+  repoPath: string,
+  entries: readonly { path: string; branch: string | null }[],
+  persisted: TargetMap,
+  lastKnown: LastKnownPr,
+): TargetMap {
+  let out: TargetMap | null = null;
+  const file = worktreeTargetsFile();
+  for (const e of entries) {
+    if (!e.branch) continue;
+    const pr = lastKnown(repoPath, e.branch);
+    // Only a FRESH, live PR is authoritative. A `stale` PR is last-known data
+    // retained by `enrichPrs` when a lookup could not complete; adopting its base
+    // during a GitHub outage could overwrite a freshly-chosen user target with an
+    // unverified — possibly closed or since-retargeted — base.
+    if (!isLivePr(pr)) continue;
+    const base = pr.baseRefName;
+    // A PR cannot land in its own head branch; treat that as bad data rather than
+    // persisting a self-target we would then have to discard on every read.
+    if (!base || base === e.branch) continue;
+    const current = persisted[e.path]?.target;
+    if (current === base) continue;
+    // Reflect the adoption in the returned map ONLY if it actually persisted, so a
+    // full/read-only store cannot make this snapshot report a base it never saved.
+    // `expect` guards the window between `loadTargets` (once, in `listRepos`) and
+    // this write: the git reads above are async, so a user's `worktree.setTarget`
+    // can land in between — and their explicit choice must not be overwritten by a
+    // decision made from the stale map.
+    if (!putTarget(file, e.path, base, { ...(current ? { retargetedFrom: current } : {}), expect: current ?? null }))
+      continue;
+    out ??= { ...persisted };
+    out[e.path] = current ? { target: base, retargetedFrom: current } : { target: base };
+  }
+  return out ?? persisted;
+}
+
+/**
+ * Pure decision core of {@link repairVanishedTargets}: given the live branch set
+ * and the record of what-lands-where, decide the new target for each of THIS
+ * repo's worktrees whose persisted target has vanished. Returns the writes to
+ * persist (empty when nothing is broken), so the I/O stays in the caller and
+ * this stays unit-testable without a repo.
+ *
+ * Two invariants it enforces, both once-live bugs:
+ *  * **Repo isolation** — `persisted` is the GLOBAL store; only paths in `here`
+ *    (this repo's worktrees) are considered, so another repo's target is never
+ *    tested against this repo's branches and rewritten to this repo's default.
+ *  * **Remote and open-PR bases are live** — the caller adds `origin` branches and
+ *    the base of any OPEN PR to `live`, so a target that exists on the remote but
+ *    was never checked out locally is not rewritten to the default. See the
+ *    caller for why a delayed repair beats a silent redirect.
+ */
+export function repointVanishedTargets(args: {
+  here: ReadonlySet<string>;
+  persisted: TargetMap;
+  live: ReadonlySet<string>;
+  branchTarget: Readonly<Record<string, string>>;
+  ownBranch: Readonly<Record<string, string>>;
+  defaultBranch: string | null;
+}): Array<{ path: string; target: string; retargetedFrom: string }> {
+  const { here, persisted, live, branchTarget, ownBranch, defaultBranch } = args;
+  const out: Array<{ path: string; target: string; retargetedFrom: string }> = [];
+  for (const [path, entry] of Object.entries(persisted)) {
+    if (!entry.target || !here.has(path)) continue;
+    if (live.has(entry.target)) continue;
+    const resolved = resolveThroughChain(entry.target, { live, branchTarget, defaultBranch });
+    // Nothing to fall back to (no default, or it is gone too). Leave the broken
+    // target in place: `diffStat` reports `targetResolved: false` and the UI says
+    // so, which beats inventing a destination.
+    if (!resolved || resolved === entry.target) continue;
+    // A resolution onto the worktree's OWN branch is a self-target (reachable via
+    // a mutual stack: W→feat/y, feat/y→W's branch, feat/y deleted). `resolveTargetBranch`
+    // discards a self-target on every read, so persisting it would only record a
+    // value that is never used and announce a move that never took effect — the
+    // same guard `adoptLivePrTargets` already applies.
+    if (resolved === ownBranch[path]) continue;
+    out.push({ path, target: resolved, retargetedFrom: entry.target });
+  }
+  return out;
+}
+
+/**
+ * Repoint any worktree whose persisted target no longer exists, and return the
+ * effective map. Pure with respect to its inputs; writes to the store only when a
+ * repair was needed.
+ *
+ * Uses {@link resolveThroughChain} so a stack that landed bottom-up outside makit
+ * still collapses to where it actually landed rather than jumping straight to the
+ * repo default.
+ */
+async function repairVanishedTargets(
+  repoPath: string,
+  entries: readonly { path: string; branch: string | null }[],
+  persisted: TargetMap,
+  defaultBranch: string | null,
+  lastKnown: LastKnownPr,
+): Promise<TargetMap> {
+  // Only this repo's worktrees carry targets we may touch; `persisted` is global.
+  const here = new Set(entries.map((e) => e.path));
+  const hasCandidates = Object.entries(persisted).some(([path, e]) => e.target && here.has(path));
+  if (!hasCandidates) return persisted;
+  const locals = await listLocalBranches(repoPath);
+  if (locals.length === 0) return persisted;
+  // Liveness is local refs ∪ `origin` refs ∪ the bases of currently-OPEN PRs.
+  //
+  // This trade-off has been argued both ways, so it is settled here explicitly:
+  // including `origin` means a stale `origin/<branch>` left behind after a merged
+  // branch is auto-deleted DELAYS the repair until the next `fetch --prune`. That
+  // is strictly better than the alternative. Excluding it silently REDIRECTS a
+  // worktree whose target lives only on the remote — e.g. an open PR into a
+  // remote-only `release` is adopted, the PR closes, and the target is rewritten
+  // to the repo default, moving future diffs and PR bases without asking. A
+  // delayed repair shows the honest `targetResolved: false` (the branch is real,
+  // it just is not here yet); a wrong redirect is unrecoverable data loss of the
+  // user's intent. Never trade the second for the first.
+  const remotes = await listRemoteBranchNames(repoPath);
+  const live = new Set<string>(locals);
+  for (const b of remotes) {
+    // BOTH spellings. `listRemoteBranchNames` strips the prefix, but a stored
+    // target (and `resolveDefaultBranch`'s answer for a remote-only branch) is the
+    // QUALIFIED `origin/<b>` — git cannot resolve a bare name against
+    // `refs/remotes/origin/`. Recording only one form left `resolveThroughChain`
+    // rejecting a perfectly live default as "gone" and skipping the repair.
+    live.add(b);
+    live.add(`origin/${b}`);
+  }
+  for (const e of entries) {
+    if (!e.branch) continue;
+    const pr = lastKnown(repoPath, e.branch);
+    if (isLivePr(pr) && pr.baseRefName) {
+      live.add(pr.baseRefName);
+    }
+  }
+
+  // branch -> where it lands, and path -> its own branch, so a multi-link chain
+  // can be walked and a self-target rejected without re-reading.
+  const branchTarget: Record<string, string> = {};
+  const ownBranch: Record<string, string> = {};
+  for (const e of entries) {
+    if (!e.branch) continue;
+    ownBranch[e.path] = e.branch;
+    const entry = persisted[e.path];
+    if (entry) branchTarget[e.branch] = entry.target;
+  }
+
+  const writes = repointVanishedTargets({
+    here,
+    persisted,
+    live,
+    branchTarget,
+    ownBranch,
+    defaultBranch,
+  });
+  if (writes.length === 0) return persisted;
+  const out: TargetMap = { ...persisted };
+  const file = worktreeTargetsFile();
+  for (const w of writes) {
+    // Reflect the repair in the returned map ONLY when it persisted, so a
+    // full/read-only store cannot make this snapshot report a repair that the
+    // next read will contradict. `expect` is the vanished target the decision was
+    // based on, so a user's `setTarget` landing during the git reads above wins.
+    if (
+      !putTarget(file, w.path, w.target, {
+        retargetedFrom: w.retargetedFrom,
+        expect: w.retargetedFrom,
+      })
+    )
+      continue;
+    out[w.path] = { target: w.target, retargetedFrom: w.retargetedFrom };
+  }
+  return out;
+}
+
+/**
+ * The single owner of "what branch does this worktree land in?".
+ *
+ * Precedence, and why:
+ *  1. **Primary or detached -> null.** The primary checkout *is* where branches
+ *     land; a detached worktree has no branch to land. Neither has a target, and
+ *     `diffStat` reads a null target as "count the working tree", which is the
+ *     honest answer for both.
+ *  2. **An open PR's `baseRefName`.** Once a PR exists the forge is
+ *     authoritative -- and this is precisely how makit inherits GitHub's
+ *     automatic PR retargeting (when a parent PR merges and its branch is
+ *     deleted, GitHub repoints the children at the merged PR's own base) without
+ *     reimplementing any of it.
+ *  3. **The persisted user choice** (`worktree-target-store`): the answer given
+ *     at creation time or via `worktree.setTarget`.
+ *  4. **The repo default.** Deliberately last, and deliberately the fallback:
+ *     it reproduces the pre-feature behaviour exactly, so upgrading an existing
+ *     install moves nobody's numbers until they choose a target.
+ *
+ * A winner equal to the worktree's own branch is discarded and resolution
+ * continues. That is reachable in practice: `renameBranch` keeps the worktree
+ * path (and therefore its stored target) while changing the branch name, so a
+ * rename onto the target's name would otherwise leave the worktree silently
+ * self-targeting -- which `diffStat` would report as working-tree-only with no
+ * indication anything was wrong.
+ *
+ * Pure, so the precedence rules are testable without a repo or a network.
+ */
+export function resolveTargetBranch(args: {
+  branch: string | null;
+  isPrimary: boolean;
+  prBaseRefName: string | null | undefined;
+  /**
+   * The pull request's state. Only a **live** PR is authoritative: a merged or
+   * closed one is history, and letting its base keep winning would pin the
+   * worktree to a destination that is already settled — so after it ends, the
+   * user's own value takes over again. An unrecognised state is treated as not
+   * authoritative, so a state this build predates cannot silently redirect where
+   * work lands.
+   */
+  prState?: string | null;
+  persisted: string | null | undefined;
+  defaultBranch: string | null;
+}): string | null {
+  const { branch, isPrimary, prBaseRefName, prState, persisted, defaultBranch } = args;
+  if (isPrimary || !branch) return null;
+  const livePrBase = prState?.toUpperCase() === "OPEN" ? prBaseRefName : null;
+  for (const candidate of [livePrBase, persisted, defaultBranch]) {
+    if (candidate && candidate !== branch) return candidate;
+  }
+  return null;
+}
+
 export async function listRepos(
   projects: ProjectDTO[],
   sessions: Session[],
@@ -76,13 +348,33 @@ export async function listRepos(
   settingsFor?: RepoSettingsLookup,
 ): Promise<RepoDTO[]> {
   // Bounded fan-out across projects (SPEC-17 P3 × #66 concurrency cap).
+  // Read the persisted targets ONCE per snapshot rather than per worktree: it is
+  // a single small JSON file, and re-reading it inside the fan-out would turn
+  // one read into N.
+  //
+  // Deliberately does NOT prune the target store here. This is a read path (the
+  // snapshot is returned, not mutated), and pruning against the live worktree set
+  // from here is unsafe: a transient `isGitRepo`/`listWorktrees` failure reports
+  // an empty repo and would delete that repo's real targets, and a worktree
+  // created concurrently (between enumeration and the sweep) would lose its
+  // freshly persisted target. Stale entries are already harmless — `removeWorktree`
+  // clears its own, `createWorktree` overwrites a reused path, and a target with
+  // no branch surfaces as `targetResolved: false` rather than a silent wrong
+  // number — so pruning buys nothing that offsets that risk.
+  const persistedTargets = loadTargets(worktreeTargetsFile());
   const repos = await mapLimit(projects, PROJECT_CONCURRENCY, async (p) => {
     // Settings are resolved BEFORE the snapshot because the snapshot needs one of
     // them: `defaultBranch` is the base every diff +/- number and ahead count is
     // measured against, so an override that arrived only in the settings blob would
     // leave the row claiming one base while the numbers used another.
     const settings = settingsFor?.(p);
-    const repo = await repoSnapshot(p, sessions, settings?.defaultBranch?.value);
+    const repo = await repoSnapshot(
+      p,
+      sessions,
+      lastKnown,
+      persistedTargets,
+      settings?.defaultBranch?.value,
+    );
     return settings === undefined ? repo : { ...repo, settings };
   });
   return includePrs ? enrichPrs(repos, gateway, lastKnown) : repos;
@@ -98,6 +390,8 @@ export async function listRepos(
 async function repoSnapshot(
   dto: ProjectDTO,
   sessions: Session[],
+  lastKnown: LastKnownPr,
+  persistedTargets: TargetMap,
   defaultBranchOverride?: string,
 ): Promise<RepoDTO> {
   const repoPath = dto.path;
@@ -130,20 +424,70 @@ async function repoSnapshot(
     sessionsByPath.set(key, list);
   }
 
+  // Rule 4: a target that has vanished without makit tidying it away.
+  //
+  // Someone ran `git branch -D`, or the forge auto-deleted the head branch when a
+  // pull request merged -- either way there was no wrap-up, so nothing handed a
+  // replacement down (rule 3). From here "merged" and "abandoned" are
+  // indistinguishable, so we take the simple, predictable route: fall back to the
+  // repo default, and RECORD what it used to be so the change is announced rather
+  // than done behind the user's back.
+  //
+  // Repairing during a read is deliberate: this is the only place we notice, and
+  // it costs one branch listing per repo (not per worktree). It writes only when
+  // something actually changed, so a healthy repo never touches the file.
+  // B7: adopt a LIVE pull request's base into the persisted value, so the two
+  // backing stores converge instead of disagreeing at every lifecycle edge.
+  // Without this, closing a PR falls back to whatever was persisted BEFORE it
+  // existed -- a value that has not been true since the PR was opened -- and
+  // GitHub's auto-retarget-then-auto-close sequence lands us on a target that no
+  // longer matches reality.
+  const adopted = gitRepo ? adoptLivePrTargets(repoPath, entries, persistedTargets, lastKnown) : persistedTargets;
+  const repaired = gitRepo
+    ? await repairVanishedTargets(repoPath, entries, adopted, defaultBranch, lastKnown)
+    : adopted;
+
   const worktrees: WorktreeDTO[] = await mapLimit(entries, WORKTREE_CONCURRENCY, async (e) => {
     // Run the per-worktree git probes sequentially so they add no extra
     // parallel fan-out on top of WORKTREE_CONCURRENCY: at most one of these
     // helpers runs at a time per worktree (diffStat's own internal parallelism
     // is unchanged), keeping concurrent git subprocesses within budget.
-    const stat = await diffStat(e.path, defaultBranch);
+    // Resolve the target FIRST, so the numbers and the label can never disagree.
+    // `enrichPrs` runs later and only assigns `w.pr` -- it never recomputes the
+    // diff -- so deferring this to that pass would leave the pill measuring
+    // against the persisted value while the UI showed the PR's base, inside one
+    // broadcast. `lastKnown` hands us the previous poll's PR synchronously,
+    // which is what makes PR-first precedence possible in the git-only phase.
+    const knownPr = e.branch ? lastKnown(repoPath, e.branch) : null;
+    const targetBranch = resolveTargetBranch({
+      branch: e.branch,
+      isPrimary: e.isPrimary,
+      prBaseRefName: knownPr?.baseRefName,
+      prState: knownPr?.state,
+      persisted: repaired[e.path]?.target,
+      defaultBranch,
+    });
+    const stat = await diffStat(e.path, targetBranch);
     const uncommittedFiles = await uncommittedFileCount(e.path);
-    const aheadCount = await commitsAhead(e.path, defaultBranch);
+    // NOTE: ahead/behind are UPSTREAM metrics, not target metrics.
+    // `commitsAhead` prefers `@{upstream}..HEAD` and only falls back to the ref
+    // passed here when the branch has no upstream; `commitsBehind` takes no ref
+    // at all. Retargeting therefore moves the diff and NOT these counts -- which
+    // is correct, because they answer "what would a push send / a pull fetch",
+    // not "what would a PR contain". Do not present them as target-relative.
+    const aheadCount = await commitsAhead(e.path, targetBranch);
     const behindCount = await commitsBehind(e.path);
     return {
       id: e.path,
       path: e.path,
       branch: e.branch,
       isPrimary: e.isPrimary,
+      targetBranch,
+      targetResolved: stat.targetResolved,
+      // What this target replaced, when makit moved it automatically. Present
+      // until the user picks a target explicitly, which is what makes it an
+      // announcement rather than a toast that can be missed.
+      retargetedFrom: repaired[e.path]?.retargetedFrom ?? null,
       insertions: stat.insertions,
       deletions: stat.deletions,
       filesChanged: stat.filesChanged,

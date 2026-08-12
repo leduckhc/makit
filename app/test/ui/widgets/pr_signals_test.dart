@@ -826,8 +826,8 @@ void main() {
         uncommitted: 2,
         residue: const PrResidue(
           sessions: 1,
-          baseBranch: 'main',
-          baseBehind: 6,
+          targetBranch: 'main',
+          targetBehind: 6,
         ),
       );
       expect(s.signals.map((x) => x.label), [
@@ -856,8 +856,8 @@ void main() {
         pr: _pr(rollup: 'pass'),
         residue: const PrResidue(
           sessions: 2,
-          baseBranch: 'main',
-          baseBehind: 6,
+          targetBranch: 'main',
+          targetBehind: 6,
         ),
       );
       expect(

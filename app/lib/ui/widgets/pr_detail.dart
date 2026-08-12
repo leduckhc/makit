@@ -18,11 +18,14 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
+import '../../status/status_event.dart';
+import '../../status/status_providers.dart';
 import '../../store/models.dart';
 import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
-import '../../status/status_event.dart';
-import '../../status/status_providers.dart';
+import '../../store/store.dart';
+import '../home/repo_chips.dart' show DiffChip;
+import 'lands_in_picker.dart';
 import 'pr_actions.dart';
 import 'pr_signals.dart';
 import 'pr_state_style.dart';
@@ -45,6 +48,11 @@ Future<void> showPrDetail(
   required void Function(PrRemedy remedy) onRun,
   bool sheet = false,
   bool canInsertPrompt = true,
+
+  /// Identity so the sheet can re-derive its facts live rather than freeze them
+  /// at open time (see [PrDetailBody.status]).
+  String? projectId,
+  String? worktreePath,
 }) {
   // On mobile the sheet *is* the PR surface — there is no persistent bar
   // carrying the call to action — so it pins one, and opens on the decision
@@ -55,6 +63,8 @@ Future<void> showPrDetail(
     onRun: onRun,
     showCta: sheet,
     canInsertPrompt: canInsertPrompt,
+    projectId: projectId,
+    worktreePath: worktreePath,
   );
   if (sheet) {
     return showModalBottomSheet<void>(
@@ -76,7 +86,7 @@ Future<void> showPrDetail(
 }
 
 /// The shared body: header, the facts (with remedies), then the CI checks.
-class PrDetailBody extends StatelessWidget {
+class PrDetailBody extends ConsumerWidget {
   const PrDetailBody({
     super.key,
     required this.status,
@@ -84,11 +94,28 @@ class PrDetailBody extends StatelessWidget {
     required this.onRun,
     this.showCta = false,
     this.canInsertPrompt = true,
+    this.projectId,
+    this.worktreePath,
   });
 
+  /// The facts as of open time.
+  ///
+  /// Used only as a FALLBACK. This sheet used to be a `StatelessWidget` handed a
+  /// `PrStatus` computed by its caller, so it painted whatever was true when it
+  /// opened and never looked again — which became a real defect the moment the
+  /// header started hosting the "Lands in" picker: change where a worktree lands
+  /// from inside this sheet and it would keep showing the old +/- numbers until
+  /// you closed and reopened it. Now it re-derives from `reposProvider` whenever
+  /// [worktreePath] identifies a worktree the snapshot still knows.
   final PrStatus status;
   final PullRequest? pr;
   final void Function(PrRemedy remedy) onRun;
+
+  /// Identity, so the sheet can re-derive rather than re-use. Optional: some
+  /// surfaces (a brand-new worktree the snapshot has not seen) have no identity
+  /// to resolve, and those keep the passed-in [status].
+  final String? projectId;
+  final String? worktreePath;
 
   /// Pin the lifecycle CTA at the bottom (mobile, where nothing else carries it).
   final bool showCta;
@@ -101,7 +128,17 @@ class PrDetailBody extends StatelessWidget {
   final bool canInsertPrompt;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Re-derive from the single source of truth. `locateWorktree` returns null for
+    // a path the snapshot does not carry (removed, or not yet seen), in which case
+    // the open-time values are the best we have and the sheet stays put.
+    final projectId = this.projectId;
+    final at = worktreePath == null
+        ? null
+        : ref.watch(reposProvider).locateWorktree(worktreePath);
+    final status = at == null ? this.status : prStatusFor(at);
+    final pr = at == null ? this.pr : at.worktree.pr;
+    final worktree = at?.worktree;
     final checks = sortPrChecks(pr?.checks ?? const []);
     // With a pinned CTA (mobile) the loud fact is already the headline *and* the
     // button, so listing it again below would say the same thing three times.
@@ -227,17 +264,53 @@ class PrDetailBody extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SheetHeader(title: status.identity),
+          // Home 2: `branch ≫ target`.
+          //
+          // This is the only place head and target appear together, and with a PR
+          // it is the only place the BRANCH appears at all — `status.identity` is
+          // `#<number>` once a PR exists (see `prStatusFor`), so without this line
+          // a PR sheet never names the branch it is about.
+          //
+          // A header subtitle rather than a `Needs you` row on purpose: putting it
+          // in the fact list would claim something is wrong, and this is merely
+          // true. The picker opens from the target half.
+          if (worktree != null &&
+              !worktree.isPrimary &&
+              worktree.branch != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, kSpace8),
+              child: LandsInLine(
+                sourceBranch: pr != null ? worktree.branch : null,
+                targetBranch: worktree.targetBranch,
+                targetResolved: worktree.targetResolved,
+                onTap: projectId == null
+                    ? null
+                    : () => showLandsInPicker(
+                        context,
+                        ref,
+                        projectId: projectId,
+                        worktree: worktree,
+                        sheet: showCta,
+                      ),
+                trailing: worktree.showsDiff
+                    ? DiffChip(
+                        insertions: worktree.insertions,
+                        deletions: worktree.deletions,
+                      )
+                    : null,
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (showCta) _Hero(status: status),
-                if (pr != null && pr!.title.isNotEmpty)
+                if (pr != null && pr.title.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: kSpace10),
                     child: Text(
-                      pr!.title,
+                      pr.title,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
@@ -278,7 +351,10 @@ class PrDetailBody extends StatelessWidget {
                     child: _OpenOnForgeButton(
                       identity: status.identity,
                       url: pr!.url,
-                      onPressed: () => _open(context),
+                      // Open the LIVE url (from the re-derived `pr`), not the
+                      // stale widget field — `_open` takes it explicitly so a
+                      // closed/removed PR cannot null-assert here.
+                      onPressed: () => _open(context, pr.url),
                     ),
                   ),
                 ],
@@ -290,8 +366,7 @@ class PrDetailBody extends StatelessWidget {
     );
   }
 
-  void _open(BuildContext context) {
-    final url = pr!.url;
+  void _open(BuildContext context, String url) {
     Navigator.of(context).maybePop();
     openPrUrl(context, url);
   }
@@ -710,6 +785,11 @@ List<Widget> buildPrActionMenu(
   WidgetRef ref, {
   required PrStatus status,
   required void Function(PrRemedy remedy) onRun,
+
+  /// Identity for the "Lands in" entry. Omitted where the surface cannot name a
+  /// worktree, in which case the group is simply absent.
+  String? projectId,
+  Worktree? worktree,
 }) {
   final hasPr = status.hasPr;
   final ended = status.isEnded;
@@ -771,6 +851,51 @@ List<Widget> buildPrActionMenu(
           reason: _whyNot(action, status, ended: ended),
           onRun: onRun,
         ),
+    // Home 1: per-worktree config, at the BOTTOM, below a divider.
+    //
+    // The two groups above are "what to do next"; where a branch lands is not a
+    // next step, so it belongs in neither. Bottom-of-menu is the conventional
+    // home for per-object settings and it is where the eye stops looking for
+    // actions. It prints its current value inline, so opening this menu for any
+    // other reason answers "where does this go?" for free — which is the whole
+    // disclosure budget this feature needs.
+    if (projectId != null &&
+        worktree != null &&
+        !worktree.isPrimary &&
+        worktree.branch != null) ...[
+      const Divider(height: 1),
+      const _MenuGroup('This worktree'),
+      MenuItemButton(
+        leadingIcon: const Icon(kLandsInIcon, size: 16),
+        onPressed: () => showLandsInPicker(
+          context,
+          ref,
+          projectId: projectId,
+          worktree: worktree,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Lands in', style: Theme.of(context).textTheme.bodyMedium),
+            const SizedBox(width: kSpace10),
+            // Flexible + ellipsis: a long target branch must truncate, not blow
+            // the menu row past the screen edge (matches `LandsInLine`).
+            Flexible(
+              child: Text(
+                worktree.targetBranch ?? 'not set',
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                style: Theme.of(context).textTheme.labelSmall?.mono.copyWith(
+                  color: worktree.targetUnresolved
+                      ? Theme.of(context).colorScheme.statusWarningText
+                      : Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
   ];
 }
 

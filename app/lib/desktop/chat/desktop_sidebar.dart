@@ -15,6 +15,7 @@ import '../../ui/docs/docs_popover.dart';
 import '../../ui/docs/doc_preview.dart';
 import '../../ui/ports/ports_popover.dart';
 import '../../ui/ports/session_ports_glyph.dart';
+import '../../ui/widgets/lands_in_picker.dart';
 import '../../ui/widgets/pr_state_style.dart';
 import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
@@ -647,6 +648,27 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                   switch (action) {
                                     case 'rename':
                                       _renameBranch();
+                                    case 'landsIn':
+                                      // NOT `sheet: true`: desktop wants the
+                                      // dialog form of the picker, not a bottom
+                                      // sheet. It persists the choice itself.
+                                      // Re-derive the live worktree: a snapshot
+                                      // may have retargeted or moved it while the
+                                      // menu was open, so act on today's value.
+                                      final live =
+                                          ref
+                                              .read(reposProvider)
+                                              .locateWorktree(worktree.path)
+                                              ?.worktree ??
+                                          worktree;
+                                      unawaited(
+                                        showLandsInPicker(
+                                          context,
+                                          ref,
+                                          projectId: repo.id,
+                                          worktree: live,
+                                        ),
+                                      );
                                     case 'delete':
                                       _deleteWorktree();
                                     case 'ports':
@@ -665,7 +687,9 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                   }
                                 },
                               )
-                            else if (worktree.hasChanges)
+                            // See worktree_row.dart: suppress rather than
+                            // publish a partial count.
+                            else if (worktree.showsDiff)
                               DiffChip(
                                 insertions: worktree.insertions,
                                 deletions: worktree.deletions,
@@ -836,8 +860,12 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
 /// The worktree row's hover overflow menu (triple dots that replace the diff
 /// pill on hover). Reports the chosen action up to [_WorktreeGroupState], which
 /// owns the dialogs and store calls with a context/ref that outlives the menu.
-/// "Rename branch" and "Delete worktree" are disabled for the primary worktree;
-/// "Rename branch" is also disabled for detached worktrees and open PRs.
+/// "Rename branch", "Lands in" and "Delete worktree" are disabled for the
+/// primary worktree and for detached worktrees; "Rename branch" is additionally
+/// disabled for an open PR, but "Lands in" is NOT (retargeting an open PR is a
+/// first-class operation). Because this menu replaces the diff pill on hover,
+/// "Lands in" prints the current target inline — the pill is not visible to
+/// glance at while the menu is open.
 class _WorktreeMenuButton extends ConsumerWidget {
   const _WorktreeMenuButton({
     required this.worktree,
@@ -856,6 +884,11 @@ class _WorktreeMenuButton extends ConsumerWidget {
     final isPrimary = worktree.isPrimary;
     final isDetached = worktree.branch == null;
     final canRename = !_hasOpenPr && !isPrimary && !isDetached;
+    // Retargeting shares rename's structural guards (no primary, no detached)
+    // but pointedly NOT its open-PR block: renaming orphans a PR's head, while
+    // retargeting an open PR is a first-class operation (`gh pr edit --base`).
+    // So an open PR leaves this enabled while it disables Rename — deliberate.
+    final canRetarget = !isPrimary && !isDetached;
     // The count is a glance at what this branch is serving; the item routes to
     // the global Ports screen either way (D8), so it shows even at zero.
     final portCount = ref.watch(portsForWorktreeProvider(worktree.path)).length;
@@ -887,6 +920,50 @@ class _WorktreeMenuButton extends ConsumerWidget {
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: canRename ? null : Theme.of(context).disabledColor,
               ),
+            ),
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'landsIn',
+          enabled: canRetarget,
+          height: 36,
+          child: Tooltip(
+            message: isPrimary
+                ? 'This is where branches land, not one that lands'
+                : isDetached
+                ? 'This worktree has no branch to land'
+                : '',
+            // Bare Text + a trailing value, no leading icon — matching the
+            // other items in this menu. The `⋯` button REPLACES the diff pill
+            // on hover, so the user cannot glance back at the pill for the
+            // current target while this menu is open; the item prints its own
+            // current value on the right instead.
+            child: Row(
+              children: [
+                Text(
+                  'Lands in',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: canRetarget ? null : Theme.of(context).disabledColor,
+                  ),
+                ),
+                const Spacer(),
+                if (worktree.targetBranch != null) ...[
+                  const SizedBox(width: kSpace12),
+                  Flexible(
+                    child: Text(
+                      worktree.targetBranch!,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.mono
+                          .copyWith(
+                            color: canRetarget
+                                ? Theme.of(context).colorScheme.outline
+                                : Theme.of(context).disabledColor,
+                          ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),

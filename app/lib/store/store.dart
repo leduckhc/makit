@@ -945,23 +945,30 @@ class StoreController extends StateNotifier<StoreState> {
   }
 
   /// Create a new worktree up front (the + New worktree flow) with an
-  /// auto-generated branch off [baseBranch], or a slugified [branchName] when
+  /// auto-generated branch off [targetBranch], or a slugified [branchName] when
   /// supplied. Returns the new worktree's path + branch; the caller then lands
   /// on it to pick a harness. The server broadcasts a repos.snapshot so the
   /// sidebar shows the new worktree.
   Future<({String path, String? branch})> createWorktree(
     String projectId, {
-    String? baseBranch,
+    String? targetBranch,
     String? branchName,
   }) async {
-    final ack = await _ref
-        .read(connectionControllerProvider.notifier)
-        .request(MsgType.cmd, {
-          'kind': 'worktree.create',
-          'projectId': projectId,
-          'baseBranch': ?baseBranch,
-          'branchName': ?branchName,
-        });
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'worktree.create',
+        'projectId': projectId,
+        'targetBranch': ?targetBranch,
+        // Sent for one release as well, so a server that predates the
+        // base->target rename still receives the value instead of silently
+        // falling back to the repo default.
+        // TODO(SPEC-51): drop the `baseBranch` alias one release after the
+        // server ships with `targetBranch`.
+        'baseBranch': ?targetBranch,
+        'branchName': ?branchName,
+      },
+    );
     final path = ack['path'] as String?;
     if (path == null) throw StateError('server did not return a worktree path');
     return (path: path, branch: ack['branch'] as String?);
@@ -981,6 +988,53 @@ class StoreController extends StateNotifier<StoreState> {
         .whereType<Map<dynamic, dynamic>>()
         .map((m) => OpenPr.fromJson(Map<String, dynamic>.from(m)))
         .toList();
+  }
+
+  /// Ranked candidates for the "Lands in" picker, grouped by why each is a
+  /// candidate, with a diff preview on the leading few.
+  ///
+  /// A read: the server does not broadcast for this, so opening a picker costs
+  /// other clients nothing.
+  Future<List<TargetCandidate>> targetCandidates(
+    String projectId,
+    String worktreePath,
+  ) async {
+    final ack = await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'worktree.targetCandidates',
+          'projectId': projectId,
+          'worktreePath': worktreePath,
+        });
+    final raw = (ack['candidates'] as List?) ?? const [];
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map((m) => TargetCandidate.fromJson(Map<String, dynamic>.from(m)))
+        .whereType<TargetCandidate>()
+        .toList();
+  }
+
+  /// Set the branch a worktree's work lands in: what the +/- diff measures
+  /// against, what a PR will target, and what a wrap-up fast-forwards.
+  ///
+  /// The server validates the ref, persists it, and only then broadcasts a
+  /// repos.snapshot — so every consumer of the diff numbers corrects itself
+  /// without the caller doing anything. Deliberately returns nothing to apply
+  /// locally: the UI must render from the snapshot, never from an optimistic
+  /// local guess, or a rejected change would leave the picker lying.
+  Future<void> setWorktreeTarget(
+    String projectId,
+    String worktreePath,
+    String targetBranch,
+  ) async {
+    await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'worktree.setTarget',
+          'projectId': projectId,
+          'worktreePath': worktreePath,
+          'targetBranch': targetBranch,
+        });
   }
 
   /// Create a worktree that checks out an existing PR's head branch. Returns
@@ -1059,7 +1113,7 @@ class StoreController extends StateNotifier<StoreState> {
   /// Tidy up after a pull request ended: remove the worktree, delete its
   /// branch, and fast-forward the branch the PR merged into.
   ///
-  /// [baseBranch] is the PR's own `baseRefName`; pass null and the server falls
+  /// [targetBranch] is the PR's own `baseRefName`; pass null and the server falls
   /// back to the repo's default branch. Returns the server's report, because the
   /// base-branch leg is best-effort — the caller has to be able to tell "tidied
   /// and caught main up" from "tidied, main left alone because it had local
@@ -1067,18 +1121,25 @@ class StoreController extends StateNotifier<StoreState> {
   Future<WrapUpReport> wrapUpWorktree(
     String projectId,
     String worktreePath, {
-    String? baseBranch,
+    String? targetBranch,
     String? expectBranch,
   }) async {
-    final ack = await _ref
-        .read(connectionControllerProvider.notifier)
-        .request(MsgType.cmd, {
-          'kind': 'worktree.wrapUp',
-          'projectId': projectId,
-          'worktreePath': worktreePath,
-          'baseBranch': ?baseBranch,
-          'expectBranch': ?expectBranch,
-        });
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'worktree.wrapUp',
+        'projectId': projectId,
+        'worktreePath': worktreePath,
+        'targetBranch': ?targetBranch,
+        // See `worktree.create` above: one-release compatibility. Here it also
+        // guards the only irreversible case — a server reading the old key would
+        // otherwise fast-forward the WRONG branch and report success.
+        // TODO(SPEC-51): drop the `baseBranch` alias one release after the
+        // server ships with `targetBranch`.
+        'baseBranch': ?targetBranch,
+        'expectBranch': ?expectBranch,
+      },
+    );
     return WrapUpReport.fromJson(ack);
   }
 

@@ -231,17 +231,39 @@ export interface DiffStat {
   insertions: number;
   deletions: number;
   filesChanged: number;
+  /**
+   * Whether the target ref could be resolved, so callers can tell "no committed
+   * delta" from "we could not measure one".
+   *
+   * Without this the two are indistinguishable: when the `target...HEAD` leg
+   * fails, only *that* leg is skipped — working-tree and untracked files still
+   * count — so an absent target yields a plausible SMALL number rather than a
+   * zero. That is strictly harder to notice than a zero, and it renders a
+   * stacked worktree as though it had barely diverged. A null target is
+   * `true`: there is nothing to resolve and the working-tree-only reading is
+   * the intended answer (see the note on `target` below).
+   */
+  targetResolved: boolean;
 }
 
-const ZERO_DIFF: DiffStat = { insertions: 0, deletions: 0, filesChanged: 0 };
+const ZERO_DIFF: DiffStat = { insertions: 0, deletions: 0, filesChanged: 0, targetResolved: true };
 
 /**
- * Total change size of a worktree relative to `baseBranch`: committed diff
- * (`base...HEAD`) plus uncommitted working-tree changes (staged + unstaged +
- * untracked). Best-effort — any git failure yields zeros. When `baseBranch` is
- * null or equals the worktree's branch we count working-tree changes only.
+ * Total change size of a worktree relative to `targetBranch` — the branch this
+ * work is destined for: committed diff (`target...HEAD`, three-dot, so git
+ * finds the merge base live) plus uncommitted working-tree changes (staged +
+ * unstaged + untracked). In other words, **what a pull request into `target`
+ * would contain**.
+ *
+ * When `targetBranch` is null or equals the worktree's own branch we count
+ * working-tree changes only — there is no destination to compare against, so
+ * the number legitimately means "uncommitted".
+ *
+ * Best-effort on the counts, but NOT silent about the ref: a target that cannot
+ * be resolved sets `targetResolved: false` rather than quietly degrading to a
+ * working-tree-only figure that reads like a small real diff.
  */
-export async function diffStat(worktreePath: string, baseBranch: string | null): Promise<DiffStat> {
+export async function diffStat(worktreePath: string, targetBranch: string | null): Promise<DiffStat> {
   const totals = { ...ZERO_DIFF };
   const files = new Set<string>();
 
@@ -261,10 +283,14 @@ export async function diffStat(worktreePath: string, baseBranch: string | null):
 
   // The three git reads are independent — run them concurrently.
   const cur = await detectCurrentBranch(worktreePath);
+  // Only a target that is BOTH set and different from our own branch implies a
+  // committed-delta measurement that could fail. Equal/null means "nothing to
+  // resolve", which is a success, not a silent skip.
+  const measuresTarget = Boolean(targetBranch) && cur !== targetBranch;
   const [committed, working, untracked] = await Promise.all([
-    // Committed delta vs the merge-base with the default branch.
-    baseBranch && cur !== baseBranch
-      ? git(["diff", "--numstat", `${baseBranch}...HEAD`], worktreePath)
+    // Committed delta vs the merge base with the target branch (three-dot).
+    measuresTarget
+      ? git(["diff", "--numstat", `${targetBranch}...HEAD`], worktreePath)
       : Promise.resolve(null),
     // Uncommitted: staged + unstaged tracked changes.
     git(["diff", "--numstat", "HEAD"], worktreePath),
@@ -273,13 +299,143 @@ export async function diffStat(worktreePath: string, baseBranch: string | null):
   ]);
 
   if (committed && committed.code === 0) addNumstat(committed.stdout);
+  // A requested-but-failed committed leg is the whole point of the flag: report
+  // it so the caller suppresses the pill instead of publishing a partial count.
+  if (measuresTarget && committed?.code !== 0) totals.targetResolved = false;
+  // A path that is not a git repo at all resolves nothing, even with no target:
+  // `git diff HEAD` failing is the only signal we get that the read was void.
+  if (!measuresTarget && working.code !== 0) totals.targetResolved = false;
   if (working.code === 0) addNumstat(working.stdout);
   if (untracked.code === 0) {
     for (const line of untracked.stdout.split("\n")) if (line.trim()) files.add(line.trim());
   }
 
   totals.filesChanged = files.size;
+  // A missed `targetResolved` check at any consumer must degrade to "nothing",
+  // not a plausible partial reading: zero the magnitudes when the target could
+  // not be resolved. The working-tree truth is still carried separately by
+  // `uncommittedFiles`, so no real information is lost.
+  if (!totals.targetResolved) return { ...ZERO_DIFF, targetResolved: false };
   return totals;
+}
+
+/**
+ * Every local branch, sorted. `for-each-ref` (not `git branch`) so the output is
+ * plain refnames with no decoration, no `*` marker and no colour.
+ */
+export async function listLocalBranches(repoPath: string): Promise<string[]> {
+  const r = await git(["for-each-ref", "--format=%(refname:short)", "refs/heads"], repoPath);
+  if (r.code !== 0) return [];
+  return r.stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .sort();
+}
+
+/**
+ * Branch names that exist on the `origin` remote, with the remote prefix
+ * stripped (`origin/feat/x` -> `feat/x`).
+ *
+ * Used to mark a candidate as unusable for a pull request: a PR base must exist
+ * on the remote, so a local-only branch is offered but disabled rather than
+ * silently accepted and rejected later by `gh`.
+ *
+ * Scoped to `refs/remotes/origin` on purpose: `gh` resolves a PR base against
+ * `origin`, so a branch that exists only on another remote (`upstream`, a fork)
+ * is NOT a valid base and must not be offered as one.
+ *
+ * `origin/HEAD` is skipped — it is a symbolic alias for the default branch, not a
+ * branch of its own, and offering it would list the default twice.
+ */
+export async function listRemoteBranchNames(repoPath: string): Promise<Set<string>> {
+  const r = await git(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"], repoPath);
+  const out = new Set<string>();
+  if (r.code !== 0) return out;
+  for (const line of r.stdout.split("\n")) {
+    const ref = line.trim();
+    if (!ref) continue;
+    const slash = ref.indexOf("/");
+    if (slash < 0) continue;
+    const name = ref.slice(slash + 1);
+    if (!name || name === "HEAD") continue;
+    out.add(name);
+  }
+  return out;
+}
+
+/**
+ * True when the repo has an **`origin`** remote.
+ *
+ * Deliberately origin-specific, not "any remote": it gates the "a PR base must
+ * exist on the remote" rule, and {@link listRemoteBranchNames} only reads
+ * `refs/remotes/origin`. A repo whose only remote is `upstream` would otherwise
+ * turn the gate ON while the branch set came back EMPTY, disabling every
+ * candidate and making the picker unusable.
+ */
+export async function hasOriginRemote(repoPath: string): Promise<boolean> {
+  const r = await git(["remote"], repoPath);
+  if (r.code !== 0) return false;
+  return r.stdout
+    .split("\n")
+    .map((l) => l.trim())
+    .includes("origin");
+}
+
+/**
+ * The branch a worktree most likely forked from: the *closest* ancestor of HEAD
+ * among `candidates`.
+ *
+ * "Ancestor" alone is not enough — after `feat/parent` forks off `main`, both are
+ * ancestors of `feat/child`, and only the nearer one is the real parent. So among
+ * the ancestors we take the one with the fewest commits between it and HEAD.
+ *
+ * Deliberately NOT `git merge-base --fork-point`: that consults the reflog, which
+ * is empty for a freshly created worktree and absent entirely after a clone or a
+ * prune, so it answers "unknown" exactly when we most need a suggestion. This is
+ * a *suggestion source* for the picker, not a stored value.
+ *
+ * Ties are broken by **candidate order**, so callers should pass candidates in
+ * preference order: two branches can sit on the same commit (a freshly cut alias),
+ * in which case they are equidistant and the caller's ranking is the only
+ * meaningful discriminator.
+ *
+ * Returns null when nothing qualifies (not a repo, unborn HEAD, or every
+ * candidate is unrelated).
+ */
+export async function closestAncestorBranch(
+  worktreePath: string,
+  candidates: readonly string[],
+): Promise<string | null> {
+  const own = await detectCurrentBranch(worktreePath);
+  // One git read per candidate, run in parallel (bounded) instead of two serial
+  // reads each: on a repo with many branches the old fan-out was up to 2N serial
+  // subprocesses on every picker open. `rev-list --left-right --count B...HEAD`
+  // yields "<behind>\t<ahead>": B is an ancestor of HEAD iff nothing is reachable
+  // from B but not HEAD (behind === 0), and the distance is then the commits
+  // between them (ahead). `mapLimit` preserves input order, so the candidate-order
+  // tie-break below is unchanged.
+  const measured = await mapLimit(candidates, WORKTREE_READ_CONCURRENCY, async (branch) => {
+    // Its own branch is an ancestor of itself; targeting yourself is meaningless.
+    if (!branch || branch === own) return null;
+    const r = await git(["rev-list", "--left-right", "--count", `${branch}...HEAD`], worktreePath);
+    if (r.code !== 0) return null;
+    const [behindRaw, aheadRaw] = r.stdout.trim().split(/\s+/);
+    const behind = Number.parseInt(behindRaw, 10);
+    const ahead = Number.parseInt(aheadRaw, 10);
+    // behind > 0 means B carries commits HEAD lacks: not an ancestor.
+    if (!Number.isFinite(behind) || behind !== 0) return null;
+    if (!Number.isFinite(ahead)) return null;
+    return { branch, distance: ahead };
+  });
+  let best: { branch: string; distance: number } | null = null;
+  for (const m of measured) {
+    if (m === null) continue;
+    // Strictly `<`, so an equidistant later candidate never displaces an earlier
+    // one — that is what makes the caller's ordering the tie-breaker.
+    if (best === null || m.distance < best.distance) best = m;
+  }
+  return best?.branch ?? null;
 }
 
 /** True when a local branch `refs/heads/<branch>` exists. */
@@ -453,10 +609,10 @@ export async function uncommittedFileCount(worktreePath: string): Promise<number
  * Count of commits on this worktree's branch that are not yet on its remote
  * (i.e. what a push would send). Prefers the upstream tracking branch
  * (`@{upstream}..HEAD`); when the branch has no upstream (never pushed), falls
- * back to commits not reachable from [baseBranch] — the commits a first
+ * back to commits not reachable from [targetBranch] — the commits a first
  * `git push -u` would publish. Best-effort — 0 on any git failure.
  */
-export async function commitsAhead(worktreePath: string, baseBranch: string | null): Promise<number> {
+export async function commitsAhead(worktreePath: string, targetBranch: string | null): Promise<number> {
   const parse = (s: string): number => {
     const n = Number.parseInt(s.trim(), 10);
     return Number.isFinite(n) ? n : 0;
@@ -464,8 +620,8 @@ export async function commitsAhead(worktreePath: string, baseBranch: string | nu
   const up = await git(["rev-list", "--count", "@{upstream}..HEAD"], worktreePath);
   if (up.code === 0) return parse(up.stdout);
   // No upstream configured: count commits ahead of the base branch instead.
-  if (!baseBranch) return 0;
-  const base = await git(["rev-list", "--count", `${baseBranch}..HEAD`], worktreePath);
+  if (!targetBranch) return 0;
+  const base = await git(["rev-list", "--count", `${targetBranch}..HEAD`], worktreePath);
   return base.code === 0 ? parse(base.stdout) : 0;
 }
 
@@ -706,7 +862,7 @@ export function slugifyBranch(text: string, maxLength = 80): string {
 
 /**
  * Create a new worktree at `<worktreeBaseDir()>/<repoName>/<name>` on a fresh
- * branch `branch`, based off `baseBranch`. Returns the absolute worktree path,
+ * branch `branch`, forked from `startPoint`. Returns the absolute worktree path,
  * canonicalized (symlinks resolved) so it matches what `git worktree list`
  * reports — callers store this as `session.worktreePath` and later compare it
  * against git's output to link sessions to worktrees, which silently breaks if
@@ -718,14 +874,22 @@ export async function addWorktree(opts: {
   repoPath: string;
   name: string;
   branch: string;
-  baseBranch?: string | null;
+  /**
+   * Where the new branch forks FROM — git's own noun for this argument is a
+   * commit-ish, and it legally accepts a tag or a SHA. Deliberately NOT called
+   * `targetBranch`: a merge destination must be a branch, and this function
+   * already uses `target` for the filesystem path it creates and `baseDir` for
+   * the worktree root. Callers pass the user's chosen target here because at
+   * creation time you fork from the branch you intend to land back in.
+   */
+  startPoint?: string | null;
   baseDir?: string;
 }): Promise<string> {
   const base = opts.baseDir ?? worktreeBaseDir();
   const repoName = basename(resolve(opts.repoPath));
   const target = join(base, repoName, opts.name);
   const args = ["worktree", "add", "-b", opts.branch, target];
-  if (opts.baseBranch) args.push(opts.baseBranch);
+  if (opts.startPoint) args.push(opts.startPoint);
   // No timeout: populating a worktree on a big repo can take a while.
   const r = await run("git", args, opts.repoPath);
   if (r.code !== 0) {

@@ -87,6 +87,31 @@ class _FakeStore extends StoreController {
     renames.add((path: worktreePath, name: newName));
     if (fail) throw Exception('nope');
   }
+
+  final List<({String path, String target})> retargets = [];
+
+  @override
+  Future<List<TargetCandidate>> targetCandidates(
+    String projectId,
+    String worktreePath,
+  ) async => const [
+    TargetCandidate(
+      branch: 'main',
+      group: TargetCandidateGroup.defaultBranch,
+      onRemote: true,
+      isSelf: false,
+    ),
+  ];
+
+  @override
+  Future<void> setWorktreeTarget(
+    String projectId,
+    String worktreePath,
+    String target,
+  ) async {
+    retargets.add((path: worktreePath, target: target));
+    if (fail) throw Exception('nope');
+  }
 }
 
 RepoInfo _repo(
@@ -115,6 +140,7 @@ Worktree _worktree(
   int deletions = 0,
   int filesChanged = 0,
   List<String> sessionIds = const [],
+  String? targetBranch,
   PullRequest? pr,
 }) => Worktree(
   id: id,
@@ -125,6 +151,7 @@ Worktree _worktree(
   deletions: deletions,
   filesChanged: filesChanged,
   sessionIds: sessionIds,
+  targetBranch: targetBranch,
   pr: pr,
 );
 
@@ -908,6 +935,143 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(store.renames, [(path: '/tmp/wt/wt-feat', name: 'feat/renamed')]);
+  });
+
+  group('lands in (⋯ menu)', () {
+    testWidgets('sits between Rename and Delete showing its current target', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [
+              _worktree(
+                'wt-feat',
+                branch: 'feat/login',
+                targetBranch: 'main',
+                sessionIds: ['s1'],
+              ),
+            ],
+          ),
+        ],
+        sessions: [_session('s1', 'p1', 'work', 'pi')],
+      );
+
+      await _openWorktreeMenu(tester, 'feat/login');
+
+      final item = find.widgetWithText(PopupMenuItem<String>, 'Lands in');
+      expect(item, findsOneWidget);
+      // The current target prints inline: this ⋯ menu replaced the diff pill on
+      // hover, so the pill is not glanceable while the menu is open.
+      expect(
+        find.descendant(of: item, matching: find.text('main')),
+        findsOneWidget,
+      );
+
+      // Order: Rename, then Lands in, then Delete.
+      final renameY = tester.getTopLeft(find.text('Rename branch')).dy;
+      final landsY = tester.getTopLeft(find.text('Lands in')).dy;
+      final deleteY = tester.getTopLeft(find.text('Delete worktree')).dy;
+      expect(renameY, lessThan(landsY));
+      expect(landsY, lessThan(deleteY));
+    });
+
+    testWidgets('is disabled on the primary worktree', (tester) async {
+      await _pump(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
+          ),
+        ],
+        sessions: const [],
+      );
+
+      await _openWorktreeMenu(tester, 'main');
+
+      final item = tester.widget<PopupMenuItem<String>>(
+        find.widgetWithText(PopupMenuItem<String>, 'Lands in'),
+      );
+      expect(item.enabled, isFalse);
+    });
+
+    testWidgets('stays enabled with an open PR while Rename is disabled', (
+      tester,
+    ) async {
+      // The deliberate asymmetry: `gh pr edit --base` retargets a live PR, but
+      // a rename would orphan its head.
+      await _pump(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [
+              _worktree(
+                'wt-pr',
+                branch: 'feat/has-pr',
+                targetBranch: 'main',
+                sessionIds: ['s1'],
+                pr: const PullRequest(
+                  number: 7,
+                  url: '',
+                  state: 'OPEN',
+                  title: 'x',
+                  isDraft: false,
+                ),
+              ),
+            ],
+          ),
+        ],
+        sessions: [_session('s1', 'p1', 'work', 'pi')],
+      );
+
+      await _openWorktreeMenu(tester, 'feat/has-pr');
+
+      final rename = tester.widget<PopupMenuItem<String>>(
+        find.widgetWithText(PopupMenuItem<String>, 'Rename branch'),
+      );
+      final landsIn = tester.widget<PopupMenuItem<String>>(
+        find.widgetWithText(PopupMenuItem<String>, 'Lands in'),
+      );
+      expect(rename.enabled, isFalse);
+      expect(landsIn.enabled, isTrue);
+    });
+
+    testWidgets('selecting it opens the picker (dialog, not a sheet)', (
+      tester,
+    ) async {
+      await _pumpWithStore(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [
+              _worktree(
+                'wt-feat',
+                branch: 'feat/login',
+                targetBranch: 'main',
+                sessionIds: ['s1'],
+              ),
+            ],
+          ),
+        ],
+        sessions: [_session('s1', 'p1', 'work', 'pi')],
+      );
+
+      await _openWorktreeMenu(tester, 'feat/login');
+      await tester.tap(find.text('Lands in'));
+      await tester.pumpAndSettle();
+
+      // The picker fetched its candidate list and rendered a row for it.
+      expect(find.byKey(const Key('landsInCandidate-main')), findsOneWidget);
+    });
   });
 
   testWidgets('fold button collapses the sidebar via the provider', (

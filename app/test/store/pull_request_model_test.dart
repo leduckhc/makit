@@ -123,29 +123,44 @@ void _wrapUpAndBaseRefTests() {
     test('decodes a full report', () {
       final r = WrapUpReport.fromJson({
         'branchDeleted': 'feat/x',
-        'baseBranch': 'main',
-        'baseUpdated': true,
+        'targetBranch': 'main',
+        'targetUpdated': true,
       });
       expect(r.branchDeleted, 'feat/x');
-      expect(r.baseBranch, 'main');
-      expect(r.baseUpdated, isTrue);
-      expect(r.baseReason, isNull);
+      expect(r.targetBranch, 'main');
+      expect(r.targetUpdated, isTrue);
+      expect(r.targetReason, isNull);
       expect(r.summary, 'Removed feat/x · main updated');
+    });
+
+    test('still decodes the legacy base* keys', () {
+      // A server that predates the base->target rename. Without these aliases the
+      // report silently loses which branch was caught up and whether it moved,
+      // which turns "tidied and caught up" into "tidied, base untouched".
+      final r = WrapUpReport.fromJson({
+        'branchDeleted': 'feat/x',
+        'baseBranch': 'main',
+        'baseUpdated': true,
+        'baseReason': 'nope',
+      });
+      expect(r.targetBranch, 'main');
+      expect(r.targetUpdated, isTrue);
+      expect(r.targetReason, 'nope');
     });
 
     test('says the base was left alone when it was not fast-forwardable', () {
       final r = WrapUpReport.fromJson({
         'branchDeleted': 'feat/x',
-        'baseBranch': 'main',
-        'baseUpdated': false,
-        'baseReason': 'main has local commits that are not on origin/main',
+        'targetBranch': 'main',
+        'targetUpdated': false,
+        'targetReason': 'main has local commits that are not on origin/main',
       });
       expect(r.summary, 'Removed feat/x · main unchanged');
-      expect(r.baseReason, contains('local commits'));
+      expect(r.targetReason, contains('local commits'));
     });
 
     test('a detached worktree reports the removal without a branch', () {
-      final r = WrapUpReport.fromJson({'baseBranch': 'main'});
+      final r = WrapUpReport.fromJson({'targetBranch': 'main'});
       expect(r.summary, 'Worktree removed · main unchanged');
     });
 
@@ -154,8 +169,8 @@ void _wrapUpAndBaseRefTests() {
       // failed, saying only "Removed feat/x" would claim the opposite of what
       // happened — and the user cannot retry, the worktree is already gone.
       final r = WrapUpReport.fromJson({
-        'baseBranch': 'main',
-        'baseUpdated': true,
+        'targetBranch': 'main',
+        'targetUpdated': true,
         'branchReason': 'git branch -D feat/x failed: cannot lock ref',
       });
       expect(r.branchDeleted, isNull);
@@ -164,11 +179,11 @@ void _wrapUpAndBaseRefTests() {
       expect(r.detail, contains('cannot lock ref'));
     });
 
-    test('combines both reasons when the base was skipped too', () {
+    test('combines both reasons when the target was skipped too', () {
       final r = WrapUpReport.fromJson({
-        'baseBranch': 'main',
-        'baseUpdated': false,
-        'baseReason': 'main has local commits',
+        'targetBranch': 'main',
+        'targetUpdated': false,
+        'targetReason': 'main has local commits',
         'branchReason': 'cannot lock ref',
       });
       expect(r.detail, contains('cannot lock ref'));
@@ -180,7 +195,7 @@ void _wrapUpAndBaseRefTests() {
       // still be able to say something.
       final r = WrapUpReport.fromJson(const {});
       expect(r.summary, 'Worktree removed');
-      expect(r.baseUpdated, isFalse);
+      expect(r.targetUpdated, isFalse);
     });
   });
 }

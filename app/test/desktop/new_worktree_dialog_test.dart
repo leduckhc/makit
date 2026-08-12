@@ -46,12 +46,12 @@ class _FakeStore extends StoreController {
   @override
   Future<({String path, String? branch})> createWorktree(
     String projectId, {
-    String? baseBranch,
+    String? targetBranch,
     String? branchName,
   }) async {
-    createdWorktreeBases.add(baseBranch);
+    createdWorktreeBases.add(targetBranch);
     createdWorktreeNames.add(branchName);
-    return (path: '/tmp/wt/new-$baseBranch', branch: 'auto/$baseBranch');
+    return (path: '/tmp/wt/new-$targetBranch', branch: 'auto/$targetBranch');
   }
 
   @override

@@ -100,8 +100,9 @@ Future<void> startSessionFlow(
         case WorktreeSource.newBranch:
           final wt = await store.createWorktree(
             repo.id,
-            baseBranch:
-                choice.baseBranch ?? (branches.isEmpty ? null : branches.first),
+            targetBranch:
+                choice.targetBranch ??
+                (branches.isEmpty ? null : branches.first),
           );
           worktreePath = wt.path;
           branch = wt.branch;

@@ -57,9 +57,9 @@ class _WtStore extends StoreController {
   @override
   Future<({String path, String? branch})> createWorktree(
     String projectId, {
-    String? baseBranch,
+    String? targetBranch,
     String? branchName,
-  }) async => (path: '/tmp/wt/created', branch: 'auto/$baseBranch');
+  }) async => (path: '/tmp/wt/created', branch: 'auto/$targetBranch');
 
   @override
   Future<String> spawnSession(
