@@ -35,10 +35,29 @@ _▶️ Demo video coming soon — see [`docs/media/`](./docs/media/) to add it.
   trust store needed.
 - 🔔 **Never miss a prompt.** Get notified when an agent is waiting on you
   (approval, a question, or a finished turn).
+- ⚡ **Light on both ends.** A native client and a small Node server, built to
+  stay quick and low on memory — your laptop keeps its battery and its fans.
 
 📱 [`app/`](./app/) (Flutter client) · 🖥 [`server/`](./server/) (Node/TS server)
 · 📚 [UX](./docs/UX.md) · [Architecture](./docs/ARCHITECTURE.md) ·
 [Development runbook](./docs/DEVELOPMENT.md) · [Notifications](./docs/NOTIFICATIONS.md)
+
+## Where it came from
+
+I like terminal-first tools. [cmux](https://github.com/manaflow-ai/cmux) and
+[herdr](https://herdr.dev) are a joy on a desktop. But when I sat on the couch
+and drove my desktop through a terminal on my phone, it hurt: a tiny keyboard,
+small text, and panes that expect a mouse and a wide screen. A terminal is the
+wrong shape for a phone on the go. (I have not tried the SSH clients yet — they
+may well be better than I expect.)
+
+So makit is not a terminal on a phone. It is a phone-shaped client for the
+agent that already runs on your desktop.
+
+It does not beat the tools that inspired it. Orca, Cursor, herdr, cmux,
+Superconductor, Conductor, and t3code are all excellent, and makit is not on
+par with them. It is my own take: the parts that work for me, in the way I like
+to work. Thanks to all of them for the ideas.
 
 ## Quick start — Mac + iPhone over Tailscale
 
