@@ -265,6 +265,10 @@ void main() {
     test('T4 skips a wrapper operand', () {
       expect(commandNames('timeout 120 ssh host uptime'), 'ssh');
       expect(commandNames('timeout 1.5s curl -s http://x'), 'curl');
+      // `timeout` takes any float its libc parses, so the leading digit is
+      // optional: `timeout .5s curl` reported `.5s` as the command.
+      expect(commandNames('timeout .5s curl -s http://x'), 'curl');
+      expect(commandNames('timeout 5. curl -s http://x'), 'curl');
       expect(commandNames('timeout -k 5 30m pnpm test'), 'pnpm test');
       expect(commandNames('watch -n 2 git status'), 'git status');
       expect(commandNames('nice -n 10 make -j4'), 'make');
@@ -293,6 +297,7 @@ void main() {
     test('T4 keeps a numeric command under a wrapper without an operand', () {
       expect(commandNames('sudo 123'), '123');
       expect(commandNames('sudo 123 echo hi'), '123');
+      expect(commandNames('sudo .5s'), '.5s');
       // The one wrapper with a numeric operand still swallows only that one.
       expect(commandNames('timeout 120 ssh host uptime'), 'ssh');
       expect(commandNames('timeout 5 sudo 123'), '123');

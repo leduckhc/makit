@@ -405,9 +405,13 @@ const Map<String, Set<String>> _wrapperCommandFlags = {
 const Set<String> _numericOperandWrappers = {'timeout'};
 
 /// A wrapper's numeric operand: `timeout 120`, `timeout 1.5s`, `timeout 30m`.
+/// The integer part is optional because `timeout` takes any float its libc
+/// parses, and `timeout .5s curl` reported `.5s` as the command.
 /// Only consulted for a wrapper in [_numericOperandWrappers], and only until
 /// its one operand is found, so a real binary whose name is digits survives.
-final RegExp _wrapperOperand = RegExp(r'^[0-9]+(?:\.[0-9]+)?[smhd]?$');
+final RegExp _wrapperOperand = RegExp(
+  r'^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)[smhd]?$',
+);
 
 /// The distinct commands [command] runs, in first-seen order, joined with
 /// `, ` — the payload of a collapsed shell row. Empty when the command is

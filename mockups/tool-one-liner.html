@@ -728,10 +728,11 @@
 const WRAPPERS = new Set(['sudo','doas','env','time','nice','nohup','exec','command','builtin','stdbuf',
   'xargs','timeout','caffeinate','script','strace','ltrace','dtruss','watch']);
 
-/* A wrapper's numeric operand: `timeout 120`, `timeout 1.5s`. Only `timeout`
+/* A wrapper's numeric operand: `timeout 120`, `timeout 1.5s`, `timeout .5s` —
+   the integer part is optional, as libc's strtod has it. Only `timeout`
    takes one — every other wrapper passes a lone number to execvp, so
    `sudo 123` runs a binary named 123. */
-const WRAPPER_ARG = /^[0-9]+(?:\.[0-9]+)?[smhd]?$/;
+const WRAPPER_ARG = /^(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)[smhd]?$/;
 const NUMERIC_OPERAND_WRAPPERS = new Set(['timeout']);
 
 /* Wrapper flags taking a SEPARATED value, keyed by wrapper: the value is the
