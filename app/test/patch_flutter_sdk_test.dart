@@ -1,0 +1,252 @@
+// Tests for tool/patch_flutter_sdk.sh — the in-place Flutter SDK patcher
+// (FLUTTER-BUMP-HANDOUT.md §5). Runs the real script against fixture SDK trees.
+//
+// Why this exists: the script's job is to survive an SDK bump, and its most
+// dangerous failure mode is not "crashed" but "reported success while doing
+// nothing". 3.47.0 moved the #182400 call site one nesting level deeper, which
+// made the literal anchor miss — and the script printed "already patched".
+// The unpatched bug then only shows up as hundreds of lines of SkSL noise on
+// someone's next macOS build. Every case below pins a *distinguishable* report.
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+
+/// The #182400 call site as it appears in Flutter 3.44.9 — the `else` block is
+/// 8 spaces deep.
+const _shader344 = r'''
+class ShaderCompiler {
+  Future<bool> compileShader() async {
+      if (!retryResult.succeeded) {
+        _logger.printError('impellerc failure: ${retryResult.stderr}');
+        return false;
+      } else {
+        _logger.printError(
+          'warning: Shader `${input.path}` is incompatible with SkSL. This '
+          'shader will not load when running with the Skia backend.',
+        );
+        _logger.printError('impellerc failure: ${result.stderr}');
+      }
+    return true;
+  }
+}
+''';
+
+/// The same call site in Flutter 3.47.0 — one nesting level deeper (10 spaces).
+/// Byte-identical logic, different indentation: the case that silently no-opped.
+const _shader347 = r'''
+class ShaderCompiler {
+  Future<bool> compileShader() async {
+    if (needsRetry) {
+        if (!retryResult.succeeded) {
+          _logger.printError('impellerc failure: ${retryResult.stderr}');
+          return false;
+        } else {
+          _logger.printError(
+            'warning: Shader `${input.path}` is incompatible with SkSL. This '
+            'shader will not load when running with the Skia backend.',
+          );
+          _logger.printError('impellerc failure: ${result.stderr}');
+        }
+    }
+    return true;
+  }
+}
+''';
+
+/// A plausible future refactor: the warning is gone entirely (upstream fixed it
+/// their own way, or moved it elsewhere). The patch has nothing to attach to and
+/// must say so instead of claiming success.
+const _shaderRefactored = r'''
+class ShaderCompiler {
+  Future<bool> compileShader() async {
+    if (!result.succeeded) {
+      _logger.printError('impellerc failure: ${result.stderr}');
+      return false;
+    }
+    return true;
+  }
+}
+''';
+
+const _windowClasses = [
+  '_WindowCreationRequest',
+  '_Size',
+  '_Offset',
+  '_Rect',
+  '_Constraints',
+];
+
+String _windowFile({List<String> classes = _windowClasses}) {
+  final buf = StringBuffer("import 'dart:ffi';\n\n");
+  for (final name in classes) {
+    buf.writeln('final class $name extends Struct {');
+    buf.writeln('  @Int64()');
+    buf.writeln('  external int value;');
+    buf.writeln('}');
+    buf.writeln();
+  }
+  return buf.toString();
+}
+
+void main() {
+  // Tests run with CWD = app/, and the script is bash-only, so POSIX
+  // separators are correct here.
+  final script = '${Directory.current.path}/tool/patch_flutter_sdk.sh';
+
+  late Directory sdk;
+  late File windowFile;
+  late File shaderFile;
+
+  setUp(() {
+    sdk = Directory.systemTemp.createTempSync('fake_flutter_sdk');
+    windowFile = File(
+      '${sdk.path}/packages/flutter/lib/src/widgets/_window_macos.dart',
+    )..createSync(recursive: true);
+    shaderFile = File(
+      '${sdk.path}/packages/flutter_tools/lib/src/build_system/tools/'
+      'shader_compiler.dart',
+    )..createSync(recursive: true);
+    windowFile.writeAsStringSync(_windowFile());
+    shaderFile.writeAsStringSync(_shader344);
+  });
+
+  tearDown(() => sdk.deleteSync(recursive: true));
+
+  ProcessResult run() => Process.runSync(
+    'bash',
+    [script],
+    environment: {'FLUTTER_ROOT': sdk.path},
+  );
+
+  group('#182400 — SkSL stderr dump', () {
+    test('patches the 3.44.9 call site', () {
+      final r = run();
+      expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      expect(
+        shaderFile.readAsStringSync(),
+        contains(r"_logger.printTrace('impellerc failure: ${result.stderr}');"),
+      );
+    });
+
+    test('patches the 3.47.0 call site, which is nested one level deeper', () {
+      shaderFile.writeAsStringSync(_shader347);
+      final r = run();
+      expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      final out = shaderFile.readAsStringSync();
+      expect(
+        out,
+        contains(r"_logger.printTrace('impellerc failure: ${result.stderr}');"),
+        reason: 'indentation must not decide whether the patch applies',
+      );
+      // The other two printError call sites are unrelated and must survive.
+      expect(
+        out,
+        contains(
+          r"_logger.printError('impellerc failure: ${retryResult.stderr}');",
+        ),
+        reason: 'only the call site after the Skia warning may be downgraded',
+      );
+    });
+
+    test('keeps the concise one-line warning', () {
+      run();
+      expect(
+        shaderFile.readAsStringSync(),
+        contains('is incompatible with SkSL'),
+      );
+    });
+
+    test('is idempotent, and says so', () {
+      run();
+      final afterFirst = shaderFile.readAsStringSync();
+      final r = run();
+      expect(r.exitCode, 0);
+      expect(r.stdout, contains('[182400] already patched'));
+      expect(shaderFile.readAsStringSync(), afterFirst);
+    });
+
+    test(
+      'fails loudly when the anchor is gone, rather than claiming success',
+      () {
+        shaderFile.writeAsStringSync(_shaderRefactored);
+        final r = run();
+        expect(
+          r.exitCode,
+          isNot(0),
+          reason:
+              'an unapplied patch must not exit 0 — §5 says stop and '
+              're-derive, which nobody does if the script prints OK',
+        );
+        expect(
+          '${r.stdout}${r.stderr}',
+          contains('182400'),
+          reason: 'the report must name which fix stopped applying',
+        );
+        expect(
+          r.stdout,
+          isNot(contains('[182400] already patched')),
+          reason: '"already patched" on an unpatched file is the actual bug',
+        );
+      },
+    );
+  });
+
+  group('#188060 — AOT windowing structs', () {
+    test('patches all five structs', () {
+      final r = run();
+      expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      expect(r.stdout, contains('patched 5 class(es)'));
+      final out = windowFile.readAsStringSync();
+      for (final name in _windowClasses) {
+        expect(
+          out,
+          contains("@pragma('vm:entry-point')\nfinal class $name"),
+          reason: '$name must be force-retained against the tree-shaker',
+        );
+      }
+    });
+
+    test('is idempotent', () {
+      run();
+      final afterFirst = windowFile.readAsStringSync();
+      final r = run();
+      expect(r.exitCode, 0);
+      expect(r.stdout, contains('patched 0 class(es)'));
+      expect(windowFile.readAsStringSync(), afterFirst);
+    });
+
+    test('distinguishes a renamed struct from an already-patched one', () {
+      // Upstream renames _Rect. "patched 4; 1 already patched" would be a lie
+      // that reads exactly like a clean re-run.
+      windowFile.writeAsStringSync(
+        _windowFile(
+          classes: const [
+            '_WindowCreationRequest',
+            '_Size',
+            '_Offset',
+            '_Constraints',
+          ],
+        ),
+      );
+      final r = run();
+      expect(
+        r.exitCode,
+        isNot(0),
+        reason: 'a struct that no longer exists means the AOT crash is back',
+      );
+      expect('${r.stdout}${r.stderr}', contains('_Rect'));
+    });
+  });
+
+  group('SDK layout', () {
+    test('fails when the SDK does not have the expected files', () {
+      shaderFile.deleteSync();
+      final r = run();
+      expect(
+        r.exitCode,
+        isNot(0),
+        reason: 'a missing file means the patch did not apply',
+      );
+    });
+  });
+}
