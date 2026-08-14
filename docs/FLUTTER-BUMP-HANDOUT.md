@@ -431,9 +431,9 @@ lockfile today.
 
 ### The §5 patch nearly broke silently here
 
-#188060 is **still open** in 3.47.0 (no `vm:entry-point` upstream, all five
-structs still present) and that half of the patch applies unchanged. But 3.47.0
-moved the #182400 call site one nesting level deeper, so the old
+Issue `#188060` is **still open** in 3.47.0 (no `vm:entry-point` upstream, all
+five structs still present) and that half of the patch applies unchanged. But
+3.47.0 moved the `#182400` call site one nesting level deeper, so the old
 literal-with-indentation anchor missed — and the script printed
 **`[182400] already patched` against a completely unpatched file**. That is
 exactly the "do not assume the bug is fixed" failure §5 warns about, except the
@@ -455,11 +455,33 @@ flutter pub get                      # NOT --enforce-lockfile; the lockfile must
 dart run tool/pub_cooldown.dart      # must pass; gates the 6 forced packages
 flutter test --update-goldens test/desktop/chat/open_in_ide_golden_test.dart \
                               test/ui/composer/context_usage_golden_test.dart
+
 git add macos/Podfile macos/Podfile.lock macos/Runner.xcodeproj/project.pbxproj \
-        analysis_options.yaml pubspec.lock
+        analysis_options.yaml pubspec.lock \
+        test/desktop/chat/goldens/ide_launcher_light.png \
+        test/desktop/chat/goldens/ide_launcher_dark.png \
+        test/ui/composer/goldens/spec37_panel_codex.png \
+        test/ui/composer/goldens/spec37_panel_pi.png \
+        test/ui/composer/goldens/spec37_panel_tightening.png
+
+# Those are the only five goldens expected to move. Confirm no sixth did:
+git status --short -- test/                 # must list exactly the five above
 ```
 
-And two docs that §8's pin list does not cover:
+**Why the explicit list rather than `git add test/`:** the two commands above
+regenerate seven goldens, and `ide_launcher_menu.png` /
+`spec37_ring_ladder.png` are expected to come back byte-identical. A sixth file
+appearing means something other than corner anti-aliasing changed — layout or
+text moved — which invalidates the "cosmetic only" finding above. Staging the
+directory wholesale is exactly what would hide it.
+
+And two docs that §8's pin list does not cover. **Both are repo-root files while
+the block above runs from `app/`**, so stage them with a root-anchored pathspec
+(`:/`) or from the repo root — plain `git add AGENTS.md` inside `app/` fails:
+
+```sh
+git add :/AGENTS.md :/BUILD_AND_DEPLOY.md
+```
 
 - `AGENTS.md` — documents the Cursor Cloud VM's Flutter version.
 - `BUILD_AND_DEPLOY.md` — state the supported minimum, **macOS 12.0+**, which

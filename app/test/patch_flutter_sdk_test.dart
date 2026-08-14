@@ -149,7 +149,16 @@ void main() {
     });
 
     test('keeps the concise one-line warning', () {
-      run();
+      final r = run();
+      // Both guards matter: without them a script that died before touching the
+      // fixture leaves the warning in place, and this test passes for the one
+      // reason it is meant to rule out.
+      expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      expect(
+        r.stdout,
+        contains('[182400] silenced'),
+        reason: 'the warning only survived something if the patch ran',
+      );
       expect(
         shaderFile.readAsStringSync(),
         contains('is incompatible with SkSL'),
@@ -239,14 +248,27 @@ void main() {
   });
 
   group('SDK layout', () {
-    test('fails when the SDK does not have the expected files', () {
-      shaderFile.deleteSync();
-      final r = run();
-      expect(
-        r.exitCode,
-        isNot(0),
-        reason: 'a missing file means the patch did not apply',
-      );
-    });
+    // Naming the absent file is the whole value of the failure: "exited 1" is
+    // also what a typo in the script looks like. Each patch target is checked
+    // separately so neither branch can rot behind the other.
+    for (final (label, victim) in [
+      ('shader_compiler.dart', () => shaderFile),
+      ('_window_macos.dart', () => windowFile),
+    ]) {
+      test('fails, naming the file, when $label is missing', () {
+        victim().deleteSync();
+        final r = run();
+        expect(
+          r.exitCode,
+          isNot(0),
+          reason: 'a missing file means the patch did not apply',
+        );
+        expect(
+          '${r.stdout}${r.stderr}',
+          contains('$label not found'),
+          reason: 'the report must name the file that moved',
+        );
+      });
+    }
   });
 }
