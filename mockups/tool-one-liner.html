@@ -296,7 +296,9 @@
     <span class="ex">for f in *.dart; do wc -l "$f"; done | sort → <i>wc, sort</i></span></li>
 
   <li><b>Unwrap wrappers, then take the basename.</b> <code>sudo env time nice nohup xargs timeout stdbuf</code> are
-    skipped, as are leading flags; <code>~/flutter/bin/flutter</code> → <code>flutter</code>,
+    skipped along with their own operands — a numeric duration (<code>timeout 120 ssh</code> is <i>ssh</i>, not
+    <i>120</i>) and the value of a separated flag (<code>timeout -s KILL 120 ssh</code> is <i>ssh</i>, not
+    <i>KILL</i>) — as are leading flags; <code>~/flutter/bin/flutter</code> → <code>flutter</code>,
     <code>./scripts/deploy.sh</code> → <code>deploy.sh</code>. Versioned interpreters normalise
     (<code>python3</code>, <code>python3.12</code> → <code>python</code>; <code>pip3</code> → <code>pip</code>) —
     the brief's example says <code>python</code>.
@@ -724,6 +726,30 @@
 const WRAPPERS = new Set(['sudo','doas','env','time','nice','nohup','exec','command','builtin','stdbuf',
   'xargs','timeout','caffeinate','script','strace','ltrace','dtruss','watch']);
 
+/* A wrapper's numeric operand: `timeout 120`, `timeout 1.5s`, `watch -n 2`. */
+const WRAPPER_ARG = /^[0-9]+(?:\.[0-9]+)?[smhd]?$/;
+
+/* Wrapper flags taking a SEPARATED value, keyed by wrapper: the value is the
+   flag's, not a command (`timeout -s KILL 120 ssh` is ssh, not KILL). Keyed,
+   because `nice -n 10` takes a value while `sudo -n` does not. */
+const WRAPPER_VALUE_FLAGS = {
+  timeout:['-s','--signal','-k','--kill-after'],
+  sudo:['-u','--user','-g','--group','-p','--prompt','-C','-h','--host','-U','-r','--role','-t','--type'],
+  doas:['-u','-C'],
+  nice:['-n','--adjustment'],
+  watch:['-n','--interval'],
+  xargs:['-I','-i','--replace','-n','--max-args','-P','--max-procs','-L','-s','--max-chars','-a','--arg-file','-d','--delimiter'],
+  env:['-u','--unset','-C','--chdir','-S','--split-string'],
+  stdbuf:['-i','--input','-o','--output','-e','--error'],
+  time:['-o','--output','-f','--format'],
+  script:['-c','--command','-T','--log-timing','-o','--log-out'],
+  strace:['-e','-o','-p','-s','-E','-P','-u'],
+  ltrace:['-e','-o','-p','-s'],
+  dtruss:['-p','-n'],
+  caffeinate:['-t','-w'],
+  exec:['-a'],
+};
+
 const KEYWORDS = new Set(['if','then','else','elif','fi','while','until','do','done','case','esac','in',
   'select','function','{','}','[[',']]','!','(',')','&&','||','&','coproc']);
 
@@ -873,12 +899,18 @@ function segmentName(seg, opts){
   if(!toks.length) return null;
   if(HEADERS.has(toks[0])) return null;                      /* loop header */
   let i = 0;
+  let wrapper = null;                                        /* most recent wrapper skipped */
   while(i < toks.length){
     const t = toks[i], b = normalise(basename(t));
     /* a bare operator swallows the token after it, so `> out.txt grep foo`
        still finds `grep` rather than naming the redirect's target */
     if(REDIR.test(t)){ i += BARE_REDIR.test(t) ? 2 : 1; continue; }
-    if(ASSIGN.test(t) || KEYWORDS.has(t) || WRAPPERS.has(b) || t.startsWith('-') || t === '«heredoc»'){ i++; continue; }
+    if(WRAPPERS.has(b)){ wrapper = b; i++; continue; }
+    /* a wrapper flag with a separated value takes the next token with it */
+    if(wrapper && (WRAPPER_VALUE_FLAGS[wrapper] || []).includes(t)){ i += 2; continue; }
+    /* the wrapper's own operand: `timeout 120 ssh …` is ssh, not 120 */
+    if(ASSIGN.test(t) || KEYWORDS.has(t) || t.startsWith('-') || t === '«heredoc»'
+       || (wrapper && WRAPPER_ARG.test(t))){ i++; continue; }
     if(PROLOGUE.has(b)) return null;                         /* cd / export / set … */
     break;
   }

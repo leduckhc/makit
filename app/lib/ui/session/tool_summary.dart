@@ -332,6 +332,68 @@ final RegExp _trailingVersion = RegExp(
 /// once instead of on every token of every segment.
 final RegExp _trailingSlashes = RegExp(r'/+$');
 
+/// Wrapper flags that take a **separated** value, keyed by wrapper. The value
+/// belongs to the flag, not to the pipeline: `timeout -s KILL 120 ssh` is
+/// `ssh`, and used to read `KILL`.
+///
+/// Keyed rather than one flat set because the same letter means different
+/// things per binary: `nice -n 10` and `watch -n 2` take a value, while
+/// `sudo -n` (non-interactive) takes none — a flat set would have eaten the
+/// command out of `sudo -n systemctl restart nginx`. Attached forms
+/// (`--signal=KILL`, `-n1`) need no entry: they are already one flag token.
+const Map<String, Set<String>> _wrapperValueFlags = {
+  'timeout': {'-s', '--signal', '-k', '--kill-after'},
+  'sudo': {
+    '-u',
+    '--user',
+    '-g',
+    '--group',
+    '-p',
+    '--prompt',
+    '-C',
+    '-h',
+    '--host',
+    '-U',
+    '-r',
+    '--role',
+    '-t',
+    '--type',
+  },
+  'doas': {'-u', '-C'},
+  'nice': {'-n', '--adjustment'},
+  'watch': {'-n', '--interval'},
+  'xargs': {
+    '-I',
+    '-i',
+    '--replace',
+    '-n',
+    '--max-args',
+    '-P',
+    '--max-procs',
+    '-L',
+    '-s',
+    '--max-chars',
+    '-a',
+    '--arg-file',
+    '-d',
+    '--delimiter',
+  },
+  'env': {'-u', '--unset', '-C', '--chdir', '-S', '--split-string'},
+  'stdbuf': {'-i', '--input', '-o', '--output', '-e', '--error'},
+  'time': {'-o', '--output', '-f', '--format'},
+  'script': {'-c', '--command', '-T', '--log-timing', '-o', '--log-out'},
+  'strace': {'-e', '-o', '-p', '-s', '-E', '-P', '-u'},
+  'ltrace': {'-e', '-o', '-p', '-s'},
+  'dtruss': {'-p', '-n'},
+  'caffeinate': {'-t', '-w'},
+  'exec': {'-a'},
+};
+
+/// A wrapper's numeric operand: `timeout 120`, `timeout 1.5s`, `timeout 30m`.
+/// Only consulted once a wrapper has been skipped, so a real binary whose name
+/// is digits is unaffected.
+final RegExp _wrapperOperand = RegExp(r'^[0-9]+(?:\.[0-9]+)?[smhd]?$');
+
 /// The distinct commands [command] runs, in first-seen order, joined with
 /// `, ` — the payload of a collapsed shell row. Empty when the command is
 /// empty or is nothing but prologue.
@@ -516,6 +578,10 @@ String? _segmentName(String segment) {
   if (_compoundHeads.contains(words.first)) return null;
 
   var i = 0;
+  // `timeout 120 ssh …` used to report `120`: the duration is the *wrapper's*
+  // argument, not a command. The most recent wrapper is remembered rather than
+  // assumed, so both operand rules below apply only when one was really seen.
+  String? wrapper;
   while (i < words.length) {
     final word = words[i];
     final base = _unversioned(_basename(word));
@@ -525,11 +591,22 @@ String? _segmentName(String segment) {
       i += _bareRedirection.hasMatch(word) ? 2 : 1;
       continue;
     }
+    if (_wrappers.contains(base)) {
+      wrapper = base;
+      i++;
+      continue;
+    }
+    // A wrapper flag with a separated value takes the next token with it.
+    if (wrapper != null &&
+        (_wrapperValueFlags[wrapper]?.contains(word) ?? false)) {
+      i += 2;
+      continue;
+    }
     if (_assignment.hasMatch(word) ||
         _shellKeywords.contains(word) ||
-        _wrappers.contains(base) ||
         word.startsWith('-') ||
-        word.startsWith('«')) {
+        word.startsWith('«') ||
+        (wrapper != null && _wrapperOperand.hasMatch(word))) {
       i++;
       continue;
     }

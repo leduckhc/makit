@@ -259,6 +259,43 @@ void main() {
       expect(commandNames('./scripts/deploy.sh --dry-run'), 'deploy.sh');
     });
 
+    // A wrapper's own operand is not the command: `timeout 120 ssh …` showed
+    // `Run 120` on the real app. Durations and flag values belong to the
+    // wrapper, so the scan keeps walking until it meets a real name.
+    test('T4 skips a wrapper operand', () {
+      expect(commandNames('timeout 120 ssh host uptime'), 'ssh');
+      expect(commandNames('timeout 1.5s curl -s http://x'), 'curl');
+      expect(commandNames('timeout -k 5 30m pnpm test'), 'pnpm test');
+      expect(commandNames('watch -n 2 git status'), 'git status');
+      expect(commandNames('nice -n 10 make -j4'), 'make');
+    });
+
+    // Same bug one step further out: the value of a *separated* wrapper flag is
+    // the flag's, not a command. `timeout -s KILL 120 ssh` reported `KILL`.
+    // The table is keyed by wrapper because the same letter can be boolean
+    // elsewhere — `sudo -n` takes no value, and eating its next word would lose
+    // the command entirely.
+    test('T4 skips the value of a wrapper flag', () {
+      expect(commandNames('timeout -s KILL 120 ssh host uptime'), 'ssh');
+      expect(commandNames('timeout --signal KILL 5 curl -s http://x'), 'curl');
+      expect(
+        commandNames('sudo -u root systemctl restart nginx'),
+        'systemctl restart',
+      );
+      expect(commandNames('xargs -I {} grep -l TODO {}'), 'grep');
+      expect(commandNames('env -u HOME python3 x.py'), 'python');
+    });
+
+    // A boolean flag on the same wrapper must not swallow the command.
+    test('T4 keeps the command after a valueless wrapper flag', () {
+      expect(
+        commandNames('sudo -n systemctl restart nginx'),
+        'systemctl restart',
+      );
+      expect(commandNames('env -i bash -lc "echo hi"'), 'bash');
+      expect(commandNames('timeout -k 5 30 pnpm test'), 'pnpm test');
+    });
+
     test('T4 normalises a versioned interpreter', () {
       expect(commandNames('python3 -c "print(1)"'), 'python');
       expect(commandNames('python3.12 tool/wait.py'), 'python');
