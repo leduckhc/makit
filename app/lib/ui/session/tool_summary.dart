@@ -363,6 +363,7 @@ const Map<String, Set<String>> _wrapperValueFlags = {
   'nice': {'-n', '--adjustment'},
   'watch': {'-n', '--interval'},
   'xargs': {
+    '-E',
     '-I',
     '-i',
     '--replace',
@@ -378,10 +379,10 @@ const Map<String, Set<String>> _wrapperValueFlags = {
     '-d',
     '--delimiter',
   },
-  'env': {'-u', '--unset', '-C', '--chdir', '-S', '--split-string'},
+  'env': {'-u', '--unset', '-C', '--chdir'},
   'stdbuf': {'-i', '--input', '-o', '--output', '-e', '--error'},
   'time': {'-o', '--output', '-f', '--format'},
-  'script': {'-c', '--command', '-T', '--log-timing', '-o', '--log-out'},
+  'script': {'-T', '--log-timing', '-o', '--log-out'},
   'strace': {'-e', '-o', '-p', '-s', '-E', '-P', '-u'},
   'ltrace': {'-e', '-o', '-p', '-s'},
   'dtruss': {'-p', '-n'},
@@ -389,9 +390,23 @@ const Map<String, Set<String>> _wrapperValueFlags = {
   'exec': {'-a'},
 };
 
+/// Wrapper flags whose value is *itself* a command line rather than metadata:
+/// `script -c 'make test'`, `env -S 'python3 -m pip install …'`. Listed with
+/// [_wrapperValueFlags] they dropped flag and operand together and the row lost
+/// the command entirely, so the operand is re-scanned as a command instead.
+const Map<String, Set<String>> _wrapperCommandFlags = {
+  'script': {'-c', '--command'},
+  'env': {'-S', '--split-string'},
+};
+
+/// Wrappers with a bare numeric operand of their own — only `timeout`'s
+/// duration. Every other wrapper passes a lone number straight through to
+/// `execvp`, so `sudo 123` runs a binary named `123` and must keep the name.
+const Set<String> _numericOperandWrappers = {'timeout'};
+
 /// A wrapper's numeric operand: `timeout 120`, `timeout 1.5s`, `timeout 30m`.
-/// Only consulted once a wrapper has been skipped, so a real binary whose name
-/// is digits is unaffected.
+/// Only consulted for a wrapper in [_numericOperandWrappers], and only until
+/// its one operand is found, so a real binary whose name is digits survives.
 final RegExp _wrapperOperand = RegExp(r'^[0-9]+(?:\.[0-9]+)?[smhd]?$');
 
 /// The distinct commands [command] runs, in first-seen order, joined with
@@ -570,6 +585,24 @@ String _unversioned(String name) {
   return _versionedTools.contains(m[1]) ? m[1]! : name;
 }
 
+/// The command line carried by the flag at [i], for a flag of [wrapper] listed
+/// in [_wrapperCommandFlags] — separated (`-c 'make test'`) or attached
+/// (`--command='make test'`). Null when this token is not such a flag, or when
+/// it ends the segment with nothing to scan.
+String? _commandFlagValue(String wrapper, List<String> words, int i) {
+  final flags = _wrapperCommandFlags[wrapper];
+  if (flags == null) return null;
+  final word = words[i];
+  if (flags.contains(word)) {
+    return i + 1 < words.length ? words[i + 1] : null;
+  }
+  final eq = word.indexOf('=');
+  if (eq > 0 && flags.contains(word.substring(0, eq))) {
+    return word.substring(eq + 1);
+  }
+  return null;
+}
+
 /// The one name [segment] contributes, or null when it contributes none
 /// (prologue, a compound-statement head, or nothing but flags).
 String? _segmentName(String segment) {
@@ -582,6 +615,8 @@ String? _segmentName(String segment) {
   // argument, not a command. The most recent wrapper is remembered rather than
   // assumed, so both operand rules below apply only when one was really seen.
   String? wrapper;
+  // Whether that wrapper is still owed its one numeric operand.
+  var operandPending = false;
   while (i < words.length) {
     final word = words[i];
     final base = _unversioned(_basename(word));
@@ -593,20 +628,31 @@ String? _segmentName(String segment) {
     }
     if (_wrappers.contains(base)) {
       wrapper = base;
+      operandPending = _numericOperandWrappers.contains(base);
       i++;
       continue;
     }
-    // A wrapper flag with a separated value takes the next token with it.
-    if (wrapper != null &&
-        (_wrapperValueFlags[wrapper]?.contains(word) ?? false)) {
-      i += 2;
-      continue;
+    if (wrapper != null) {
+      // A flag carrying a command line: that operand *is* the command.
+      final nested = _commandFlagValue(wrapper, words, i);
+      if (nested != null) return _segmentName(nested);
+      // A wrapper flag with a separated value takes the next token with it.
+      if (_wrapperValueFlags[wrapper]?.contains(word) ?? false) {
+        i += 2;
+        continue;
+      }
+      // The wrapper's own operand, consumed once: `timeout 120 ssh` is `ssh`,
+      // while the `123` in `timeout 5 sudo 123` is still a command.
+      if (operandPending && _wrapperOperand.hasMatch(word)) {
+        operandPending = false;
+        i++;
+        continue;
+      }
     }
     if (_assignment.hasMatch(word) ||
         _shellKeywords.contains(word) ||
         word.startsWith('-') ||
-        word.startsWith('«') ||
-        (wrapper != null && _wrapperOperand.hasMatch(word))) {
+        word.startsWith('«')) {
       i++;
       continue;
     }

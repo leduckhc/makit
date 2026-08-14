@@ -283,7 +283,36 @@ void main() {
         'systemctl restart',
       );
       expect(commandNames('xargs -I {} grep -l TODO {}'), 'grep');
+      expect(commandNames('xargs -E EOF grep -l TODO'), 'grep');
       expect(commandNames('env -u HOME python3 x.py'), 'python');
+    });
+
+    // A numeric token is only the wrapper's when that wrapper actually takes
+    // one. `timeout 120` is a duration, but `sudo 123` runs a binary named
+    // `123`, and skipping it left the row with no command at all.
+    test('T4 keeps a numeric command under a wrapper without an operand', () {
+      expect(commandNames('sudo 123'), '123');
+      expect(commandNames('sudo 123 echo hi'), '123');
+      // The one wrapper with a numeric operand still swallows only that one.
+      expect(commandNames('timeout 120 ssh host uptime'), 'ssh');
+      expect(commandNames('timeout 5 sudo 123'), '123');
+    });
+
+    // `script -c` and `env -S` carry a *command line*, not flag metadata.
+    // Listing them as value flags dropped the flag and its operand together,
+    // so the row said nothing at all about what ran.
+    test('T4 names the command a wrapper flag carries', () {
+      expect(commandNames("script -c 'make test' /dev/null"), 'make test');
+      expect(
+        commandNames('script --command="flutter test --no-pub" out.log'),
+        'flutter test',
+      );
+      expect(
+        commandNames("env -S 'python3 -m pip install -r r.txt'"),
+        'python',
+      );
+      // Nothing to scan: the flag alone is still not a command name.
+      expect(commandNames('script -c'), '');
     });
 
     // A boolean flag on the same wrapper must not swallow the command.
