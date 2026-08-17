@@ -335,7 +335,7 @@ It fails as the five section 11 goldens, and nothing else.
       |---|---|---|
       | 3.44.4 (`main`, 2026-08-08) | 8 | 7 |
       | 3.44.9 (2026-08-12) | 19, then 28 | 9, then 2 |
-      | 3.47.0 (2026-08-13, §11) | — | 3 |
+      | 3.47.0 (2026-08-13, §11) | — | 3, then 2, then 1 |
       **Neither count is reproducible run-to-run — not even the serial one**, so
       do not gate on a number at all. Measured on one machine within one hour,
       serial ranged 2–9 and parallel 19–28 on the *same* commit and SDK; a
@@ -392,7 +392,9 @@ git -C /Users/le/Work/Vibe/flutter worktree add /Users/le/Work/Vibe/flutter-3.47
 That is a strictly better version of §6's "separate directory": it shares the
 object store, so the checkout costs ~1.5 GB instead of ~4 GB, and
 `flutter --version` still reports `3.47.0` correctly. Remove it with
-`git -C .../flutter worktree remove ../flutter-3.47.0`, not `rm -rf`.
+`git -C .../flutter worktree remove --force ../flutter-3.47.0`, not `rm -rf`.
+The `--force` is required, not optional: the §5 patch leaves two tracked SDK
+files modified, and `worktree remove` refuses a dirty worktree.
 
 | | version | Dart | published | §3 lockfile moves? |
 |---|---|---|---|---|
@@ -483,16 +485,25 @@ print(r[d['current_release']['stable']]['version'])"
 
 Re-measured at landing on 3.47.0, not carried over from the evaluation:
 
-- `flutter analyze` — clean.
-- `flutter test --concurrency 1` — **3071 pass, 2 failures, both loading-stage
-  flakes (§9), non-loading `0`**, and both named files pass when run alone.
-  That `0` is the gate; the raw counts are not reproducible (§9). Count failures
-  from `--reporter=json` (`testDone` events whose `result != success`, ignoring
-  `hidden`) rather than reading the human reporter — that is the only way to
-  separate a real failure from the intentional-exception banners §9 lists.
-- `flutter build macos --release` — builds **and launches**; ran 12s with no
-  `illegal cid, full-aot`, so the #188060 canary is clean.
-- The §5 patch — still needed, and still applies. See below.
+- `flutter analyze --fatal-infos` — clean.
+- `flutter test --concurrency 1` — **non-loading failures `0`**, which is the
+  gate.
+  Two runs measured it, and only the gate held steady:
+  3071 pass with 2 loading flakes before the rebase onto main;
+  3102 pass with 1 loading flake after it.
+  Every named file passed when run alone.
+  Do not treat either count as a target (section 9).
+  Count failures from `--reporter=json`.
+  Use `testDone` events whose `result != success`, and ignore `hidden`.
+  The human reporter cannot separate a real failure from the
+  intentional-exception banners that section 9 lists.
+- `flutter build macos --release` — builds **and launches**.
+  It ran 12s with no `illegal cid, full-aot`, so the #188060 canary is clean.
+  The build printed only the three short SkSL warnings.
+  So section 5 fix 2 works on 3.47.0.
+- `flutter pub get --enforce-lockfile` — changes no file once the lockfile is
+  committed. CI therefore sees a clean tree.
+- The section 5 patch — still needed, and still applies. See below.
 
 ### The section 5 patch nearly broke silently here
 
@@ -512,12 +523,6 @@ A renamed struct no longer reports as "already patched".
 `app/test/patch_flutter_sdk_test.dart` covers this.
 It pins the 3.44.9 and the 3.47.0 call sites as fixtures.
 The next bump fails a test instead of a build.
-
-Fixed on this branch: both fixes now match indentation-insensitively, "anchor
-absent" is a distinct hard failure (non-zero exit naming the site that moved),
-and a *renamed* struct no longer reports as "already patched". Covered by
-`app/test/patch_flutter_sdk_test.dart`, which pins the 3.44.9 **and** 3.47.0 call
-sites as fixtures, so the next bump fails a test instead of a build.
 
 ### How it was landed (2026-08-17)
 
@@ -592,11 +597,20 @@ Do the move in the **same sitting as the merge**:
 ```sh
 git -C /Users/le/Work/Vibe/flutter checkout 3.47.0
 bash app/tool/patch_flutter_sdk.sh                 # expect: patched 5 class(es)
-git -C /Users/le/Work/Vibe/flutter worktree remove ../flutter-3.47.0
+git -C /Users/le/Work/Vibe/flutter worktree remove --force ../flutter-3.47.0
 ```
 
 Use `worktree remove`, **not** `rm -rf`.
 The 3.47.0 checkout is a worktree of the same clone.
+
+`--force` is required here, not a shortcut.
+The section 5 patch modifies two tracked files inside that worktree.
+`worktree remove` refuses a worktree with modified tracked files.
+Discarding that patch is correct, because you re-apply it to the shared SDK in
+the step above.
+Run `git -C /Users/le/Work/Vibe/flutter-3.47.0 status --porcelain` first if you
+want to see what `--force` discards.
+
 The section 5 patch applies per SDK, not per worktree (section 6).
 One run therefore covers every worktree.
 
