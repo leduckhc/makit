@@ -268,13 +268,19 @@ docs/DEVELOPMENT.md:31    "flutter --version  # expect <version>"
 
 **Why the cache keys carry the version.** `flutter-ci.yml` and
 `protocol-contract-ci.yml` hand-roll an `actions/cache` whose `path` includes
-`${{ runner.tool_cache }}/flutter/` — the SDK itself. An SDK bump does not
-change `app/pubspec.lock`, so a key built only from that hash still hits the
-*previous* SDK's entry: the new SDK is never saved (exact-key hit ⇒ no save) and
+`${{ runner.tool_cache }}/flutter/` — the SDK itself. An SDK bump **can** leave
+`app/pubspec.lock` untouched, as every 3.44.x bump did, so a key built only from
+that hash then still hits the *previous* SDK's entry: the new SDK is never saved
+(exact-key hit ⇒ no save) and
 `restore-keys` drags the old one in as the base. `integration-ci.yml` and
 `integration-desktop-ci.yml` need nothing here — they use the action's own
 `cache: true`, which is version-aware. `real-pi-e2e.yml:124` caches only
 `~/.pub-cache`, so keying it on the lockfile alone is correct.
+
+This bump is the exception, and it strengthens the rule.
+It moves six lockfile lines (section 11, item 2), so the hash does change here.
+A lockfile hash is therefore not a reliable name for an SDK version.
+Keep the version in the key.
 
 Two more that the first draft of this list missed:
 
@@ -308,9 +314,23 @@ Do not add a version there again to "fix the drift".
 The VM is provisioned outside this repo, so any number here goes stale.
 If VM toolchain notes return, state the pin.
 Then tell the reader to check `~/flutter/bin/flutter --version`.
-A lagging image does **not** fail at `pub get`.
-The lockfile floor is `Dart >=3.12.0`.
-It fails as the five section 11 goldens, and nothing else.
+A lagging image **does** fail at `pub get`, and the declared floors hide why.
+The lockfile floor is `Dart >=3.12.0` with `Flutter >=3.44.0`, and 3.44.9 meets both.
+The binding constraint sits elsewhere.
+The SDK's own `packages/flutter_test/pubspec.yaml` pins the six section 11
+packages to exact versions.
+An older SDK therefore demands the older six.
+It reverses item 2 of section 11.
+Measured on 3.44.9 against this branch's lockfile:
+
+| command | result |
+|---|---|
+| `flutter pub get --enforce-lockfile` | exit 65, `Unable to satisfy pubspec.yaml using pubspec.lock` |
+| `flutter pub get` | exit **0**, and it reverts the same six entries |
+
+The second row is the trap.
+It succeeds, so the reverted lockfile can land in a commit unnoticed.
+The five section 11 goldens fail as well, but after this, not instead of it.
 
 ---
 
