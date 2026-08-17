@@ -182,20 +182,20 @@ rather than assuming the bug is fixed.
 
 ## 6. Trap 2 — one SDK, every worktree
 
-`/Users/le/Work/Vibe/flutter` is shared by every worktree. Run
-`git worktree list` for the live set rather than trusting a list here — it goes
-stale fast (as of 2026-08-12 it is 4, and 3 of the 5 originally listed are
-gone).
+`/Users/le/Work/Vibe/flutter` is shared by every worktree.
+Run `git worktree list` for the live set.
+Do not trust a list in this file, because the set changes often.
+On 2026-08-12 there were 4, and 3 of the 5 first listed were gone.
 
-`flutter upgrade` moves **all of them** at once, before this branch has merged
-or even passed CI.
+`flutter upgrade` moves **all of them** at once.
+It does so before this branch has merged, or even passed CI.
 
-The §5 patch, however, is applied to the **SDK**, not to a worktree — so one run
-of `patch_flutter_sdk.sh` against the shared checkout covers every worktree, and
-re-running it from another worktree is a verified no-op
-(`patched 0 class(es); 5 already patched`). Earlier wording here and in §7 step 0
-implied per-worktree re-application; that is wrong, and only misleads you into
-thinking you have more work than you do.
+The section 5 patch applies to the **SDK**, not to a worktree.
+One run of `patch_flutter_sdk.sh` against the shared checkout covers them all.
+A second run from another worktree is a verified no-op.
+It reports `patched 0 class(es); 5 already patched`.
+Earlier wording here, and in section 7 step 0, implied per-worktree work.
+That wording is wrong. It only adds work that you do not have.
 
 If that is unacceptable, install the new SDK into a separate directory and point
 only this worktree's `PATH` at it, leaving the shared checkout on 3.44.4 until
@@ -283,30 +283,34 @@ BUILD_AND_DEPLOY.md:375   flutter-action snippet, build-ios job
 BUILD_AND_DEPLOY.md:407   flutter-action snippet, build-macos job
 ```
 
-Those are template YAML for a proposed tag-triggered release workflow, not live
-CI, so they change nothing today. The 3.44.9 bump deliberately left them at
-`3.44.4` as an open follow-up. **The 3.47.0 bump reversed that call and moved
-them**, because the reason for excluding them was self-defeating: the file is
-prescriptive, so anyone copying the template reintroduces a stale pin. A
-template is a pin site. Keep them in the sed.
+Those are template YAML for a proposed tag-triggered release workflow.
+They are not live CI, so they change nothing today.
+The 3.44.9 bump left them at `3.44.4` as an open follow-up.
+**The 3.47.0 bump reversed that call and moved them.**
+The reason to skip them was self-defeating.
+The file is prescriptive, so a reader copies the template and gets a stale pin.
+A template is a pin site. Keep it in the sed.
 
-`BUILD_AND_DEPLOY.md` also now carries the **supported-platform floor** (macOS
-12.0, iOS 13.0) near the top. It is not a version pin, but it moves *with* one —
-see §11 — so change it in the same commit as any deployment-target edit.
+`BUILD_AND_DEPLOY.md` also states the **supported platform floor** near the top.
+That floor is macOS 12.0 and iOS 13.0.
+It is not a version pin, but it moves with one. See section 11.
+Change it in the same commit as any deployment-target edit.
 
 **Do not touch** `docs/specs/2026-08-06-SPEC-40-composer-footer-space.md` or
 `docs/specs/2026-08-06-SPEC-40-PLAN.md`. They also say `3.44.4`, but as the
 recorded SDK for a past performance measurement. Rewriting them falsifies the
 record.
 
-`AGENTS.md` **is no longer a pin site.** It documented Flutter `3.44.4` on the
-Cursor Cloud VM, but `#165` deleted that whole section and did not move it
-elsewhere. Do not re-add a version there to "fix the drift": the VM is
-provisioned outside this repo, so a number in this repo can only go stale again.
-If VM toolchain notes come back, state the pin and tell the reader to check
-`~/flutter/bin/flutter --version`, because a lagging image does **not** fail at
-`pub get` — the lockfile floor is `Dart >=3.12.0` — it fails as the five §11
-goldens and nothing else.
+`AGENTS.md` **is no longer a pin site.**
+It documented Flutter `3.44.4` on the Cursor Cloud VM.
+PR #165 deleted that whole section and did not move it elsewhere.
+Do not add a version there again to "fix the drift".
+The VM is provisioned outside this repo, so any number here goes stale.
+If VM toolchain notes return, state the pin.
+Then tell the reader to check `~/flutter/bin/flutter --version`.
+A lagging image does **not** fail at `pub get`.
+The lockfile floor is `Dart >=3.12.0`.
+It fails as the five section 11 goldens, and nothing else.
 
 ---
 
@@ -368,10 +372,11 @@ goldens and nothing else.
 - Do not edit `app/pubspec.lock` by hand — see the header comment in
   `app/pubspec.yaml` and `SECURITY.md`.
 - Do not skip `app/tool/patch_flutter_sdk.sh` (§5).
-- Do not trust the patch script's output without reading it. "Already patched"
-  used to be printed for an unpatched file (§11); it is a hard failure now, but
-  the general lesson holds — a patch that reports success is not the same as a
-  patch that applied.
+- Do not trust the patch script's output without reading it.
+  It used to print "already patched" for an unpatched file (section 11).
+  That state is a hard failure now.
+  The general rule still holds.
+  A patch that reports success is not the same as a patch that applied.
 
 ---
 
@@ -414,23 +419,25 @@ print(r[d['current_release']['stable']]['version'])"
 
 ### What it costs — four things, none of them optional
 
-1. **macOS deployment target 10.15 → 12.0 — accepted 2026-08-13 (KC).**
-   `flutter build macos` silently rewrites `macos/Podfile`,
-   `macos/Podfile.lock` and `macos/Runner.xcodeproj/project.pbxproj` through the
-   tool's own `macos_deployment_target_migration.dart`. That is **dropping macOS
-   11 and earlier** — a product decision wearing the costume of a build
-   artifact, so it is recorded here rather than discovered in a diff.
-   **Decision: acceptable.** macOS 11 (2020) is four majors behind; current is
-   26.5.2. Nothing user-facing promised 10.15 — in fact the app's minimum OS is
-   documented *nowhere*, only implied by `project.pbxproj`. Land the three
-   migrated files deliberately in the bump commit, and close that documentation
-   gap at the same time (see the landing checklist).
+1. **macOS deployment target 10.15 to 12.0. Accepted 2026-08-13 (KC).**
+   `flutter build macos` rewrites `macos/Podfile`, `macos/Podfile.lock` and
+   `macos/Runner.xcodeproj/project.pbxproj`.
+   It uses its own `macos_deployment_target_migration.dart`.
+   The change drops macOS 11 and older.
+   That is a product decision, not a build artifact, so it is recorded here.
+   **Decision: acceptable.** macOS 11 shipped in 2020 and is four majors behind.
+   The current release is 26.5.2.
+   Nothing user-facing promised 10.15.
+   Before this bump the app stated no minimum OS anywhere.
+   Only `project.pbxproj` implied one.
+   Land the three migrated files in the bump commit.
+   Close the documentation gap in the same commit.
 2. **6 SDK-forced package bumps** — `matcher` 0.12.19→0.12.20, `meta`
    1.18.0→1.19.0, `test` 1.31.0→1.31.1, `test_api` 0.7.11→0.7.12,
-   `test_core` 0.6.17→0.6.18, `vector_math` **2.2.0→2.4.2**. So
-   `--enforce-lockfile` fails until the lockfile is regenerated — unlike the
-   3.44.x bumps, where §3's "zero-line lockfile diff" held. The
-   "N packages incompatible" warning drops 27 → 24.
+   `test_core` 0.6.17→0.6.18, `vector_math` **2.2.0→2.4.2**.
+   So `--enforce-lockfile` fails until you regenerate the lockfile.
+   The 3.44.x bumps did not need this; section 3's zero-line diff held there.
+   The "N packages incompatible" warning drops from 27 to 24.
 3. **5 golden images must be regenerated.** All five are **rounded-corner
    anti-aliasing only.** At landing this was re-verified by measurement rather
    than by eye — the changed pixels cluster into exactly the corner arcs:
@@ -443,17 +450,21 @@ print(r[d['current_release']['stable']]['version'])"
    | `spec37_panel_pi.png` | 340×620 | 159 | 0.075% | 12/255 | same |
    | `spec37_panel_tightening.png` | 340×620 | 163 | 0.077% | 13/255 | same |
 
-   No size change, and no changed pixel in any text region — text or layout
-   movement would show a max channel Δ near 255, not 13. Do **not** regenerate
-   them before the bump lands — they would then fail on the pinned 3.44.9.
+   No file changed size.
+   No changed pixel sits in a text region.
+   Moved text or layout would give a channel delta near 255, not 13.
+   Do **not** regenerate these goldens before the bump lands.
+   They would then fail on the pinned 3.44.9.
 
-   Two gotchas if you re-measure: the two commands regenerate **seven** goldens,
-   of which only these five may move (`ide_launcher_menu.png` and
-   `spec37_ring_ladder.png` must come back byte-identical — a sixth mover means
-   layout changed and this whole "cosmetic" finding is void); and Pillow ≥10
-   makes `Image.getbbox()` default to `alpha_only=True` on RGBA, so a diff whose
-   alpha is untouched reports `None`. Pass `alpha_only=False` or you will
-   conclude nothing changed.
+   Two traps if you re-measure.
+   First, the two commands regenerate **seven** goldens.
+   Only these five may move.
+   `ide_launcher_menu.png` and `spec37_ring_ladder.png` must stay identical.
+   A sixth changed file means layout moved, and this finding is then void.
+   Second, Pillow 10 and later default `Image.getbbox()` to `alpha_only=True`
+   on RGBA.
+   A diff with untouched alpha then reports `None`.
+   Pass `alpha_only=False`, or you will conclude that nothing changed.
 4. **`pub get` rewrites `analysis_options.yaml`**, appending
    `android|ios|web|windows|macos|linux/**` to `analyzer.exclude`. Tracked file,
    silent edit, so every dev and CI run shows a dirty tree until it is
@@ -474,15 +485,24 @@ Re-measured at landing on 3.47.0, not carried over from the evaluation:
   `illegal cid, full-aot`, so the #188060 canary is clean.
 - The §5 patch — still needed, and still applies. See below.
 
-### The §5 patch nearly broke silently here
+### The section 5 patch nearly broke silently here
 
-Issue `#188060` is **still open** in 3.47.0 (no `vm:entry-point` upstream, all
-five structs still present) and that half of the patch applies unchanged. But
-3.47.0 moved the `#182400` call site one nesting level deeper, so the old
-literal-with-indentation anchor missed — and the script printed
-**`[182400] already patched` against a completely unpatched file**. That is
-exactly the "do not assume the bug is fixed" failure §5 warns about, except the
-script itself was doing the assuming.
+Issue `#188060` is **still open** in 3.47.0.
+There is no `vm:entry-point` upstream, and all five structs are still present.
+That half of the patch applies unchanged.
+But 3.47.0 moved the `#182400` call site one level deeper.
+The old anchor held indentation, so it did not match.
+The script then printed **`[182400] already patched` for an unpatched file**.
+Section 5 warns you not to assume the bug is fixed.
+Here the script made that assumption for you.
+
+Fixed on this branch.
+Both fixes now ignore indentation.
+A missing anchor is a hard failure that names the site that moved.
+A renamed struct no longer reports as "already patched".
+`app/test/patch_flutter_sdk_test.dart` covers this.
+It pins the 3.44.9 and the 3.47.0 call sites as fixtures.
+The next bump fails a test instead of a build.
 
 Fixed on this branch: both fixes now match indentation-insensitively, "anchor
 absent" is a distinct hard failure (non-zero exit naming the site that moved),
@@ -518,12 +538,12 @@ git status --short -- test/                 # must list exactly the five above
 ```
 
 **Why the explicit list rather than `git add test/`:** the two commands above
-regenerate seven goldens, and `ide_launcher_menu.png` /
-`spec37_ring_ladder.png` are expected to come back byte-identical. A sixth file
-appearing means something other than corner anti-aliasing changed — layout or
-text moved — which invalidates the "cosmetic only" finding above. Staging the
-directory wholesale is exactly what would hide it. (On the real run: exactly
-five moved.)
+regenerate seven goldens.
+`ide_launcher_menu.png` and `spec37_ring_ladder.png` must stay identical.
+A sixth changed file means something other than corner anti-aliasing changed.
+Layout or text moved, and the "cosmetic only" finding above is then void.
+Staging the whole directory hides that.
+On the real run, exactly five files moved.
 
 Then the 18 pin sites in §8, which is a plain sed plus two hand edits:
 
@@ -550,22 +570,36 @@ git add :/BUILD_AND_DEPLOY.md
 `AGENTS.md` needed no change: `#165` removed its toolchain section before this
 bump landed (§8).
 
-### ⚠️ Outstanding — the §7-step-1 move, post-merge
+### ⚠️ Outstanding: the section 7 step 1 move, post-merge
 
-The shared checkout `/Users/le/Work/Vibe/flutter` is **still 3.44.9**. Until it
-moves to 3.47.0, local builds in every worktree run 3.44.9 while all 18 pins say
-3.47.0 — and the five goldens above will fail locally, because they were
-regenerated on 3.47.0.
+The shared checkout `/Users/le/Work/Vibe/flutter` is **still 3.44.9**.
+Until it moves to 3.47.0, every worktree builds locally with 3.44.9.
+All 18 pins say 3.47.0.
+The five goldens above also fail locally, because 3.47.0 generated them.
 
-That is the exact drift §0 records sitting undone for four days last time. Do it
-in the **same sitting as the merge**, not "soon":
+Section 0 records this same drift sitting undone for four days.
+Do the move in the **same sitting as the merge**:
 
 ```sh
 git -C /Users/le/Work/Vibe/flutter checkout 3.47.0
-bash app/tool/patch_flutter_sdk.sh                 # §5 — expect: patched 5 class(es)
+bash app/tool/patch_flutter_sdk.sh                 # expect: patched 5 class(es)
 git -C /Users/le/Work/Vibe/flutter worktree remove ../flutter-3.47.0
 ```
 
-Use `worktree remove`, **not** `rm -rf` — it was added as a worktree of the same
-clone. Re-running the §5 patch is per-**SDK**, not per-worktree (§6), so one run
-covers all of them.
+Use `worktree remove`, **not** `rm -rf`.
+The 3.47.0 checkout is a worktree of the same clone.
+The section 5 patch applies per SDK, not per worktree (section 6).
+One run therefore covers every worktree.
+
+**The pre-push hook makes this urgent.** `.pre-commit-config.yaml` runs
+`flutter pub get && flutter analyze` and takes `flutter` from `PATH`.
+A push from a shell that still resolves 3.44.9 rewrites `app/pubspec.lock`.
+It downgrades the 6 packages in cost 2 above, and the push then fails.
+This happened while landing this bump.
+Until the shared checkout moves, export the pinned SDK before you push:
+
+```sh
+export PATH="/Users/le/Work/Vibe/flutter-3.47.0/bin:$PATH"
+```
+
+Do not pass `--no-verify`. The hook is correct; the SDK on `PATH` is not.

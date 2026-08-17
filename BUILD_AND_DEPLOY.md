@@ -16,11 +16,12 @@ This guide covers building and pushing the makit app to **iOS** (physical device
 | macOS | **12.0** (Monterey) | `macos/Runner.xcodeproj/project.pbxproj` · `macos/Podfile` |
 | iOS | **13.0** | `ios/Runner.xcodeproj/project.pbxproj` |
 
-The macOS floor rose 10.15 → 12.0 with the Flutter 3.47.0 bump, which the
-tool migrates automatically (`docs/FLUTTER-BUMP-HANDOUT.md` §11). That drops
-macOS 11 and earlier. It is stated here because a support floor that lives only
-inside `project.pbxproj` is one nobody can check against — if you change a
-deployment target, change this table in the same commit.
+The macOS floor rose from 10.15 to 12.0 with the Flutter 3.47.0 bump.
+The Flutter tool applies that migration automatically.
+See `docs/FLUTTER-BUMP-HANDOUT.md` section 11.
+The change drops macOS 11 and older.
+This table exists because a floor inside `project.pbxproj` is hard to find.
+Change this table in the same commit as any deployment-target change.
 
 ---
 

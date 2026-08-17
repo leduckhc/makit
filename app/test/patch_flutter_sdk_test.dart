@@ -1,12 +1,13 @@
-// Tests for tool/patch_flutter_sdk.sh — the in-place Flutter SDK patcher
-// (FLUTTER-BUMP-HANDOUT.md §5). Runs the real script against fixture SDK trees.
+// Tests for tool/patch_flutter_sdk.sh, the in-place Flutter SDK patcher.
+// See FLUTTER-BUMP-HANDOUT.md section 5.
 //
-// Why this exists: the script's job is to survive an SDK bump, and its most
-// dangerous failure mode is not "crashed" but "reported success while doing
-// nothing". 3.47.0 moved the #182400 call site one nesting level deeper, which
-// made the literal anchor miss — and the script printed "already patched".
-// The unpatched bug then only shows up as hundreds of lines of SkSL noise on
-// someone's next macOS build. Every case below pins a *distinguishable* report.
+// The script must survive an SDK bump.
+// Its most dangerous failure is not a crash.
+// It is a report of success after doing nothing.
+// Flutter 3.47.0 moved the #182400 call site one level deeper.
+// The literal anchor then did not match, and the script said "already patched".
+// The unpatched bug next appears as hundreds of SkSL lines in a macOS build.
+// Every case below pins a report that a reader can tell apart from the others.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -31,8 +32,9 @@ class ShaderCompiler {
 }
 ''';
 
-/// The same call site in Flutter 3.47.0 — one nesting level deeper (10 spaces).
-/// Byte-identical logic, different indentation: the case that silently no-opped.
+/// The same call site in Flutter 3.47.0, one level deeper (10 spaces).
+/// The logic is the same. Only the indentation differs.
+/// This is the case that silently did nothing.
 const _shader347 = r'''
 class ShaderCompiler {
   Future<bool> compileShader() async {
@@ -53,9 +55,9 @@ class ShaderCompiler {
 }
 ''';
 
-/// A plausible future refactor: the warning is gone entirely (upstream fixed it
-/// their own way, or moved it elsewhere). The patch has nothing to attach to and
-/// must say so instead of claiming success.
+/// A possible future refactor: the warning is gone.
+/// Upstream may fix it another way, or move it.
+/// The patch then has nothing to attach to, and must say so.
 const _shaderRefactored = r'''
 class ShaderCompiler {
   Future<bool> compileShader() async {
@@ -150,9 +152,9 @@ void main() {
 
     test('keeps the concise one-line warning', () {
       final r = run();
-      // Both guards matter: without them a script that died before touching the
-      // fixture leaves the warning in place, and this test passes for the one
-      // reason it is meant to rule out.
+      // Both guards matter.
+      // A script that failed before it touched the fixture leaves the warning.
+      // The test would then pass for the one reason it must rule out.
       expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
       expect(
         r.stdout,
@@ -225,8 +227,8 @@ void main() {
     });
 
     test('distinguishes a renamed struct from an already-patched one', () {
-      // Upstream renames _Rect. "patched 4; 1 already patched" would be a lie
-      // that reads exactly like a clean re-run.
+      // Upstream renames _Rect.
+      // A report of "patched 4; 1 already patched" would read like a clean run.
       windowFile.writeAsStringSync(
         _windowFile(
           classes: const [
@@ -248,9 +250,9 @@ void main() {
   });
 
   group('SDK layout', () {
-    // Naming the absent file is the whole value of the failure: "exited 1" is
-    // also what a typo in the script looks like. Each patch target is checked
-    // separately so neither branch can rot behind the other.
+    // The failure must name the absent file.
+    // A typo in the script also exits non-zero.
+    // Each patch target has its own test, so neither branch can rot.
     for (final (label, victim) in [
       ('shader_compiler.dart', () => shaderFile),
       ('_window_macos.dart', () => windowFile),
