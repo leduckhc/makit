@@ -311,11 +311,9 @@ void main() {
         _session('sB', worktreePath: '/tmp/wt/B'),
       ]);
       await Future<void>.delayed(Duration.zero);
-      expect(
-        _boundIds(container.read(workspaceControllerProvider)),
-        ['sA'],
-        reason: 'a foreign-branch session never joins the canvas',
-      );
+      expect(_boundIds(container.read(workspaceControllerProvider)), [
+        'sA',
+      ], reason: 'a foreign-branch session never joins the canvas');
       expect(
         container.read(groupsControllerProvider).activeGroupId,
         'gA',
@@ -349,11 +347,11 @@ void main() {
       _push(container, [_session('s1'), _session('s2'), _session('s3')]);
       await Future<void>.delayed(Duration.zero);
 
-      expect(
-        _boundIds(container.read(workspaceControllerProvider)).toSet(),
-        {'s1', 's2', 's3'},
-        reason: 'the pinned agent lands on the board canvas',
-      );
+      expect(_boundIds(container.read(workspaceControllerProvider)).toSet(), {
+        's1',
+        's2',
+        's3',
+      }, reason: 'the pinned agent lands on the board canvas');
       expect(
         _focused(container.read(workspaceControllerProvider)),
         focusBefore,
@@ -386,11 +384,11 @@ void main() {
           );
       await Future<void>.delayed(Duration.zero);
 
-      expect(
-        _boundIds(container.read(workspaceControllerProvider)).toSet(),
-        {'s1', 's2', 's3'},
-        reason: 'the pinned agent shows up right away',
-      );
+      expect(_boundIds(container.read(workspaceControllerProvider)).toSet(), {
+        's1',
+        's2',
+        's3',
+      }, reason: 'the pinned agent shows up right away');
       expect(
         _focused(container.read(workspaceControllerProvider)),
         focusBefore,
@@ -426,11 +424,10 @@ void main() {
         _push(container, [_session('s1'), _session('s2'), _session('s3')]);
         await Future<void>.delayed(Duration.zero);
 
-        expect(
-          _boundIds(container.read(workspaceControllerProvider)).toSet(),
-          {'s1', 's2'},
-          reason: 's3 exists but was never pinned, so it stays off the board',
-        );
+        expect(_boundIds(container.read(workspaceControllerProvider)).toSet(), {
+          's1',
+          's2',
+        }, reason: 's3 exists but was never pinned, so it stays off the board');
       },
     );
 
@@ -453,11 +450,11 @@ void main() {
         _push(container, [_session('s1'), _session('s2'), _session('s3')]);
         await Future<void>.delayed(Duration.zero);
 
-        expect(
-          _boundIds(container.read(workspaceControllerProvider)).toSet(),
-          {'s1', 's2', 's3'},
-          reason: 'a reopened board shows its surviving members',
-        );
+        expect(_boundIds(container.read(workspaceControllerProvider)).toSet(), {
+          's1',
+          's2',
+          's3',
+        }, reason: 'a reopened board shows its surviving members');
       },
     );
 
@@ -478,11 +475,10 @@ void main() {
       _push(container, [_session('s1'), _session('s2')]);
       await Future<void>.delayed(Duration.zero);
 
-      expect(
-        _boundIds(container.read(workspaceControllerProvider)).toSet(),
-        {'s1', 's2'},
-        reason: 'survivors are on the canvas and the dead member is gone',
-      );
+      expect(_boundIds(container.read(workspaceControllerProvider)).toSet(), {
+        's1',
+        's2',
+      }, reason: 'survivors are on the canvas and the dead member is gone');
     });
 
     test('decision 7 tail: deleting the active group\'s worktree closes it '
@@ -510,11 +506,10 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       final groups = container.read(groupsControllerProvider);
-      expect(
-        groups.groups.map((g) => g.id),
-        ['g0', 'g1'],
-        reason: 'the deleted worktree\'s group is dropped',
-      );
+      expect(groups.groups.map((g) => g.id), [
+        'g0',
+        'g1',
+      ], reason: 'the deleted worktree\'s group is dropped');
       expect(
         groups.activeGroupId,
         'g1',

@@ -139,11 +139,9 @@ void main() {
         location: const SessionLocation(projectId: 'p1'),
       );
 
-      expect(
-        c.read(groupsControllerProvider).active.members,
-        ['s-mine'],
-        reason: 'the concurrently-spawned session is not on the board',
-      );
+      expect(c.read(groupsControllerProvider).active.members, [
+        's-mine',
+      ], reason: 'the concurrently-spawned session is not on the board');
     },
   );
 

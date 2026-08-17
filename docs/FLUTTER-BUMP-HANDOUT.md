@@ -417,7 +417,7 @@ curl -s https://storage.googleapis.com/flutter_infra_release/releases/releases_m
 print(r[d['current_release']['stable']]['version'])"
 ```
 
-### What it costs — four things, none of them optional
+### What it costs — five things, none of them optional
 
 1. **macOS deployment target 10.15 to 12.0. Accepted 2026-08-13 (KC).**
    `flutter build macos` rewrites `macos/Podfile`, `macos/Podfile.lock` and
@@ -469,6 +469,15 @@ print(r[d['current_release']['stable']]['version'])"
    `android|ios|web|windows|macos|linux/**` to `analyzer.exclude`. Tracked file,
    silent edit, so every dev and CI run shows a dirty tree until it is
    committed.
+5. **`dart format` reformats 6 files that this branch never touched.**
+   Dart 3.13 splits long method chains differently from Dart 3.12.
+   The files are `lib/store/store.dart` and 5 test files.
+   The change is layout only, and the affected tests still pass.
+   **The pre-push hook does not catch this.**
+   That hook formats only *staged* Dart files.
+   CI runs `dart format --set-exit-if-changed lib test` over the whole tree.
+   So this fails in CI after a clean local push.
+   Run `dart format lib test` with the new SDK and commit the result.
 
 ### What it does not cost
 

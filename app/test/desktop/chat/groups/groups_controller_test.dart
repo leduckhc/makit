@@ -127,11 +127,11 @@ void main() {
         label: 'b',
         preview: true,
       );
-      expect(
-        c.state.groups.map((g) => g.id),
-        ['g1', 'b1', second],
-        reason: 'the newcomer reuses the displaced slot',
-      );
+      expect(c.state.groups.map((g) => g.id), [
+        'g1',
+        'b1',
+        second,
+      ], reason: 'the newcomer reuses the displaced slot');
       expect(c.state.previewGroupId, second);
       expect(c.state.activeGroupId, second);
       expect(
@@ -224,11 +224,11 @@ void main() {
         label: 'b',
         preview: true,
       );
-      expect(
-        c.state.groups.map((g) => g.id),
-        ['g1', id, next],
-        reason: 'a promoted group is no longer replaceable',
-      );
+      expect(c.state.groups.map((g) => g.id), [
+        'g1',
+        id,
+        next,
+      ], reason: 'a promoted group is no longer replaceable');
     });
 
     test('a deliberate open neither marks nor evicts (decision 6)', () {
