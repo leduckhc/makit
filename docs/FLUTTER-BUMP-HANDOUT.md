@@ -551,7 +551,8 @@ while this was verified:
 
 ```sh
 export PATH="/Users/le/Work/Vibe/flutter-3.47.0/bin:$PATH"
-bash app/tool/patch_flutter_sdk.sh   # §5, against the 3.47.0 SDK
+FLUTTER_ROOT=/Users/le/Work/Vibe/flutter-3.47.0 \
+  bash app/tool/patch_flutter_sdk.sh  # §5, against the 3.47.0 SDK
 
 cd app
 flutter pub get                      # NOT --enforce-lockfile; the lockfile must move
@@ -615,10 +616,29 @@ Section 0 records this same drift sitting undone for four days.
 Do the move in the **same sitting as the merge**:
 
 ```sh
+# 1. discard the §5 patch in the shared SDK first, as in §7 step 1.
+#    Both patched files differ between 3.44.9 and 3.47.0, so `git checkout`
+#    aborts with "local changes would be overwritten" while they stay modified.
+git -C /Users/le/Work/Vibe/flutter checkout -- \
+  packages/flutter/lib/src/widgets/_window_macos.dart \
+  packages/flutter_tools/lib/src/build_system/tools/shader_compiler.dart
+
+# 2. move the shared SDK
 git -C /Users/le/Work/Vibe/flutter checkout 3.47.0
-bash app/tool/patch_flutter_sdk.sh                 # expect: patched 5 class(es)
+
+# 3. re-apply the §5 patch. FLUTTER_ROOT names the shared SDK, as in §7 step 2.
+#    Without it the script reads `command -v flutter`, which in this sitting is
+#    the 3.47.0 worktree that step 4 deletes. The shared SDK would stay
+#    unpatched, and the next macOS release build would crash with
+#    "illegal cid, full-aot".
+FLUTTER_ROOT=/Users/le/Work/Vibe/flutter \
+  bash app/tool/patch_flutter_sdk.sh               # expect: patched 5 class(es)
+
+# 4. remove the temporary worktree
 git -C /Users/le/Work/Vibe/flutter worktree remove --force ../flutter-3.47.0
 ```
+
+Step 1 is not tidying. Skip it and step 2 fails.
 
 Use `worktree remove`, **not** `rm -rf`.
 The 3.47.0 checkout is a worktree of the same clone.
