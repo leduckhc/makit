@@ -85,7 +85,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.9'
+          flutter-version: '3.47.0'
           channel: 'stable'
 
       - name: Cache Flutter dependencies
@@ -94,9 +94,9 @@ jobs:
           path: |
             ${{ runner.tool_cache }}/flutter/
             ~/.pub-cache/
-          key: ${{ runner.os }}-flutter-3.44.9-${{ hashFiles('app/pubspec.lock') }}
+          key: ${{ runner.os }}-flutter-3.47.0-${{ hashFiles('app/pubspec.lock') }}
           restore-keys: |
-            ${{ runner.os }}-flutter-3.44.9-
+            ${{ runner.os }}-flutter-3.47.0-
 
       - name: Install Flutter dependencies
         run: |

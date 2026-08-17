@@ -10,7 +10,7 @@ notarization specifics see [`../BUILD_AND_DEPLOY.md`](../BUILD_AND_DEPLOY.md).
 
 | Thing | Value |
 |-------|-------|
-| Flutter | `3.44.9` (stable), binary at `/Users/le/Work/Vibe/flutter/bin/flutter` |
+| Flutter | `3.47.0` (stable), binary at `/Users/le/Work/Vibe/flutter/bin/flutter` |
 | Server package manager | **pnpm** (`npm install` is blocked by a preinstall guard) |
 | Node | 20+ (server runs via `tsx`) |
 | Apple team | `RT8DP44B6N` · bundle id `dev.getmakit.app` |
@@ -28,7 +28,7 @@ export PATH="/Users/le/Work/Vibe/flutter/bin:$PATH"
 Sanity check:
 
 ```sh
-flutter --version          # expect 3.44.9
+flutter --version          # expect 3.47.0
 pnpm --version
 rustup --version           # SPEC-33: required, see "Rust + CocoaPods" below
 pod --version
