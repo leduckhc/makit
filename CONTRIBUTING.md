@@ -63,20 +63,14 @@ macOS job in `real-pi-e2e`) can also be run on demand from the Actions tab.
 
 ## Engineering standards
 
-These are enforced (see [`AGENTS.md`](./AGENTS.md)):
+The standards live in one place: [`AGENTS.md`](./AGENTS.md). It lists the rules
+we enforce (TDD, SOLID, simplicity first, surgical changes, ASD-STE100 prose),
+the commands, and the definition of done. `app/AGENTS.md` and `server/AGENTS.md`
+add the rules for each side. [`docs/ENGINEERING.md`](./docs/ENGINEERING.md) §1
+explains the reasoning behind them.
 
-- **TDD:** a failing test precedes production logic (red → green → refactor).
-- **Simplicity first:** the minimum code that solves the problem — no
-  speculative abstractions or unrequested configurability.
-- **Surgical changes:** touch only what the change requires; match existing
-  style; don't refactor unrelated code.
-- **SOLID:** if you can't say why a change doesn't violate one of the five, it
-  probably does.
-- **Specs are named by clock, not by counter.** Create one with
-  `scripts/new-spec.sh "a short title"`, and refer to it by slug
-  (`SPEC-cli-as-client`). Never hand-write the timestamp, and never add a spec
-  number — numbers clashed six times across parallel worktrees. See
-  [the naming convention](./docs/specs/README.md#spec-naming).
+Agents read the same files you do. Procedures — how to verify a feature, capture
+screenshots, or add an adapter — live in [`.agents/skills/`](./.agents/skills/).
 
 ## Reporting security issues
 
