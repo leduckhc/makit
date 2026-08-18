@@ -12,6 +12,8 @@
  *     (awaiting-approval / awaiting-input); leaving the last one resumes
  *     `running` while a turn is still in flight, or settles to `idle` when the
  *     turn already ended
+ *   - streamed work with nothing in flight re-opens a turn ({@link
+ *     TurnStatusTracker.noteWork}), which the agent's own settle signal closes
  *   - nothing is emitted once the adapter has exited
  */
 
@@ -31,6 +33,8 @@ export class TurnStatusTracker {
   private approvals = 0;
   /** Monotonic source of synthetic turn keys for counter-style callers. */
   private seq = 0;
+  /** The turn opened from streamed work, if one is open. */
+  private workKey: string | null = null;
 
   constructor(private readonly hooks: TurnStatusHooks) {}
 
@@ -59,6 +63,7 @@ export class TurnStatusTracker {
   /** End a turn; settles to `idle` when nothing else is in flight. */
   leaveTurn(id: string): void {
     this.turns.delete(id);
+    if (id === this.workKey) this.workKey = null;
     this.settleIdle();
   }
 
@@ -82,6 +87,38 @@ export class TurnStatusTracker {
     if (this.approvals > 0 || this.hooks.isExited()) return;
     if (this.turns.size > 0) this.hooks.emitStatus("running");
     else this.settleIdle();
+  }
+
+  /**
+   * The agent streamed work: a message chunk, a thought, or a new tool call.
+   *
+   * An agent can keep working after its prompt was answered. pi-acp resolves
+   * `session/prompt` on pi's `agent_end`, and pi emits more than one of those
+   * per prompt, so a duplicate ends the turn makit tracks while the agent
+   * carries on. One session then streamed 6,147 events with `status: idle`,
+   * which hides the app's working shimmer and its live dot.
+   *
+   * The stream is the evidence, so it re-opens a turn. Called per chunk (a hot
+   * path): it emits on the transition only, never per token.
+   */
+  noteWork(): void {
+    if (this.hooks.isExited()) return;
+    if (this.turns.size > 0) return;
+    this.workKey = this.enterTurn();
+  }
+
+  /**
+   * The agent says it stopped — pi-acp's `session_info_update` carrying
+   * `_meta.piAcp.running: false`. This is what closes a {@link noteWork} turn.
+   *
+   * It never touches a real prompt turn: that one ends when its own promise
+   * settles, and ending it here would race two sources of truth.
+   */
+  noteAgentSettled(): void {
+    const key = this.workKey;
+    if (key === null) return;
+    this.workKey = null;
+    this.leaveTurn(key);
   }
 
   /** Emit `idle` iff fully settled (no turns, no approvals, not exited). */

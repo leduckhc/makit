@@ -701,3 +701,31 @@ test("SPEC-session-timings D12: toDTO exposes createdAt so the app can show sess
   const fresh = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
   assert.ok((fresh.toDTO().createdAt ?? 0) > 0);
 });
+
+test("a message is queued while the agent still streams after an early idle", async () => {
+  // The consequence of the stuck-idle bug: the agent kept working, but the
+  // session believed it was idle, so `BUSY_STATUSES` no longer held and the next
+  // message started a second turn on a busy agent. That reply then resolved at
+  // once and re-armed the same false idle. Truthful status closes the loop: the
+  // adapter re-opens the turn from the stream, and the message waits its turn.
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  f.idle(); // the prompt was answered early
+  await settle();
+  assert.equal(session.status, "idle");
+
+  // The adapter learns from the stream that the agent never stopped.
+  f.adapter.emit("status", "running");
+  await settle();
+  assert.equal(session.status, "running");
+
+  await session.sendUserMessage("later");
+
+  assert.deepEqual(f.sent, ["first"], "no second prompt into a working agent");
+  assert.deepEqual(
+    session.queuedMessages.map((q) => q.text),
+    ["later"],
+  );
+});

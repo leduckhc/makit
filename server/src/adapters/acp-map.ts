@@ -24,6 +24,22 @@ export interface AcpMapperHooks {
   /** Agent-driven session rename (ACP `session_info_update.title`). */
   onTitle?: (title: string) => void;
   /**
+   * The agent's own turn signal: pi-acp puts `{ queueDepth, running }` under
+   * `session_info_update._meta.piAcp`, emitting `running: true` when it starts a
+   * turn and `running: false` at every `agent_end` (and on a prompt error).
+   *
+   * It is the ONLY authoritative end-of-work signal an ACP agent gives us, and
+   * the adapter needs it because a prompt promise can settle while the agent
+   * keeps streaming. Optional: an agent that never sends it costs nothing.
+   */
+  onAgentRunning?: (running: boolean) => void;
+  /**
+   * Substantive agent work arrived: a message chunk, a thought, or a NEW tool
+   * call. Bookkeeping updates (a tool completion, usage, commands) deliberately
+   * do not count — one of those trailing a finished turn would re-open it.
+   */
+  onWork?: () => void;
+  /**
    * Persist an image payload (SPEC-assistant-display-media) and return its descriptor, or `null`
    * when it is refused (disallowed mime, over the size cap, malformed base64).
    * Injected so this module stays I/O-free and unit-testable; the adapter wires
@@ -80,6 +96,7 @@ export class AcpEventMapper {
     switch (update.sessionUpdate) {
       case "agent_message_chunk": {
         this.flushThinking();
+        this.hooks.onWork?.();
         this.ingestMedia(update.content);
         const chunk = contentBlockText(update.content);
         if (!chunk) return;
@@ -94,6 +111,7 @@ export class AcpEventMapper {
 
       case "agent_thought_chunk": {
         this.flushText();
+        this.hooks.onWork?.();
         const chunk = contentBlockText(update.content);
         if (!chunk) return;
         if (!this.thinkId) {
@@ -115,6 +133,7 @@ export class AcpEventMapper {
 
       case "tool_call": {
         this.flushAll();
+        this.hooks.onWork?.();
         this.trackTool(update);
         return;
       }
@@ -137,6 +156,18 @@ export class AcpEventMapper {
       case "session_info_update": {
         const title = (update as { title?: unknown }).title;
         if (typeof title === "string" && title.trim()) this.hooks.onTitle?.(title.trim());
+        // Untrusted boundary: report the flag only when the agent really sent a
+        // boolean. A missing or malformed one leaves the turn state alone.
+        const meta = (update as { _meta?: unknown })._meta;
+        const piAcp =
+          typeof meta === "object" && meta !== null
+            ? (meta as { piAcp?: unknown }).piAcp
+            : undefined;
+        const running =
+          typeof piAcp === "object" && piAcp !== null
+            ? (piAcp as { running?: unknown }).running
+            : undefined;
+        if (typeof running === "boolean") this.hooks.onAgentRunning?.(running);
         return;
       }
 
