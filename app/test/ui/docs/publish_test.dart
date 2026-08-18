@@ -187,11 +187,9 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(
-        store.unpublished,
-        ['7f3a'],
-        reason: 'a grant that lands after dismissal must be revoked',
-      );
+      expect(store.unpublished, [
+        '7f3a',
+      ], reason: 'a grant that lands after dismissal must be revoked');
     });
   });
 

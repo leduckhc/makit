@@ -9,6 +9,20 @@ This guide covers building and pushing the makit app to **iOS** (physical device
 - Bundle IDs: `dev.getmakit.app` (iOS/macOS)
 - Provisioning profiles & signing certificates provisioned in Xcode
 
+**Supported platforms (what a user needs to run the app):**
+
+| Platform | Minimum | Set in |
+|---|---|---|
+| macOS | **12.0** (Monterey) | `macos/Runner.xcodeproj/project.pbxproj` · `macos/Podfile` |
+| iOS | **13.0** | `ios/Runner.xcodeproj/project.pbxproj` |
+
+The macOS floor rose from 10.15 to 12.0 with the Flutter 3.47.0 bump.
+The Flutter tool applies that migration automatically.
+See `docs/FLUTTER-BUMP-HANDOUT.md` section 11.
+The change drops macOS 11 and older.
+This table exists because a floor inside `project.pbxproj` is hard to find.
+Change this table in the same commit as any deployment-target change.
+
 ---
 
 ## 1. iOS Build & Deployment
@@ -359,7 +373,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.4'
+          flutter-version: '3.47.0'
           channel: 'stable'
 
       - name: Install dependencies
@@ -391,7 +405,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.4'
+          flutter-version: '3.47.0'
           channel: 'stable'
 
       - name: Install dependencies

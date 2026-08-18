@@ -20,6 +20,22 @@
 #    compiler stderr (hundreds of lines) on every build. Fix: downgrade that
 #    dump from printError to printTrace so it only shows with `-v`; the concise
 #    one-line "incompatible with SkSL" warning is kept.
+#
+# CONTRACT: this script exits non-zero if a patch does not apply.
+# A patch that no longer matches means the bug is back, not fixed.
+# The SkSL noise returns, or a macOS release build crashes at launch.
+# This script is a cheaper place to learn that than a build.
+# Any state other than "patched" or "already patched" is a hard failure.
+# The failure message names the site that moved, so you can re-derive the fix.
+# See FLUTTER-BUMP-HANDOUT.md section 5.
+#
+# Flutter 3.47.0 moved the #182400 call site one level deeper.
+# The old anchor held leading indentation, so it did not match.
+# The script then reported "already patched" for an unpatched file.
+# Both fixes now ignore indentation.
+# A missing anchor is now a distinct failure, not an "already patched" report.
+#
+# Covered by app/test/patch_flutter_sdk_test.dart.
 set -euo pipefail
 
 # Locate the Flutter SDK. Xcode build phases export FLUTTER_ROOT but have no
@@ -36,69 +52,129 @@ else
   sdk_root="$(cd "$(dirname "$(readlink -f "$flutter_bin" 2>/dev/null || echo "$flutter_bin")")/.." && pwd)"
 fi
 
-window_file="$sdk_root/packages/flutter/lib/src/widgets/_window_macos.dart"
-shader_file="$sdk_root/packages/flutter_tools/lib/src/build_system/tools/shader_compiler.dart"
+# Both fixes are applied by one python pass.
+# That pass locates the call sites, rewrites them, invalidates the
+# flutter_tools snapshot, and sets the exit code.
+# Bash only resolves the SDK root above.
+python3 - "$sdk_root" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+sdk_root = Path(sys.argv[1])
+window_file = sdk_root / "packages/flutter/lib/src/widgets/_window_macos.dart"
+shader_file = (
+    sdk_root
+    / "packages/flutter_tools/lib/src/build_system/tools/shader_compiler.dart"
+)
+
+failures = []
+
+
+def read(path):
+    """Return the file's text. Record a failure and return None if it is absent.
+
+    A missing file is a hard failure.
+    The patch cannot have been applied.
+    A change in the SDK layout needs a human.
+    """
+    if not path.is_file():
+        failures.append(
+            f"{path} not found — Flutter's layout changed; re-derive the patch"
+        )
+        return None
+    return path.read_text()
+
 
 # --- Fix 1: AOT windowing structs (#188060) ---------------------------------
-if [[ -f "$window_file" ]]; then
-  python3 - "$window_file" <<'PY'
-import re, sys
-path = sys.argv[1]
-src = open(path).read()
-classes = ["_WindowCreationRequest", "_Size", "_Offset", "_Rect", "_Constraints"]
-pragma = "@pragma('vm:entry-point')"
-changed = 0
-for name in classes:
-    decl = f"final class {name} extends Struct {{"
-    if decl not in src:
-        continue
-    if re.search(re.escape(pragma) + r"\n" + re.escape(decl), src):
-        continue
-    src = src.replace(decl, f"{pragma}\n{decl}", 1)
-    changed += 1
-open(path, "w").write(src)
-print(f"[188060] patched {changed} class(es); {len(classes) - changed} already patched")
-PY
-else
-  echo "warn: $window_file not found (Flutter layout changed?)" >&2
-fi
+# Matched on the declaration alone, so a reformatted struct body still matches.
+# A class that has vanished is reported by name, never as "already patched".
+# A rename lets the tree-shaker drop the struct again.
+# A macOS release build then crashes at launch.
+CLASSES = ["_WindowCreationRequest", "_Size", "_Offset", "_Rect", "_Constraints"]
+PRAGMA = "@pragma('vm:entry-point')"
+
+src = read(window_file)
+if src is not None:
+    patched, already, missing = [], [], []
+    for name in CLASSES:
+        decl = re.compile(
+            r"^(?P<indent>[ \t]*)final class " + re.escape(name) + r"\b[^\n{]*\{",
+            re.MULTILINE,
+        )
+        m = decl.search(src)
+        if m is None:
+            missing.append(name)
+            continue
+        preceding = src[: m.start()].rstrip()
+        if preceding.endswith(PRAGMA):
+            already.append(name)
+            continue
+        src = (
+            src[: m.start()]
+            + f"{m.group('indent')}{PRAGMA}\n"
+            + src[m.start() :]
+        )
+        patched.append(name)
+
+    if patched:
+        window_file.write_text(src)
+    print(
+        f"[188060] patched {len(patched)} class(es); {len(already)} already patched"
+    )
+    if missing:
+        failures.append(
+            "[188060] struct(s) not found: "
+            + ", ".join(missing)
+            + " — upstream renamed or removed them. Re-derive the patch; "
+            "without it macOS --release crashes with 'illegal cid, full-aot'."
+        )
 
 # --- Fix 2: silence irrelevant SkSL shader dump (#182400) -------------------
-shader_changed=0
-if [[ -f "$shader_file" ]]; then
-  shader_changed=$(python3 - "$shader_file" <<'PY'
-import sys
-path = sys.argv[1]
-src = open(path).read()
-old = (
-    "          'shader will not load when running with the Skia backend.',\n"
-    "        );\n"
-    "        _logger.printError('impellerc failure: ${result.stderr}');"
+# Anchored on the user-visible warning text, and tolerant of leading whitespace.
+# The nesting depth of the call site is not stable across releases.
+# Flutter 3.47.0 moved it one level deeper.
+# Only the dump after the Skia-backend warning is downgraded.
+# The other `impellerc failure:` sites are real errors and must stay errors.
+ANCHOR = re.compile(
+    r"shader will not load when running with the Skia backend\.',\n"
+    r"\s*\);\n"
+    r"\s*_logger\.print(?P<level>Error|Trace)"
+    r"\('impellerc failure: \$\{result\.stderr\}'\);"
 )
-new = (
-    "          'shader will not load when running with the Skia backend.',\n"
-    "        );\n"
-    "        _logger.printTrace('impellerc failure: ${result.stderr}');"
-)
-if old in src:
-    open(path, "w").write(src.replace(old, new, 1))
-    print(1)
-else:
-    print(0)
-PY
-)
-  if [[ "$shader_changed" == "1" ]]; then
-    echo "[182400] silenced SkSL stderr dump (kept one-line warning)"
-    # The flutter tool runs from a cached snapshot that is NOT invalidated by a
-    # source edit (only by git-revision/pubspec changes). Delete it so the next
-    # `flutter` invocation recompiles the tool from the patched source.
-    rm -f "$sdk_root/bin/cache/flutter_tools.snapshot" \
-          "$sdk_root/bin/cache/flutter_tools.stamp"
-  else
-    echo "[182400] already patched"
-  fi
-else
-  echo "warn: $shader_file not found (Flutter layout changed?)" >&2
-fi
 
-echo "OK: patched Flutter SDK at $sdk_root"
+src = read(shader_file)
+if src is not None:
+    m = ANCHOR.search(src)
+    if m is None:
+        failures.append(
+            "[182400] the SkSL dump call site was not found — upstream moved or "
+            "fixed it. Verify which, then re-derive or delete this fix. Left "
+            "unpatched, every macOS/iOS build dumps hundreds of SkSL lines."
+        )
+    elif m.group("level") == "Trace":
+        print("[182400] already patched")
+    else:
+        start, end = m.span("level")
+        shader_file.write_text(src[:start] + "Trace" + src[end:])
+        print("[182400] silenced SkSL stderr dump (kept one-line warning)")
+        # The flutter tool runs from a cached snapshot that is NOT invalidated
+        # by a source edit (only by git-revision/pubspec changes). Delete it so
+        # the next `flutter` invocation recompiles the tool from the patched
+        # source.
+        for stale in ("flutter_tools.snapshot", "flutter_tools.stamp"):
+            (sdk_root / "bin" / "cache" / stale).unlink(missing_ok=True)
+
+if failures:
+    print("", file=sys.stderr)
+    for f in failures:
+        print(f"error: {f}", file=sys.stderr)
+    print(
+        "\nSee FLUTTER-BUMP-HANDOUT.md §5. Do not assume the bug is fixed "
+        "because the patch stopped applying — check upstream first.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+print(f"OK: patched Flutter SDK at {sdk_root}")
+PY

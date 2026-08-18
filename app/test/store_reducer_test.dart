@@ -880,11 +880,9 @@ void main() {
 
         final state = container.read(storeControllerProvider);
         final items = foldEvents(state.events[_sid]!);
-        expect(
-          items.whereType<AgentMessageItem>().map((i) => i.text),
-          ['still working'],
-          reason: 'the agent event must not be swallowed by a guessed seq',
-        );
+        expect(items.whereType<AgentMessageItem>().map((i) => i.text), [
+          'still working',
+        ], reason: 'the agent event must not be swallowed by a guessed seq');
         expect(
           items.whereType<UserMessageItem>().map((i) => i.text),
           ['long task'],

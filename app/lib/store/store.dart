@@ -1075,14 +1075,13 @@ class StoreController extends StateNotifier<StoreState> {
 
   /// Remove a worktree (kills its sessions, then `git worktree remove --force`).
   Future<void> removeWorktree(String projectId, String worktreePath) async {
-    await _ref.read(connectionControllerProvider.notifier).request(
-      MsgType.cmd,
-      {
-        'kind': 'worktree.remove',
-        'projectId': projectId,
-        'worktreePath': worktreePath,
-      },
-    );
+    await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'worktree.remove',
+          'projectId': projectId,
+          'worktreePath': worktreePath,
+        });
   }
 
   /// Discard the worktree of a pull request that closed without merging: remove
