@@ -11,10 +11,23 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type { SessionEvent } from "../protocol.js";
 import type { EventStore, NewEvent, SessionMeta } from "./event_store.js";
 
+/**
+ * How many seqs one persisted high-water mark covers.
+ *
+ * A streamed delta takes a seq and writes no row, so the mark is what stops a
+ * restart from reissuing those numbers. Writing it per delta would cost the very
+ * commit that not writing the delta saved, so it is written once per block. The
+ * only price is a gap in the numbering after a crash, and the log has never been
+ * required to be dense.
+ */
+export const SEQ_BLOCK = 256;
+
 export class SqliteEventStore implements EventStore {
   private readonly db: DatabaseSync;
   /** Next seq per session — avoids a MAX(seq) query on every append. */
   private readonly nextSeq = new Map<string, number>();
+  /** Per-session persisted seq ceiling, so the mark is written once per block. */
+  private readonly hwm = new Map<string, number>();
   /**
    * Prepared statements by SQL text. Every write used to call `db.prepare`, so
    * an agent streaming a turn recompiled the same two statements per token.
@@ -71,7 +84,8 @@ export class SqliteEventStore implements EventStore {
         agent_session_id TEXT,
         branch         TEXT,
         worktree_path  TEXT,
-        closed       INTEGER NOT NULL DEFAULT 0
+        closed       INTEGER NOT NULL DEFAULT 0,
+        seq_hwm      INTEGER
       );
       CREATE TABLE IF NOT EXISTS events (
         session_id TEXT NOT NULL,
@@ -98,6 +112,11 @@ export class SqliteEventStore implements EventStore {
     if (!cols.some((c) => c.name === "worktree_path")) {
       this.db.exec("ALTER TABLE sessions ADD COLUMN worktree_path TEXT");
     }
+    // The seq high-water mark. A streamed delta takes a seq and is never written,
+    // so `MAX(seq)` under-reports what clients were sent (see reserveSeq).
+    if (!cols.some((c) => c.name === "seq_hwm")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN seq_hwm INTEGER");
+    }
     // SPEC-session-lifecycle-resume-list-delete close/reopen: the flag was called `archived` before sessions grew a
     // real close (release the agent, keep the session). RENAME rather than add,
     // so sessions a user had already closed stay closed across the upgrade —
@@ -122,20 +141,62 @@ export class SqliteEventStore implements EventStore {
   }
 
   append(sessionId: string, e: NewEvent): SessionEvent {
-    const seq = this.reserveSeq(sessionId);
+    // The row itself records the seq, so `MAX(seq)` recovers it after a restart
+    // and no high-water mark is needed (see reserveSeq for the delta path).
+    const seq = this.nextSeqFor(sessionId);
     return this.appendAt(sessionId, seq, e);
   }
 
+  /**
+   * Take the next seq for an event that will NOT be written: a streamed delta.
+   *
+   * The row is what normally remembers a seq, so an unwritten one needs the
+   * persisted mark, or a restart mid-turn hands the same numbers out again and
+   * every client discards the events as already seen.
+   */
   reserveSeq(sessionId: string): number {
+    const seq = this.nextSeqFor(sessionId);
+    this.reserveBlockIfNeeded(sessionId, seq);
+    return seq;
+  }
+
+  /** The next seq for this session, from the cache or from what survived. */
+  private nextSeqFor(sessionId: string): number {
     let seq = this.nextSeq.get(sessionId);
     if (seq === undefined) {
       const row = this.stmt(
         "SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM events WHERE session_id = ?",
       ).get(sessionId) as { maxSeq: number };
-      seq = Number(row.maxSeq) + 1;
+      // A delta consumes a seq without leaving a row, so MAX(seq) alone would
+      // reissue the numbers of a turn that was streaming when the server died.
+      seq = Math.max(Number(row.maxSeq), this.persistedHwm(sessionId)) + 1;
     }
     this.nextSeq.set(sessionId, seq + 1);
     return seq;
+  }
+
+  /** The high-water mark this session persisted, or 0 when it has none. */
+  private persistedHwm(sessionId: string): number {
+    const row = this.stmt("SELECT seq_hwm AS hwm FROM sessions WHERE id = ?").get(sessionId) as
+      | { hwm: number | null }
+      | undefined;
+    return Number(row?.hwm ?? 0);
+  }
+
+  /**
+   * Keep a persisted ceiling above the seqs handed out, in blocks.
+   *
+   * Writing the mark per delta would undo the point of not writing the delta, so
+   * one row update covers {@link SEQ_BLOCK} reservations. After a crash the next
+   * seq resumes at the block ceiling: it skips a few numbers, which the log has
+   * never required to be dense, and it can never repeat one.
+   */
+  private reserveBlockIfNeeded(sessionId: string, seq: number): void {
+    const known = this.hwm.get(sessionId);
+    if (known !== undefined && seq < known) return;
+    const ceiling = seq + SEQ_BLOCK;
+    this.stmt("UPDATE sessions SET seq_hwm = ? WHERE id = ?").run(ceiling, sessionId);
+    this.hwm.set(sessionId, ceiling);
   }
 
   appendAt(sessionId: string, seq: number, e: NewEvent): SessionEvent {

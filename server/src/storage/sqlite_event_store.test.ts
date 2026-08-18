@@ -400,3 +400,34 @@ test("readTail reads only the rows it returns, never the whole log", () => {
   assert.equal(rowsRead, 5, `readTail must not materialize the whole log (read ${rowsRead} rows for 5)`);
   store.close();
 });
+
+// A streamed delta consumes a seq but is never written (see stream_digest.ts), so
+// the highest seq the log HOLDS is lower than the highest seq clients were sent.
+// A restart in the middle of a turn used to hand those numbers out again, and the
+// app drops any event whose seq it has already seen — the session looked frozen.
+test("a reserved seq survives a restart, even though its delta is never written", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-seq-"));
+  try {
+    const path = join(dir, "makit.db");
+    const first = new SqliteEventStore(path);
+    first.saveSession(meta("s1"));
+    first.append("s1", { ts: 1, kind: "user.message", payload: { text: "hi" } });
+    // Five deltas: they take seqs 2-6 and are emitted, but nothing is persisted.
+    const reserved: number[] = [];
+    for (let i = 0; i < 5; i++) reserved.push(first.reserveSeq("s1"));
+    assert.deepEqual(reserved, [2, 3, 4, 5, 6]);
+    first.close();
+
+    // The server restarts mid-turn: a new store on the same file.
+    const second = new SqliteEventStore(path);
+    const next = second.reserveSeq("s1");
+    second.close();
+
+    assert.ok(
+      next > 6,
+      `a seq clients already hold was reissued: got ${next}, highest sent was 6`,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

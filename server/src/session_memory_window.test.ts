@@ -164,3 +164,46 @@ test("a mid-turn replay from a truncated cache still carries the live deltas", (
     "and carries no duplicate seq",
   );
 });
+
+// The cap must not eat the turn that is still streaming. A delta is never
+// persisted, so a delta the cache drops is gone for good: trimming mid-stream
+// truncated the answer a mid-turn subscriber replays.
+test("a long stream is not trimmed away while it is still open", () => {
+  const store = storeWith("s1", 0);
+  const session = new Session({
+    id: "s1",
+    projectId: "p",
+    agent: "pi",
+    adapter: fakeAdapter(),
+    store,
+  });
+
+  session.adapter.emit("event", { ts: 1, kind: "session.status", payload: { status: "running" } });
+  const chunks = MEMORY_EVENT_CAP * 3;
+  for (let i = 1; i <= chunks; i++) {
+    session.adapter.emit("event", {
+      ts: i,
+      kind: "agent.message.delta",
+      payload: { msgId: "m1", chunk: `c${i} ` },
+    });
+  }
+
+  const replay = session.eventsSince(0);
+  assert.equal(
+    replay.filter((e) => e.kind === "agent.message.delta").length,
+    chunks,
+    "every chunk of the open turn is still replayable",
+  );
+
+  // Once the turn ends, the aggregate carries the text and the cache is free to
+  // shrink again — that is what the cap is for.
+  session.adapter.emit("event", { ts: 9999, kind: "session.status", payload: { status: "idle" } });
+  assert.ok(
+    session.events.length <= MEMORY_EVENT_CAP * 2,
+    `cache is bounded again after the close, got ${session.events.length}`,
+  );
+  const text = store
+    .read("s1", 0)
+    .find((e) => e.kind === "agent.message")?.payload.text as string | undefined;
+  assert.ok(text?.startsWith("c1 "), "and the aggregate kept the text from the first chunk on");
+});

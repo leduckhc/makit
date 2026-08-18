@@ -345,9 +345,16 @@ export class Session extends EventEmitter {
    * Drop the oldest events once the cache grows past twice the cap, so a long
    * turn costs one trim instead of one per event. Only with a store: without one
    * the cache is the history.
+   *
+   * Never while a stream is open. A delta is not persisted, so a delta this drops
+   * cannot be read back — trimming mid-stream truncated the answer that a
+   * mid-turn subscriber replays. The digest already holds the same text to build
+   * the aggregate, so waiting for the close costs no new order of memory, and
+   * {@link closeStreams} trims as soon as the aggregate replaces the deltas.
    */
   private trimCache(): void {
     if (!this.store) return;
+    if (!this.digest.isEmpty) return;
     if (this._events.length <= MEMORY_EVENT_CAP * 2) return;
     this._events.splice(0, this._events.length - MEMORY_EVENT_CAP);
     this.truncated = true;
@@ -496,6 +503,9 @@ export class Session extends EventEmitter {
     }
     this._events.length = 0;
     this._events.push(...kept);
+    // The aggregates now carry the text, so the cap may apply again. The trim is
+    // held off while a stream is open (see trimCache), and this is that moment.
+    this.trimCache();
   }
 
   private toMeta(): SessionMeta {
