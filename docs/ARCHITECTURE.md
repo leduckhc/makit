@@ -62,7 +62,7 @@ type Envelope = {
 | ------------ | ------------ | -------------------------------------------------------- |
 | `hello`      | C→S, S→C     | Handshake, capability negotiation, resume cursor         |
 | `sub`        | C→S          | Subscribe/unsubscribe to session(s) or project(s)        |
-| `event`      | S→C          | Append-only stream of session events (see §3)            |
+| `event`      | S→C          | Session events, one or a window of them (see §3.3)       |
 | `cmd`        | C→S          | User intent: send-message, approve, cancel, spawn, kill  |
 | `ack` / `err`| S→C          | Response to a `cmd` with its `id`                        |
 | `presence`   | S→C          | Which devices are currently subscribed to a session      |
@@ -133,6 +133,54 @@ type EventKind =
 Events are **append-only** and authoritative. The phone's chat UI is a pure
 projection of the event stream. Tool cards are derived by folding
 `tool.call.start` + `delta`s + `end` into a single card.
+
+### 3.1 A streamed delta is live data, not history
+
+`agent.message.delta`, `agent.thinking.delta` and `tool.call.delta` arrive one
+per token. They are fanned out to every client and they consume a `seq`, but they
+are **not written to the log**: the final `agent.message`, `agent.thinking` or
+`tool.call.end` already carries the same text in full.
+
+At the end of a turn (`session.status` → `idle`/`exited`) `StreamDigest` closes
+each stream:
+
+- a stream that produced a final needs nothing;
+- a stream that produced none is written as ONE aggregated event, at the seq of
+  the first delta it replaces — a seq every client already saw;
+- a `tool.call.end` with no `output` is given the chunks it streamed, so tool
+  output is never lost with its deltas.
+
+Memory follows the same rule: the turn's deltas leave the in-memory cache at the
+close, and a client that subscribes mid-turn still replays the partial text.
+
+Why: one profile log held 1,795,475 rows in 730 MB, 93% of them deltas. Each row
+also cost a synchronous SQLite commit while the agent streamed.
+
+`makit compact [--db PATH] [--dry-run]` applies the same rule to a log written
+before it, through the same digest. Measured on a 730 MB log: 1,795,528 rows →
+142,980, 701.8 MB → 225.4 MB.
+
+**Trade-off:** a server killed mid-turn loses that turn's partial text from
+history, because no final was written. The agent's own transcript still has it.
+
+### 3.2 What each side keeps in memory
+
+The log on disk is the history. A session caches the recent tail
+(`MEMORY_EVENT_CAP` = 500) and `Session.eventsSince` serves anything older from
+the store, so a first `sub` still replays everything. The app keeps the folded
+rows (`SessionTranscript`) and a bounded raw window (`kRawEventWindow` = 400) for
+the seq bookkeeping around them.
+
+### 3.3 Frames carry a window, not a token
+
+A client that sends `batch: true` in `hello` receives
+`event {kind:"session.events", events}` — every event of a 40 ms window in one
+frame. Without the flag it receives one `session.event` per event, which is what
+an older app and every CLI client (`makit tail`, `attach`, `wait`) rely on. Order
+holds on both paths: any other frame flushes the pending window first.
+
+The app applies a batch in one store update (its `EventBatcher`, 50 ms), so a
+streamed turn costs one fold and one rebuild per window instead of per token.
 
 ---
 
