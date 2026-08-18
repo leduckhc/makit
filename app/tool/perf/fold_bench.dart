@@ -138,7 +138,7 @@ List<SessionEvent> _priorStreaming(int n) {
 /// the app does per delta today.
 ({double copyMs, double foldMs, int items}) _probe(List<SessionEvent> prior) {
   var list = List<SessionEvent>.from(prior);
-  final msgId = 'stream';
+  const msgId = 'stream';
   var copyMicros = 0;
   var foldMicros = 0;
   var items = 0;
@@ -176,7 +176,7 @@ List<SessionEvent> _priorStreaming(int n) {
 /// instead of folding the session again.
 ({double foldMs, int items}) _probeKept(List<SessionEvent> prior) {
   var transcript = SessionTranscript.of(prior);
-  final msgId = 'stream';
+  const msgId = 'stream';
   var seq = prior.length;
   var foldMicros = 0;
   var items = 0;
