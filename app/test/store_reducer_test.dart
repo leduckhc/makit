@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:makit/store/event_batcher.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -34,6 +35,12 @@ StoreState _seeded() => StoreState.empty().copyWith(
       policy: ApprovalPolicy.askOnRisky,
     ),
   ],
+);
+
+/// Live events arrive one frame per token and land as one batch per window
+/// (see `EventBatcher`). Give the window time to close before asserting.
+Future<void> settleLiveBatch() => Future<void>.delayed(
+  kDefaultBatchWindow + const Duration(milliseconds: 10),
 );
 
 void main() {
@@ -668,9 +675,9 @@ void main() {
       transport.pushAck(id: 's-$_sid');
       await Future<void>.delayed(Duration.zero);
 
-      // After the ack, streaming tokens must fold in one-by-one (no buffering).
+      // After the ack, streaming tokens fold in per batch window, not per frame.
       transport.pushEvent(seq: 1, sessionId: _sid);
-      await Future<void>.delayed(Duration.zero);
+      await settleLiveBatch();
       expect(container.read(storeControllerProvider).events[_sid]!.length, 1);
     });
 
@@ -737,7 +744,7 @@ void main() {
           kind: 'user.message',
           text: 'new message',
         );
-        await Future<void>.delayed(Duration.zero);
+        await settleLiveBatch();
 
         final state = container.read(storeControllerProvider);
         expect(state.cursors[_sid], 2);
@@ -807,7 +814,7 @@ void main() {
           kind: 'user.message',
           text: 'first task',
         );
-        await Future<void>.delayed(Duration.zero);
+        await settleLiveBatch();
 
         final state = container.read(storeControllerProvider);
         final items = foldEvents(
@@ -869,14 +876,14 @@ void main() {
           kind: 'user.message',
           text: 'long task',
         );
-        await Future<void>.delayed(Duration.zero);
+        await settleLiveBatch();
 
         store.appendOptimisticMessage(_sid, 'mid-turn');
         store.sendMessage(_sid, 'mid-turn');
 
         // The agent keeps streaming: seq 2 is ITS event, not our echo.
         transport.pushEvent(seq: 2, sessionId: _sid, text: 'still working');
-        await Future<void>.delayed(Duration.zero);
+        await settleLiveBatch();
 
         final state = container.read(storeControllerProvider);
         final items = foldEvents(state.events[_sid]!);

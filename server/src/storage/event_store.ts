@@ -70,6 +70,20 @@ export interface EventStore {
    * Returns the fully-formed, persisted event (with seq + sessionId).
    */
   append(sessionId: string, e: NewEvent): SessionEvent;
+  /**
+   * Take the next `seq` WITHOUT writing a row.
+   *
+   * For a streamed delta, which is emitted live but never persisted (see
+   * `stream_digest.ts`). The seq still has to be consumed: clients dedup by seq,
+   * so two events must never share one.
+   */
+  reserveSeq(sessionId: string): number;
+  /**
+   * Write an event at an already-issued `seq` — the slot a streamed delta took.
+   * Used to persist one aggregate in place of the deltas it replaces, so no
+   * client ever receives a seq it has not already seen.
+   */
+  appendAt(sessionId: string, seq: number, e: NewEvent): SessionEvent;
   /** Events with `seq > fromSeq`, ascending. `fromSeq = 0` returns all. */
   read(sessionId: string, fromSeq?: number): SessionEvent[];
   /**

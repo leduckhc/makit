@@ -69,6 +69,10 @@ export class AuthGate {
       client.appPid = env.pid;
     }
 
+    // The client tells us it decodes a `session.events` batch. Absent means the
+    // old contract (one frame per event), so an older app keeps working.
+    if (env.batch === true) client.acceptsEventBatches = true;
+
     if (bearer) {
       this.handleBearer(client, env, bearer);
       return;

@@ -21,6 +21,7 @@ import type {
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { EventStore, NewEvent, SessionMeta } from "./storage/event_store.js";
 import type { MediaAttachment } from "./media/store.js";
+import { StreamDigest, isStreamDelta, TURN_END_STATUSES } from "./stream_digest.js";
 
 /**
  * Event kinds that advance lastActivityAt but must never fan out the sessions
@@ -46,6 +47,15 @@ interface QueuedMessage {
   attachments?: MediaAttachment[];
   queuedAt: number;
 }
+
+/**
+ * How many recent events a session keeps in memory when a store holds the rest.
+ *
+ * 500 covers a mid-turn subscribe (the deltas of one turn leave memory at its
+ * close, see stream_digest.ts) while bounding what an opened transcript costs.
+ * Anything older is read from the store on demand ({@link Session.eventsSince}).
+ */
+export const MEMORY_EVENT_CAP = 500;
 
 /**
  * Statuses in which the agent is working (or blocked on the user) and therefore
@@ -210,6 +220,23 @@ export class Session extends EventEmitter {
   private _lifecycle: SessionLifecycle = { phase: "started" };
 
   private readonly _events: SessionEvent[] = [];
+  /**
+   * The highest seq this session has ever issued, for the no-store path.
+   *
+   * NOT derived from `_events`: a seq is a client's dedup key, and the cache
+   * SHRINKS. `closeStreams` removes the turn's deltas and puts one aggregate
+   * back at the first delta's seq, so both `_events.length` and the last
+   * element's seq can fall below a seq clients already hold. Counting from
+   * either reissued those numbers, and every event of the next turn was then
+   * discarded as already seen. With a store, `reserveSeq` plays this role.
+   */
+  private lastSeq = 0;
+  /**
+   * Which streamed text is still open, and what history needs when it closes.
+   * A delta is emitted live but never written as its own row (see
+   * stream_digest.ts).
+   */
+  private readonly digest = new StreamDigest();
   /** Mid-turn messages awaiting delivery (SPEC-mid-turn-steering-and-queue), oldest first. */
   private readonly queued: QueuedMessage[] = [];
   /**
@@ -222,12 +249,43 @@ export class Session extends EventEmitter {
   private readonly store?: EventStore;
 
   /**
-   * The in-memory event cache. For a lazily-rehydrated session the first
-   * access loads the persisted history (once) before returning.
+   * The in-memory event cache: the recent tail, not the whole history.
+   *
+   * For a lazily-rehydrated session the first access loads that tail (once)
+   * before returning. Callers that need older events must use
+   * {@link eventsSince}, which falls back to the store.
    */
   get events(): SessionEvent[] {
     this.ensureHydrated();
     return this._events;
+  }
+
+  /**
+   * Events with `seq > fromSeq`, ascending — from memory when the cache reaches
+   * back that far, else from the store.
+   *
+   * The replay path (`sub`) asks for the whole log on a first subscribe, and one
+   * session here has 31,554 events. Serving that from a cache meant holding every
+   * transcript the user ever opened for the life of the process; serving it from
+   * the store costs one query on a path that already sends the same rows over a
+   * socket.
+   */
+  eventsSince(fromSeq: number): SessionEvent[] {
+    this.ensureHydrated();
+    const oldest = this._events[0]?.seq;
+    const complete = !this.truncated || oldest === undefined || fromSeq >= oldest - 1;
+    if (complete) return this._events.filter((e) => e.seq > fromSeq);
+    if (!this.store) return this._events.filter((e) => e.seq > fromSeq);
+
+    // The store holds history, but a streamed delta is never written to it (see
+    // stream_digest.ts). Serving the store alone would replay a mid-turn
+    // subscriber everything EXCEPT the answer being typed, so the live tail is
+    // merged back in. `seq` is unique per event, so it is the merge key; the
+    // in-memory copy wins, being the one clients were fanned out.
+    const merged = new Map<number, SessionEvent>();
+    for (const e of this.store.read(this.id, fromSeq)) merged.set(e.seq, e);
+    for (const e of this._events) if (e.seq > fromSeq) merged.set(e.seq, e);
+    return [...merged.values()].sort((a, b) => a.seq - b.seq);
   }
 
   constructor(init: SessionInit) {
@@ -268,6 +326,38 @@ export class Session extends EventEmitter {
     for (const e of events) this._events.push(e);
     const last = events.at(-1);
     if (last) this.lastActivityAt = Math.max(this.lastActivityAt, last.ts);
+    // Never issue a seq that history already used. Loaded rows may arrive in any
+    // order, so take the maximum rather than the last one.
+    for (const e of events) if (e.seq > this.lastSeq) this.lastSeq = e.seq;
+    // A tail read starts above seq 1, so the cache no longer reaches the log's
+    // start and `eventsSince` must go to the store for anything older.
+    if (this.store && (this._events[0]?.seq ?? 1) > 1) this.truncated = true;
+  }
+
+  /**
+   * True when the cache no longer holds the session's oldest event, so the store
+   * is the only complete history. False for a session with no store, where the
+   * cache IS the history and must never be trimmed.
+   */
+  private truncated = false;
+
+  /**
+   * Drop the oldest events once the cache grows past twice the cap, so a long
+   * turn costs one trim instead of one per event. Only with a store: without one
+   * the cache is the history.
+   *
+   * Never while a stream is open. A delta is not persisted, so a delta this drops
+   * cannot be read back — trimming mid-stream truncated the answer that a
+   * mid-turn subscriber replays. The digest already holds the same text to build
+   * the aggregate, so waiting for the close costs no new order of memory, and
+   * {@link closeStreams} trims as soon as the aggregate replaces the deltas.
+   */
+  private trimCache(): void {
+    if (!this.store) return;
+    if (!this.digest.isEmpty) return;
+    if (this._events.length <= MEMORY_EVENT_CAP * 2) return;
+    this._events.splice(0, this._events.length - MEMORY_EVENT_CAP);
+    this.truncated = true;
   }
 
   /** Run the pending lazy loader (if any) exactly once. History must precede
@@ -293,10 +383,9 @@ export class Session extends EventEmitter {
     // Load persisted history first so the cache stays complete + ordered even
     // when a cold session records before anyone read `events`.
     this.ensureHydrated();
-    const event: SessionEvent = this.store
-      ? this.store.append(this.id, e)
-      : { seq: this._events.length + 1, sessionId: this.id, ts: e.ts, kind: e.kind, payload: e.payload };
+    const event = this.form(e);
     this._events.push(event);
+    this.trimCache();
 
     // Snapshot the DTO-visible fields BEFORE mutating so we can emit
     // `metaChanged` only on an actual change (and never pre-assign status
@@ -318,7 +407,10 @@ export class Session extends EventEmitter {
       const s = (event.payload as { status?: SessionStatus }).status;
       if (s) this.status = s;
     }
-    this.persistMeta();
+    // A streamed token moves nothing but `lastActivityAt`, and the next real
+    // event carries that. Persisting here meant a full 17-column session upsert
+    // per token — 1.66 M of them across one profile log, for data nothing read.
+    if (!isNoFanout) this.persistMeta();
 
     // Fan out a sessions-snapshot trigger for a real, non-streaming DTO change
     // (status/preview/lastActivityAt). Errors and tool events now refresh the
@@ -329,7 +421,91 @@ export class Session extends EventEmitter {
       this.lastPreview !== prevPreview ||
       this.lastActivityAt !== prevActivity;
     if (!isNoFanout && changed) this.emit("metaChanged");
+
+    // The agent stopped: every stream is complete, so history can take its
+    // aggregates and memory can drop the deltas (see stream_digest.ts). Done
+    // after the event is in place, so the close cannot reorder the log.
+    if (event.kind === "session.status" && TURN_END_STATUSES.has(this.status)) {
+      this.closeStreams();
+    }
     return event;
+  }
+
+  /**
+   * Form the event: assign its seq, and persist it unless it is a streamed
+   * delta (see stream_digest.ts). A delta still consumes a seq, because clients
+   * dedup by seq and two events must never share one.
+   */
+  private form(e: NewEvent): SessionEvent {
+    if (!this.store) {
+      // No store: the in-memory log is the only history, so it keeps the
+      // aggregate rather than the deltas — the same shape a persisted session
+      // rehydrates with.
+      const event: SessionEvent = {
+        seq: ++this.lastSeq,
+        sessionId: this.id,
+        ts: e.ts,
+        kind: e.kind,
+        payload: e.payload,
+      };
+      return this.digestOf(event);
+    }
+    if (isStreamDelta(e.kind)) {
+      const event: SessionEvent = {
+        seq: this.store.reserveSeq(this.id),
+        sessionId: this.id,
+        ts: e.ts,
+        kind: e.kind,
+        payload: e.payload,
+      };
+      this.digest.noteDelta(event);
+      return event;
+    }
+    const payload = this.digest.noteFinal(e.kind, e.payload ?? {});
+    return this.store.append(this.id, { ...e, payload });
+  }
+
+  /** The no-store path's half of {@link form}: note the event, same rules. */
+  private digestOf(event: SessionEvent): SessionEvent {
+    if (isStreamDelta(event.kind)) {
+      this.digest.noteDelta(event);
+      return event;
+    }
+    return { ...event, payload: this.digest.noteFinal(event.kind, event.payload ?? {}) };
+  }
+
+  /**
+   * End of turn: write one aggregate for every stream that produced no final,
+   * then drop the turn's deltas from memory. The aggregate takes the seq of the
+   * first delta it replaces, so no client receives a seq it has not seen.
+   */
+  private closeStreams(): void {
+    if (this.digest.isEmpty) return;
+    const { aggregates, replacedSeqs } = this.digest.close();
+    if (replacedSeqs.size === 0) return;
+
+    const written: SessionEvent[] = [];
+    for (const { seq, event } of aggregates) {
+      written.push(
+        this.store
+          ? this.store.appendAt(this.id, seq, event)
+          : { seq, sessionId: this.id, ts: event.ts, kind: event.kind, payload: event.payload },
+      );
+    }
+
+    // One pass: drop every delta of the turn, then splice the aggregates back in
+    // at their own seq so the cache stays seq-ordered.
+    const kept = this._events.filter((ev) => !replacedSeqs.has(ev.seq));
+    for (const ev of written) {
+      let at = kept.length;
+      while (at > 0 && kept[at - 1].seq > ev.seq) at--;
+      kept.splice(at, 0, ev);
+    }
+    this._events.length = 0;
+    this._events.push(...kept);
+    // The aggregates now carry the text, so the cap may apply again. The trim is
+    // held off while a stream is open (see trimCache), and this is that moment.
+    this.trimCache();
   }
 
   private toMeta(): SessionMeta {

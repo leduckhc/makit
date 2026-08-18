@@ -197,8 +197,21 @@ class _RenderAnchoredSliverList extends RenderSliverList {
   /// flash covers.
   static const int _maxJumpCorrections = 5;
 
+  /// How many corrections the ANCHOR may spend in one frame.
+  ///
+  /// A correction is expected to settle on the next pass: the row's new offset
+  /// becomes the baseline, the re-run measures zero delta, done. It does not
+  /// always converge — the applied delta is clamped at the newest end, so a row
+  /// that keeps moving by a different amount keeps producing a nonzero delta.
+  /// Unbounded, that walks through `RenderViewport`'s whole cycle budget, and
+  /// layout then ENDS on a correction: children stay unpositioned, and the next
+  /// pointer packet throws a null check inside `childMainAxisPosition`. That
+  /// crash was logged 49 times. Three attempts is more than convergence needs.
+  static const int _maxAnchorCorrections = 3;
+
   TranscriptJumpTarget? _jumpTarget;
   int _jumpCorrections = 0;
+  int _anchorCorrections = 0;
 
   /// The jump handle, if any. Setting it re-parents the render-object link so
   /// [TranscriptJumpTarget.offsetForChild] reads this list.
@@ -302,7 +315,10 @@ class _RenderAnchoredSliverList extends RenderSliverList {
     }
 
     final held = _anchorChild;
-    if (shouldAnchor() && held != null && held.parent == this) {
+    if (shouldAnchor() &&
+        held != null &&
+        held.parent == this &&
+        _anchorCorrections < _maxAnchorCorrections) {
       final now = childScrollOffset(held);
       final before = _anchorOffset;
       if (now != null && before != null) {
@@ -315,6 +331,7 @@ class _RenderAnchoredSliverList extends RenderSliverList {
           // then measures a zero delta and settles.
           _anchorOffset = before + applied;
           if (applied.abs() > precisionErrorTolerance) {
+            _anchorCorrections++;
             geometry = SliverGeometry(scrollOffsetCorrection: applied);
             return;
           }
@@ -324,9 +341,33 @@ class _RenderAnchoredSliverList extends RenderSliverList {
     _rebaselineAnchor();
   }
 
+  /// Where a row sits in the main axis, with a row the last layout did not
+  /// position treated as just past the visible window.
+  ///
+  /// The framework's version is `childScrollOffset(child)! - scrollOffset`, a
+  /// null check that throws for a child with no `layoutOffset`. A lazy sliver
+  /// leaves one unpositioned when its layout ended on a correction the viewport
+  /// ran out of cycles to settle. Everything that reads a child's position then
+  /// throws: the pointer packet (49 crashes in the field), the semantics pass,
+  /// paint. The cap above is what stops that state arising; this makes reading it
+  /// harmless.
+  ///
+  /// Off-window rather than 0: a row with no position has no place on screen, so
+  /// it must not paint, must not take a tap, and must not claim a semantics rect
+  /// belonging to a row the user can actually see. `childScrollOffset` itself
+  /// keeps returning null, because layout depends on that meaning "not laid out".
+  @override
+  double childMainAxisPosition(RenderBox child) {
+    final offset = childScrollOffset(child);
+    if (offset == null) return constraints.remainingPaintExtent + 1.0;
+    return offset - constraints.scrollOffset;
+  }
+
   /// Records the row to hold, its offset, and its index, at the end of a layout
   /// that did not issue a correction.
   void _rebaselineAnchor() {
+    // This layout is settling, so the next frame starts with a full budget.
+    _anchorCorrections = 0;
     final child = _topVisibleChild();
     _anchorChild = child;
     _anchorOffset = child == null ? null : childScrollOffset(child);

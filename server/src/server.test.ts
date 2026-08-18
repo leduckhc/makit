@@ -684,3 +684,88 @@ test("SPEC-open-ports: a socket close clears watchingPorts and disarms the port 
     rmSync(project, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Batched fan-out over a real socket (see SubscriptionHub + protocol.ts).
+// ---------------------------------------------------------------------------
+
+test("a client that announces `batch` gets one frame per window; one that does not gets one per event", async () => {
+  await withMetricsServer(async ({ connect, manager }) => {
+    const projectId = manager.listProjects()[0].id;
+    const session = await manager.spawnPiSession(projectId);
+
+    // Two devices on one server: a new app, and an older client (or a CLI).
+    const batching = await connect();
+    batching.send({ t: "hello", id: "h1", batch: true });
+    await batching.nextEvent((e) => e.t === "hello.ack" && e.id === "h1");
+    const perEvent = await connect();
+    perEvent.send({ t: "hello", id: "h2" });
+    await perEvent.nextEvent((e) => e.t === "hello.ack" && e.id === "h2");
+    batching.allFrames.length = 0;
+    perEvent.allFrames.length = 0;
+
+    // A turn streams six tokens inside one window.
+    for (let i = 0; i < 6; i++) {
+      session.adapter.emit("event", {
+        ts: Date.now(),
+        kind: "agent.message.delta",
+        payload: { msgId: "m1", chunk: `c${i}` },
+      });
+    }
+
+    const batch = await batching.nextEvent((e) => e.kind === "session.events");
+    const events = (batch as unknown as { events: Array<{ payload: { chunk: string } }> }).events;
+    assert.deepEqual(
+      events.map((e) => e.payload.chunk),
+      ["c0", "c1", "c2", "c3", "c4", "c5"],
+      "one frame carried the whole window, in order",
+    );
+    assert.equal(
+      batching.allFrames.filter((f) => f.kind === "session.event").length,
+      0,
+      "and no per-event frame went to it",
+    );
+
+    // The other client received six single-event frames and no batch.
+    for (let i = 0; i < 6; i++) {
+      await perEvent.nextEvent(
+        (e) =>
+          e.kind === "session.event" &&
+          (e as unknown as { event: { payload: { chunk: string } } }).event.payload.chunk === `c${i}`,
+      );
+    }
+    assert.equal(
+      perEvent.allFrames.filter((f) => f.kind === "session.events").length,
+      0,
+      "an older client never sees a batch frame",
+    );
+  });
+});
+
+test("an ack never overtakes the events fanned out before it", async () => {
+  await withMetricsServer(async ({ connect, manager }) => {
+    const projectId = manager.listProjects()[0].id;
+    const session = await manager.spawnPiSession(projectId);
+
+    const c = await connect();
+    c.send({ t: "hello", id: "h1", batch: true });
+    await c.nextEvent((e) => e.t === "hello.ack" && e.id === "h1");
+    c.allFrames.length = 0;
+
+    session.adapter.emit("event", {
+      ts: Date.now(),
+      kind: "agent.message.delta",
+      payload: { msgId: "m1", chunk: "first" },
+    });
+    // A command right behind it: its ack must arrive AFTER the pending batch, or
+    // the app reads a `sub` replay as live events and drops the history.
+    c.send({ t: "ping", id: "p1", ts: Date.now() });
+    await c.nextEvent((e) => e.t === "pong" && e.id === "p1");
+
+    const kinds = c.allFrames.map((f) => f.kind ?? f.t);
+    assert.deepEqual(
+      kinds.filter((k) => k === "session.events" || k === "pong"),
+      ["session.events", "pong"],
+    );
+  });
+});

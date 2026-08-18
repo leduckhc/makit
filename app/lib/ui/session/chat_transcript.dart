@@ -18,7 +18,6 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
-import '../../store/turns.dart';
 import '../widgets/glass.dart';
 import '../widgets/pulse.dart';
 import 'ask_card.dart';
@@ -521,8 +520,7 @@ class _WorkingIndicatorState extends ConsumerState<WorkingIndicator> {
   Widget? _turnCounter(BuildContext context, ColorScheme cs) {
     final id = widget.sessionId;
     if (id == null) return null;
-    final events = ref.watch(eventsProvider).forSession(id);
-    final startTs = openTurnStartMs(events);
+    final startTs = ref.watch(openTurnStartProvider(id));
     if (startTs == null) return null;
     final style = Theme.of(context).textTheme.labelLarge?.copyWith(
       color: cs.onSurfaceVariant,

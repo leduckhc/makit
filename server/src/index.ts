@@ -5,6 +5,7 @@
  * Usage:
  *   makit serve [--host H] [--lan] [--port 7777] [--project P]... [--no-auth]
  *   makit pair  [--host H] [--port P]                  # prints a QR + URL
+ *   makit compact [--db PATH] [--dry-run] [--force]    # shrink the event log
  *
  * Default host (secure by default): Tailscale IP if online, else loopback
  * only. makit does NOT expose the local network by default — on public Wi-Fi
@@ -77,14 +78,14 @@ async function main() {
   const KNOWN = new Set([
     "serve", "pair", "qr", "devices", "ls", "sessions",
     "new", "send", "tail", "resume", "rm", "wait", "run", "handoff", "fork", "ask", "tree",
-    "approve", "answer", "attach",
+    "approve", "answer", "attach", "compact",
     ...LIFECYCLE,
   ]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
         `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|` +
-        `ls|tree|new|send|ask|tail|resume|rm|wait|run|handoff|fork|approve|answer|attach [...]`,
+        `ls|tree|new|send|ask|tail|resume|rm|wait|run|handoff|fork|approve|answer|attach|compact [...]`,
     );
     process.exit(2);
   }
@@ -96,6 +97,15 @@ async function main() {
     // `makit pair` is an alias for `makit qr --refresh` (daemon required).
     const argv = cmd === "pair" ? ["--refresh", ...process.argv.slice(3)] : process.argv.slice(3);
     await runQr(argv);
+    return;
+  }
+
+  // `compact` shrinks the event log: streamed deltas are live data, not history
+  // (see stream_digest.ts). Offline maintenance, so it runs in this process
+  // rather than over the control socket.
+  if (cmd === "compact") {
+    const { runCompact } = await import("./cli/compact.js");
+    await runCompact(process.argv.slice(3));
     return;
   }
 

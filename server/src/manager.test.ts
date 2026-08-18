@@ -1221,11 +1221,17 @@ test("rehydration is lazy: events are not read from the store until first access
   store.append("sess-lazy", { ts: 2, kind: "user.message", payload: { text: "old task" } });
   store.append("sess-lazy", { ts: 3, kind: "agent.message", payload: { text: "done" } });
 
+  // Hydration reads the recent TAIL (see MEMORY_EVENT_CAP), so count both reads:
+  // the point of the test is when the log is touched, not which query is used.
   let reads = 0;
   const counting: typeof store = Object.create(store);
   counting.read = (id: string, fromSeq?: number) => {
     reads++;
     return store.read(id, fromSeq);
+  };
+  counting.readTail = (id: string, limit: number) => {
+    reads++;
+    return store.readTail(id, limit);
   };
 
   const mgr = new SessionManager({ projects: [], store: counting });

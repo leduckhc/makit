@@ -10,9 +10,11 @@ import '../transport/ws_client.dart';
 import 'cached_commands.dart';
 import 'connection.dart';
 import 'docs.dart';
+import 'event_batcher.dart';
 import 'metrics.dart';
 import 'models.dart';
 import 'ports.dart';
+import 'transcript.dart';
 import 'turns.dart';
 
 class ProjectsState {
@@ -86,6 +88,7 @@ class StoreState {
     required this.repos,
     required this.sessions,
     required this.events,
+    required this.transcripts,
     required this.cursors,
     required this.commands,
     required this.meta,
@@ -104,6 +107,7 @@ class StoreState {
     repos: const [],
     sessions: const [],
     events: const {},
+    transcripts: const {},
     cursors: const {},
     commands: const {},
     meta: const {},
@@ -115,6 +119,13 @@ class StoreState {
   final List<RepoInfo> repos;
   final List<Session> sessions;
   final Map<String, List<SessionEvent>> events;
+
+  /// Per-session folded transcript: the rendered rows, the turn spans and the
+  /// open turn's start. Kept in the state, not folded per rebuild, because the
+  /// fold is O(events) and a streaming turn would pay it per token (see
+  /// [SessionTranscript]).
+  final Map<String, SessionTranscript> transcripts;
+
   final Map<String, int> cursors;
 
   /// Per-session list of slash commands advertised by the agent.
@@ -167,6 +178,7 @@ class StoreState {
     List<RepoInfo>? repos,
     List<Session>? sessions,
     Map<String, List<SessionEvent>>? events,
+    Map<String, SessionTranscript>? transcripts,
     Map<String, int>? cursors,
     Map<String, List<SlashCmd>>? commands,
     Map<String, SessionMeta>? meta,
@@ -183,6 +195,7 @@ class StoreState {
     repos: repos ?? this.repos,
     sessions: sessions ?? this.sessions,
     events: events ?? this.events,
+    transcripts: transcripts ?? this.transcripts,
     cursors: cursors ?? this.cursors,
     commands: commands ?? this.commands,
     meta: meta ?? this.meta,
@@ -196,6 +209,23 @@ class StoreState {
     historyLoaded: historyLoaded ?? this.historyLoaded,
   );
 }
+
+/// How many raw events a session keeps.
+///
+/// The rendered rows live in [StoreState.transcripts] and are never dropped, so
+/// this window only serves the seq bookkeeping around it (the cursor, the
+/// optimistic bubble, a replay). One live session has 31,554 events; holding
+/// them per session, for the life of the process, was a second copy of a history
+/// the fold already had.
+const int kRawEventWindow = 400;
+
+/// Trim [list] to the trailing [kRawEventWindow] events (drop-oldest).
+///
+/// Returns the same list when it fits, so the common case allocates nothing.
+List<SessionEvent> _boundedWindow(List<SessionEvent> list) =>
+    list.length <= kRawEventWindow
+    ? list
+    : list.sublist(list.length - kRawEventWindow);
 
 /// Max metrics samples retained (30 min at 1 Hz). Drop-oldest beyond this.
 const int _metricsCap = 1800;
@@ -227,6 +257,7 @@ StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
     sessionsLoaded: true,
   ),
   SessionEventFrame(:final event) => reduceEvent(state, event),
+  SessionEventsFrame(:final events) => reduceEvents(state, events),
 };
 
 /// Fold a single [SessionEvent] into the store, preserving the seq-cursor
@@ -238,7 +269,13 @@ StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
 /// space stays aligned with the server's. Without this, the optimistic user
 /// bubble (seq N) and the server's user.message echo (also seq N) get different
 /// seqs and both render as duplicate bubbles.
-StoreState reduceEvent(StoreState state, SessionEvent ev) {
+StoreState reduceEvent(
+  StoreState state,
+  SessionEvent ev, {
+
+  /// False when a caller folds a whole batch itself — see [reduceEvents].
+  bool foldTranscript = true,
+}) {
   final lastSeen = state.cursors[ev.sessionId] ?? 0;
   if (lastSeen >= ev.seq) return state;
 
@@ -293,7 +330,18 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
   final events = Map<String, List<SessionEvent>>.from(state.events);
   final list = List<SessionEvent>.from(events[ev.sessionId] ?? const []);
   list.add(ev);
-  events[ev.sessionId] = list;
+  events[ev.sessionId] = _boundedWindow(list);
+
+  // Extend the folded transcript with this one event. [reduceEvents] passes
+  // `foldTranscript: false` and folds a whole batch once instead, so a burst of
+  // tokens copies the rows once rather than per token.
+  final transcripts = foldTranscript
+      ? (Map<String, SessionTranscript>.from(state.transcripts)..update(
+          ev.sessionId,
+          (t) => t.extend([ev]),
+          ifAbsent: () => SessionTranscript.of([ev]),
+        ))
+      : state.transcripts;
 
   // Bubble up session-level status / preview.
   var sessions = state.sessions;
@@ -316,13 +364,60 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
     );
   }
 
-  return state.copyWith(events: events, cursors: cursors, sessions: sessions);
+  return state.copyWith(
+    events: events,
+    transcripts: transcripts,
+    cursors: cursors,
+    sessions: sessions,
+  );
+}
+
+/// Fold a batch of events in, folding each touched session's transcript ONCE.
+///
+/// The store receives one frame per streamed token and applies them per window
+/// (see [EventBatcher]). Extending the transcript per event would copy the rows
+/// per token, so the batch is collected first and folded at the end.
+StoreState reduceEvents(StoreState state, List<SessionEvent> batch) {
+  if (batch.isEmpty) return state;
+  if (batch.length == 1) return reduceEvent(state, batch.single);
+
+  var next = state;
+  // Which events actually landed in the log, per session, in order. Read from
+  // the state rather than from the event kind: [reduceEvent] alone decides what
+  // reaches the log, and a second copy of that rule here would drift from it.
+  //
+  // The test is identity of the last element, not a length: the raw window is
+  // bounded (see [kRawEventWindow]), so a full window appends without growing.
+  final folded = <String, List<SessionEvent>>{};
+  for (final ev in batch) {
+    next = reduceEvent(next, ev, foldTranscript: false);
+    if (identical(next.events[ev.sessionId]?.lastOrNull, ev)) {
+      (folded[ev.sessionId] ??= <SessionEvent>[]).add(ev);
+    }
+  }
+  if (folded.isEmpty) return next;
+
+  final transcripts = Map<String, SessionTranscript>.from(next.transcripts);
+  for (final entry in folded.entries) {
+    transcripts[entry.key] = (transcripts[entry.key] ?? SessionTranscript.empty)
+        .extend(entry.value);
+  }
+  return next.copyWith(transcripts: transcripts);
 }
 
 class StoreController extends StateNotifier<StoreState> {
-  StoreController(this._ref, {int Function()? nowMs})
-    : _nowMs = nowMs ?? _deviceNowMs,
-      super(StoreState.empty()) {
+  StoreController(
+    this._ref, {
+    int Function()? nowMs,
+    Duration batchWindow = kDefaultBatchWindow,
+    FlushScheduler? batchSchedule,
+  }) : _nowMs = nowMs ?? _deviceNowMs,
+       super(StoreState.empty()) {
+    _batcher = EventBatcher(
+      onFlush: _applyLiveBatch,
+      window: batchWindow,
+      schedule: batchSchedule,
+    );
     _sub = _ref
         .read(connectionControllerProvider.notifier)
         .incoming
@@ -350,6 +445,10 @@ class StoreController extends StateNotifier<StoreState> {
       final prevId = prev?.activeServer?.id;
       final nextId = next.activeServer?.id;
       if (prevId != nextId) {
+        // Before anything else: the events waiting for a flush describe the old
+        // server's sessions. Applying them into the cleared store would
+        // resurrect one session of a desktop the user just left.
+        _batcher.drop();
         _subscribed.clear();
         _awaitingReplay.clear();
         _replayBuffer.clear();
@@ -411,6 +510,10 @@ class StoreController extends StateNotifier<StoreState> {
 
   final Ref _ref;
   StreamSubscription<Envelope>? _sub;
+
+  /// Collects live events and applies them in one batch per window. See
+  /// [EventBatcher] for why one update per token is too expensive.
+  late final EventBatcher _batcher;
 
   /// The device wall clock in epoch ms. Injected so tests can pin "now" while
   /// asserting the server-clock offset (SPEC-session-timings D15).
@@ -482,12 +585,41 @@ class StoreController extends StateNotifier<StoreState> {
       );
       return;
     }
-    state = reduce(state, decoded);
     if (decoded is SessionEventFrame) {
-      // Live branch only (a buffered replay returned above): correct the clock
-      // from this event's server `ts` (D15).
-      _serverClockOffset = decoded.event.ts - _nowMs();
-      _cacheCommands(decoded.event);
+      // Live event: collect it. [_applyLiveBatch] does the folding once the
+      // window closes.
+      _batcher.add(decoded.event);
+      return;
+    }
+    if (decoded is SessionEventsFrame) {
+      // A server-side batch (`session.events`). Its events join the same window,
+      // so one flush covers whatever else arrives with them. Replay still routes
+      // per session, because a batch may carry events of several sessions.
+      for (final e in decoded.events) {
+        if (_awaitingReplay.contains(e.sessionId)) {
+          (_replayBuffer[e.sessionId] ??= <SessionEvent>[]).add(e);
+        } else {
+          _batcher.add(e);
+        }
+      }
+      return;
+    }
+    // Any other frame carries state the events must already be behind — a
+    // sessions snapshot, a budget, a ports list. Apply the pending batch first
+    // so the store never reads a cursor that lags the events it holds.
+    _batcher.flush();
+    state = reduce(state, decoded);
+  }
+
+  /// Apply one window's worth of live events in a single state update.
+  void _applyLiveBatch(List<SessionEvent> batch) {
+    state = reduceEvents(state, batch);
+    // D15: correct the clock from the newest live event of the batch. The window
+    // adds at most its own length to the reading, and the counters it feeds have
+    // a one-second granularity.
+    _serverClockOffset = batch.last.ts - _nowMs();
+    for (final e in batch) {
+      _cacheCommands(e);
     }
   }
 
@@ -527,6 +659,9 @@ class StoreController extends StateNotifier<StoreState> {
   /// Apply the buffered replay for [sessionId] in a single state assignment,
   /// then resume immediate folding for its live events.
   void _flushReplay(String sessionId) {
+    // Live events of OTHER sessions may wait for their window. Apply them first
+    // so a full-history replay cannot install a cursor ahead of them.
+    _batcher.flush();
     _awaitingReplay.remove(sessionId);
     final buffered = _replayBuffer.remove(sessionId);
     final full = _fullReplay.remove(sessionId);
@@ -541,16 +676,16 @@ class StoreController extends StateNotifier<StoreState> {
       next = next.copyWith(
         events: Map<String, List<SessionEvent>>.from(next.events)
           ..remove(sessionId),
+        // The fold describes the events being dropped, so it goes with them.
+        transcripts: Map<String, SessionTranscript>.from(next.transcripts)
+          ..remove(sessionId),
         cursors: Map<String, int>.from(next.cursors)..remove(sessionId),
         // Expose "we now hold this session's full history" (SPEC-session-timings D16).
         historyLoaded: {...next.historyLoaded, sessionId},
       );
     }
     final events = buffered ?? const <SessionEvent>[];
-    for (final e in events) {
-      next = reduceEvent(next, e);
-    }
-    state = next;
+    state = reduceEvents(next, events);
     for (final e in events) {
       _cacheCommands(e);
     }
@@ -591,6 +726,9 @@ class StoreController extends StateNotifier<StoreState> {
   }
 
   void _sendSub(String sessionId) {
+    // The cursor decides how much history to ask for, so it must count every
+    // event this client already holds — including a batch still in its window.
+    _batcher.flush();
     // Include the last-seen seq so the server replays only newer events on
     // reconnect instead of the whole history — but only once we hold that
     // history contiguously, or the cursor an auto-mirrored session advanced for
@@ -619,6 +757,10 @@ class StoreController extends StateNotifier<StoreState> {
     String text, {
     List<MediaAttachmentRef> attachments = const [],
   }) {
+    // The bubble takes the seq after the cursor, so every event this client has
+    // must be applied first — a batch inside its window included, or the guessed
+    // seq collides with a token that already arrived.
+    _batcher.flush();
     // Replay events have not advanced the public cursor yet, so assigning the
     // next seq here could collide with buffered history. The command still goes
     // to the server; its real user.message echo is ordered after the sub ack and
@@ -1382,6 +1524,7 @@ class StoreController extends StateNotifier<StoreState> {
 
   @override
   void dispose() {
+    _batcher.dispose();
     _sub?.cancel();
     super.dispose();
   }
@@ -1439,15 +1582,17 @@ final eventsProvider = Provider<EventsState>((ref) {
   return EventsState(s.events, s.cursors);
 });
 
+/// The rendered transcript rows for a session, receipts included.
+///
+/// A read of the fold the reducer keeps (see [SessionTranscript]) — NOT a fold
+/// per rebuild. Folding here cost O(events) on every store update, which made a
+/// streaming turn quadratic.
 final chatItemsProvider = Provider.family<List<ChatItem>, String>((
   ref,
   sessionId,
 ) {
-  final events = ref.watch(eventsProvider).forSession(sessionId);
-  // SPEC-session-timings D18: turn spans come from a SEPARATE pure pass over the same
-  // events, then the receipt rows are projected into the fold's output. The
-  // fold stays a row builder; turn correctness never depends on row order.
-  return withTurnReceipts(foldEvents(events), deriveTurns(events));
+  final s = ref.watch(storeControllerProvider);
+  return s.transcripts[sessionId]?.rows ?? const <ChatItem>[];
 });
 
 /// Slash commands advertised by the agent for a given session.
@@ -1509,8 +1654,15 @@ final sessionTurnsProvider = Provider.family<List<TurnSpan>, String>((
   ref,
   sessionId,
 ) {
-  final events = ref.watch(eventsProvider).forSession(sessionId);
-  return deriveTurns(events);
+  final s = ref.watch(storeControllerProvider);
+  return s.transcripts[sessionId]?.turns ?? const <TurnSpan>[];
+});
+
+/// The opener timestamp of a session's open turn, or null when none is open
+/// (SPEC-session-timings D8). Read from the kept fold, not derived per rebuild.
+final openTurnStartProvider = Provider.family<int?, String>((ref, sessionId) {
+  final s = ref.watch(storeControllerProvider);
+  return s.transcripts[sessionId]?.openTurnStartMs;
 });
 
 /// The session-effort rollup (SPEC-session-timings D11): turn count, agent time, median.

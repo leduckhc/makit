@@ -322,7 +322,10 @@ class TurnReceiptItem extends ChatItem {
 /// [register] is set) record its position so later deltas find it. [create]
 /// may return null to add nothing — used by tool deltas (which must not create
 /// a card without a preceding start) and the empty-final thinking guard.
-void _upsertStream<T extends ChatItem>(
+///
+/// Returns the index it wrote, or null when it wrote nothing. The caller needs
+/// that index to keep its per-row bookkeeping (see [ChatItemFold._noteMedia]).
+int? _upsertStream<T extends ChatItem>(
   List<ChatItem> items,
   Map<String, int> index,
   String? id,
@@ -333,23 +336,127 @@ void _upsertStream<T extends ChatItem>(
   final idx = id != null ? index[id] : null;
   if (idx != null && items[idx] is T) {
     items[idx] = append(items[idx] as T);
-    return;
+    return idx;
   }
   final created = create();
-  if (created == null) return;
+  if (created == null) return null;
   if (register && id != null) index[id] = items.length;
   items.add(created);
+  return items.length - 1;
 }
 
 /// Fold a raw [SessionEvent] stream into ordered [ChatItem]s. Tool-call deltas
 /// are merged into the matching [ToolCallItem] so the UI sees one card per call.
-List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
-  final items = <ChatItem>[];
-  final byCall = <String, int>{}; // callId -> index in items
-  final byMsg = <String, int>{}; // streamed msgId -> index in items
-  final byThink = <String, int>{}; // streamed thinkId -> index in items
+///
+/// A convenience wrapper over [ChatItemFold] for callers that hold the whole
+/// stream. Live code uses the fold itself, and extends it — see
+/// `SessionTranscript`.
+List<ChatItem> foldEvents(Iterable<SessionEvent> events) =>
+    (ChatItemFold()..addAll(events)).rows;
 
-  for (final e in events) {
+/// The fold of a session's events, kept so the next event costs one step
+/// instead of one whole pass.
+///
+/// The fold used to run from the first event on every store update, which made
+/// a streaming turn quadratic: `tool/perf/fold_bench.dart` measured 2.54 ms per
+/// delta at 20000 prior events. [ChatItemFold] holds the rows and the three
+/// stream indexes, so [add] is O(1) and only [rows] walks the list.
+class ChatItemFold {
+  ChatItemFold();
+
+  /// A working copy. The source keeps its own rows, because the store hands the
+  /// previous fold out as immutable state.
+  ChatItemFold.from(ChatItemFold other)
+    : _items = List<ChatItem>.of(other._items),
+      _byCall = Map<String, int>.of(other._byCall),
+      _byMsg = Map<String, int>.of(other._byMsg),
+      _byThink = Map<String, int>.of(other._byThink),
+      _mediaInRow = {
+        for (final e in other._mediaInRow.entries)
+          e.key: Set<String>.of(e.value),
+      },
+      _shownMedia = Map<String, int>.of(other._shownMedia);
+
+  List<ChatItem> _items = <ChatItem>[];
+
+  /// callId -> index in [_items].
+  Map<String, int> _byCall = <String, int>{};
+
+  /// streamed msgId -> index in [_items].
+  Map<String, int> _byMsg = <String, int>{};
+
+  /// streamed thinkId -> index in [_items].
+  Map<String, int> _byThink = <String, int>{};
+
+  /// Media ids the prose of one row shows, per row index. Kept per row so a
+  /// changed message rescans only its own text (see [_noteMedia]).
+  Map<int, Set<String>> _mediaInRow = <int, Set<String>>{};
+
+  /// How many rows show each media id. A count, not a set: two messages may
+  /// show the same image, and the first one to change must not unhide it.
+  Map<String, int> _shownMedia = <String, int>{};
+
+  /// The rows to render: the fold, minus every media bubble whose bytes a
+  /// message already shows inline (see [_noteMedia]).
+  ///
+  /// A fresh list per call, because the store hands it to Riverpod as the new
+  /// value of `chatItemsProvider`.
+  List<ChatItem> get rows {
+    if (_shownMedia.isEmpty) return List<ChatItem>.of(_items);
+    return List<ChatItem>.of(
+      _items.where(
+        (i) => i is! AgentMediaItem || !_shownMedia.containsKey(i.mediaId),
+      ),
+    );
+  }
+
+  /// How many rows the fold holds, media bubbles included.
+  int get length => _items.length;
+
+  void addAll(Iterable<SessionEvent> events) {
+    for (final e in events) {
+      add(e);
+    }
+  }
+
+  /// Record which media ids row [index] shows, and keep [_shownMedia] in step.
+  ///
+  /// A message's text grows by append and is replaced once by the final event,
+  /// so the row's set is recomputed and diffed rather than merged: an id the
+  /// final text drops must lose its count, or its bubble stays hidden forever.
+  void _noteMedia(int index, String text) {
+    final found = <String>{};
+    for (final m in _mediaUriPattern.allMatches(text)) {
+      found.add(m.group(1)!);
+    }
+    final had = _mediaInRow[index] ?? const <String>{};
+    if (found.isEmpty && had.isEmpty) return;
+    for (final id in had) {
+      if (found.contains(id)) continue;
+      final n = (_shownMedia[id] ?? 1) - 1;
+      if (n <= 0) {
+        _shownMedia.remove(id);
+      } else {
+        _shownMedia[id] = n;
+      }
+    }
+    for (final id in found) {
+      if (had.contains(id)) continue;
+      _shownMedia[id] = (_shownMedia[id] ?? 0) + 1;
+    }
+    if (found.isEmpty) {
+      _mediaInRow.remove(index);
+    } else {
+      _mediaInRow[index] = found;
+    }
+  }
+
+  /// Fold one event in.
+  void add(SessionEvent e) {
+    final items = _items;
+    final byCall = _byCall;
+    final byMsg = _byMsg;
+    final byThink = _byThink;
     switch (e.kind) {
       case EventKind.userMessage:
         items.add(
@@ -366,7 +473,7 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         // in place, or appends a fresh (non-streamed) bubble when there is none.
         final msgId = e.payload['msgId'] as String?;
         final text = e.payload['text'] as String? ?? '';
-        _upsertStream<AgentMessageItem>(
+        final row = _upsertStream<AgentMessageItem>(
           items,
           byMsg,
           msgId,
@@ -374,12 +481,13 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           (cur) => cur.copyWith(text: text, streaming: false),
           register: false,
         );
+        if (row != null) _noteMedia(row, text);
       case EventKind.agentMessageDelta:
         // Streaming token. Append to the bubble for this msgId, creating it on
         // the first delta.
         final msgId = e.payload['msgId'] as String? ?? '';
         final chunk = e.payload['chunk'] as String? ?? '';
-        _upsertStream<AgentMessageItem>(
+        final row = _upsertStream<AgentMessageItem>(
           items,
           byMsg,
           msgId,
@@ -392,6 +500,9 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           ),
           (cur) => cur.copyWith(text: cur.text + chunk),
         );
+        if (row != null) {
+          _noteMedia(row, (items[row] as AgentMessageItem).text);
+        }
       case EventKind.agentMedia:
         // Defensive: only a well-formed content hash is fetchable (the server's
         // /media route and MediaEndpoint.urlFor both require exactly this
@@ -510,31 +621,15 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         break;
     }
   }
-  return _dropMediaShownInProse(items);
-}
-
-/// Drops a media bubble whose bytes a message already displays inline.
-///
-/// A real turn produces both: the agent reads an image (→ `agent.media`) and
-/// then shows it with markdown, which the server rewrote to
-/// `makit-media:<mediaId>`. Rendering both puts the same screenshot in the
-/// transcript twice. `mediaId` is a content hash, so an identical id is
-/// provably identical bytes — and a *different* id is a genuinely different
-/// image (a harness may hand the model a downscaled copy of a huge screenshot),
-/// which stays visible.
-List<ChatItem> _dropMediaShownInProse(List<ChatItem> items) {
-  final shown = <String>{};
-  for (final item in items) {
-    if (item is! AgentMessageItem) continue;
-    for (final m in _mediaUriPattern.allMatches(item.text)) {
-      shown.add(m.group(1)!);
-    }
-  }
-  if (shown.isEmpty) return items;
-  return items
-      .where((i) => i is! AgentMediaItem || !shown.contains(i.mediaId))
-      .toList(growable: false);
 }
 
 /// `makit-media:<sha256>` as the server writes it into rewritten markdown.
+///
+/// A real turn produces both a media bubble and the prose that shows it: the
+/// agent reads an image (→ `agent.media`) and then displays it with markdown,
+/// which the server rewrote to `makit-media:<mediaId>`. Rendering both puts the
+/// same screenshot in the transcript twice, so [ChatItemFold.rows] drops the
+/// bubble. `mediaId` is a content hash, so an identical id is provably identical
+/// bytes — and a different id is a genuinely different image (a harness may hand
+/// the model a downscaled copy of a huge screenshot), which stays visible.
 final RegExp _mediaUriPattern = RegExp(r'makit-media:([a-f0-9]{64})');

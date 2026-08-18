@@ -409,6 +409,14 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   /// Authenticated `hello` body. Credentials only — [_attachReal] adds the pid.
   Map<String, dynamic> _authHelloBody(String bearer) => {'bearer': bearer};
 
+  /// Capabilities this client announces in `hello`.
+  ///
+  /// `batch`: we decode a `session.events` frame carrying many events, so the
+  /// server may collect a window of them instead of sending one frame per
+  /// streamed token. A client that omits this keeps the one-frame-per-event
+  /// contract, which is how an older app and the CLI still work.
+  static const Map<String, dynamic> _capsHelloBody = {'batch': true};
+
   /// Our OS `pid`, so the server can measure the app surface (SPEC-performance-metrics-dashboard decision
   /// 6: the app has no self-CPU API, so the server samples the pid we report and
   /// trusts it only on a loopback socket).
@@ -562,7 +570,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
       // The pid is merged here, not by the callers, so no future attach path can
       // omit it. A caller may still override it explicitly.
       url,
-      helloBody: {..._pidHelloBody(), ...helloBody},
+      helloBody: {..._capsHelloBody, ..._pidHelloBody(), ...helloBody},
       pinnedFingerprint: fingerprint,
     );
   }

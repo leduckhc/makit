@@ -595,6 +595,24 @@ export interface SessionEvent {
 }
 
 /**
+ * Wire frames that carry session events.
+ *
+ * `event {kind:"session.event", event}` is the original contract: one frame per
+ * event. `event {kind:"session.events", events}` carries a whole window of them,
+ * in arrival order, possibly across sessions — the server sent 2184 frames a
+ * second at the measured peak, and each one is a JSON encode, a socket write and
+ * a radio wake on a phone.
+ *
+ * A client OPTS IN by sending `batch: true` in `hello`. Without it the server
+ * keeps sending one frame per event, which is how an app built before batching
+ * and every CLI client (`makit tail`, `attach`, `wait`) still work.
+ *
+ * Ordering holds on both paths: a frame that is not a fanned-out event flushes
+ * the pending window first, so an ack never overtakes the events it follows.
+ */
+export type SessionEventFrameKind = "session.event" | "session.events";
+
+/**
  * One attachment as it arrives on `send.message` (SPEC-user-attachments).
  *
  * Deliberately just an id plus a display hint: the bytes were already uploaded

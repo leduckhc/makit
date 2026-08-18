@@ -14,7 +14,7 @@ import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
 import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/catalog.js";
 import { CapabilityCache } from "./adapters/capability_cache.js";
-import { Session } from "./session.js";
+import { Session, MEMORY_EVENT_CAP } from "./session.js";
 import { sessionTokens } from "./ws/session_tokens.js";
 import {
   DEFAULT_SESSION_TITLE,
@@ -351,7 +351,9 @@ export class SessionManager extends EventEmitter {
    * Only session METADATA is loaded here — each session's event history is
    * read lazily on first access (see {@link SessionInit.hydrateFrom}), so boot
    * stays fast and memory stays proportional to the sessions actually opened,
-   * not the total size of the event log.
+   * not the total size of the event log. And only the recent TAIL is cached: a
+   * session here has 31,554 events, and a full read per opened transcript is
+   * what grew the server's RSS to 234 MB.
    */
   private rehydrate(): void {
     const store = this.store;
@@ -374,7 +376,7 @@ export class SessionManager extends EventEmitter {
         branch: meta.branch,
         worktreePath: meta.worktreePath,
         closed: meta.closed,
-        hydrateFrom: () => store.read(meta.id),
+        hydrateFrom: () => store.readTail(meta.id, MEMORY_EVENT_CAP),
       });
       this.sessions.set(session.id, session);
     }
