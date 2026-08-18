@@ -63,14 +63,17 @@ void main() {
       expect(trims, [true]);
     });
 
-    test('treats inactive as visible, so a transient overlay keeps the pulse', () {
-      final observer = build();
-      clock.addListener(() {});
+    test(
+      'treats inactive as visible, so a transient overlay keeps the pulse',
+      () {
+        final observer = build();
+        clock.addListener(() {});
 
-      observer.didChangeAppLifecycleState(AppLifecycleState.inactive);
+        observer.didChangeAppLifecycleState(AppLifecycleState.inactive);
 
-      expect(clock.isTicking, isTrue);
-      expect(trims, isEmpty);
-    });
+        expect(clock.isTicking, isTrue);
+        expect(trims, isEmpty);
+      },
+    );
   });
 }
