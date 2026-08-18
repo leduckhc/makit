@@ -1626,3 +1626,44 @@ test("an agent that keeps working after its prompt resolved stays running", asyn
   await new Promise((r) => setTimeout(r, 20));
   assert.deepEqual(statuses(), ["running", "idle", "running", "idle"]);
 });
+
+test("a silent agent that reported itself running stays running past its prompt", async () => {
+  // Work evidence cannot cover this one: the agent says `running: true`, answers
+  // the prompt early (a duplicate `agent_end`), then spends minutes inside a
+  // tool that streams nothing. With the running flag derived from the prompt
+  // turn, `.finally()` dropped it and the session reported `idle` mid-work.
+  let agentRef!: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      // The agent announces the turn, then answers the prompt at once.
+      await agentRef.update(sessionId, {
+        sessionUpdate: "session_info_update",
+        _meta: { piAcp: { queueDepth: 0, running: true } },
+      });
+    });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const all: string[] = [];
+  const events: AdapterEvent[] = [];
+  adapter.on("status", (s) => all.push(s));
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  const from = all.length;
+  const statuses = () => all.slice(from);
+  await adapter.send({ text: "go" });
+  await collectUntil(events, "user.message");
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.deepEqual(statuses(), ["running"], "the agent said it is working: no idle");
+
+  // It finally stops, and says so — the only thing that may settle it.
+  await agentRef.update("acp-sess-1", {
+    sessionUpdate: "session_info_update",
+    _meta: { piAcp: { queueDepth: 0, running: false } },
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(statuses(), ["running", "idle"]);
+});

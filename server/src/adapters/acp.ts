@@ -147,7 +147,9 @@ export class AcpAdapter extends SubprocessAdapter {
       // stream re-opens the turn, and the agent's own `running: false` closes it.
       onWork: () => this.turns.noteWork(),
       onAgentRunning: (running) => {
-        if (running) this.turns.noteWork();
+        // Held independently of the prompt turn, which pi-acp routinely ends
+        // first — and it outlives a tool that streams nothing at all.
+        if (running) this.turns.noteAgentRunning();
         else this.turns.noteAgentSettled();
       },
       // Sync + before the event is emitted: the blob is durable by the time the
