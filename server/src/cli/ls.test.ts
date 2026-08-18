@@ -17,6 +17,7 @@ import { cliCredentialPath } from "./client.js";
 import { createControlServer, type ControlBackend } from "../daemon/control-server.js";
 import { controlSocketPath } from "../daemon/paths.js";
 import { startStubWss } from "../../test/support/stub_wss.js";
+import { hideAmbientCliToken } from "../../test/support/cli_home.js";
 
 const SESSIONS = [
   {
@@ -36,6 +37,7 @@ async function withHome(
   opts: { control?: boolean; bearer?: string } = {},
 ): Promise<void> {
   const prev = process.env.MAKIT_HOME;
+  const restoreToken = hideAmbientCliToken();
   const home = mkdtempSync(join(tmpdir(), "makit-ls-home-"));
   process.env.MAKIT_HOME = home;
   const control = opts.control
@@ -51,6 +53,7 @@ async function withHome(
     await control?.close();
     if (prev === undefined) delete process.env.MAKIT_HOME;
     else process.env.MAKIT_HOME = prev;
+    restoreToken();
     rmSync(home, { recursive: true, force: true });
   }
 }

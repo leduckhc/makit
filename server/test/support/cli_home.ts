@@ -7,6 +7,9 @@
  * socket that answers `cli.grant`, a cached `cli.json` bearer, and a capture of
  * stdout/stderr/exit. `ls`/`new` predate this and inline it; the T14 verbs share
  * it here rather than copying it four more times.
+ *
+ * The scaffolding owns the **whole** credential surface, not just the home dir.
+ * See `hideAmbientCliToken` for the half that was missing.
  */
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +19,31 @@ import { cliCredentialPath } from "../../src/cli/client.js";
 import { stdout } from "../../src/cli/out.js";
 import { createControlServer, type ControlBackend } from "../../src/daemon/control-server.js";
 import { controlSocketPath } from "../../src/daemon/paths.js";
+
+/**
+ * Hide an ambient `MAKIT_CLI_TOKEN` for the length of one test, and return the
+ * undo.
+ *
+ * A cached `cli.json` bearer is only the fixture's bearer while nothing outranks
+ * it. `resolveBearer` reads `MAKIT_CLI_TOKEN` first (D2/D3 order), so a token in
+ * the environment silently replaces the one the test wrote, and the stub server
+ * then answers `unknown device`.
+ *
+ * A makit session exports that token to every agent it spawns. So an agent that
+ * runs this suite from inside makit hits it, while CI and a plain shell stay
+ * green. Isolating `MAKIT_HOME` alone is therefore not isolation.
+ *
+ * Call this in any harness that writes a `cli.json`, not only in `withCliHome`:
+ * five CLI test files still inline that ritual.
+ */
+export function hideAmbientCliToken(): () => void {
+  const prev = process.env.MAKIT_CLI_TOKEN;
+  delete process.env.MAKIT_CLI_TOKEN;
+  return () => {
+    if (prev === undefined) delete process.env.MAKIT_CLI_TOKEN;
+    else process.env.MAKIT_CLI_TOKEN = prev;
+  };
+}
 
 /** A control backend that only has to answer `cli.grant` for these tests. */
 function stubBackend(bearer: string): ControlBackend {
@@ -38,6 +66,9 @@ function stubBackend(bearer: string): ControlBackend {
 /**
  * Run `fn` with an isolated `MAKIT_HOME`. By default a control socket is up and
  * a `cli.json` bearer is cached; pass `control: false` to test "daemon down".
+ *
+ * An ambient `MAKIT_CLI_TOKEN` is hidden for the duration, so the cached bearer
+ * is the one the CLI actually sends (`hideAmbientCliToken`).
  */
 export async function withCliHome(
   fn: () => Promise<void>,
@@ -46,6 +77,7 @@ export async function withCliHome(
   const bearer = opts.bearer ?? "CACHED";
   const control = opts.control ?? true;
   const prev = process.env.MAKIT_HOME;
+  const restoreToken = hideAmbientCliToken();
   const home = mkdtempSync(join(tmpdir(), "makit-cli-home-"));
   process.env.MAKIT_HOME = home;
   const server = control
@@ -59,6 +91,7 @@ export async function withCliHome(
     await server?.close();
     if (prev === undefined) delete process.env.MAKIT_HOME;
     else process.env.MAKIT_HOME = prev;
+    restoreToken();
     rmSync(home, { recursive: true, force: true });
   }
 }

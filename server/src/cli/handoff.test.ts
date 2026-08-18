@@ -97,6 +97,11 @@ async function run(
     MAKIT_SESSION_ID: "parent-sid",
     MAKIT_PROJECT_ID: "p1",
     MAKIT_WORKTREE: PARENT.worktreePath,
+    // The stub accepts only the `cli.json` bearer written below. `resolveBearer`
+    // reads MAKIT_CLI_TOKEN first, and a makit session exports one to every
+    // agent it spawns, so an ambient token would replace the fixture's and the
+    // stub would answer `unknown device`. See test/support/cli_home.ts.
+    MAKIT_CLI_TOKEN: undefined,
     ...(opts.env ?? {}),
   };
   for (const [k, v] of Object.entries(env)) {
