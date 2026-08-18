@@ -34,9 +34,10 @@ export interface AcpMapperHooks {
    */
   onAgentRunning?: (running: boolean) => void;
   /**
-   * Substantive agent work arrived: a message chunk, a thought, or a NEW tool
-   * call. Bookkeeping updates (a tool completion, usage, commands) deliberately
-   * do not count — one of those trailing a finished turn would re-open it.
+   * Substantive agent work arrived: a message chunk, a thought, a NEW tool
+   * call, or fresh output streamed by a running tool. Bookkeeping updates (a
+   * tool completion, usage, commands) deliberately do not count — one of those
+   * trailing a finished turn would re-open it.
    */
   onWork?: () => void;
   /**
@@ -139,6 +140,10 @@ export class AcpEventMapper {
       }
 
       case "tool_call_update": {
+        // A tool that streams output is the agent working, and for a silent-then-
+        // chatty tool it is the ONLY evidence there is. Bookkeeping (a status
+        // flip, a completion) still does not count — see {@link hasNewToolOutput}.
+        if (this.hasNewToolOutput(update)) this.hooks.onWork?.();
         this.trackTool(update);
         return;
       }
@@ -288,6 +293,30 @@ export class AcpEventMapper {
     if (!cur.started) return;
     this.applyToolContent(id, update);
     this.maybeEndTool(id, status, update);
+  }
+
+  /**
+   * True when this update carries tool output that has not been seen yet.
+   *
+   * Must be asked BEFORE {@link trackTool}, which folds the output into
+   * {@link toolText}. Two shapes, two rules:
+   *
+   * * `_meta.terminal_output` is already an incremental delta, so any of it is
+   *   new.
+   * * `content` is cumulative — agents re-send the whole buffer on every update
+   *   — so only a change counts. Otherwise a stalled tool would look busy for as
+   *   long as it kept repeating itself.
+   *
+   * A `completed`/`failed` update is never work: nothing would close a turn it
+   * re-opened. See {@link AcpMapperHooks.onWork}.
+   */
+  private hasNewToolOutput(
+    update: Extract<SessionUpdate, { sessionUpdate: "tool_call_update" }>,
+  ): boolean {
+    if (update.status === "completed" || update.status === "failed") return false;
+    if (terminalOutput(update) !== undefined) return true;
+    const full = toolContentText((update as { content?: unknown }).content);
+    return full.length > 0 && full !== (this.toolText.get(update.toolCallId) ?? "");
   }
 
   /** Emit `tool.call.start` from the accumulated state, exactly once per tool. */

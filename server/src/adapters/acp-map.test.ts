@@ -885,3 +885,91 @@ test("chunks and new tool calls count as work; bookkeeping updates do not", () =
     "a completion trailing a finished turn must not re-open one",
   );
 });
+
+test("output streamed by a running tool counts as work", () => {
+  // A long `bash` reports progress only through `tool_call_update`s. Those are
+  // the sole evidence that the agent still works, so they must re-open a turn:
+  // without this a session whose prompt settled early sat `idle` for the whole
+  // tool run, with no shimmer and no live dot.
+  const { mapper, work } = collectTurnSignals();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "b1",
+    title: "sleep 300",
+    kind: "execute",
+    status: "in_progress",
+    rawInput: { command: "sleep 300" },
+  } as unknown as SessionUpdate);
+  const before = work();
+
+  // The ACP terminal convention: `_meta.terminal_output.data` is a delta.
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "b1",
+    status: "in_progress",
+    _meta: { terminal_output: { terminal_id: "b1", data: "tick\n" } },
+  } as unknown as SessionUpdate);
+  assert.equal(work(), before + 1, "streamed output is the agent working");
+
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "b1",
+    status: "in_progress",
+    _meta: { terminal_output: { terminal_id: "b1", data: "tock\n" } },
+  } as unknown as SessionUpdate);
+  assert.equal(work(), before + 2, "and each further delta keeps it alive");
+});
+
+test("a re-sent cumulative tool output is not new work", () => {
+  // `content` is cumulative: agents re-send the whole buffer on every update.
+  // Only a change is evidence, or a stalled tool would look busy forever.
+  const { mapper, work } = collectTurnSignals();
+  const output = (text: string) =>
+    ({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "r1",
+      status: "in_progress",
+      content: [{ type: "content", content: { type: "text", text } }],
+    }) as unknown as SessionUpdate;
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "r1",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: { path: "a.txt" },
+  } as unknown as SessionUpdate);
+
+  mapper.handle(output("line 1"));
+  const grown = work();
+  mapper.handle(output("line 1"));
+
+  assert.equal(work(), grown, "the same buffer again proves nothing");
+  mapper.handle(output("line 1line 2"));
+  assert.equal(work(), grown + 1, "but a grown buffer does");
+});
+
+test("a completion carrying its output still does not count as work", () => {
+  // The rule that protects a finished turn: a terminal update is bookkeeping
+  // even when it ships the final buffer, because nothing would close the turn
+  // it re-opened.
+  const { mapper, work } = collectTurnSignals();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "c1",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: { path: "a.txt" },
+  } as unknown as SessionUpdate);
+  const before = work();
+
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "c1",
+    status: "completed",
+    content: [{ type: "content", content: { type: "text", text: "the whole file" } }],
+  } as unknown as SessionUpdate);
+
+  assert.equal(work(), before, "a completion is not evidence of more work");
+});
