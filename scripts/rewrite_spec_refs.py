@@ -14,7 +14,10 @@ Evidence, most specific first:
   3. the subject of the file the line sits in,
   4. a per-number default — every use of which is reported for review.
 
-Usage: rewrite_spec_refs.py [--apply]
+Usage: rewrite_spec_refs.py [--apply | --list-files]
+
+`--list-files` prints the paths this script reads, one per line. A test then
+compares them with the paths the naming guard scans.
 """
 import json
 import re
@@ -322,6 +325,11 @@ def tracked_files():
 
 
 def main():
+    if "--list-files" in sys.argv:
+        for rel in tracked_files():
+            print(rel)
+        return 0
+
     apply = "--apply" in sys.argv
     unresolved = []
     decisions = defaultdict(list)

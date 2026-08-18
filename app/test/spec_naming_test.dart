@@ -16,10 +16,21 @@
 //   2. slugs are unique  — the readable id stays unambiguous,
 //   3. timestamps are unique — the sort key stays a key,
 //   4. every `SPEC-<slug>` reference in the repo resolves to a real spec, and no
-//      numeric `SPEC-<NN>` reference survives anywhere.
+//      numeric `SPEC-<NN>` reference survives anywhere,
+//   5. every relative link to a spec file resolves on disk,
+//   6. `scripts/rewrite_spec_refs.py` selects the same files this guard scans.
 //
 // Rule 4 is the one that pays. A renamed or deleted spec now fails a test
 // instead of leaving a comment that points nowhere.
+//
+// Rule 5 covers what rule 4 cannot see. A link carries the slug inside a path,
+// so `../../docs/specs/...-SPEC-computer-use.md` satisfies rule 4 while the
+// path itself points one directory too high, and the link opens nothing.
+//
+// Rule 6 closes the gap that let #168 through. The guard and the rewrite script
+// each carry their own exclusion list, so a guard that scans a tree the script
+// skips reports a fault that nothing can repair — and the reverse rewrites a
+// tree nobody audits.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -107,6 +118,29 @@ Iterable<File> _sourceFiles() sync* {
       }
     }
   }
+}
+
+/// Runs the rewrite script in report mode and returns its stdout.
+String _rewriteScript(List<String> args) {
+  final r = Process.runSync('python3', [
+    'scripts/rewrite_spec_refs.py',
+    ...args,
+  ], workingDirectory: _repoRoot.path);
+  expect(
+    r.exitCode,
+    0,
+    reason: 'rewrite_spec_refs.py ${args.join(" ")} failed:\n${r.stderr}',
+  );
+  return r.stdout as String;
+}
+
+/// Only git-tracked files, so an untracked draft never fails the comparison.
+Set<String> _trackedFiles() {
+  final r = Process.runSync('git', [
+    'ls-files',
+  ], workingDirectory: _repoRoot.path);
+  expect(r.exitCode, 0, reason: 'git ls-files failed:\n${r.stderr}');
+  return (r.stdout as String).split('\n').where((l) => l.isNotEmpty).toSet();
 }
 
 void main() {
@@ -213,6 +247,105 @@ void main() {
       reason:
           'these reference a spec that does not exist:\n'
           '${dangling.toSet().take(20).join('\n')}',
+    );
+  });
+
+  test('every relative link to a spec file resolves on disk', () {
+    // A relative link whose path reaches `docs/specs/`. The slug inside it
+    // satisfies the reference guard above, so only the path needs checking.
+    final link = RegExp(r'\]\((\.\.?/[^)\s#]*docs/specs/[^)\s#]+)');
+    final broken = <String>[];
+    for (final f in _sourceFiles()) {
+      if (!f.path.endsWith('.md')) continue;
+      final dir = f.parent.path;
+      final lines = f.readAsStringSync().split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        for (final m in link.allMatches(lines[i])) {
+          final target = File('$dir/${m.group(1)}');
+          if (target.existsSync()) continue;
+          final rel = f.path.substring(_repoRoot.path.length + 1);
+          broken.add('$rel:${i + 1} -> ${m.group(1)}');
+        }
+      }
+    }
+    expect(
+      broken,
+      isEmpty,
+      reason:
+          'these links open nothing; count the directories up to the root:\n'
+          '${broken.join('\n')}',
+    );
+  });
+
+  test('the rewrite script scans the same files this guard scans', () {
+    final selected = _rewriteScript([
+      '--list-files',
+    ]).split('\n').where((l) => l.isNotEmpty).toSet();
+    expect(selected, isNotEmpty, reason: 'the script selected no files');
+
+    // makit's own skills are first-party, and must be rewritten. #168 added
+    // twelve of them through the hole this asserts is shut.
+    final firstPartySkills = selected
+        .where(
+          (p) =>
+              p.startsWith('.agents/skills/') &&
+              !p.startsWith('.agents/skills/vendor/'),
+        )
+        .toList();
+    expect(
+      firstPartySkills,
+      isNotEmpty,
+      reason: "the script skips makit's own skills, so retired ids creep back",
+    );
+
+    // The vendor subtree is a checkout of other repositories, and the migration
+    // record keeps the retired ids on purpose. Both stay untouched.
+    expect(
+      selected.where((p) => p.startsWith('.agents/skills/vendor/')),
+      isEmpty,
+      reason: 'the script would rewrite vendored skills',
+    );
+    expect(
+      selected.where((p) => p.startsWith('scripts/spec-migration/')),
+      isEmpty,
+      reason: 'the script would erase the mapping that makes it auditable',
+    );
+
+    // The two exclusion lists must agree over the tree that broke: a guard that
+    // audits a file the script skips reports a fault nothing can repair.
+    final tracked = _trackedFiles()
+        .where((p) => p.startsWith('.agents/skills/'))
+        .toSet();
+    final guardScans = _sourceFiles()
+        .map((f) => f.path.substring(_repoRoot.path.length + 1))
+        .where(tracked.contains)
+        .toSet();
+    final scriptSelects = selected
+        .where((p) => p.startsWith('.agents/skills/'))
+        .toSet();
+    expect(
+      guardScans.difference(scriptSelects),
+      isEmpty,
+      reason: 'this guard audits skills the rewrite script cannot repair',
+    );
+    expect(
+      scriptSelects.difference(guardScans),
+      isEmpty,
+      reason: 'the rewrite script edits skills nothing audits',
+    );
+  });
+
+  test('the rewrite is complete, so running it again changes nothing', () {
+    final out = _rewriteScript([]);
+    expect(
+      out,
+      contains('files needing edits: 0'),
+      reason: 'a reference still needs rewriting:\n$out',
+    );
+    expect(
+      out,
+      contains('UNRESOLVED: 0'),
+      reason: 'a reference cannot be resolved:\n$out',
     );
   });
 }
