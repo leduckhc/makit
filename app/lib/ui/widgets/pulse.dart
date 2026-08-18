@@ -24,6 +24,7 @@ class PulseClock extends ChangeNotifier {
 
   Timer? _timer;
   Duration _elapsed = Duration.zero;
+  bool _visible = true;
 
   /// Time accumulated while the clock had listeners. Indicators derive their
   /// own phase from it, so periods need not agree.
@@ -32,16 +33,39 @@ class PulseClock extends ChangeNotifier {
   /// Whether the periodic timer is currently running.
   bool get isTicking => _timer != null;
 
+  /// Report whether the app window is visible.
+  ///
+  /// A hidden or occluded window must carry zero periodic work, so the clock
+  /// stops while [visible] is false even when indicators still listen. The
+  /// elapsed time freezes, so the pulse resumes in phase with no visible jump.
+  /// This is a seam: the app wires [WidgetsBindingObserver] to it, and tests
+  /// drive it directly.
+  void setVisible(bool visible) {
+    if (_visible == visible) return;
+    _visible = visible;
+    _sync();
+  }
+
   @override
   void addListener(VoidCallback listener) {
     super.addListener(listener);
-    _timer ??= Timer.periodic(kPulseInterval, _tick);
+    _sync();
   }
 
   @override
   void removeListener(VoidCallback listener) {
     super.removeListener(listener);
-    if (!hasListeners) _stop();
+    _sync();
+  }
+
+  /// Start the timer only while the app is visible and something listens; stop
+  /// it otherwise. One place decides, so the two conditions cannot disagree.
+  void _sync() {
+    if (_visible && hasListeners) {
+      _timer ??= Timer.periodic(kPulseInterval, _tick);
+    } else {
+      _stop();
+    }
   }
 
   void _tick(Timer _) {

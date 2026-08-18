@@ -4,24 +4,29 @@ import '../../app/theme.dart';
 import '../../store/models.dart';
 import 'pulse.dart';
 
-/// A tiny session-status indicator dot. Active states (running / awaiting)
-/// pulse; the rest render as a solid dot. Shared by the sidebar session tiles
-/// and the pane header so a session reads the same everywhere.
+/// A tiny session-status indicator dot. Only the `running` state pulses; every
+/// other state renders as a solid dot. Shared by the sidebar session tiles and
+/// the pane header so a session reads the same everywhere.
+///
+/// Motion means work. A parked session (awaiting input or approval) waits on the
+/// human and does no work, so its dot stays solid. Its colour still names the
+/// state, and the tooltip plus semantics label keep the dot from being a
+/// colour-only signal.
 ///
 /// Palette-tuned hues (theme roles where they exist, softened ambers for the
-/// awaiting states) so it sits with the neutral M3 surfaces. Carries a tooltip
-/// + semantics label so the dot is never a colour-only signal.
+/// awaiting states) so it sits with the neutral M3 surfaces.
 class SessionStatusDot extends StatelessWidget {
   /// Creates a status dot reflecting [status].
-  const SessionStatusDot({super.key, required this.status});
+  const SessionStatusDot({super.key, required this.status, this.clock});
 
   /// The session status the dot reflects.
   final SessionStatus status;
 
-  bool get _pulses =>
-      status == SessionStatus.running ||
-      status == SessionStatus.awaitingInput ||
-      status == SessionStatus.awaitingApproval;
+  /// The clock the pulse listens to. Tests inject their own; production reads
+  /// the shared [PulseClock.instance].
+  final PulseClock? clock;
+
+  bool get _pulses => status == SessionStatus.running;
 
   /// Human-readable status, used for the tooltip + screen-reader semantics so
   /// the dot is not a color-only signal.
@@ -62,7 +67,10 @@ class SessionStatusDot extends StatelessWidget {
     // Active states pulse on the shared low-rate clock (see [PulseBuilder]);
     // solid states render flat, leaving nothing ticking.
     final Widget dot = _pulses
-        ? PulseBuilder(builder: (context, t) => dotAt(0.3 + 0.7 * t))
+        ? PulseBuilder(
+            clock: clock,
+            builder: (context, t) => dotAt(0.3 + 0.7 * t),
+          )
         : dotAt(1);
     return Tooltip(
       message: _label,

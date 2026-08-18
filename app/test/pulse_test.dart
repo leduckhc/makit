@@ -60,6 +60,54 @@ void main() {
       });
     });
 
+    test('stops ticking while the app is not visible, even with listeners', () {
+      fakeAsync((async) {
+        final clock = PulseClock();
+        var ticks = 0;
+        clock.addListener(() => ticks++);
+        async.elapse(const Duration(milliseconds: 100));
+        expect(ticks, greaterThan(0));
+        expect(clock.isTicking, isTrue);
+
+        // A hidden or occluded window must carry zero periodic work.
+        clock.setVisible(false);
+        final atHide = ticks;
+        async.elapse(const Duration(seconds: 1));
+
+        expect(clock.isTicking, isFalse);
+        expect(ticks, atHide);
+      });
+    });
+
+    test('resumes on visible without jumping elapsed forward', () {
+      fakeAsync((async) {
+        final clock = PulseClock();
+        clock.addListener(() {});
+        async.elapse(const Duration(milliseconds: 200));
+        final atHide = clock.elapsed;
+
+        clock.setVisible(false);
+        // Hidden time must not accumulate, so the pulse resumes in phase.
+        async.elapse(const Duration(seconds: 5));
+        expect(clock.elapsed, atHide);
+
+        clock.setVisible(true);
+        expect(clock.isTicking, isTrue);
+        async.elapse(const Duration(milliseconds: 100));
+        expect(clock.elapsed, greaterThan(atHide));
+      });
+    });
+
+    test('stays silent when it becomes visible with no listeners', () {
+      fakeAsync((async) {
+        final clock = PulseClock();
+        clock.setVisible(false);
+        clock.setVisible(true);
+        async.elapse(const Duration(seconds: 1));
+        expect(clock.isTicking, isFalse);
+      });
+    });
+
     test('restarts cleanly when a listener comes back', () {
       fakeAsync((async) {
         final clock = PulseClock();
