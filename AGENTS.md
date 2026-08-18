@@ -17,7 +17,7 @@ makit drives a coding agent on your desktop from your phone.
 ## Commands
 
 Toolchain: Node ≥22.13 and pnpm ≥11 (`npm install` is blocked by a guard).
-Flutter ≥3.38, and the repo runs 3.44.9. App builds also need `rustup` and CocoaPods.
+Flutter ≥3.38, and the repo runs 3.47.0. App builds also need `rustup` and CocoaPods.
 
 ```sh
 # server
