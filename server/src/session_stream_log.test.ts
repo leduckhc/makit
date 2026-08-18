@@ -184,3 +184,31 @@ test("a session with no store keeps working, deltas included", () => {
   session.adapter.emit("event", { ts: 2, kind: "session.status", payload: { status: "idle" } });
   assert.deepEqual(session.events.map((e) => e.kind), ["agent.message", "session.status"]);
 });
+
+// A seq is a client's dedup key, so no two events may ever share one. Without a
+// store the seq came from `_events.length`, and the close DROPS the turn's
+// deltas from that array — so the next turn restarted the numbering and every
+// event it produced was discarded as "already seen".
+test("a no-store session never reissues a seq after a turn closes", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+  const emitted: SessionEvent[] = [];
+  session.on("event", (ev: SessionEvent) => emitted.push(ev));
+  const feed = (kind: string, payload: Record<string, unknown>) =>
+    session.adapter.emit("event", { ts: Date.now(), kind, payload });
+
+  // Turn one: several deltas, then a final that supersedes them, then idle.
+  for (const chunk of ["a", "b", "c", "d"]) feed("agent.message.delta", { msgId: "m1", chunk });
+  feed("agent.message", { msgId: "m1", text: "abcd" });
+  feed("session.status", { status: "idle" });
+  // Turn two.
+  feed("user.message", { text: "again" });
+  feed("agent.message", { msgId: "m2", text: "ok" });
+
+  const seqs = emitted.map((e) => e.seq);
+  assert.equal(new Set(seqs).size, seqs.length, `a seq was reissued: ${seqs.join(",")}`);
+  assert.deepEqual(
+    [...seqs].sort((a, b) => a - b),
+    seqs,
+    "seqs must also stay ascending in emission order",
+  );
+});

@@ -119,3 +119,48 @@ test("without a store the cache is the history, so nothing is trimmed", () => {
   assert.equal(session.events.length, total);
   assert.equal(session.eventsSince(0).length, total);
 });
+
+// ARCHITECTURE §3.1: "a client that subscribes mid-turn still replays the partial
+// text". A delta lives in memory and is never persisted, so once the cache is
+// truncated the store-only path silently dropped the live answer.
+test("a mid-turn replay from a truncated cache still carries the live deltas", () => {
+  const store = storeWith("s1", 0);
+  const session = new Session({
+    id: "s1",
+    projectId: "p",
+    agent: "pi",
+    adapter: fakeAdapter(),
+    store,
+  });
+
+  // Push the cache past its trim point, so `truncated` is set.
+  for (let i = 1; i <= MEMORY_EVENT_CAP * 3; i++) {
+    session.adapter.emit("event", {
+      ts: i,
+      kind: "agent.message",
+      payload: { msgId: `m${i}`, text: `t${i}` },
+    });
+  }
+  // Now stream a turn that has not finished: deltas only, no final.
+  for (const chunk of ["live ", "partial ", "text"]) {
+    session.adapter.emit("event", {
+      ts: 9000,
+      kind: "agent.message.delta",
+      payload: { msgId: "open", chunk },
+    });
+  }
+
+  const replay = session.eventsSince(0);
+  const deltas = replay.filter((e) => e.kind === "agent.message.delta");
+  assert.equal(deltas.length, 3, "the partial answer is replayed, not lost");
+  assert.deepEqual(
+    replay.map((e) => e.seq),
+    [...replay.map((e) => e.seq)].sort((a, b) => a - b),
+    "the merged replay stays seq-ordered",
+  );
+  assert.equal(
+    new Set(replay.map((e) => e.seq)).size,
+    replay.length,
+    "and carries no duplicate seq",
+  );
+});

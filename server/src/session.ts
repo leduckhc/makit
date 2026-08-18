@@ -221,6 +221,17 @@ export class Session extends EventEmitter {
 
   private readonly _events: SessionEvent[] = [];
   /**
+   * The highest seq this session has ever issued, for the no-store path.
+   *
+   * NOT derived from `_events`: a seq is a client's dedup key, and the cache
+   * SHRINKS. `closeStreams` removes the turn's deltas and puts one aggregate
+   * back at the first delta's seq, so both `_events.length` and the last
+   * element's seq can fall below a seq clients already hold. Counting from
+   * either reissued those numbers, and every event of the next turn was then
+   * discarded as already seen. With a store, `reserveSeq` plays this role.
+   */
+  private lastSeq = 0;
+  /**
    * Which streamed text is still open, and what history needs when it closes.
    * A delta is emitted live but never written as its own row (see
    * stream_digest.ts).
@@ -264,7 +275,17 @@ export class Session extends EventEmitter {
     const oldest = this._events[0]?.seq;
     const complete = !this.truncated || oldest === undefined || fromSeq >= oldest - 1;
     if (complete) return this._events.filter((e) => e.seq > fromSeq);
-    return this.store ? this.store.read(this.id, fromSeq) : this._events.filter((e) => e.seq > fromSeq);
+    if (!this.store) return this._events.filter((e) => e.seq > fromSeq);
+
+    // The store holds history, but a streamed delta is never written to it (see
+    // stream_digest.ts). Serving the store alone would replay a mid-turn
+    // subscriber everything EXCEPT the answer being typed, so the live tail is
+    // merged back in. `seq` is unique per event, so it is the merge key; the
+    // in-memory copy wins, being the one clients were fanned out.
+    const merged = new Map<number, SessionEvent>();
+    for (const e of this.store.read(this.id, fromSeq)) merged.set(e.seq, e);
+    for (const e of this._events) if (e.seq > fromSeq) merged.set(e.seq, e);
+    return [...merged.values()].sort((a, b) => a.seq - b.seq);
   }
 
   constructor(init: SessionInit) {
@@ -305,6 +326,9 @@ export class Session extends EventEmitter {
     for (const e of events) this._events.push(e);
     const last = events.at(-1);
     if (last) this.lastActivityAt = Math.max(this.lastActivityAt, last.ts);
+    // Never issue a seq that history already used. Loaded rows may arrive in any
+    // order, so take the maximum rather than the last one.
+    for (const e of events) if (e.seq > this.lastSeq) this.lastSeq = e.seq;
     // A tail read starts above seq 1, so the cache no longer reaches the log's
     // start and `eventsSince` must go to the store for anything older.
     if (this.store && (this._events[0]?.seq ?? 1) > 1) this.truncated = true;
@@ -411,7 +435,7 @@ export class Session extends EventEmitter {
       // aggregate rather than the deltas — the same shape a persisted session
       // rehydrates with.
       const event: SessionEvent = {
-        seq: this._events.length + 1,
+        seq: ++this.lastSeq,
         sessionId: this.id,
         ts: e.ts,
         kind: e.kind,
