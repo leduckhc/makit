@@ -6,7 +6,7 @@ description: Wire, verify, or debug computer use (cua-driver desktop control) in
 
 makit writes no desktop-driving code. It points both agents at the external
 [`cua-driver`](https://github.com/trycua/cua) binary over stdio MCP. Design rationale lives
-in [`docs/specs/20260804-003600-SPEC-computer-use.md`](../../docs/specs/20260804-003600-SPEC-computer-use.md).
+in [`docs/specs/20260804-003600-SPEC-computer-use.md`](../../../docs/specs/20260804-003600-SPEC-computer-use.md).
 
 ## Contents
 - [Two routes, one per agent](#two-routes-one-per-agent)
