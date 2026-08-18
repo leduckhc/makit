@@ -373,6 +373,10 @@ export class SqliteEventStore implements EventStore {
 
   deleteSession(id: string): void {
     this.nextSeq.delete(id);
+    // The ceiling describes a row that is about to go. Keeping it would make
+    // `reserveBlockIfNeeded` skip the write for a reused id, whose seqs restart
+    // below the stale value.
+    this.hwm.delete(id);
     this.db.prepare("DELETE FROM events WHERE session_id = ?").run(id);
     this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
   }

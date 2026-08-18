@@ -431,3 +431,32 @@ test("a reserved seq survives a restart, even though its delta is never written"
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The in-memory ceiling must not outlive the row it describes. A session id that
+// is deleted and used again starts from seq 1, and a stale ceiling above that
+// made `reserveBlockIfNeeded` skip the write — the very hole it exists to close.
+test("deleting a session forgets its seq ceiling, so a reused id still persists one", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-seq-"));
+  try {
+    const path = join(dir, "makit.db");
+    const first = new SqliteEventStore(path);
+    first.saveSession(meta("s1"));
+    first.append("s1", { ts: 1, kind: "user.message", payload: { text: "old" } });
+    for (let i = 0; i < 5; i++) first.reserveSeq("s1"); // ceiling climbs well past 1
+
+    first.deleteSession("s1");
+    first.saveSession(meta("s1")); // same id, fresh log
+    const reserved = first.reserveSeq("s1");
+    first.close();
+
+    const second = new SqliteEventStore(path);
+    const next = second.reserveSeq("s1");
+    second.close();
+    assert.ok(
+      next > reserved,
+      `a reused id reissued a seq: got ${next}, already sent ${reserved}`,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
