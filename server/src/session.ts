@@ -21,6 +21,7 @@ import type {
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { EventStore, NewEvent, SessionMeta } from "./storage/event_store.js";
 import type { MediaAttachment } from "./media/store.js";
+import { StreamDigest, isStreamDelta, TURN_END_STATUSES } from "./stream_digest.js";
 
 /**
  * Event kinds that advance lastActivityAt but must never fan out the sessions
@@ -210,6 +211,12 @@ export class Session extends EventEmitter {
   private _lifecycle: SessionLifecycle = { phase: "started" };
 
   private readonly _events: SessionEvent[] = [];
+  /**
+   * Which streamed text is still open, and what history needs when it closes.
+   * A delta is emitted live but never written as its own row (see
+   * stream_digest.ts).
+   */
+  private readonly digest = new StreamDigest();
   /** Mid-turn messages awaiting delivery (SPEC-mid-turn-steering-and-queue), oldest first. */
   private readonly queued: QueuedMessage[] = [];
   /**
@@ -293,9 +300,7 @@ export class Session extends EventEmitter {
     // Load persisted history first so the cache stays complete + ordered even
     // when a cold session records before anyone read `events`.
     this.ensureHydrated();
-    const event: SessionEvent = this.store
-      ? this.store.append(this.id, e)
-      : { seq: this._events.length + 1, sessionId: this.id, ts: e.ts, kind: e.kind, payload: e.payload };
+    const event = this.form(e);
     this._events.push(event);
 
     // Snapshot the DTO-visible fields BEFORE mutating so we can emit
@@ -329,7 +334,88 @@ export class Session extends EventEmitter {
       this.lastPreview !== prevPreview ||
       this.lastActivityAt !== prevActivity;
     if (!isNoFanout && changed) this.emit("metaChanged");
+
+    // The agent stopped: every stream is complete, so history can take its
+    // aggregates and memory can drop the deltas (see stream_digest.ts). Done
+    // after the event is in place, so the close cannot reorder the log.
+    if (event.kind === "session.status" && TURN_END_STATUSES.has(this.status)) {
+      this.closeStreams();
+    }
     return event;
+  }
+
+  /**
+   * Form the event: assign its seq, and persist it unless it is a streamed
+   * delta (see stream_digest.ts). A delta still consumes a seq, because clients
+   * dedup by seq and two events must never share one.
+   */
+  private form(e: NewEvent): SessionEvent {
+    if (!this.store) {
+      // No store: the in-memory log is the only history, so it keeps the
+      // aggregate rather than the deltas — the same shape a persisted session
+      // rehydrates with.
+      const event: SessionEvent = {
+        seq: this._events.length + 1,
+        sessionId: this.id,
+        ts: e.ts,
+        kind: e.kind,
+        payload: e.payload,
+      };
+      return this.digestOf(event);
+    }
+    if (isStreamDelta(e.kind)) {
+      const event: SessionEvent = {
+        seq: this.store.reserveSeq(this.id),
+        sessionId: this.id,
+        ts: e.ts,
+        kind: e.kind,
+        payload: e.payload,
+      };
+      this.digest.noteDelta(event);
+      return event;
+    }
+    const payload = this.digest.noteFinal(e.kind, e.payload ?? {});
+    return this.store.append(this.id, { ...e, payload });
+  }
+
+  /** The no-store path's half of {@link form}: note the event, same rules. */
+  private digestOf(event: SessionEvent): SessionEvent {
+    if (isStreamDelta(event.kind)) {
+      this.digest.noteDelta(event);
+      return event;
+    }
+    return { ...event, payload: this.digest.noteFinal(event.kind, event.payload ?? {}) };
+  }
+
+  /**
+   * End of turn: write one aggregate for every stream that produced no final,
+   * then drop the turn's deltas from memory. The aggregate takes the seq of the
+   * first delta it replaces, so no client receives a seq it has not seen.
+   */
+  private closeStreams(): void {
+    if (this.digest.isEmpty) return;
+    const { aggregates, replacedSeqs } = this.digest.close();
+    if (replacedSeqs.size === 0) return;
+
+    const written: SessionEvent[] = [];
+    for (const { seq, event } of aggregates) {
+      written.push(
+        this.store
+          ? this.store.appendAt(this.id, seq, event)
+          : { seq, sessionId: this.id, ts: event.ts, kind: event.kind, payload: event.payload },
+      );
+    }
+
+    // One pass: drop every delta of the turn, then splice the aggregates back in
+    // at their own seq so the cache stays seq-ordered.
+    const kept = this._events.filter((ev) => !replacedSeqs.has(ev.seq));
+    for (const ev of written) {
+      let at = kept.length;
+      while (at > 0 && kept[at - 1].seq > ev.seq) at--;
+      kept.splice(at, 0, ev);
+    }
+    this._events.length = 0;
+    this._events.push(...kept);
   }
 
   private toMeta(): SessionMeta {

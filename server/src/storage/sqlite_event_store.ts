@@ -90,6 +90,11 @@ export class SqliteEventStore implements EventStore {
   }
 
   append(sessionId: string, e: NewEvent): SessionEvent {
+    const seq = this.reserveSeq(sessionId);
+    return this.appendAt(sessionId, seq, e);
+  }
+
+  reserveSeq(sessionId: string): number {
     let seq = this.nextSeq.get(sessionId);
     if (seq === undefined) {
       const row = this.db
@@ -97,10 +102,18 @@ export class SqliteEventStore implements EventStore {
         .get(sessionId) as { maxSeq: number };
       seq = Number(row.maxSeq) + 1;
     }
+    this.nextSeq.set(sessionId, seq + 1);
+    return seq;
+  }
+
+  appendAt(sessionId: string, seq: number, e: NewEvent): SessionEvent {
     this.db
       .prepare("INSERT INTO events (session_id, seq, ts, kind, payload) VALUES (?, ?, ?, ?, ?)")
       .run(sessionId, seq, e.ts, e.kind, JSON.stringify(e.payload ?? {}));
-    this.nextSeq.set(sessionId, seq + 1);
+    // A reserved seq may be written out of order (an aggregate lands after the
+    // events that followed its deltas), so never let it pull the counter back.
+    const next = this.nextSeq.get(sessionId) ?? 0;
+    if (seq + 1 > next) this.nextSeq.set(sessionId, seq + 1);
     return { seq, sessionId, ts: e.ts, kind: e.kind, payload: e.payload };
   }
 
@@ -212,6 +225,39 @@ export class SqliteEventStore implements EventStore {
       handoffReason: (r.handoff_reason as string | null) ?? undefined,
       origin: (r.origin as SessionMeta["origin"] | null) ?? undefined,
     }));
+  }
+
+  /**
+   * Remove the given seqs of one session. Maintenance only — see `compact.ts`;
+   * the log is append-only for every other caller.
+   */
+  deleteEvents(sessionId: string, seqs: number[]): void {
+    if (seqs.length === 0) return;
+    const stmt = this.db.prepare("DELETE FROM events WHERE session_id = ? AND seq = ?");
+    for (const seq of seqs) stmt.run(sessionId, seq);
+  }
+
+  /** Replace one row's payload, keeping its seq, ts and kind (maintenance only). */
+  replacePayload(sessionId: string, seq: number, payload: Record<string, unknown>): void {
+    this.db
+      .prepare("UPDATE events SET payload = ? WHERE session_id = ? AND seq = ?")
+      .run(JSON.stringify(payload), sessionId, seq);
+  }
+
+  /** Every session id that has at least one event. */
+  eventSessionIds(): string[] {
+    const rows = this.db
+      .prepare("SELECT DISTINCT session_id AS id FROM events ORDER BY session_id")
+      .all() as Array<{ id: string }>;
+    return rows.map((r) => r.id);
+  }
+
+  /**
+   * Reclaim the space removed rows held. SQLite keeps freed pages in the file
+   * otherwise, so a compaction would report success and free no disk.
+   */
+  vacuum(): void {
+    this.db.exec("VACUUM;");
   }
 
   deleteSession(id: string): void {
