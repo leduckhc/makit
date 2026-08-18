@@ -40,6 +40,16 @@ class SessionEventFrame extends Decoded {
   final SessionEvent event;
 }
 
+/// Many session events in one frame (`session.events`).
+///
+/// The server used to send one frame per streamed token — 2184 per second at the
+/// peak — so it now collects a window of them into one. Never empty: a frame with
+/// no readable event decodes to null like any other unusable frame.
+class SessionEventsFrame extends Decoded {
+  const SessionEventsFrame(this.events);
+  final List<SessionEvent> events;
+}
+
 class GithubBudgetFrame extends Decoded {
   const GithubBudgetFrame(this.budget);
   final GithubBudget budget;
@@ -116,6 +126,25 @@ class WireCodec {
           return null;
         }
         return SessionEventFrame(event);
+      case 'session.events':
+        // Tolerant per entry, like every other list frame: one malformed event
+        // must not cost the whole window. Nothing readable → drop the frame.
+        final raw = env.body['events'];
+        if (raw is! List) {
+          _warn('session.events');
+          return null;
+        }
+        final batch = <SessionEvent>[];
+        for (final entry in raw) {
+          final e = decodeEvent(entry);
+          if (e == null) {
+            _warn('session.events entry');
+            continue;
+          }
+          batch.add(e);
+        }
+        if (batch.isEmpty) return null;
+        return SessionEventsFrame(batch);
       case 'github.budget':
         // Tolerant by contract: a missing bucket / null field must survive as
         // null (unmeasured ≠ empty), never take down the socket. Only a

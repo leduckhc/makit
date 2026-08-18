@@ -257,6 +257,7 @@ StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
     sessionsLoaded: true,
   ),
   SessionEventFrame(:final event) => reduceEvent(state, event),
+  SessionEventsFrame(:final events) => reduceEvents(state, events),
 };
 
 /// Fold a single [SessionEvent] into the store, preserving the seq-cursor
@@ -588,6 +589,19 @@ class StoreController extends StateNotifier<StoreState> {
       // Live event: collect it. [_applyLiveBatch] does the folding once the
       // window closes.
       _batcher.add(decoded.event);
+      return;
+    }
+    if (decoded is SessionEventsFrame) {
+      // A server-side batch (`session.events`). Its events join the same window,
+      // so one flush covers whatever else arrives with them. Replay still routes
+      // per session, because a batch may carry events of several sessions.
+      for (final e in decoded.events) {
+        if (_awaitingReplay.contains(e.sessionId)) {
+          (_replayBuffer[e.sessionId] ??= <SessionEvent>[]).add(e);
+        } else {
+          _batcher.add(e);
+        }
+      }
       return;
     }
     // Any other frame carries state the events must already be behind — a

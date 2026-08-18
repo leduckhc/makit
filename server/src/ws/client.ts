@@ -68,4 +68,12 @@ export interface WsClient {
    * every non-loopback client.
    */
   appPid?: number;
+  /**
+   * True when the client announced `batch: true` in `hello`, meaning it decodes a
+   * `session.events` frame carrying many events.
+   *
+   * Absent or false is the old contract — one `session.event` per event — so an
+   * app built before batching keeps working against a newer server.
+   */
+  acceptsEventBatches?: boolean;
 }

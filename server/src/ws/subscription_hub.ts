@@ -30,8 +30,31 @@ export interface SubscriptionManager {
   getSession(id: string): { eventsSince(fromSeq: number): SessionEvent[] } | undefined;
 }
 
+/** A pending flush, cancellable. Injected so tests never arm a real timer. */
+export interface PendingFlush {
+  cancel(): void;
+}
+
+/**
+ * How long events wait for company before they go out.
+ *
+ * 40 ms holds a burst together without being felt: the app applies a batch every
+ * 50 ms anyway (see its `EventBatcher`), so a shorter window buys nothing and a
+ * longer one starts to read as lag.
+ */
+const DEFAULT_BATCH_WINDOW_MS = 40;
+
+/** True when this client announced `batch` in `hello` (see AuthGate). */
+function acceptsBatches(client: WsClient): boolean {
+  return client.acceptsEventBatches === true;
+}
+
 export interface SubscriptionHubDeps {
   manager: SubscriptionManager;
+  /** Override the batching window (tests, and a future setting). */
+  batchWindowMs?: number;
+  /** Arm a one-shot flush. Production uses `setTimeout`. */
+  schedule?: (ms: number, fn: () => void) => PendingFlush;
   /**
    * A session's parent from persisted lineage (SPEC-cli-as-client D10), for the D17 read
    * rule: a session-scoped principal reads its own session and its descendants.
@@ -43,8 +66,58 @@ export interface SubscriptionHubDeps {
 
 export class SubscriptionHub {
   private readonly clients = new Set<WsClient>();
+  /** Events waiting for their window, per client, in arrival order. */
+  private readonly pending = new Map<WsClient, SessionEvent[]>();
+  /** The armed window per client, cancelled when the client leaves. */
+  private readonly armed = new Map<WsClient, PendingFlush>();
 
   constructor(private readonly deps: SubscriptionHubDeps) {}
+
+  /** The batching window, in ms. */
+  private get windowMs(): number {
+    return this.deps.batchWindowMs ?? DEFAULT_BATCH_WINDOW_MS;
+  }
+
+  private schedule(fn: () => void): PendingFlush {
+    if (this.deps.schedule) return this.deps.schedule(this.windowMs, fn);
+    const timer = setTimeout(fn, this.windowMs);
+    timer.unref?.();
+    return { cancel: () => clearTimeout(timer) };
+  }
+
+  /**
+   * Send a frame that is NOT a fanned-out event, flushing this client's pending
+   * events first.
+   *
+   * Order on one socket is a contract: `handleSub` replays a session's history
+   * and then acks it, and the app treats that ack as "the replay is complete".
+   * An ack that overtook the batch would make the app read replayed history as
+   * live events and drop it.
+   */
+  sendDirect(client: WsClient, frame: Parameters<WsClient["send"]>[0]): void {
+    this.flush(client);
+    client.send(frame);
+  }
+
+  /** Send everything this client is holding, as one frame when it can take one. */
+  flush(client: WsClient): void {
+    this.armed.get(client)?.cancel();
+    this.armed.delete(client);
+    const events = this.pending.get(client);
+    this.pending.delete(client);
+    if (events === undefined || events.length === 0) return;
+    if (!this.clients.has(client)) return; // gone: never write to a closed socket
+    if (!acceptsBatches(client)) {
+      for (const e of events) this.sendOne(client, e);
+      return;
+    }
+    client.send({ t: "event", id: newId("evs"), kind: "session.events", events });
+  }
+
+  /** Flush every client — used when the server broadcasts to all of them. */
+  flushAll(): void {
+    for (const client of [...this.pending.keys()]) this.flush(client);
+  }
 
   /** The D17 read rule for this client, resolved against persisted lineage. */
   private mayRead(client: WsClient, sessionId: string): boolean {
@@ -57,6 +130,11 @@ export class SubscriptionHub {
 
   unregister(client: WsClient): void {
     this.clients.delete(client);
+    // Drop what it was holding: the socket is going away, and a pending window
+    // that fired afterwards would write to a closed one.
+    this.armed.get(client)?.cancel();
+    this.armed.delete(client);
+    this.pending.delete(client);
   }
 
   handleSub(client: WsClient, env: Envelope): void {
@@ -80,6 +158,10 @@ export class SubscriptionHub {
       return;
     }
     client.subscribed.add(sid);
+    // Anything already fanned out to this client goes first: the replay frames
+    // below are sent immediately, so a pending batch left behind them would
+    // reach the app after history it precedes.
+    this.flush(client);
     const fromSeq = typeof env.fromSeq === "number" ? env.fromSeq : 0;
     const replay = session.eventsSince(fromSeq);
     log.info(
@@ -113,14 +195,38 @@ export class SubscriptionHub {
     for (const c of this.clients) {
       if (!c.authed) continue;
       if (!this.mayRead(c, sessionId)) continue;
-      this.sendEvent(c, event);
+      this.queue(c, event);
       sent++;
     }
     return sent;
   }
 
-  private sendEvent(client: WsClient, event: SessionEvent): void {
+  /** Hold [event] for [client], arming the window on the first of a burst. */
+  private queue(client: WsClient, event: SessionEvent): void {
+    const held = this.pending.get(client);
+    if (held === undefined) {
+      this.pending.set(client, [event]);
+    } else {
+      held.push(event);
+    }
+    if (!this.armed.has(client)) {
+      this.armed.set(
+        client,
+        this.schedule(() => {
+          this.armed.delete(client);
+          this.flush(client);
+        }),
+      );
+    }
+  }
+
+  /** The one-event frame, for a client that cannot take a batch. */
+  private sendOne(client: WsClient, event: SessionEvent): void {
     client.send({ t: "event", id: newId("ev"), kind: "session.event", event });
+  }
+
+  private sendEvent(client: WsClient, event: SessionEvent): void {
+    this.sendOne(client, event);
   }
 
   private err(client: WsClient, id: string, code: WireErrorCode, message: string): void {

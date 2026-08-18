@@ -1099,7 +1099,7 @@ export function startWsServer(opts: ServerOpts) {
   // -------- concrete client ------------------------------------------------
 
   function makeClient(ws: WebSocket, authed: boolean, isLocal: boolean): ClientState {
-    return {
+    const state: ClientState = {
       ws,
       authed,
       isLocal,
@@ -1108,6 +1108,13 @@ export function startWsServer(opts: ServerOpts) {
       watchingDocs: false,
       subscribed: new Set<string>(),
       send(frame: OutgoingFrame) {
+        // Fanned-out events wait for their batching window (see SubscriptionHub).
+        // Everything else — an ack, a snapshot, an approval request — must not
+        // overtake them, so it flushes the window first. One place, rather than a
+        // rule every call site has to remember.
+        if (frame.kind !== "session.event" && frame.kind !== "session.events") {
+          hub.flush(state);
+        }
         if (ws.readyState !== ws.OPEN) return;
         const raw = encodeFrame({ v: PROTOCOL_VERSION, ...frame } as Envelope);
         wire.addOut(raw.length); // SPEC-performance-metrics-dashboard: count outbound WS bytes at the transport.
@@ -1118,6 +1125,7 @@ export function startWsServer(opts: ServerOpts) {
         ws.close(code, reason);
       },
     };
+    return state;
   }
 }
 

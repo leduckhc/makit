@@ -47,6 +47,9 @@ test("a session-scoped principal receives only its own session's events", () => 
 
   h.fanout("A", ev());
   h.fanout("B", ev());
+  // Fan-out is batched per window now (see subscription_hub_batch.test.ts); this
+  // test is about the visibility rule, so close the window by hand.
+  h.flush(client);
 
   assert.equal(client.events.length, 1, "should receive session A only, not B");
 });
@@ -58,6 +61,9 @@ test("a no-caps principal (existing phone) still receives every session's events
 
   h.fanout("A", ev());
   h.fanout("B", ev());
+  // Fan-out is batched per window now (see subscription_hub_batch.test.ts); this
+  // test is about the visibility rule, so close the window by hand.
+  h.flush(client);
 
   assert.equal(client.events.length, 2, "auto-mirror must stay intact for a phone");
 });
@@ -69,6 +75,9 @@ test("a client-cap principal (cli@host) keeps the auto-mirror too", () => {
 
   h.fanout("A", ev());
   h.fanout("B", ev());
+  // Fan-out is batched per window now (see subscription_hub_batch.test.ts); this
+  // test is about the visibility rule, so close the window by hand.
+  h.flush(client);
 
   assert.equal(client.events.length, 2);
 });
@@ -136,6 +145,7 @@ test("fanout reaches a descendant too, matching D17's wording", () => {
   h.register(client);
 
   h.fanout("child", ev());
+  h.flush(client);
 
   assert.equal(client.events.length, 1, "an agent sees the child it spawned");
 });

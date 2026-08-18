@@ -155,6 +155,8 @@ test("fanout auto-mirrors to every authed client regardless of subscription", ()
   unauthed.subscribed.add("sess-1"); // authed=false → still excluded
 
   const count = hub.fanout("sess-1", evt(3, "sess-1"));
+  // Fan-out is batched per window; close it so the frames are countable here.
+  hub.flushAll();
 
   // Auto-mirror: both authed clients receive it, even the one that never subbed.
   assert.equal(count, 2);
