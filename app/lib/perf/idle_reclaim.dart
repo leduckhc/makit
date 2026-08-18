@@ -47,7 +47,17 @@ class IdleReclaimObserver with WidgetsBindingObserver {
   final CacheTrimmer _trim;
 
   /// Start observing lifecycle and memory-pressure signals.
-  void install() => WidgetsBinding.instance.addObserver(this);
+  ///
+  /// It adopts the state the app is ALREADY in. `addObserver` never replays the
+  /// current lifecycle state, so an observer installed into a hidden or paused
+  /// app would hear nothing until the next change, and leave the 20 Hz pulse
+  /// running while the window was parked.
+  void install() {
+    final binding = WidgetsBinding.instance;
+    binding.addObserver(this);
+    final state = binding.lifecycleState;
+    if (state != null) didChangeAppLifecycleState(state);
+  }
 
   /// Stop observing.
   void dispose() => WidgetsBinding.instance.removeObserver(this);

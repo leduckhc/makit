@@ -17,6 +17,9 @@ void main() {
     setUp(() {
       clock = PulseClock();
       trims = [];
+      // A ticking clock is a pending timer, which fails the widget-test
+      // invariants. Stop it after each case.
+      addTearDown(clock.dispose);
     });
 
     IdleReclaimObserver build() => IdleReclaimObserver(
@@ -75,5 +78,45 @@ void main() {
         expect(trims, isEmpty);
       },
     );
+
+    // `addObserver` never replays the current state, so an observer installed
+    // into an already-parked app heard nothing and left the 20 Hz timer running
+    // while the window was hidden — the exact idle cost this class removes.
+    testWidgets('adopts the lifecycle state that is already current', (
+      tester,
+    ) async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      final observer = build();
+      clock.addListener(() {});
+      expect(
+        clock.isTicking,
+        isTrue,
+        reason: 'parked only once the observer installs',
+      );
+
+      observer.install();
+      addTearDown(observer.dispose);
+
+      expect(clock.isTicking, isFalse, reason: 'installed into a hidden app');
+      expect(trims, [true]);
+    });
+
+    testWidgets('installing into a visible app keeps the pulse running', (
+      tester,
+    ) async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final observer = build();
+      void listener() {}
+      clock.addListener(listener);
+
+      observer.install();
+      addTearDown(observer.dispose);
+
+      expect(clock.isTicking, isTrue);
+      expect(trims, isEmpty, reason: 'a visible app must not drop live images');
+      // A live 20 Hz timer is a pending timer, and the widget-test invariants
+      // run before any tearDown, so it has to stop here.
+      clock.removeListener(listener);
+    });
   });
 }
