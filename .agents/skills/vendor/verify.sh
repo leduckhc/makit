@@ -23,6 +23,7 @@ dir="$(jq -r '.vendorDir' "$lock")"
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
 
 fail=0
+wrote=0
 names="$(jq -r '.skills | keys[]' "$lock")"
 
 # Every lock entry must have a file with the recorded hash.
@@ -30,6 +31,7 @@ while IFS= read -r name; do
   file="$root/$dir/$name/SKILL.md"
   if [ ! -f "$file" ]; then
     echo "MISSING  $dir/$name/SKILL.md is in the lock but not on disk"
+    echo "         restore the file, or drop the entry from skills-lock.json"
     fail=1
     continue
   fi
@@ -39,6 +41,7 @@ while IFS= read -r name; do
     tmp="$(mktemp)"
     jq --arg n "$name" --arg h "$got" '.skills[$n].committedHash = $h' "$lock" > "$tmp"
     mv "$tmp" "$lock"
+    wrote=$((wrote + 1))
     continue
   fi
   if [ -z "$want" ]; then
@@ -55,12 +58,20 @@ done <<< "$names"
 # Every file on disk must have a lock entry.
 while IFS= read -r file; do
   name="$(basename "$(dirname "$file")")"
-  grep -qx "$name" <<< "$names" || { echo "UNTRACKED  $dir/$name is not in skills-lock.json"; fail=1; }
+  grep -qx "$name" <<< "$names" || {
+    echo "UNTRACKED  $dir/$name is not in skills-lock.json"
+    echo "           add its source and upstream path by hand; --write cannot invent provenance"
+    fail=1
+  }
 done < <(find "$root/$dir" -name SKILL.md)
 
+total="$(wc -l <<< "$names" | tr -d ' ')"
 if [ "$write" = 1 ]; then
-  echo "recorded committedHash for $(wc -l <<< "$names" | tr -d ' ') vendored skills"
-  exit 0
+  echo "recorded committedHash for $wrote of $total vendored skills"
+  # A rewrite does not repair a lock that does not describe the tree, so the
+  # findings above still fail the run.
+  [ "$fail" = 0 ] || echo "lock is still out of sync: fix the findings above"
+  exit "$fail"
 fi
-[ "$fail" = 0 ] && echo "ok: $(wc -l <<< "$names" | tr -d ' ') vendored skills match skills-lock.json"
+[ "$fail" = 0 ] && echo "ok: $total vendored skills match skills-lock.json"
 exit "$fail"

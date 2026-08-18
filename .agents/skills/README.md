@@ -87,7 +87,9 @@ bash .agents/skills/vendor/verify.sh --write    # re-record after a refresh
 ```
 
 The script fails on a modified file, a missing file, and a skill that no lock
-entry covers. The `skills-ci` workflow runs it on every PR that touches this
+entry covers. `--write` re-records the hashes, but it still fails on a missing or
+an untracked skill: a rewrite cannot repair a lock that does not describe the
+tree. The `skills-ci` workflow runs the check on every PR that touches this
 directory. So a local edit to a vendored skill can no longer pass as upstream
 code.
 
