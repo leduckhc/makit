@@ -6,12 +6,14 @@
  * `stream_digest.ts` stopped writing them; this removes the ones already there
  * and reclaims the disk.
  *
- * Read-only by default (`--dry-run` reports and changes nothing), and it refuses
- * to touch a database a running daemon holds unless the caller insists.
+ * Read-only by default (`--dry-run` reports and changes nothing, on a read-only
+ * connection), and it refuses to touch a database a running daemon holds unless
+ * the caller insists.
  */
 
 import { existsSync, statSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { SqliteEventStore } from "../storage/sqlite_event_store.js";
 import { compactAll, compactSessionLog } from "../storage/compact.js";
@@ -45,6 +47,29 @@ function sameHomeAsDaemon(dbPath: string): boolean {
   return dbPath === home;
 }
 
+/**
+ * Count the delta rows a real run would remove, WITHOUT writing.
+ *
+ * Deliberately not `SqliteEventStore`: its constructor runs `migrate()` and sets
+ * `journal_mode = WAL`, both of which persist in the file. A dry run that
+ * upgraded the schema of the database it was only asked to describe would break
+ * its own promise, so this opens a read-only connection and asks SQL to count.
+ */
+function dryRunCounts(dbPath: string): { rows: number; sessions: number } {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const row = db
+      .prepare(
+        "SELECT COUNT(*) AS rows, COUNT(DISTINCT session_id) AS sessions " +
+          "FROM events WHERE kind LIKE '%.delta'",
+      )
+      .get() as { rows: number; sessions: number };
+    return { rows: row.rows, sessions: row.sessions };
+  } finally {
+    db.close();
+  }
+}
+
 export async function runCompact(argv: string[]): Promise<void> {
   const dryRun = argv.includes("--dry-run");
   const force = argv.includes("--force");
@@ -72,25 +97,20 @@ export async function runCompact(argv: string[]): Promise<void> {
   const before = statSync(dbPath).size;
   console.log(`[makit] event log: ${dbPath} (${mb(before)})`);
 
+  if (dryRun) {
+    // Report what a real run would remove, and change nothing at all.
+    const { rows, sessions } = dryRunCounts(dbPath);
+    console.log(`[makit] dry run: ${rows} delta rows in ${sessions} sessions would go`);
+    return;
+  }
+
   const store = new SqliteEventStore(dbPath);
   try {
-    if (dryRun) {
-      // Count against a copy of the rules without writing: read each session,
-      // and report what a real run would remove.
-      let rows = 0;
-      let sessions = 0;
-      for (const id of store.eventSessionIds()) {
-        sessions++;
-        rows += store
-          .read(id, 0)
-          .filter((e) => e.kind.endsWith(".delta")).length;
-      }
-      console.log(`[makit] dry run: ${rows} delta rows in ${sessions} sessions would go`);
-      return;
-    }
-
-    // A live daemon may be streaming the last turn, so leave it alone (--force).
-    const keepOpenTurn = pid !== undefined || force;
+    // An open turn is spared only because a LIVE digest still owns its text and
+    // will write the aggregate at the close. `--force` says "the daemon is
+    // running, compact anyway"; it must not also spare a turn on a stopped
+    // daemon, which would leave those rows for nothing to ever collapse.
+    const keepOpenTurn = pid !== undefined;
     const totals = compactAll(store, {
       keepOpenTurn,
       onSession: (id, r) => {

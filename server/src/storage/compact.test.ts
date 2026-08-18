@@ -134,6 +134,34 @@ test("an unfinished turn is left alone until it ends", () => {
   assert.equal(store.read("s1", 0).length, 3);
 });
 
+// The delete and the insert are one unit of work: the aggregate carries the text
+// of the very rows being deleted, so a failure between them would lose it.
+test("a failed insert rolls the whole session's compaction back", () => {
+  const store = new SqliteEventStore(":memory:");
+  seed(store, "s1");
+  store.append("s1", { ts: 1, kind: "session.status", payload: { status: "running" } });
+  store.append("s1", { ts: 2, kind: "agent.message.delta", payload: { msgId: "m1", chunk: "half " } });
+  store.append("s1", { ts: 3, kind: "agent.message.delta", payload: { msgId: "m1", chunk: "a text" } });
+  const before = store.read("s1", 0);
+
+  // Everything real except `appendAt`, which fails the way a full disk would.
+  const failing = {
+    read: (id: string, from?: number) => store.read(id, from),
+    deleteEvents: (id: string, seqs: number[]) => store.deleteEvents(id, seqs),
+    replacePayload: (id: string, seq: number, p: Record<string, unknown>) =>
+      store.replacePayload(id, seq, p),
+    eventSessionIds: () => store.eventSessionIds(),
+    vacuum: () => store.vacuum(),
+    transaction: <T>(fn: () => T): T => store.transaction(fn),
+    appendAt: (): never => {
+      throw new Error("disk full");
+    },
+  };
+
+  assert.throws(() => compactSessionLog(failing, "s1"), /disk full/);
+  assert.deepEqual(store.read("s1", 0), before, "the deltas are still there, text intact");
+});
+
 test("compactAll reports every session it touched", () => {
   const store = new SqliteEventStore(":memory:");
   for (const id of ["s1", "s2"]) {

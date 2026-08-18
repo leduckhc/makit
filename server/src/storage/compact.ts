@@ -35,6 +35,15 @@ export interface CompactableLog {
   eventSessionIds(): string[];
   /** Reclaim the space the removed rows held. */
   vacuum(): void;
+  /**
+   * Run `fn` so that either all of its writes land, or none do.
+   *
+   * Compaction DELETEs a turn's deltas and then INSERTs the aggregate that
+   * carries their text. A crash between the two would lose that text for good,
+   * so the pair must be atomic. Optional: an in-memory double has nothing to
+   * roll back, and callers fall back to running `fn` directly.
+   */
+  transaction?<T>(fn: () => T): T;
 }
 
 export interface CompactOptions {
@@ -91,11 +100,17 @@ export function compactSessionLog(
   // now rather than left as thousands of rows nothing will ever collapse.
   if (opts.keepOpenTurn !== true) closeTurn();
 
-  for (const r of rewrite) log.replacePayload(sessionId, r.seq, r.payload);
-  // Delete before inserting: an aggregate takes the seq of the first delta it
-  // replaces, which is one of the rows being removed.
-  if (remove.length > 0) log.deleteEvents(sessionId, remove);
-  for (const a of insert) log.appendAt(sessionId, a.seq, a.event);
+  // One transaction per session: an aggregate carries the text of the deltas
+  // being deleted, so a crash between the DELETE and the INSERT would lose it.
+  const apply = (): void => {
+    for (const r of rewrite) log.replacePayload(sessionId, r.seq, r.payload);
+    // Delete before inserting: an aggregate takes the seq of the first delta it
+    // replaces, which is one of the rows being removed.
+    if (remove.length > 0) log.deleteEvents(sessionId, remove);
+    for (const a of insert) log.appendAt(sessionId, a.seq, a.event);
+  };
+  if (log.transaction) log.transaction(apply);
+  else apply();
 
   return { removed: remove.length, aggregated: insert.length, rewritten: rewrite.length };
 }

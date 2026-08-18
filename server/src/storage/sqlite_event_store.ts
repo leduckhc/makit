@@ -254,6 +254,30 @@ export class SqliteEventStore implements EventStore {
   }
 
   /**
+   * Run `fn` inside one SQLite transaction: all of its writes land, or none do.
+   *
+   * Used by compaction, which deletes a turn's delta rows and then inserts the
+   * aggregate carrying their text. Nested calls are not supported and not
+   * needed — SQLite has no nested `BEGIN`.
+   */
+  transaction<T>(fn: () => T): T {
+    this.db.exec("BEGIN IMMEDIATE;");
+    try {
+      const out = fn();
+      this.db.exec("COMMIT;");
+      return out;
+    } catch (err) {
+      // A failed ROLLBACK must not mask the error that caused it.
+      try {
+        this.db.exec("ROLLBACK;");
+      } catch {
+        // Already rolled back, or the connection is gone.
+      }
+      throw err;
+    }
+  }
+
+  /**
    * Remove the given seqs of one session. Maintenance only — see `compact.ts`;
    * the log is append-only for every other caller.
    */
