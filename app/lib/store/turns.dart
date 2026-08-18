@@ -114,9 +114,31 @@ class _OpenTurn {
 
   /// When the turn entered its current gate, or null when it is not gated.
   int? gateEnteredTs;
+
+  /// A detached copy, so extending an accumulator never mutates the open turn a
+  /// previous state snapshot still describes.
+  _OpenTurn copy() => _OpenTurn(openTs: openTs, openSeq: openSeq)
+    ..gatedMs = gatedMs
+    ..toolCount = toolCount
+    ..hasAgentMessage = hasAgentMessage
+    ..gateEnteredTs = gateEnteredTs;
 }
 
 /// Fold a seq-ordered [events] stream into completed [TurnSpan]s (SPEC-session-timings D10).
+///
+/// A convenience wrapper over [TurnAccumulator] for callers that hold the whole
+/// stream. Live code keeps the accumulator and extends it, because a pass per
+/// store update made a streaming turn quadratic.
+List<TurnSpan> deriveTurns(Iterable<SessionEvent> events) =>
+    (TurnAccumulator()..addAll(events)).spans;
+
+/// The opener timestamp of the currently-**open** (unclosed) turn, or null when
+/// no turn is open (SPEC-session-timings D8). Drives the working indicator's live counter.
+int? openTurnStartMs(Iterable<SessionEvent> events) =>
+    (TurnAccumulator()..addAll(events)).openTurnStartMs;
+
+/// Turn derivation kept between events (SPEC-session-timings D10), so one new event costs one
+/// step instead of one pass over the session.
 ///
 /// A turn opens at a `user.message` with `steered != true`, or — absent one — at
 /// the first `session.status: running`. It closes at the first `idle` after it,
@@ -124,11 +146,33 @@ class _OpenTurn {
 /// and `exited` is not a turn transition at all (a failed reattach records it
 /// days later — closing on it would print a multi-day span). An unclosed turn,
 /// a backwards span (D10b) and a content-free turn (D10a) yield no span.
-List<TurnSpan> deriveTurns(Iterable<SessionEvent> events) {
-  final spans = <TurnSpan>[];
-  _OpenTurn? open;
+class TurnAccumulator {
+  TurnAccumulator();
 
-  for (final e in events) {
+  /// A working copy, so the source keeps the spans it already handed out.
+  TurnAccumulator.from(TurnAccumulator other)
+    : _spans = List<TurnSpan>.of(other._spans),
+      _open = other._open?.copy();
+
+  List<TurnSpan> _spans = <TurnSpan>[];
+  _OpenTurn? _open;
+
+  /// The completed turns, oldest first.
+  List<TurnSpan> get spans => _spans;
+
+  /// The opener timestamp of the open turn, or null when none is open (D8).
+  int? get openTurnStartMs => _open?.openTs;
+
+  void addAll(Iterable<SessionEvent> events) {
+    for (final e in events) {
+      add(e);
+    }
+  }
+
+  /// Fold one event in.
+  void add(SessionEvent e) {
+    final spans = _spans;
+    var open = _open;
     switch (e.kind) {
       case EventKind.userMessage:
         // A non-steered user message opens a turn — but only when none is open,
@@ -179,31 +223,8 @@ List<TurnSpan> deriveTurns(Iterable<SessionEvent> events) {
       case EventKind.sessionUsage:
         break;
     }
+    _open = open;
   }
-  return spans;
-}
-
-/// The opener timestamp of the currently-**open** (unclosed) turn, or null when
-/// no turn is open (SPEC-session-timings D8). Drives the working indicator's live counter;
-/// the same opener rules as [deriveTurns] apply.
-int? openTurnStartMs(Iterable<SessionEvent> events) {
-  int? openTs;
-  for (final e in events) {
-    switch (e.kind) {
-      case EventKind.userMessage:
-        if (openTs == null && e.payload['steered'] != true) openTs = e.ts;
-      case EventKind.sessionStatus:
-        switch (e.payload['status'] as String?) {
-          case 'running':
-            openTs ??= e.ts;
-          case 'idle':
-            openTs = null;
-        }
-      default:
-        break;
-    }
-  }
-  return openTs;
 }
 
 /// Build a [TurnSpan] from an [open] turn closed by [idle], or null when the
