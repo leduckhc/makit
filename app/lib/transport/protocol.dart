@@ -165,10 +165,14 @@ class SessionEvent {
   final Map<String, dynamic> payload;
 
   static SessionEvent? fromJson(Map<String, dynamic> j) {
-    final kind = EventKind.fromWire(j['kind'] as String? ?? '');
-    if (kind == null) return null;
     // Defensive: malformed scalars yield null (dropped + logged by the codec),
-    // never a runtime throw — this is the untrusted-input boundary (F2).
+    // never a runtime throw — this is the untrusted-input boundary (F2). `kind`
+    // is checked the same way as the others: `as String?` THREW on a number, and
+    // in a `session.events` batch that one entry cost the whole window.
+    final rawKind = j['kind'];
+    if (rawKind is! String) return null;
+    final kind = EventKind.fromWire(rawKind);
+    if (kind == null) return null;
     final seq = j['seq'];
     final ts = j['ts'];
     final sessionId = j['sessionId'];

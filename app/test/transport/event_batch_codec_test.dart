@@ -53,6 +53,58 @@ void main() {
     expect((decoded! as SessionEventsFrame).events.map((e) => e.seq), [1, 2]);
   });
 
+  // A malformed SCALAR is the harder case: `kind` was cast with `as String?`,
+  // which throws on a number instead of yielding null. The throw escaped the
+  // batch loop, so one bad entry cost the whole window.
+  test('a batch entry with a non-string kind costs only that entry', () {
+    final decoded = WireCodec.decode(
+      Envelope(
+        t: MsgType.event,
+        id: 'evs-5',
+        body: {
+          'kind': 'session.events',
+          'events': [
+            _event(1),
+            {
+              'seq': 2,
+              'sessionId': 's1',
+              'ts': 2,
+              'kind': 7,
+              'payload': <String, dynamic>{},
+            },
+            _event(3),
+          ],
+        },
+      ),
+    );
+
+    expect((decoded! as SessionEventsFrame).events.map((e) => e.seq), [1, 3]);
+  });
+
+  test(
+    'a single-event frame with a non-string kind is dropped, not thrown',
+    () {
+      final decoded = WireCodec.decode(
+        Envelope(
+          t: MsgType.event,
+          id: 'ev-6',
+          body: {
+            'kind': 'session.event',
+            'event': {
+              'seq': 1,
+              'sessionId': 's1',
+              'ts': 1,
+              'kind': 7,
+              'payload': <String, dynamic>{},
+            },
+          },
+        ),
+      );
+
+      expect(decoded, isNull);
+    },
+  );
+
   test('an empty batch decodes to nothing at all', () {
     final decoded = WireCodec.decode(
       Envelope(
