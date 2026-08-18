@@ -46,12 +46,12 @@ class _Timestamp extends StatelessWidget {
 }
 
 /// Caption under a sent message whose images were handed to the agent as files
-/// rather than shown to the model directly (SPEC-33 §3.5). Explains a lukewarm
+/// rather than shown to the model directly (SPEC-user-attachments §3.5). Explains a lukewarm
 /// reply ("I see a path…") instead of leaving it mysterious.
 const String kSentAsFileNote = 'Sent as a file for the agent to open';
 
 /// Caption under a message that was injected into the turn the agent was
-/// already running, rather than starting a new one (SPEC-35). Steering vs
+/// already running, rather than starting a new one (SPEC-mid-turn-steering-and-queue). Steering vs
 /// queueing is chosen by the transport, so this caption is where the user
 /// learns which one happened.
 const String kSteeredNote = 'Steered into the running turn';
@@ -69,10 +69,10 @@ class ChatBubble extends StatelessWidget {
   final String text;
   final int ts;
 
-  /// Images sent with this message (SPEC-33).
+  /// Images sent with this message (SPEC-user-attachments).
   final List<MediaAttachmentRef> attachments;
 
-  /// This message went into the turn that was already running (SPEC-35).
+  /// This message went into the turn that was already running (SPEC-mid-turn-steering-and-queue).
   final bool steered;
 
   @override
@@ -140,7 +140,7 @@ class ChatBubble extends StatelessWidget {
                   ).textTheme.labelSmall?.copyWith(color: cs.outline),
                 ),
               ),
-            // SPEC-33: a delivery receipt for THIS message. makit always
+            // SPEC-user-attachments: a delivery receipt for THIS message. makit always
             // materialises a file and names it in the prompt, so it is true of
             // every attachment-bearing turn. Do NOT gate it on what the agent can
             // accept: that suppresses a true statement, goes stale when the model
@@ -256,7 +256,7 @@ ImageProvider remoteImageProvider(
 /// `![](/local/path.png)` into (server/src/media/local.ts ingests the bytes,
 /// because the phone has no access to that filesystem) — those load through the
 /// pinned media client. `http(s)` keeps flutter_markdown_plus's pre-existing
-/// network behaviour; hardening remote images is a separate phase of SPEC-22.
+/// network behaviour; hardening remote images is a separate phase of SPEC-assistant-display-media.
 /// Anything else — a `file://` or a raw path that was NOT rewritten (outside
 /// the allowed roots, or a still-streaming delta) — is unfetchable from the
 /// phone, so it gets a placeholder instead of a red decode error.

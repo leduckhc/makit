@@ -1,4 +1,4 @@
-/// Utilities for daemon action results (SPEC-50).
+/// Utilities for daemon action results (SPEC-profiles).
 library;
 
 import 'dart:io' show ProcessResult;

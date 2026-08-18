@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Films the pending-message queue tour (SPEC-35/36) on a booted iOS simulator.
+# Films the pending-message queue tour (SPEC-mid-turn-steering-and-queue/36) on a booted iOS simulator.
 #
 # Unlike tool/record-tour.sh (which films demo mode), this needs a LIVE server:
 # the queue only exists while an agent is busy, and every step goes over the real

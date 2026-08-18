@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { resolveTranscriptPath } from "./transcript-path.js";
 import { piSessionsDir } from "./pi-sessions.js";
 
-// Two REAL colliding UUIDv7 ids from this machine (SPEC-52 D15): their first 8
+// Two REAL colliding UUIDv7 ids from this machine (SPEC-session-identity D15): their first 8
 // chars are identical (`019fa9f4`), so a prefix match would resolve the wrong
 // one. Asserted server-side too, not just in the app.
 const ID_A = "019fa9f4-443d-7d86-8f4c-d9c4988ddf4f";

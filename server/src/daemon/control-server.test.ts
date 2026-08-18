@@ -1,5 +1,5 @@
 /**
- * Control-server tests (SPEC-01, phase 2).
+ * Control-server tests (SPEC-daemon-control-plane, phase 2).
  *
  * The server is transport (a unix socket) + a pure request dispatcher. We test
  * the dispatcher against a fake backend (fast, no sockets) and the socket

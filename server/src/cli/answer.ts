@@ -1,6 +1,6 @@
 /**
  * `makit answer <id> TEXT` — fill a session's pending elicitation (an `input`
- * prompt) with TEXT, from the terminal (SPEC-46 U3).
+ * prompt) with TEXT, from the terminal (SPEC-cli-as-client U3).
  *
  * A thin `srv.response` sender over the shared client (see `respond.ts`): the
  * only authorization is the server-side D13 check, never duplicated here. With

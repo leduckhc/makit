@@ -1,4 +1,4 @@
-// Visual harness for SPEC-48's per-repo Settings section, with seeded data and no
+// Visual harness for SPEC-per-repo-settings's per-repo Settings section, with seeded data and no
 // server. Run on the desktop you are reading this from:
 //
 //   cd app && rm -rf .dart_tool/flutter_build build/macos/Build/Products/Profile

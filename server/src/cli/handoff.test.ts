@@ -1,5 +1,5 @@
 /**
- * T19 (SPEC-46) — `makit handoff`: the gesture the whole spec exists for.
+ * T19 (SPEC-cli-as-client) — `makit handoff`: the gesture the whole spec exists for.
  *
  * "This session is out of context. Write a handoff and continue on codex." Today
  * that is a copy-paste ritual across a phone screen; here it is one command the

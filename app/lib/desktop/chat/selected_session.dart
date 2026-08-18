@@ -28,7 +28,7 @@ Tab? activeTab(WorkspaceState state) {
 }
 
 /// The session currently shown in the desktop chat workspace, or `null` when
-/// the active tab is an empty placeholder (SPEC-28 decisions 4 & 6).
+/// the active tab is an empty placeholder (SPEC-desktop-workspace-tabs decisions 4 & 6).
 ///
 /// A **derived mirror** of the active split's active tab's `sessionId`: every
 /// selection change routes through [WorkspaceController], so the sidebar
@@ -39,7 +39,7 @@ final selectedSessionProvider = Provider<String?>(
 
 /// The worktree of the active tab, for the sidebar grouping highlight, or null
 /// when the active tab has neither a session nor a worktree hint. Derived from
-/// the workspace so it tracks the visible tab (SPEC-28: worktree is per-session
+/// the workspace so it tracks the visible tab (SPEC-desktop-workspace-tabs: worktree is per-session
 /// metadata, never a layout owner).
 final selectedWorktreeProvider = Provider<SelectedWorktree?>((ref) {
   final tab = activeTab(ref.watch(workspaceControllerProvider));
@@ -72,7 +72,7 @@ SelectedWorktree? activeRealWorktree(WidgetRef ref) {
   return _worktreeOfSession(ref.read(sessionsProvider).byId(sessionId));
 }
 
-/// Navigate to [id] (SPEC-30 decision 15): **activate a group that already
+/// Navigate to [id] (SPEC-tab-groups decision 15): **activate a group that already
 /// contains it, then reveal its tab there** — navigation never mutates
 /// membership, so it can never trigger decision 4's conversion. Resolution
 /// order (a→d) lives in [groupHolding]; when it finds nothing (d) we mint the
@@ -119,9 +119,9 @@ void closeActiveTab(WidgetRef ref) {
 }
 
 /// Close [tabId] in [splitId] and then dispose of its session **according to the
-/// active group's kind** (SPEC-30 decision 7):
+/// active group's kind** (SPEC-tab-groups decision 7):
 ///
-/// * **worktree group** → close it (SPEC-29). Membership is derived, so the
+/// * **worktree group** → close it (SPEC-session-lifecycle-resume-list-delete). Membership is derived, so the
 ///   only way to take a session off that canvas is to end it.
 /// * **board** → **unpin** it. The list is the user's to edit and the agent
 ///   keeps running; closing here would destroy work while tidying a view.
@@ -174,12 +174,12 @@ void closeActiveSplit(WidgetRef ref) {
   ref.read(workspaceControllerProvider.notifier).closeActiveSplit();
 }
 
-/// Select a worktree from the sidebar (SPEC-30 decision 15): activate that
+/// Select a worktree from the sidebar (SPEC-tab-groups decision 15): activate that
 /// worktree's group, minting it when it does not exist yet. An empty scope
 /// seeds the placeholder tab with [worktree] so the pane renders the in-pane
 /// starter (decision 20) rather than the no-worktree placeholder.
 ///
-/// SPEC-51: with [previewGroupsPreference] on, a plain click mints the group as
+/// SPEC-preview-groups: with [previewGroupsPreference] on, a plain click mints the group as
 /// the **preview** one — disposable, replaced by the next branch you click, so
 /// browsing twenty worktrees costs one tab.
 ///

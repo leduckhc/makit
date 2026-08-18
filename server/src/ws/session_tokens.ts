@@ -1,6 +1,6 @@
 /**
  * SessionTokenStore — the in-memory home of per-session agent credentials
- * (SPEC-46 D3, contract C2).
+ * (SPEC-cli-as-client D3, contract C2).
  *
  * Each live session may have one agent bearer, delivered to the agent's process
  * as `MAKIT_CLI_TOKEN`. It authenticates as a **session-scoped** principal

@@ -1,5 +1,5 @@
 /**
- * SPEC-33/46 — the `--attach` upload leg.
+ * SPEC-user-attachments/46 — the `--attach` upload leg.
  *
  * The media POST is the one part of a CLI verb that does not ride the WebSocket,
  * so it needs its own teardown discipline: `client.close()` cannot rescue a

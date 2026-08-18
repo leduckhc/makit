@@ -1,4 +1,4 @@
-// Tests for the profile-switch confirmation sheets (SPEC-50 D10).
+// Tests for the profile-switch confirmation sheets (SPEC-profiles D10).
 //
 // These sheets are the last thing between a click and an irreversible action, so
 // what they *say* is part of the contract, not decoration. In particular

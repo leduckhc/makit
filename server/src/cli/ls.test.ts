@@ -1,5 +1,5 @@
 /**
- * T7 (SPEC-46) — `makit ls`: the output contract (D7) and the exit codes (D8/C4).
+ * T7 (SPEC-cli-as-client) — `makit ls`: the output contract (D7) and the exit codes (D8/C4).
  *
  * `ls` is the first verb that is a client of the WSS transport, so these tests
  * pin the two contracts every later verb inherits: `--json` is the wire
@@ -223,7 +223,7 @@ test("--closed reads session.listClosed instead of the pushed snapshot", async (
 // D8/C4 — exit 3 (daemon down) vs exit 4 (credential refused)
 // ---------------------------------------------------------------------------
 
-test("daemon down → SPEC-02's message and exit 3, with no stack trace", async () => {
+test("daemon down → SPEC-cli-client-subcommands's message and exit 3, with no stack trace", async () => {
   await withHome(async () => {
     const { err, code, out } = await capture(["--port", "1"]);
     assert.equal(code, 3);

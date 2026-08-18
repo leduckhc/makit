@@ -1,9 +1,9 @@
-/// SPEC-35 — a steered message says so on its own bubble.
+/// SPEC-mid-turn-steering-and-queue — a steered message says so on its own bubble.
 ///
 /// Steering and queueing are chosen by the transport, not by the user, so the
 /// only honest place to teach the difference is the transcript: a message that
 /// went into the turn that was already running is captioned, the same way an
-/// attachment handed over as a file is (SPEC-33).
+/// attachment handed over as a file is (SPEC-user-attachments).
 library;
 
 import 'package:flutter/material.dart';

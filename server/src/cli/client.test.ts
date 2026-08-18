@@ -1,5 +1,5 @@
 /**
- * T6 (SPEC-46) — the shared WSS client module.
+ * T6 (SPEC-cli-as-client) — the shared WSS client module.
  *
  * Drives `cli/client.ts` against a throwaway stub WSS server (self-signed cert,
  * same `hello`/`cmd`/`ack` envelope the app speaks). Also covers D2/D3

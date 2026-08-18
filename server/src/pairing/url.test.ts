@@ -1,5 +1,5 @@
 /**
- * Pair-URL construction tests (SPEC-50 D12).
+ * Pair-URL construction tests (SPEC-profiles D12).
  *
  * D12 adds two OPTIONAL params (`n`, `id`) to the makit://pair URL so the
  * phone can label each paired server. Back-compat is the hard requirement:

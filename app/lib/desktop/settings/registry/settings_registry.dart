@@ -24,7 +24,7 @@ import '../repository_settings_page.dart';
 import 'settings_item.dart';
 import 'settings_section.dart';
 
-/// All settings sections, in taxonomy order (SPEC-13 §"Section taxonomy").
+/// All settings sections, in taxonomy order (SPEC-desktop-settings-rework §"Section taxonomy").
 final List<SettingsSection> kSettingsSections = [
   SettingsSection(
     id: 'general',

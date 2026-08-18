@@ -1,5 +1,5 @@
 /**
- * The agent capability surface (SPEC-46 D17 / contract C1).
+ * The agent capability surface (SPEC-cli-as-client D17 / contract C1).
  *
  * Default-deny: every command kind is forbidden to agent tokens unless
  * explicitly listed in AGENT_COMMANDS. An agent cap grants only the

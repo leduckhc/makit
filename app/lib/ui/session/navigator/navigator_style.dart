@@ -1,5 +1,5 @@
 /// Whether the transcript shows the message rail, and the rail's tunables
-/// (SPEC-34).
+/// (SPEC-message-navigator).
 ///
 /// This lives in **shared** `ui/` on purpose: the transcript is rendered by both
 /// the mobile `SessionScreen` and the desktop `DesktopChatPane`, and shared code

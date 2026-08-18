@@ -5,7 +5,7 @@
 /// drives it (see [MakitCliResolver]), and the loopback endpoint its own chat
 /// client self-pairs against (always `127.0.0.1`, see [LoopbackPairing]).
 ///
-/// Reachability is one question with two answers plus a fallback (SPEC-50 D5):
+/// Reachability is one question with two answers plus a fallback (SPEC-profiles D5):
 ///
 /// - [Reachability.myDevices] (default) → let the server run its secure-default
 ///   decision (`chooseBindHost` in `server/src/pairing`): Tailscale IP if
@@ -33,13 +33,13 @@ const String _kCustomHostKey = 'desktop_server_custom_host';
 const String _kPortKey = 'desktop_server_port';
 const String _kCliPathKey = 'desktop_server_cli_path';
 
-/// Legacy key: the pre-SPEC-50 four-way bind mode. Migrated on load.
+/// Legacy key: the pre-SPEC-profiles four-way bind mode. Migrated on load.
 const String _kLegacyBindModeKey = 'desktop_server_bind_mode';
 
 /// Legacy key: the pre-unification single host string. Migrated on load.
 const String _kLegacyHostKey = 'desktop_server_host';
 
-/// Who can reach this server — one decision, two answers (SPEC-50 D5).
+/// Who can reach this server — one decision, two answers (SPEC-profiles D5).
 enum Reachability {
   /// Loopback only (`127.0.0.1`) — nothing else can connect.
   thisMacOnly,
@@ -147,7 +147,7 @@ class ServerConfig {
 
 /// Reads + persists the [ServerConfig] via a profile-scoped [ScopedPrefs].
 ///
-/// Server config is **server-bound** (SPEC-50 D11): each profile's port and
+/// Server config is **server-bound** (SPEC-profiles D11): each profile's port and
 /// reachability belong to that profile alone, so writes go through a
 /// [ScopedPrefs] whose key prefix is the profile's own. Switching profiles
 /// rebuilds this controller against the target's scope, so the window never
@@ -172,8 +172,8 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
 
   /// Loads the persisted config, migrating any older schema in place.
   ///
-  /// Three layers, newest first: the SPEC-50 [Reachability] keys; the
-  /// pre-SPEC-50 four-way `desktop_server_bind_mode`; and the pre-unification
+  /// Three layers, newest first: the SPEC-profiles [Reachability] keys; the
+  /// pre-SPEC-profiles four-way `desktop_server_bind_mode`; and the pre-unification
   /// single `desktop_server_host`. Each older layer is only consulted when the
   /// newer ones are absent, so an explicit choice always wins over stale data
   /// and no user silently loses a configured endpoint.
@@ -184,7 +184,7 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
     final resolvedPort = (port == null || port <= 0) ? fallbackPort : port;
     final storedHost = prefs.getString(_kCustomHostKey) ?? '';
 
-    // Layer 1: the current SPEC-50 schema.
+    // Layer 1: the current SPEC-profiles schema.
     final reachStr = prefs.getString(_kReachabilityKey);
     if (reachStr != null) {
       return ServerConfig(
@@ -196,7 +196,7 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
       );
     }
 
-    // Layer 2: the pre-SPEC-50 four-way bind mode.
+    // Layer 2: the pre-SPEC-profiles four-way bind mode.
     final bindMode = prefs.getString(_kLegacyBindModeKey);
     if (bindMode != null) {
       return switch (bindMode) {

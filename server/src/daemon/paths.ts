@@ -1,5 +1,5 @@
 /**
- * Filesystem paths for the makit daemon (SPEC-01).
+ * Filesystem paths for the makit daemon (SPEC-daemon-control-plane).
  *
  * Everything lives under `~/.makit` (overridable via `MAKIT_HOME`, matching
  * `pairing/cert.ts` and `pairing/registry.ts` so tests can redirect all state

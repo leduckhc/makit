@@ -1,6 +1,6 @@
 /**
  * queries.ts — the `gh` argv for each GitHub read + its cost declaration
- * (SPEC-32 §6.4/§5, purity column). Pure: builds argument vectors and static
+ * (SPEC-github-gateway-and-budget §6.4/§5, purity column). Pure: builds argument vectors and static
  * {@link RequestPlan} costs, spawns nothing. The gateway (T4) owns exec.
  *
  * The argv here is lifted verbatim from `git.ts` (`fetchOpenPr`,

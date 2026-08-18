@@ -187,13 +187,13 @@ export interface AgentAdapter {
   readonly agent: string;             // "codex" | "pi" | ...
   start(opts: SpawnOpts): Promise<void>;
   send(input: UserInput): Promise<void>;          // user message / keystrokes
-  // SPEC-35: inject into the RUNNING turn instead of starting a new one.
+  // SPEC-mid-turn-steering-and-queue: inject into the RUNNING turn instead of starting a new one.
   // `true`  = delivered (the adapter echoed it; the Session must not requeue)
   // `false` = refused for any reason (no steer primitive, no active turn, a
   //           stale `expectedTurnId`, a non-steerable turn kind) → queue it
   // Exception: an attachment that cannot be materialised returns `true` after
   // emitting `session.error` — the prompt is undeliverable, so requeueing it
-  // would fail forever (see the SPEC-35 plan's deviation note).
+  // would fail forever (see the SPEC-mid-turn-steering-and-queue plan's deviation note).
   steer(input: UserInput): Promise<boolean>;
   approve(callId: string, decision: ApprovalDecision): Promise<void>;
   cancel(): Promise<void>;
@@ -236,7 +236,7 @@ session uses:
 - Deterministic fake (fixed-delay echo + markdown sample reply) used by the
   app's E2E suite; no real agent involved.
 
-### 5.5 Mid-turn messages: steer vs queue (SPEC-35)
+### 5.5 Mid-turn messages: steer vs queue (SPEC-mid-turn-steering-and-queue)
 
 A message submitted while a turn is in flight is never sent as an overlapping
 request. `Session.sendUserMessage` decides:
@@ -248,7 +248,7 @@ request. `Session.sendUserMessage` decides:
   `true` if the message was steered, `false` if steering failed (protocol
   rejection, precondition mismatch, or no active turn). Attachment
   materialization failures emit `session.error` and return `true` to prevent
-  requeueing the unmaterializable prompt (see SPEC-35 PLAN deviation tracking).
+  requeueing the unmaterializable prompt (see SPEC-mid-turn-steering-and-queue PLAN deviation tracking).
 - **Queue** — anything the adapter cannot steer waits in an in-memory FIFO on the
   Session and is delivered one message per `idle` transition. Pending messages
   ride the sessions snapshot as `SessionDTO.queued` (never the event log, so a
@@ -405,7 +405,7 @@ recommendation. Then we lock the v1 adapter set.
    stream, approvals, mirror to desktop pane.
 4. **M3 — Projects & multi-session**: project index, home screen, presence.
 5. **M4 — Resume/offline**: event log, reconnect, queued commands.
-6. **M5 — Notifications** ✅: actionable lock-screen approvals (SPEC-08) + content-free APNs wake (SPEC-07). See [NOTIFICATIONS.md](NOTIFICATIONS.md) and [PUSH.md](PUSH.md).
+6. **M5 — Notifications** ✅: actionable lock-screen approvals (SPEC-actionable-notifications) + content-free APNs wake (SPEC-background-wake-notifications). See [NOTIFICATIONS.md](NOTIFICATIONS.md) and [PUSH.md](PUSH.md).
 7. **M6 — Polish**: slash palette, @-mentions, voice, diff viewer.
 
 ---

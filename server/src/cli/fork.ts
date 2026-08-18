@@ -1,6 +1,6 @@
 /**
- * `makit fork <id> [--agent A] [--worktree]` — SPEC-46 U4, the completion of
- * SPEC-29's PENDING `session.fork`.
+ * `makit fork <id> [--agent A] [--worktree]` — SPEC-cli-as-client U4, the completion of
+ * SPEC-session-lifecycle-resume-list-delete's PENDING `session.fork`.
  *
  * This is the **adapter-native** fork: a high-fidelity branch of the *same*
  * conversation (codex `thread/fork`), not `makit handoff`. A handoff carries a

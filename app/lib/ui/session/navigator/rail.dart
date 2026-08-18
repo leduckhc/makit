@@ -1,11 +1,11 @@
 /// The ripple rail: a cosy cluster of ticks in the transcript's top-right
-/// corner, one per message you sent (SPEC-34).
+/// corner, one per message you sent (SPEC-message-navigator).
 ///
 /// **Why a cluster and not a full-height gutter.** Ticks are placed at fixed
 /// spacing by message *order*, not proportionally to scroll position. That is not
 /// a style choice: the transcript is a reversed lazy list, so rows that have not
 /// been laid out have no scroll offset to be proportional to, and forcing one
-/// would mean measuring the whole history — the lurch SPEC-21 removed. Packing
+/// would mean measuring the whole history — the lurch SPEC-chat-scroll-anchoring removed. Packing
 /// them tightly is also what makes the ripple legible: spread out, it is three
 /// lines growing.
 library;

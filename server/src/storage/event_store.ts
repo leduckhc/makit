@@ -33,7 +33,7 @@ export interface SessionMeta {
   /**
    * Native agent session/thread id (ACP `sessionId`, codex `threadId`).
    * Persisted so a cold (rehydrated) session can be resumed on the live agent
-   * after a server restart (SPEC-29). Null/absent for drafts + agents that
+   * after a server restart (SPEC-session-lifecycle-resume-list-delete). Null/absent for drafts + agents that
    * never produced one.
    */
   agentSessionId?: string;
@@ -45,14 +45,14 @@ export interface SessionMeta {
   branch?: string;
   worktreePath?: string;
   /**
-   * Closed (SPEC-29): hidden from the active session list but kept + resumable
+   * Closed (SPEC-session-lifecycle-resume-list-delete): hidden from the active session list but kept + resumable
    * and restorable via `session.reopen`. Persisted so it survives a restart.
    */
   closed?: boolean;
   /**
-   * SPEC-46 lineage (D10), persisted so the app can draw the handoff chain and
+   * SPEC-cli-as-client lineage (D10), persisted so the app can draw the handoff chain and
    * so D9's depth/fan-out guard has something to count. Added by an in-place
-   * `ALTER TABLE` migration: a row written before SPEC-46 rehydrates with all
+   * `ALTER TABLE` migration: a row written before SPEC-cli-as-client rehydrates with all
    * three `undefined`, which is why nothing may treat a missing `origin` as an
    * error.
    */
@@ -74,7 +74,7 @@ export interface EventStore {
   read(sessionId: string, fromSeq?: number): SessionEvent[];
   /**
    * The last `limit` events, ascending — bounded in the query, not by slicing a
-   * full read afterwards (SPEC-46 D5). Returns the whole log when it is shorter
+   * full read afterwards (SPEC-cli-as-client D5). Returns the whole log when it is shorter
    * than `limit`.
    */
   readTail(sessionId: string, limit: number): SessionEvent[];

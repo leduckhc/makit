@@ -1,4 +1,4 @@
-/// About section body (SPEC-13 migration map).
+/// About section body (SPEC-desktop-settings-rework migration map).
 ///
 /// App identity (name, protocol version) and a docs link — mirroring the mobile
 /// About idiom (`app/lib/ui/settings/settings_screen.dart`). The destructive

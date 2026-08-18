@@ -1,4 +1,4 @@
-// SPEC-52 C2a — `sessionIdentityProvider(sessionId)`: the seam that maps the
+// SPEC-session-identity C2a — `sessionIdentityProvider(sessionId)`: the seam that maps the
 // store's `Session` to the UI-level `SessionIdentity` the panel watches (D19).
 //
 // The load-bearing invariant here is that the provider NEVER returns null and

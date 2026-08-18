@@ -214,11 +214,11 @@
   </ul>
   A control that vanishes in four states cannot be the only route to a value you need in all of them.
   It is still a <em>good second</em> route, because the panel is already becoming the session's fact sheet
-  (SPEC-37 usage + SPEC-47 <code>SessionEffortSection</code>) — so identity is appended there too, for free.
+  (SPEC-context-usage usage + SPEC-session-timings <code>SessionEffortSection</code>) — so identity is appended there too, for free.
 </div>
 
 <div class="note warn">
-  <strong>✎ Amended in planning, before a line was written (SPEC-52).</strong> Six things on this page were
+  <strong>✎ Amended in planning, before a line was written (SPEC-session-identity).</strong> Six things on this page were
   wrong, and all six are corrected above — the frames now show what will ship.
   <ul>
     <li><b>The short resume id was unsafe.</b> This page showed <code>pi --session 019ff121</code>, leaning on
@@ -564,7 +564,7 @@
           in one line instead of showing an empty row.</p>
       </div>
       <div class="state">
-        <div class="h">Closed / cold (SPEC-29)</div>
+        <div class="h">Closed / cold (SPEC-session-lifecycle-resume-list-delete)</div>
         <div class="kv"><span class="k">pi session</span><span class="v">019ff0a3-…</span></div>
         <div class="kv"><span class="k">State</span><span class="v dim">closed · resumable</span></div>
         <p class="m">Works because <code>agentSessionId</code> is persisted, not live state
@@ -678,7 +678,7 @@
 
     </table>
     <p class="why" style="margin-top:14px"><b>Deliberately NOT changed:</b> the ring's absence rule
-      (<code>context_usage.dart:218</code>) stays exactly as SPEC-37 decided — this design works <em>around</em>
+      (<code>context_usage.dart:218</code>) stays exactly as SPEC-context-usage decided — this design works <em>around</em>
       it rather than weakening it; the footer gains no control, so the 375pt crowding problem is untouched;
       no new wire command (the ids ride the existing session snapshot, so they arrive with the session and
       cost zero round-trips mid-turn); <code>attachPiSession</code> and the resume path are read-only here.</p>

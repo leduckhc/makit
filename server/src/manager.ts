@@ -118,7 +118,7 @@ export interface AdapterFactoryContext {
 export type AdapterFactory = (context: AdapterFactoryContext) => AgentAdapter;
 
 /**
- * One row of the adapter-native session list (SPEC-29). Mirrors the legacy
+ * One row of the adapter-native session list (SPEC-session-lifecycle-resume-list-delete). Mirrors the legacy
  * {@link PiSessionMeta} wire fields (so the app's `PiSessionMeta.fromJson`
  * keeps working) minus the server-internal `path`, plus the owning `agent` so
  * the client knows which harness to resume with.
@@ -141,7 +141,7 @@ export interface ManagerOpts {
   /** Override the production pi adapter, used by deterministic e2e tests. */
   adapterFactory?: AdapterFactory;
   /**
-   * Resolve a session's transcript path (SPEC-52 D3). Injected so tests can
+   * Resolve a session's transcript path (SPEC-session-identity D3). Injected so tests can
    * observe the (memoized) directory read; production uses the real resolver
    * over the pi agent dir.
    */
@@ -165,7 +165,7 @@ export interface ManagerOpts {
    */
   store?: EventStore;
   /**
-   * Capability cache for `agents.list`/`agents.refresh` (SPEC-27). Injected in
+   * Capability cache for `agents.list`/`agents.refresh` (SPEC-new-session-config-at-spawn). Injected in
    * tests with a stub prober so listing never spawns a probe subprocess; a
    * default (real-probe) cache is created lazily when omitted.
    */
@@ -180,7 +180,7 @@ export interface ManagerOpts {
    */
   closeGraceMs?: number;
   /**
-   * The single GitHub gateway (SPEC-32): every `gh` read for PR data routes
+   * The single GitHub gateway (SPEC-github-gateway-and-budget): every `gh` read for PR data routes
    * through it so cost, cache, dedupe, and quota accounting live in one place.
    * Injected so tests can substitute a fake (no subprocesses); omitted in
    * production, where a real gateway over git.ts's `run` is created lazily.
@@ -268,7 +268,7 @@ export class SessionManager extends EventEmitter {
   private readonly adapterFactory?: AdapterFactory;
   private readonly transcriptResolver: (q: TranscriptQuery) => string | undefined;
   /**
-   * Per-session-id transcript path cache, INCLUDING misses (SPEC-52 D3). A
+   * Per-session-id transcript path cache, INCLUDING misses (SPEC-session-identity D3). A
    * `sessions.snapshot` is rebroadcast on every `metaChanged` (150ms coalesce),
    * so resolving per projection would `readdir` per session per broadcast — a
    * real regression. Memoized here it costs at most one read per session per
@@ -304,7 +304,7 @@ export class SessionManager extends EventEmitter {
     this.store = opts.store;
     this.capabilityCache = opts.capabilityCache;
     this.closeGraceMs = opts.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
-    // The single forge gateway (SPEC-32). A router over every provider unless a
+    // The single forge gateway (SPEC-github-gateway-and-budget). A router over every provider unless a
     // fake is injected: it dispatches per repo on that repo's own provider setting
     // and, failing that, on what detection reports -- github.com to the `gh`-backed
     // gateway, Forgejo/Gitea to the REST one -- and forwards the budget surface to
@@ -314,7 +314,7 @@ export class SessionManager extends EventEmitter {
     //
     // `providerFor` is passed as a bound method, not a captured value: the router
     // calls it per routing decision, so a provider the user changes at runtime is
-    // honoured on the next poll (SPEC-48 D3").
+    // honoured on the next poll (SPEC-per-repo-settings D3").
     this._gateway =
       opts.gateway ??
       createDefaultForgeGateway({
@@ -459,7 +459,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Re-point a project at a new root path, **keeping its id** (SPEC-48 D4′).
+   * Re-point a project at a new root path, **keeping its id** (SPEC-per-repo-settings D4′).
    *
    * Not equivalent to remove-and-re-add, which is why it exists: re-adding mints a
    * fresh `PersistedProject.id`, and everything keyed to that id — per-repo
@@ -556,13 +556,13 @@ export class SessionManager extends EventEmitter {
   }
 
   listSessions() {
-    // Closed sessions (SPEC-29) are hidden from the ACTIVE list, but kept in
+    // Closed sessions (SPEC-session-lifecycle-resume-list-delete) are hidden from the ACTIVE list, but kept in
     // the registry (resumable + restorable). `allSessions()` still returns them
     // for fan-out/lookup; only this DTO list excludes them.
     return [...this.sessions.values()].filter((s) => !s.closed).map((s) => this.projectSessionDTO(s));
   }
 
-  /** The closed sessions (SPEC-29), for the "Show closed" list. Newest first.
+  /** The closed sessions (SPEC-session-lifecycle-resume-list-delete), for the "Show closed" list. Newest first.
    *  Each is tagged `orphaned` when its recorded worktree is no longer an active
    *  worktree of the project (e.g. the worktree was removed) so the UI can flag
    *  it with a "worktree removed" chip. Restoring such a session runs it at the
@@ -596,7 +596,7 @@ export class SessionManager extends EventEmitter {
     return new Set(entries.map((e) => resolve(e.path)));
   }
 
-  /** SPEC-29 "orphaned": the session's recorded worktree is no longer a live
+  /** SPEC-session-lifecycle-resume-list-delete "orphaned": the session's recorded worktree is no longer a live
    *  worktree of its project. A repo-root session (no distinct worktree) is
    *  never orphaned; an empty {@link liveWorktreePaths} set is unproven (git
    *  failure) → not orphaned. This single predicate drives BOTH the closed
@@ -614,7 +614,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * SPEC-46 D9/T11: the reason a new child of `parentId` may not be spawned, or
+   * SPEC-cli-as-client D9/T11: the reason a new child of `parentId` may not be spawned, or
    * null when it may. Depth and live-child count are recomputed here from the
    * persisted `parentId` links of every session (closed ones stay in the map,
    * killed ones are gone) — never from the forgeable `MAKIT_SPAWN_DEPTH`.
@@ -642,7 +642,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * SPEC-46 C3: a session's persisted events, read from the event store rather
+   * SPEC-cli-as-client C3: a session's persisted events, read from the event store rather
    * than the session's in-memory cache, so a bounded tail (session.transcript)
    * never hydrates the whole log just to return its last few lines (D5). The
    * `limit` is pushed all the way down to the SQL; falls back to the in-memory
@@ -654,7 +654,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Project a session for the wire (SPEC-52 D1). `Session.toDTO()` cannot do
+   * Project a session for the wire (SPEC-session-identity D1). `Session.toDTO()` cannot do
    * this: `agentSessionId` is passed through verbatim, but `transcriptPath`
    * needs the project's filesystem path, which the session does not hold
    * (`projectId` + `worktreePath` only) — the manager does, via `this.projects`.
@@ -667,7 +667,7 @@ export class SessionManager extends EventEmitter {
     };
   }
 
-  /** Memoized transcript-path lookup (SPEC-52 D3); see {@link transcriptPathMemo}. */
+  /** Memoized transcript-path lookup (SPEC-session-identity D3); see {@link transcriptPathMemo}. */
   private transcriptPathFor(session: Session): string | undefined {
     if (this.transcriptPathMemo.has(session.id)) return this.transcriptPathMemo.get(session.id);
     // A draft has no id and no resume handle yet: nothing to resolve, and no I/O
@@ -714,7 +714,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Agents enriched with their cached `configOptions` catalog (SPEC-27). Serves
+   * Agents enriched with their cached `configOptions` catalog (SPEC-new-session-config-at-spawn). Serves
    * from the capability cache, re-probing an AVAILABLE harness once on a
    * fingerprint miss/change; a warm cache spawns nothing. Unavailable harnesses
    * are never probed. This is the `agents.list` serve path.
@@ -737,7 +737,7 @@ export class SessionManager extends EventEmitter {
   /**
    * Validate pre-spawn config picks against the AGENT's cached catalog: drop
    * unknown option ids and values that aren't offered, keep the valid ones
-   * (SPEC-27). When no catalog is cached yet (cold probe), picks pass through
+   * (SPEC-new-session-config-at-spawn). When no catalog is cached yet (cold probe), picks pass through
    * unchanged — apply-at-launch is best-effort and the live session reconciles.
    */
   private validateConfigPicks(
@@ -755,7 +755,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Spawn a session for a chosen agent. All sessions run headless (SPEC-27):
+   * Spawn a session for a chosen agent. All sessions run headless (SPEC-new-session-config-at-spawn):
    * pi over ACP via `pi-acp`, codex via `codex app-server`. There is no longer
    * an attachable multiplexer pane.
    */
@@ -777,7 +777,7 @@ export class SessionManager extends EventEmitter {
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
     // Validate pre-spawn picks against the cached catalog now (drop unknown
-    // ids/values); the survivors ride the draft and apply at launch (SPEC-27).
+    // ids/values); the survivors ride the draft and apply at launch (SPEC-new-session-config-at-spawn).
     const configPicks =
       configOptions && configOptions.length > 0
         ? this.validateConfigPicks(agentId, configOptions)
@@ -815,12 +815,12 @@ export class SessionManager extends EventEmitter {
       title: DEFAULT_SESSION_TITLE,
       adapter: new DetachedAdapter(agentId),
       store: this.store,
-      // SPEC-46 D10: lineage derived by the caller (session.spawn) from the
+      // SPEC-cli-as-client D10: lineage derived by the caller (session.spawn) from the
       // credential, never the wire. Set once at construction.
       parentId: lineage?.parentId,
       handoffReason: lineage?.handoffReason,
       origin: lineage?.origin,
-      // SPEC-46 D13: a relaxed approval policy is human-gated at the command
+      // SPEC-cli-as-client D13: a relaxed approval policy is human-gated at the command
       // layer; undefined falls back to the Session default (`ask-on-risky`).
       policy,
     });
@@ -829,11 +829,11 @@ export class SessionManager extends EventEmitter {
       pendingWorktreePath: boundPath,
       branch: boundBranch,
       configPicks,
-      // SPEC-46 U4: a fork rides the draft as a resume handle, adopted by the
+      // SPEC-cli-as-client U4: a fork rides the draft as a resume handle, adopted by the
       // adapter's resume path at promotion (see startPendingSession).
       resumeAgentSessionId,
     });
-    // SPEC-46 D9: the bound is re-checked HERE, in the same synchronous step as
+    // SPEC-cli-as-client D9: the bound is re-checked HERE, in the same synchronous step as
     // the registration below. The command layer checks it too, but that check
     // happens before the `await listWorktrees` above, so the count it read is
     // stale — two spawns fired together from one parent both saw a free slot and
@@ -937,7 +937,7 @@ export class SessionManager extends EventEmitter {
    * Open PRs for a project, for the "New worktree from PR" picker.
    *
    * Marked `interactive`: this is a click, so it draws on the quota reserve
-   * (SPEC-32 §6.3). A throttled account is precisely when the user reaches for
+   * (SPEC-github-gateway-and-budget §6.3). A throttled account is precisely when the user reaches for
    * the picker, and a silently empty list would read as "no open PRs".
    */
   async listOpenPrs(projectId: string): Promise<OpenPr[]> {
@@ -973,7 +973,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * How a PR should be checked out for [repoPath] (SPEC-48).
+   * How a PR should be checked out for [repoPath] (SPEC-per-repo-settings).
    *
    * Resolved from the SAME two sources the router uses to pick a gateway, and in the
    * same order — the user's override first, then routing's decision — so the checkout
@@ -1036,7 +1036,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Discard a worktree whose pull request closed without merging (SPEC-38 §6.1):
+   * Discard a worktree whose pull request closed without merging (SPEC-pr-actions-next-step-bar §6.1):
    * remove the worktree, then delete the branch it held.
    *
    * Symmetric with {@link wrapUpWorktree} minus the base-branch sync — nothing
@@ -1231,7 +1231,7 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Shared body for the PR mutations: resolve the worktree's branch, look up
-   * its PR **interactively** (a button press must draw on SPEC-32's reserve, or
+   * its PR **interactively** (a button press must draw on SPEC-github-gateway-and-budget's reserve, or
    * a shed lookup reports "no pull request" for one that exists), run the verb,
    * and turn a `gh` failure into a thrown error carrying gh's own message — the
    * app puts that in front of the user, so swallowing it would leave a button
@@ -1383,7 +1383,7 @@ export class SessionManager extends EventEmitter {
    * fails.
    *
    * That order matters and the inline comment below explains why; this sentence
-   * used to state the reverse, which SPEC-38's confirm dialog then had to be
+   * used to state the reverse, which SPEC-pr-actions-next-step-bar's confirm dialog then had to be
    * checked against by hand.
    */
   async removeWorktree(projectId: string, worktreePath: string): Promise<void> {
@@ -1418,7 +1418,7 @@ export class SessionManager extends EventEmitter {
         `[makit] removed worktree ${target} but could not clear its stored target (store not writable)`,
       );
     }
-    // Reconcile sessions bound to the removed worktree (SPEC-29):
+    // Reconcile sessions bound to the removed worktree (SPEC-session-lifecycle-resume-list-delete):
     //  - closed  → leave as-is (already preserved; it simply becomes orphaned)
     //  - draft   → kill (no transcript to keep; must not launch in a deleted dir)
     //  - live    → CLOSE, not kill — preserve the transcript + resume handle.
@@ -1468,17 +1468,17 @@ export class SessionManager extends EventEmitter {
       this.adapterFactory?.({ projectPath: worktreePath, sessionId: session.id, agent: agentId }) ??
       built.adapter;
     session.replaceAdapter(adapter);
-    // SPEC-46 U4: a forked draft resumes the forked thread here — the same
+    // SPEC-cli-as-client U4: a forked draft resumes the forked thread here — the same
     // resume path a cold session takes — rather than launching a fresh one,
     // which would discard the fork.
     await adapter.start(this.startOpts(worktreePath, session.id, undefined, lc.resumeAgentSessionId));
     // Apply pre-spawn config picks now: AFTER the real session/thread exists
-    // and BEFORE the first prompt (SPEC-27). Best-effort per transport — ACP
+    // and BEFORE the first prompt (SPEC-new-session-config-at-spawn). Best-effort per transport — ACP
     // routes to session/set_config_option, codex caches model/effort for the
     // first turn/start; an adapter that can't honour a pick ignores it.
     await this.applyConfigPicks(adapter, lc.configPicks);
     // Persist the live adapter's native id so this session can resume after a
-    // server restart (SPEC-29).
+    // server restart (SPEC-session-lifecycle-resume-list-delete).
     session.captureAgentSessionId();
     session.markStarted({ branch, worktreePath, title: humanizeSlug(base) });
     return session;
@@ -1570,7 +1570,7 @@ export class SessionManager extends EventEmitter {
 
   /**
    * The worktree root in force for [repoPath] — the repo's override, else
-   * `MAKIT_WORKTREE_DIR`, else `~/.worktrees` (SPEC-48 D8').
+   * `MAKIT_WORKTREE_DIR`, else `~/.worktrees` (SPEC-per-repo-settings D8').
    *
    * Re-validated on read, not trusted from the file: `projects.json` is plain JSON
    * a user can edit by hand, so a write-time check alone is not a guarantee. An
@@ -1608,7 +1608,7 @@ export class SessionManager extends EventEmitter {
 
   /**
    * The provider the user chose for [repoPath], or `auto` to believe detection
-   * (SPEC-48 D3").
+   * (SPEC-per-repo-settings D3").
    *
    * Public because the forge router calls it **at routing time**, once per routing
    * decision — not at construction. That is what makes a changed setting take
@@ -1625,7 +1625,7 @@ export class SessionManager extends EventEmitter {
 
   /**
    * The default branch in force for [repoPath] — the repo's override when it still
-   * resolves, else git's own answer (SPEC-48 D14/rev 3).
+   * resolves, else git's own answer (SPEC-per-repo-settings D14/rev 3).
    *
    * The ONE place the three consumers read from: the repos snapshot (whose
    * `defaultBranch` is what the diff +/- numbers and ahead counts are measured
@@ -1743,14 +1743,14 @@ export class SessionManager extends EventEmitter {
    * concurrent `gh` processes / network calls.
    *
    * `lastKnown` lets a throttled/failed lookup retain the previously-broadcast
-   * PR (marked `stale`) instead of erasing the pill (SPEC-32 §6.5); the caller
+   * PR (marked `stale`) instead of erasing the pill (SPEC-github-gateway-and-budget §6.5); the caller
    * (server.ts) owns the last-broadcast snapshot. Defaults to "nothing known".
    */
   async enrichPrs(repos: RepoDTO[], lastKnown: LastKnownPr = () => null): Promise<RepoDTO[]> {
     return enrichPrs(repos, this._gateway, lastKnown);
   }
 
-  /** The single GitHub gateway (SPEC-32), for the server's budget wiring. */
+  /** The single GitHub gateway (SPEC-github-gateway-and-budget), for the server's budget wiring. */
   get gateway(): GithubGateway {
     return this._gateway;
   }
@@ -1769,7 +1769,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Adapter-native session discovery (SPEC-29): enumerate a project's prior
+   * Adapter-native session discovery (SPEC-session-lifecycle-resume-list-delete): enumerate a project's prior
    * sessions by asking each AVAILABLE agent over its own protocol — ACP
    * `session/list` (pi via `pi-acp`) and codex `thread/list` — instead of
    * scraping pi's on-disk transcript files. Agent-agnostic (codex sessions now
@@ -1811,7 +1811,7 @@ export class SessionManager extends EventEmitter {
   private toSessionListItem(info: AgentSessionInfo, agent: string): AgentSessionListItem {
     // `cold` (== holds a `DetachedAdapter`) is the honest predicate for "no live
     // agent", and it is the only one that covers every case: a CLOSED session
-    // (SPEC-29) and a REHYDRATED one after a server restart both keep their
+    // (SPEC-session-lifecycle-resume-list-delete) and a REHYDRATED one after a server restart both keep their
     // `agentSessionId` but hold a `DetachedAdapter` — and rehydration leaves
     // `closed === false`, so a `!closed` check would still report a process-less
     // session as attached and suppress the attach/resume affordance for it.
@@ -1895,7 +1895,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Close a session (SPEC-29): release the agent, keep the session. Sets the
+   * Close a session (SPEC-session-lifecycle-resume-list-delete): release the agent, keep the session. Sets the
    * persisted `closed` flag — so it drops from the active session list and
    * survives a restart — and frees the live agent, swapping in the detached
    * placeholder.
@@ -1933,13 +1933,13 @@ export class SessionManager extends EventEmitter {
 
   /** The teardown itself; {@link closeSession} owns de-duplication. */
   private async runClose(id: string, session: Session): Promise<void> {
-    // SPEC-46 D3: the session is ending, so its agent credential must stop
+    // SPEC-cli-as-client D3: the session is ending, so its agent credential must stop
     // authenticating now — and before the teardown below, every step of which is
     // deliberately best-effort. A token that outlives a close whose kill() gave
     // up is the exact case that matters, because that agent process may still be
     // alive to use it.
     sessionTokens.drop(id);
-    // Stop means stop (SPEC-35), as with `cancel`: drop pending mid-turn input
+    // Stop means stop (SPEC-mid-turn-steering-and-queue), as with `cancel`: drop pending mid-turn input
     // before the agent is asked to close. Otherwise the `idle` an adapter emits
     // while cancelling its turn triggers `flushNext()` and a queued message is
     // prompted into the process we are about to reap.
@@ -1968,7 +1968,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Reopen a closed session (SPEC-29): clear the flag so it returns to the
+   * Reopen a closed session (SPEC-session-lifecycle-resume-list-delete): clear the flag so it returns to the
    * active list. It stays cold until the next subscribe re-attaches it (resume
    * by its kept native id). Idempotent.
    */
@@ -1985,7 +1985,7 @@ export class SessionManager extends EventEmitter {
     // would clear a LIVE session's worktree binding.
     if (!session.closed) return;
     // If the worktree was deleted while closed, restoring must detach the
-    // session to the repo root (SPEC-29) — otherwise its stale path matches no
+    // session to the repo root (SPEC-session-lifecycle-resume-list-delete) — otherwise its stale path matches no
     // live worktree and it renders in no view. Uses the same orphaned predicate
     // as the closed-list chip, so the flag and the action never diverge;
     // reattachSession already falls back to the repo root for a missing
@@ -2029,7 +2029,7 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
 
-    // SPEC-46 D3: revoked when the session ends, and before the kill — an agent
+    // SPEC-cli-as-client D3: revoked when the session ends, and before the kill — an agent
     // that outlives its kill() signal must not still hold spawn/send/read.
     sessionTokens.drop(id);
     await session.adapter.kill();
@@ -2109,7 +2109,7 @@ export class SessionManager extends EventEmitter {
     // every app and CLI session actually takes used to pass nothing, so the agent
     // got an empty MAKIT_PROJECT_ID and a depth of 0 however deep it really was.
     const session = this.sessions.get(sessionId);
-    // SPEC-46 D3: the agent's environment carries a per-session scoped credential
+    // SPEC-cli-as-client D3: the agent's environment carries a per-session scoped credential
     // plus its lineage context. The token is minted here (and re-minted on
     // re-attach, which drops the old one first) because env is a spawn-time
     // snapshot — it cannot be rotated in a running process, so its lifecycle is
@@ -2195,7 +2195,7 @@ export class SessionManager extends EventEmitter {
     // A draft also holds a DetachedAdapter, but its path forward is promotion
     // (which names the branch), never re-attach.
     if (session.pending) return;
-    // Closing deliberately released the process (SPEC-29); only reopen
+    // Closing deliberately released the process (SPEC-session-lifecycle-resume-list-delete); only reopen
     // may bring it back.
     if (session.closed) return;
     if (!session.resumable) return;
@@ -2211,7 +2211,7 @@ export class SessionManager extends EventEmitter {
     if (!session) throw new Error(`no such session: ${sessionId}`);
 
     // A session is resumable iff it captured a native agent session/thread id
-    // (SPEC-29) OR a legacy pi resume path. The adapter itself decides how to
+    // (SPEC-session-lifecycle-resume-list-delete) OR a legacy pi resume path. The adapter itself decides how to
     // honour it (ACP session/resume|load, codex thread/resume, pi --session)
     // from its advertised capabilities; a back end that can do neither starts
     // fresh but live.
@@ -2251,7 +2251,7 @@ export class SessionManager extends EventEmitter {
       );
     }
     try {
-      // SPEC-46 D3: re-attach restarts the adapter, which is the only moment an
+      // SPEC-cli-as-client D3: re-attach restarts the adapter, which is the only moment an
       // env-delivered token can change. Drop the pre-restart token and mint a
       // fresh one in the same step (startOpts mints), so the resumed agent's
       // old credential stops authenticating the instant it is superseded.

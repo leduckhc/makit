@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// SharedPreferences key holding the recent-model lists as a single JSON object
 /// of `{ agentId: [modelValue, …] }`, most-recent-first. Mirrors
 /// [PreferencesController]'s single-JSON-key, corrupt-tolerant philosophy
-/// (SPEC-31, option C — the recent list is the *only* persisted state).
+/// (SPEC-model-picker-menu-per-model-config, option C — the recent list is the *only* persisted state).
 const String _kRecentModelsKey = 'recent_models';
 
 /// The most models remembered per agent. Older selections fall off the tail.
@@ -14,7 +14,7 @@ const int kRecentModelsMax = 7;
 
 /// Remembers the model values a user has recently selected, per agent, so the
 /// model picker can surface a short Recent list instead of the full ~300-entry
-/// catalog (SPEC-31). Selections are recorded **optimistically on the user's
+/// catalog (SPEC-model-picker-menu-per-model-config). Selections are recorded **optimistically on the user's
 /// gesture** — `configOption` actions are fire-and-forget with no success
 /// signal, so there is no ack to wait for.
 ///

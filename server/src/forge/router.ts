@@ -3,7 +3,7 @@
  *
  * The decision has three inputs, in this order:
  *
- *   1. **The repo's own provider setting** (SPEC-48 D3"). `forgejo`/`gitea` go to the
+ *   1. **The repo's own provider setting** (SPEC-per-repo-settings D3"). `forgejo`/`gitea` go to the
  *      REST gateway, `github` to the `gh` one, and `none` to a gateway that talks to
  *      no forge at all. An override is honoured WITHOUT probing, because the cases it
  *      exists for are the ones where the probe cannot answer.
@@ -162,7 +162,7 @@ export interface RepoForge {
   authed?: boolean;
   /**
    * Whether this repo's provider came from probing the instance or from the user's
-   * override (SPEC-48 D3").
+   * override (SPEC-per-repo-settings D3").
    *
    * Recorded because the UI must not caption an override "detected": whether the
    * answer was measured or asserted is the one thing a reader would use to decide
@@ -196,7 +196,7 @@ export interface ForgeInspector {
 /**
  * Invalidation, kept apart from {@link ForgeInspector} on purpose: inspection is a
  * read and this is a write, and the consumers are different components. Only the
- * one place that re-points a project needs it (SPEC-48 D4′), so putting it on the
+ * one place that re-points a project needs it (SPEC-per-repo-settings D4′), so putting it on the
  * read port would hand every reader a way to clear the cache.
  */
 export interface ForgeForgetful {
@@ -211,7 +211,7 @@ export interface ForgeRouterDeps {
   /** Used for a repo whose provider the user set to `none`. See `none.ts`. */
   none: ForgeGateway;
   /**
-   * The user's per-repo provider override (SPEC-48 D3"), or `auto` to believe
+   * The user's per-repo provider override (SPEC-per-repo-settings D3"), or `auto` to believe
    * detection. Read at routing time rather than injected once, because the setting
    * changes while the daemon runs.
    */
@@ -422,7 +422,7 @@ export function createForgeRouter(
     /**
      * Discard everything routing learned about [repoPath].
      *
-     * Called when a project is re-pointed (SPEC-48 D4′): the repo at the old path is
+     * Called when a project is re-pointed (SPEC-per-repo-settings D4′): the repo at the old path is
      * no longer the project's repo, so its cached gateway, forge decision and remote
      * fact must not be reported — and detection has to run again for the new path,
      * because the forge may have changed with the move.

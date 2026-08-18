@@ -1,9 +1,9 @@
 /// Glue between the composer's attachment UI and the pieces that do the work
-/// (SPEC-33): the pickers/clipboard on one side, the upload notifier on the
+/// (SPEC-user-attachments): the pickers/clipboard on one side, the upload notifier on the
 /// other.
 ///
 /// Exists so the mobile session screen and the desktop chat pane share one
-/// behaviour instead of two near-copies — the bug class SPEC-33 §4.1 was written
+/// behaviour instead of two near-copies — the bug class SPEC-user-attachments §4.1 was written
 /// to avoid (an attachment that works on one surface and silently doesn't on the
 /// other).
 library;
@@ -41,7 +41,7 @@ ComposerAttachmentsApi composerAttachments(
   context,
   ref,
   key: sessionId,
-  // Only real precondition: somewhere to upload to (SPEC-33 §3.4), and a session
+  // Only real precondition: somewhere to upload to (SPEC-user-attachments §3.4), and a session
   // to upload for. NOT a recorded worktree — the server materialises into the
   // agent's cwd, and the default repo-root session legitimately has
   // `worktreePath == null`, so gating on it would disable the paperclip for the
@@ -50,7 +50,7 @@ ComposerAttachmentsApi composerAttachments(
 );
 
 /// The same capability for a composer whose session does not exist yet — the
-/// starter pane's first message (SPEC-45 D6/D7).
+/// starter pane's first message (SPEC-starter-pane-parity D6/D7).
 ///
 /// [draftKey] is that pane's staging key (built by `starterDraftKey`), so the
 /// images survive the pane being recreated exactly as its draft text does. The
@@ -114,7 +114,7 @@ List<MediaAttachmentRef> takeAttachmentsForSend(WidgetRef ref, String key) =>
 
 /// Same, from a notifier captured **before** an await.
 ///
-/// The starter pane takes its images only once the spawn has landed (SPEC-45
+/// The starter pane takes its images only once the spawn has landed (SPEC-starter-pane-parity
 /// D6), by which time its element may be gone — and a `WidgetRef.read` after
 /// that throws. Same reason [_stage] takes a notifier.
 List<MediaAttachmentRef> takeAttachmentsFrom(

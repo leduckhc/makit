@@ -91,7 +91,7 @@ void main() {
     });
 
     test('config options supersede the legacy fields', () {
-      // SPEC-26: when an agent sends configOptions the composer swaps its
+      // SPEC-acp-config-options-unified-composer: when an agent sends configOptions the composer swaps its
       // footer to them, so the legacy pickers are the wrong mechanism.
       const meta = SessionMeta(
         model: _model,

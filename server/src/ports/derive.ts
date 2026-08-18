@@ -1,12 +1,12 @@
 /**
- * derive.ts — pure orphan/collision annotation (SPEC-42 D10/D12).
+ * derive.ts — pure orphan/collision annotation (SPEC-ports-global-view D10/D12).
  *
  * Takes the attributed `PortDTO[]` plus the port-history store and fills in the
  * optional `orphan` / `collision` fields. No I/O, no clock read beyond the
  * caller-supplied `now`, no mutation of its inputs, and it never throws — exactly
  * like `attribute.ts`.
  *
- * The honesty bar (SPEC-41 D7, SPEC-42 D10): a date is only ever ECHOED from
+ * The honesty bar (SPEC-open-ports D7, SPEC-ports-global-view D10): a date is only ever ECHOED from
  * history (`removedAt` = the worktree's recorded `lastSeen`), never fabricated.
  * On empty/first-run history there is no orphan and no date at all.
  */

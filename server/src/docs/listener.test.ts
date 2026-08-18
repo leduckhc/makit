@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { DocListener } from "./listener.js";
 
 /**
- * SPEC-46 D10 rev 2: the doc listener is bound **lazily on first publish** and
+ * SPEC-doc-preview D10 rev 2: the doc listener is bound **lazily on first publish** and
  * closed once nothing is published, so makit does not hold a routable port open
  * for a feature you are not using. Tailnet only (rev 2 drops the LAN fallback),
  * so the capability in the URL never crosses a network WireGuard is not

@@ -22,7 +22,7 @@ import 'model_picker_menu.dart';
 /// sent an action nothing could honour, and reported success.
 ///
 /// A non-empty [SessionMeta.configOptions] supersedes the legacy
-/// `model`/`thinking` fields (SPEC-26) — the composer swaps its footer to those
+/// `model`/`thinking` fields (SPEC-acp-config-options-unified-composer) — the composer swaps its footer to those
 /// selectors, so reaching for a legacy picker would drive the wrong channel.
 bool sessionCanPickModel(SessionMeta? meta) =>
     meta != null && meta.configOptions.isEmpty && meta.models.isNotEmpty;
@@ -32,7 +32,7 @@ bool sessionCanPickModel(SessionMeta? meta) =>
 bool sessionCanSetThinking(SessionMeta? meta) =>
     meta != null && meta.configOptions.isEmpty && meta.thinking.isNotEmpty;
 
-/// The `category` values (SPEC-31, Makit UX policy — *not* ACP semantics) whose
+/// The `category` values (SPEC-model-picker-menu-per-model-config, Makit UX policy — *not* ACP semantics) whose
 /// options are folded into the model picker as flyout segments. `model` itself
 /// is the picker's list; everything else stays a standalone pill. Conservative
 /// on purpose: unknown/`_`-prefixed categories are never folded.
@@ -55,7 +55,7 @@ String configValueName(SessionConfigOption option, String value) {
 }
 
 /// The model name with its provider prefix dropped, for the composer pill only
-/// (SPEC-40).
+/// (SPEC-composer-footer-space).
 ///
 /// `pi-acp` builds its model option names as `` `${provider}/${name}` ``, so the
 /// pill's most valuable label spent its first two thirds on a provider nobody
@@ -83,7 +83,7 @@ String shortModelLabel(String name) {
 /// (or null when the session advertises none), the model-scoped options folded
 /// into the picker's flyout ([kModelScopedCategories], in agent order), and the
 /// standalone options rendered as their own pills (everything else, in agent
-/// order). Pure — the footer + menu are built from this partition (SPEC-31).
+/// order). Pure — the footer + menu are built from this partition (SPEC-model-picker-menu-per-model-config).
 ({
   SessionConfigOption? model,
   List<SessionConfigOption> modelScoped,
@@ -337,7 +337,7 @@ class ComposerModeSelector extends ConsumerWidget {
   }
 }
 
-/// SPEC-26 — the unified, category-driven composer config renderer. Reads the
+/// SPEC-acp-config-options-unified-composer — the unified, category-driven composer config renderer. Reads the
 /// session's ordered [SessionConfigOption] list off `session.meta` and renders
 /// a pill per option (reusing the [_ComposerPill] look), in the exact order the
 /// agent sent them. Each pill dispatches the single `configOption {id, value}`
@@ -346,7 +346,7 @@ class ComposerModeSelector extends ConsumerWidget {
 ///
 /// Renders nothing when the session advertises no `configOptions` — the legacy
 /// [ComposerModelSelector]/[ComposerThinkingSelector]/[ComposerModeSelector]
-/// triple is shown by the call site in that case (native pi, until SPEC-27).
+/// triple is shown by the call site in that case (native pi, until SPEC-new-session-config-at-spawn).
 class ComposerConfigOptions extends ConsumerWidget {
   /// Creates the unified config-option renderer for [sessionId]. [desktop]
   /// selects the presentation of the model picker: an anchored menu on desktop,
@@ -390,7 +390,7 @@ class ComposerConfigOptions extends ConsumerWidget {
   }
 }
 
-/// SPEC-31 — the live model picker sheet content. A [ConsumerWidget] so it
+/// SPEC-model-picker-menu-per-model-config — the live model picker sheet content. A [ConsumerWidget] so it
 /// re-reads `session.meta` on every re-emit: the agent returns the **complete**
 /// configOptions list on each set, so the flyout stays correct (and an option
 /// disappearing does not crash — [ModelFlyoutColumn] renders wholly from the
@@ -436,7 +436,7 @@ class _LiveModelPickerSheet extends ConsumerWidget {
           'configOption',
           args: {'id': model.id, 'value': value},
         );
-        // SPEC-31 (decision a): keep the sheet open — the ConsumerWidget
+        // SPEC-model-picker-menu-per-model-config (decision a): keep the sheet open — the ConsumerWidget
         // re-reads the re-emitted `session.meta`, so the now-active row updates
         // in place (its `✓`+`›` flyout caret revealed). No pop.
       },
@@ -449,7 +449,7 @@ class _LiveModelPickerSheet extends ConsumerWidget {
   }
 }
 
-/// SPEC-27 — the reusable config-option pill row shared by the live composer
+/// SPEC-new-session-config-at-spawn — the reusable config-option pill row shared by the live composer
 /// ([ComposerConfigOptions]) and the pre-session New-session dialog. The caller
 /// supplies the ordered [options], the current [values] (id → String/bool), the
 /// owning [agent] (for the model pill's avatar), and an [onPick] callback
@@ -670,7 +670,7 @@ class ConfigOptionPill extends StatelessWidget {
   }
 }
 
-/// SPEC-31 — the composer footer for a session whose config options include a
+/// SPEC-model-picker-menu-per-model-config — the composer footer for a session whose config options include a
 /// `model` category. Renders the model pill (avatar + active model name +
 /// read-only chips summarising the model-scoped options) first, then any
 /// standalone options as today's [ConfigOptionPill]s. When there is **no**
@@ -796,10 +796,10 @@ class ModelConfigFooter extends StatelessWidget {
 }
 
 /// A read-only chip plus the width it wants, so the pill can decide whether the
-/// whole set fits beside the model name (SPEC-40).
+/// whole set fits beside the model name (SPEC-composer-footer-space).
 typedef _Chip = ({Widget widget, double width});
 
-/// SPEC-31 — the composer-footer model pill: the agent avatar, the active
+/// SPEC-model-picker-menu-per-model-config — the composer-footer model pill: the agent avatar, the active
 /// model's name, and faint **read-only** chips summarising the model-scoped
 /// options ([kModelScopedCategories]). Reasoning (`thought_level`) renders as
 /// the [ThinkingSignal] bars; each `model_config` select shows its current
@@ -835,7 +835,7 @@ class ModelConfigPill extends StatelessWidget {
     final label = shortModelLabel(full);
     return Tooltip(
       // The full `provider/name`, not the literal 'Model' it used to show: the
-      // label drops the provider prefix (SPEC-40), so this is where it stays
+      // label drops the provider prefix (SPEC-composer-footer-space), so this is where it stays
       // reachable on desktop. Mobile recovers it from the picker sheet.
       message: full,
       child: InkWell(
@@ -846,7 +846,7 @@ class ModelConfigPill extends StatelessWidget {
             horizontal: kSpace8,
             vertical: kSpace4,
           ),
-          // The chips yield to the model name when both will not fit (SPEC-40
+          // The chips yield to the model name when both will not fit (SPEC-composer-footer-space
           // ladder step 2). Read-only decoration must not cost the one label
           // that answers "what am I talking to?": with both chips shown, codex
           // rendered `gpt-5.6…` at 375pt, roughly half its name.

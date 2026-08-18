@@ -1,4 +1,4 @@
-/// SPEC-42 P2a — the pure filter + grouping behind the global Ports screen.
+/// SPEC-ports-global-view P2a — the pure filter + grouping behind the global Ports screen.
 ///
 /// Pure functions and value types only: no widgets, no provider reads, so the
 /// screen's visible-set logic is testable without a container (the same split

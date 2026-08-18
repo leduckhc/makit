@@ -1,4 +1,4 @@
-// Golden "screenshot" of the SPEC-40 composer footer. Run:
+// Golden "screenshot" of the SPEC-composer-footer-space composer footer. Run:
 //   flutter test --update-goldens test/ui/composer/composer_footer_golden_test.dart
 // to (re)generate the PNGs under goldens/.
 //
@@ -71,7 +71,7 @@ ProviderContainer _container(List<SessionConfigOption> options) =>
 
 void main() {
   // Text goldens are platform-dependent (macOS rasterizes glyphs differently
-  // than the Linux CI runner), same convention as the SPEC-37 goldens.
+  // than the Linux CI runner), same convention as the SPEC-context-usage goldens.
   final skipOffMac = !Platform.isMacOS;
 
   for (final (name, width, options)
@@ -145,7 +145,7 @@ void main() {
 
       await expectLater(
         find.byType(Composer),
-        matchesGoldenFile('goldens/spec40_footer_$name.png'),
+        matchesGoldenFile('goldens/composer_footer_space_$name.png'),
       );
     }, skip: skipOffMac);
   }

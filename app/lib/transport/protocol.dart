@@ -101,7 +101,7 @@ enum EventKind {
   agentMessage,
   agentMessageDelta,
 
-  /// Assistant display media (SPEC-22) — a descriptor for an image/GIF the
+  /// Assistant display media (SPEC-assistant-display-media) — a descriptor for an image/GIF the
   /// agent produced. The bytes are fetched from the server's `/media/<mediaId>`
   /// route, never carried on this socket (the event log is replayed in full on
   /// every resume).
@@ -117,7 +117,7 @@ enum EventKind {
   sessionMeta,
   sessionActionError,
 
-  /// Context-window + cost snapshot for a session (SPEC-37). Latest-wins chrome,
+  /// Context-window + cost snapshot for a session (SPEC-context-usage). Latest-wins chrome,
   /// never a chat item. Sourced from codex's `thread/tokenUsage/updated`, an ACP
   /// `usage_update`, or — for pi, which reports none of this over ACP — the
   /// `makit-pi-usage` reporter.

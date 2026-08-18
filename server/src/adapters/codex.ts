@@ -43,7 +43,7 @@ const CODEX_HANDSHAKE_TIMEOUT = 15_000;
 
 /**
  * Fallback reasoning-effort levels for the `thought_level` config option when a
- * model does not advertise its own `supportedReasoningEfforts` (SPEC-26).
+ * model does not advertise its own `supportedReasoningEfforts` (SPEC-acp-config-options-unified-composer).
  * codex's `turn/start.effort` accepts these values. Real codex models advertise
  * a **per-model** list (see {@link reasoningEffortOptions}); this is only used
  * for older app-servers / models with no advertised set.
@@ -92,7 +92,7 @@ export interface CodexAdapterOpts {
   /** Test seam: supply a transport instead of spawning a subprocess. */
   connect?: (cwd: string, env: Record<string, string>) => CodexTransport;
   /**
-   * Blob store for user attachments (SPEC-33). Defaults to the shared
+   * Blob store for user attachments (SPEC-user-attachments). Defaults to the shared
    * `~/.makit/media` store the `/media` route serves from; tests inject a
    * temp-dir store.
    */
@@ -104,7 +104,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
 
   /**
    * codex `app-server` always exposes the full thread lifecycle
-   * (`thread/resume`, `thread/list`, `thread/delete`, `thread/fork`) — SPEC-29.
+   * (`thread/resume`, `thread/list`, `thread/delete`, `thread/fork`) — SPEC-session-lifecycle-resume-list-delete.
    * `load` is false: codex resume does not replay history (nor does makit need
    * it to; the event log is authoritative).
    */
@@ -113,7 +113,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   /**
    * codex's `turn/start` `input[]` is typed `{type:"text", text, text_elements}`;
    * no image element type is verified, so attachments always take the file
-   * hand-off (SPEC-33 §6).
+   * hand-off (SPEC-user-attachments §6).
    */
 
   private readonly command: string;
@@ -122,7 +122,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private readonly model?: string;
   private readonly connectFn: (cwd: string, env: Record<string, string>) => CodexTransport;
   private readonly media: MediaStore;
-  /** The session's worktree — where attachments are materialised (SPEC-33). */
+  /** The session's worktree — where attachments are materialised (SPEC-user-attachments). */
   private workspaceRoot = "";
 
   private transport?: CodexTransport;
@@ -135,7 +135,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
 
   /**
-   * Projected config surface (SPEC-26). codex `app-server` is not ACP, so its
+   * Projected config surface (SPEC-acp-config-options-unified-composer). codex `app-server` is not ACP, so its
    * model list (from `model/list`) and reasoning effort are projected into the
    * same {@link SessionConfigOption} shape the composer consumes. Picks apply on
    * the next turn via `turn/start` `model`/`effort` overrides.
@@ -166,7 +166,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
 
   /**
    * Root pid of the codex app-server process tree, or `undefined` before
-   * `start()` and for a faulted spawn (SPEC-37). A per-adapter getter (not a
+   * `start()` and for a faulted spawn (SPEC-performance-metrics-dashboard). A per-adapter getter (not a
    * widened `AgentAdapter` contract) keeps the pid concern on the only adapters
    * that spawn a child — see the note on {@link AcpAdapter.agentPid}.
    */
@@ -206,7 +206,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   }
 
   /**
-   * SPEC-46 U4: fork this thread at its head via `thread/fork`. Returns the
+   * SPEC-cli-as-client U4: fork this thread at its head via `thread/fork`. Returns the
    * NEW thread's id (codex's response also carries `forkedFromId`, its own
    * ancestry record, which makit does not need — lineage is tracked by the
    * session's `parentId`). A `thread/fork` on a thread with no persisted
@@ -240,7 +240,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   async send(input: UserInput): Promise<void> {
     if (!this.threadId) throw new Error("CodexAppServerAdapter: send before start");
 
-    // SPEC-33: attachments are delivered as files in the worktree, named in the
+    // SPEC-user-attachments: attachments are delivered as files in the worktree, named in the
     // prompt (codex's `input[]` has no verified image element type). A failed
     // write abandons the turn rather than prompting about an unreachable file.
     const turn = prepareTurnOrFail(this.media, input, this.workspaceRoot, (e) => this.emitEvent(e));
@@ -272,7 +272,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   }
 
   /**
-   * Steer the running turn (SPEC-35): codex's `turn/steer` folds the message
+   * Steer the running turn (SPEC-mid-turn-steering-and-queue): codex's `turn/steer` folds the message
    * into the turn identified by `expectedTurnId`, so the user gets one turn in
    * the transcript instead of an overlapping second one.
    *
@@ -354,7 +354,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
 
   /**
    * Control actions from the app. Projects the unified `configOption` action
-   * (SPEC-26) onto codex's turn params: `model`/`thought_level` picks are cached
+   * (SPEC-acp-config-options-unified-composer) onto codex's turn params: `model`/`thought_level` picks are cached
    * and applied on the next `turn/start` (`model`/`effort`), then re-emitted so
    * the composer reflects the new current value.
    */
@@ -408,7 +408,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     this.handleExit(null, () => this.rejectPending());
   }
 
-  // ---- config-option projection (SPEC-26) ----------------------------------
+  // ---- config-option projection (SPEC-acp-config-options-unified-composer) ----------------------------------
 
   /**
    * Fetch codex's model catalog via the `model/list` RPC and seed the active
@@ -701,7 +701,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   }
 }
 
-// ---------- config-option projection (SPEC-26 / SPEC-27) -------------------
+// ---------- config-option projection (SPEC-acp-config-options-unified-composer / SPEC-new-session-config-at-spawn) -------------------
 
 /**
  * Projected view of codex's `model/list` result: the visible models as
@@ -926,11 +926,11 @@ export async function probeCodexConfigOptions(
   }
 }
 
-// ---------- session listing (SPEC-29) --------------------------------------
+// ---------- session listing (SPEC-session-lifecycle-resume-list-delete) --------------------------------------
 
 /**
  * List a cwd's prior codex threads via a throwaway `codex app-server`
- * connection (SPEC-29). Mirrors {@link probeCodexConfigOptions}: spawn,
+ * connection (SPEC-session-lifecycle-resume-list-delete). Mirrors {@link probeCodexConfigOptions}: spawn,
  * `initialize`, call `thread/list {}`, keep the threads whose `cwd` matches the
  * target, and normalize to {@link AgentSessionInfo}. No thread is started, so
  * there is nothing to clean up. Never throws — logs + returns `[]` on error.

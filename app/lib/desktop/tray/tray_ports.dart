@@ -1,4 +1,4 @@
-/// The menubar's ports vocabulary (SPEC-42 P2c, D15) — pure, so the tray's
+/// The menubar's ports vocabulary (SPEC-ports-global-view P2c, D15) — pure, so the tray's
 /// content is testable without an OS tray.
 ///
 /// D15 is the whole design: the menubar renders the app's **last cached**

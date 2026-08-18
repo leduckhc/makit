@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D11: the docs subsystem's one stateful piece.
+ * makit — SPEC-doc-preview D11: the docs subsystem's one stateful piece.
  *
  * Mirrors {@link PortsService}'s watch-gated, ref-counted lifecycle, with one
  * deliberate difference: there is **no polling loop**. The tree already has a

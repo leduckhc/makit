@@ -1,4 +1,4 @@
-/// SPEC-46 desktop popover (mockup Card 2 right frame) — hover previews, click
+/// SPEC-doc-preview desktop popover (mockup Card 2 right frame) — hover previews, click
 /// pins. The house pattern is `ports_popover.dart`: an [OverlayPortal] anchored
 /// to the glyph, an outside-tap barrier and an `Esc` binding, plus the hover
 /// discipline the mockup specifies — a [kDocsHoverOpenMs] dwell before opening

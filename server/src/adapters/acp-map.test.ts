@@ -153,7 +153,7 @@ test("defers tool.call.start until streamed args are ready", () => {
 });
 
 // `ask_user` is answered through a separate ACP permission request that the app
-// renders as a live inline ask card (SPEC-25), so no tool row may appear WHILE
+// renders as a live inline ask card (SPEC-ask-user-inline-in-chat), so no tool row may appear WHILE
 // the question is open (it would duplicate the card) — but once answered the row
 // must land, because the app's persisted "answered ask" card is that tool call.
 test("defers the ask_user tool row until it is answered", () => {
@@ -442,7 +442,7 @@ test("maps user_message_chunk to user.message (history replay)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Assistant display media (SPEC-22). The shapes below are copied from a real
+// Assistant display media (SPEC-assistant-display-media). The shapes below are copied from a real
 // pi-acp 0.0.32 wire capture ("read /tmp/probe-shot.png"): the image bytes are
 // in `rawOutput.content[]`, NOT in the normalized ACP `content[]` (which only
 // carries the "Read image file [image/png]" summary text).
@@ -757,7 +757,7 @@ test("two same-length images that diverge late are both announced", () => {
   assert.equal(events.filter((e) => e.kind === "agent.media").length, 2);
 });
 
-// ---- SPEC-37: context usage -------------------------------------------------
+// ---- SPEC-context-usage: context usage -------------------------------------------------
 
 // NOTE: pi-acp does not emit `usage_update` (verified against its shipped
 // dist/index.js), so this path is exercised only by other ACP agents today. It

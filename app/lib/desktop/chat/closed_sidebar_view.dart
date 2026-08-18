@@ -8,7 +8,7 @@ import '../../store/store.dart';
 import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
 
-/// Whether the sidebar shows the Active tree or the Closed list (SPEC-29).
+/// Whether the sidebar shows the Active tree or the Closed list (SPEC-session-lifecycle-resume-list-delete).
 final sidebarClosedProvider = StateProvider<bool>((_) => false);
 
 /// How the closed list is grouped.

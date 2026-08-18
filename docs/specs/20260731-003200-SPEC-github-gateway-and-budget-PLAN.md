@@ -1,0 +1,219 @@
+# SPEC-github-gateway-and-budget — Implementation plan
+
+Spec: [`20260731-003200-SPEC-github-gateway-and-budget.md`](./20260731-003200-SPEC-github-gateway-and-budget.md)
+
+Ground rules (AGENTS.md): failing test first, SOLID/YAGNI, surgical diffs, `server/`
+is pnpm-only, `flutter analyze --fatal-infos` clean.
+
+## Phase ordering
+
+```
+Phase 1 (parallel, pure units, no deps)
+  T1 budget.ts      T2 router.ts      T3 policy.ts
+                    │
+Phase 2 (needs 1)
+  T4 gateway.ts + queries.ts
+                    │
+Phase 3 (parallel, needs 4)
+  T5 git.ts/repo_service/pr_watcher wiring + PrLookup (the bug fix)
+  T6 protocol + server.ts broadcast + commands
+                    │
+Phase 4 (parallel, needs 6)
+  T7 app: codec + store + models (github.budget, pr.stale)
+                    │
+Phase 5 (needs 7)
+  T8 app: footer icon + popover widget
+  T9 app: stale pill rendering
+```
+
+T5 is the user-visible bug fix and the highest-value task. It depends on T4 only for
+the gateway's *interface*, so if T4 slips, T5 can be built against the interface and
+wired last.
+
+---
+
+## T1 · `server/src/github/budget.ts`
+
+Bucket state, spend accounting, burn rate, attribution, level.
+
+- Inject `now: () => number`. No timers, no I/O.
+- `parseRateLimit(json)` → `Record<BucketName, BucketState|null>`; tolerate missing
+  buckets and unknown resources.
+- `others = max(0, limit - remaining - mine)`; never negative.
+- Burn: 60-slot per-minute ring buffer; `burnPerHour` = sum over the trailing 10 min
+  × 6.
+- `msUntilEmpty` from the **governing** bucket (the one whose `remaining/burn` is
+  smallest); `null` when burn is 0.
+- `level`: `unknown` if never measured; `paused` if explicitly paused or remaining 0;
+  `critical` <5 min; `warm` <30 min; else `healthy`.
+
+**Tests:** parse (incl. missing/garbage), `others` derivation and clamp, ring-buffer
+rollover, `burnPerHour`, `msUntilEmpty` picks the governing bucket, each `level`
+boundary (test *at* the boundary, not near it).
+
+**Verify:** `cd server && pnpm test`
+
+---
+
+## T2 · `server/src/github/router.ts`
+
+Cost-aware bucket choice. Pure.
+
+- `plan(kind)` → `RequestPlan` (from `queries.ts` in T4; for now define the types here
+  and let T4 supply argv).
+- `route(plan, snapshot, previousChoice)` → `{ bucket, path: "primary"|"fallback"|"omit" }`.
+- `score = units / max(1, remaining)`; argmin.
+- Hysteresis: keep `previousChoice` unless the alternative is ≥20% better.
+- Secondary limit (`retryAfterMs != null`) → **always** primary, never fail over.
+- Reset-imminence: if primary resets within 2 min and fallback costs ≥3× units,
+  choose primary (wait) rather than fallback.
+- No fallback declared (e.g. unresolved threads) + primary starved → `"omit"`.
+
+**Tests:** each bullet above as a named case; explicitly assert the
+*no-failover-under-secondary-limit* case and the hysteresis case, since both are
+easy to regress and neither is obvious from the code.
+
+---
+
+## T3 · `server/src/github/policy.ts`
+
+`decide(snapshot, { paused }) → Policy`. Pure, table-driven.
+
+- Rungs per spec §6.3. `pollIntervalMs` 5s → 30s → 120s → `Infinity`.
+- `includeUnresolved=false` from `warm` down (shed first: most expensive call we make).
+- `concurrency` 6, or 2 while `retryAfterMs != null`.
+- `reserve = 300`; `allow(kind, interactive)` — background denied below reserve,
+  interactive always allowed.
+
+**Tests:** one case per rung at its exact boundary; interactive-vs-background at
+`remaining = reserve - 1`; concurrency under secondary limit.
+
+---
+
+## T4 · `server/src/github/gateway.ts` + `queries.ts`
+
+The single door. `queries.ts` holds argv builders + costs; `gateway.ts` holds cache,
+dedupe, concurrency, exec, spend.
+
+- Constructor takes `{ exec, now, setTimer, budget, router, policy }` — all injected,
+  so tests never spawn a process.
+- `exec(cmd, args, cwd, timeoutMs)` matches `git.ts`'s existing `run` shape; reuse it
+  in production by passing `run`.
+- Cache: `Map<key, {value, expiresAt}>`; TTL per kind (PR 20s, unresolved 5 min,
+  openPrs 60s). `interactive` bypasses read, still writes.
+- Dedupe: `Map<key, Promise>` cleared in `finally`.
+- Concurrency: reuse `mapLimit`'s semaphore idea, or a tiny counting gate — do **not**
+  add a dependency.
+- Spend recorded **before** exec.
+- 403 / rate-limit stderr → `{kind:"unknown", reason:"throttled"}` + immediate
+  `refresh()`.
+- `refresh()` = `gh api rate_limit`; exempt, so callable freely.
+- `onBudgetChange` fires only when `level` or `throttles` change (server broadcasts
+  off this).
+
+**Tests (injected exec, zero subprocesses):** dedupe → 1 exec for 2 concurrent
+identical calls; TTL hit → 0 execs; interactive bypasses TTL; 403 → `unknown` +
+refresh called; spend counted before exec (assert ordering via the fake); concurrency
+cap never exceeded; `onBudgetChange` does not fire on unchanged level.
+
+---
+
+## T5 · `PrLookup` wiring — **the missing-pill fix**
+
+Files: `server/src/git.ts`, `repo_service.ts`, `pr_watcher.ts`, `protocol.ts`.
+
+The bug is in **`enrichPrs`**, not the watcher — see spec §1 defect 2 for the trace.
+
+1. `git.ts`: `fetchOpenPr` → returns `PrLookup`, takes the gateway. Delete the
+   `run("gh", …)` bodies (now in `queries.ts`). Keep `normalizeChecks`/`rollupChecks`
+   where they are — pure, already tested.
+2. `repo_service.ts`: **the fix.** `enrichPrs` takes a `lastKnown` accessor
+   (`(repoPath, branch) => PullRequestDTO | null`) and stops calling `findOpenPr`. On
+   `unknown` it writes the last-known PR with `stale: true`; on `none` it writes
+   `null`; on `pr` it writes fresh data.
+3. `pr_watcher.ts`: map `unknown` onto the existing `if (!ok) continue` path so the
+   current retain-on-failure behaviour is preserved once `fetchOpenPr` returns a union
+   instead of throwing. **Do not restructure the watcher** — its logic is already
+   correct; only the adapter at the call site changes.
+4. `protocol.ts`: add optional `stale?` and `unresolvedUnknown?` to `PullRequestDTO`.
+5. `server.ts`: pass `lastEnrichedRepos` as the `lastKnown` source into `enrichPrs`.
+6. `findOpenPr` (lenient wrapper) stays for the two callers that genuinely don't care
+   (snapshot enrichment's rename guard, worktree cmds) — document that it must **not**
+   be used on any path that can clear a pill.
+
+**Tests:** `repo_service` gains "a throttled lookup retains the prior PR and marks it
+stale" and "a genuine 'no open PR' clears it" — the two cases the current code cannot
+tell apart. `pr_watcher.test.ts` gains "an `unknown` result does not clear a tracked
+PR". All three **mutation-tested**: revert the fix, confirm red.
+
+---
+
+## T6 · Protocol + server wiring
+
+- `protocol.ts`: `EventKind |= "github.budget"`; `GithubBudgetDTO` + `history`.
+- `server.ts`: construct the gateway once; pass to `manager`/`repo_service`/watcher;
+  subscribe `onBudgetChange` → broadcast; drive `prWatcher` interval from
+  `policy.pollIntervalMs` (replacing the hardcoded `fastMs=slowMs=5_000`).
+- `ws/commands/github.ts`: `github.refresh`, `github.pause`. Register in the router
+  alongside `repo.ts`.
+- Send the current budget in `sendSnapshots` so a fresh client renders immediately.
+
+**Tests:** `server.test.ts` — budget event on connect; `github.refresh` acks and
+re-broadcasts; `github.pause` flips the level to `paused`.
+
+---
+
+## T7 · App: transport + store
+
+- `models.dart`: `GithubBudget` + `BudgetBucket` + `stale`/`unresolvedUnknown` on
+  `PullRequest`.
+- `codec.dart`: `case 'github.budget'` → `GithubBudgetSnapshot` frame; tolerate
+  missing buckets (null-safe, no throw — matches the file's existing `_warn` style).
+- `store.dart`: reduce into `StoreState.githubBudget`; `githubBudgetProvider`.
+- `fake_server.dart`: emit a budget snapshot so widget tests and the fake path work.
+
+**Tests:** codec decode incl. absent/garbage buckets; store reducer; `PullRequest`
+round-trip with the new fields absent (back-compat).
+
+---
+
+## T8 · App: footer icon + popover
+
+`app/lib/desktop/chat/github_budget_button.dart` (new), wired into
+`desktop_sidebar.dart:_Footer` **left of the "Add repo" `IconButton`**.
+
+- Icon colour per level (theme tokens only: `outline`, `kStatusWarning`, `kDiffDel`).
+- Hover → `Tooltip` one-liner. Click → `showMenu`-style anchored popover, bottom-right,
+  opens upward; `Esc`/outside dismisses.
+- Collapsed content, "Burn history" pill with throttle count, expanded sparkline +
+  ladder. Expanded flag persisted (same mechanism as `sidebarArchivedProvider`).
+- Search row only when the search bucket is non-idle.
+- Explainer tooltips per the mockup's §6 copy table.
+- Sparkline: `CustomPainter`, no new dependency.
+
+**Tests:** widget tests for icon colour per level, popover opens on tap, pill expands,
+search row hidden when idle, tooltip copy present.
+
+---
+
+## T9 · App: stale pill
+
+`pr_bar.dart` — render `pr.stale` at reduced opacity + a tooltip naming the reason;
+`unresolvedUnknown` hides the comment count rather than showing a lie.
+
+**Tests:** widget test — stale renders dimmed and still present (the regression guard
+for the reported bug, at the UI layer).
+
+---
+
+## Verification (every task)
+
+```sh
+cd server && pnpm typecheck && pnpm test
+cd app && /Users/le/Work/Vibe/flutter/bin/flutter analyze --fatal-infos && \
+          /Users/le/Work/Vibe/flutter/bin/flutter test
+cd app && ./tool/audit.sh
+```
+
+Final: the four success criteria in spec §10, incl. the ≥80% call reduction measured
+from the gateway's own counters.

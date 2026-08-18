@@ -1,5 +1,5 @@
 /**
- * Bridge tests (SPEC-37): the loopback endpoint a pi extension posts usage to.
+ * Bridge tests (SPEC-context-usage): the loopback endpoint a pi extension posts usage to.
  *
  * The bridge is reachable by anything running on the host, so the bearer check
  * and the body validation are the security boundary, not a formality.

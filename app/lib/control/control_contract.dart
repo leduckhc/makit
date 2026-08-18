@@ -1,4 +1,4 @@
-/// Control-socket contract consumed by the SPEC-03 desktop screens.
+/// Control-socket contract consumed by the SPEC-desktop-control-app desktop screens.
 ///
 /// The desktop UI depends on the abstract [ControlClient], while the concrete
 /// socket implementation and tests share the wire DTOs from `control_types.dart`

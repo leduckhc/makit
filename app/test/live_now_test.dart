@@ -24,7 +24,7 @@ class _FakeClock extends ChangeNotifier {
 }
 
 void main() {
-  group('ServerNowTicker (SPEC-47 D5)', () {
+  group('ServerNowTicker (SPEC-session-timings D5)', () {
     test('exposes the current server-now on construction', () {
       const now = 42000;
       final ticker = ServerNowTicker(nowMs: () => now, clock: _FakeClock());

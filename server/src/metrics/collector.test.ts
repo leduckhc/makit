@@ -496,10 +496,10 @@ test("a negative server cpuPercent from self.ts is clamped to 0", async () => {
   assert.equal(h.samples[0].server.cpuPercent, 0);
 });
 
-test("a failed ps must not make live agents look like they exited (SPEC-32 lesson)", async () => {
+test("a failed ps must not make live agents look like they exited (SPEC-github-gateway-and-budget lesson)", async () => {
   // Two agents are registered and running. `ps` then fails. The sample must NOT
   // read as "no agents": that is indistinguishable from every agent having quit,
-  // which is exactly how SPEC-32's PR pills used to vanish under rate limits.
+  // which is exactly how SPEC-github-gateway-and-budget's PR pills used to vanish under rate limits.
   const h = harness({
     exec: async () => {
       throw new Error("ps: command not found");

@@ -1,5 +1,5 @@
 /**
- * T8 (SPEC-46) — `cli/connect.ts`: the credential and liveness order (D2/C4).
+ * T8 (SPEC-cli-as-client) — `cli/connect.ts`: the credential and liveness order (D2/C4).
  *
  * Every session verb reaches makit through here, so this is where the two exit
  * codes automation depends on are pinned: `3` when the daemon is down, `4` when
@@ -121,7 +121,7 @@ test("a revoked CLI credential exits 4", async () => {
   }
 });
 
-test("no daemon exits 3 with SPEC-02's message", async () => {
+test("no daemon exits 3 with SPEC-cli-client-subcommands's message", async () => {
   await withHome(async () => {
     const res = await capture(1);
     assert.equal(res.code, 3);

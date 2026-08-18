@@ -1,4 +1,4 @@
-// SPEC-30 Lane 1 — the Group model. Pure Dart: no widgets, no providers, no
+// SPEC-tab-groups Lane 1 — the Group model. Pure Dart: no widgets, no providers, no
 // prefs, so these tests stay fast and deterministic.
 import 'package:flutter/widgets.dart' show Axis;
 import 'package:flutter_test/flutter_test.dart';

@@ -1,5 +1,5 @@
 /**
- * launchd LaunchAgent plist tests (SPEC-01, phase 5).
+ * launchd LaunchAgent plist tests (SPEC-daemon-control-plane, phase 5).
  *
  * We can't meaningfully unit-test `launchctl` load/unload in CI, so we lock down
  * the pure plist builder here and cover install/uninstall's file side effects.

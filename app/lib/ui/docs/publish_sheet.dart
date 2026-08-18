@@ -1,4 +1,4 @@
-/// SPEC-46 Option D (mockup Card 5) — publish a doc to the tailnet and share
+/// SPEC-doc-preview Option D (mockup Card 5) — publish a doc to the tailnet and share
 /// one URL. The share sheet shows the capability URL, a QR, the reach pill
 /// (`tailnet`/`lan`), the expiry, and Copy link / Open / **Stop sharing**.
 ///

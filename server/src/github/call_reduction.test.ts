@@ -1,6 +1,6 @@
 /**
- * SPEC-32 §10 criterion 1, as an executable guard: with 10 tracked branches idle
- * for 10 minutes, GitHub calls must drop **≥80%** versus the pre-SPEC-32
+ * SPEC-github-gateway-and-budget §10 criterion 1, as an executable guard: with 10 tracked branches idle
+ * for 10 minutes, GitHub calls must drop **≥80%** versus the pre-SPEC-github-gateway-and-budget
  * behaviour.
  *
  * This is the number the whole spec exists to move, so it is asserted rather
@@ -65,7 +65,7 @@ test("10 idle branches over 10 minutes cost >=80% fewer gh calls", async () => {
   });
   await gateway.refresh();
 
-  // Pre-SPEC-32: 2 uncached calls per branch per tick.
+  // Pre-SPEC-github-gateway-and-budget: 2 uncached calls per branch per tick.
   const before = TICKS * BRANCHES.length * 2;
 
   for (let tick = 0; tick < TICKS; tick++) {

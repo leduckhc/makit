@@ -10,7 +10,7 @@ import 'starter_prune.dart';
 /// Keeps the groups layer honest about what the server still has.
 ///
 /// This provider owns one thing — **unpinning sessions the server no longer
-/// lists** (SPEC-30 decision 6: a vanished session leaves every board's member
+/// lists** (SPEC-tab-groups decision 6: a vanished session leaves every board's member
 /// list, not merely its tabs; no dead tiles, no restore affordance) — and then
 /// hands off, in a fixed order, to the reconcilers in
 /// `desktop_group_reconcile.dart`:
@@ -90,7 +90,7 @@ final desktopSessionPruneProvider = Provider<void>((ref) {
     reposProvider,
     (_, next) => afterPass(() {
       closeGroupsForDeletedWorktrees(ref, next);
-      // SPEC-45 D10: and with the group goes the starter draft, picks and staged
+      // SPEC-starter-pane-parity D10: and with the group goes the starter draft, picks and staged
       // images keyed on that worktree — nothing else ever dropped them, and a
       // staged screenshot is megabytes.
       pruneStarterDrafts(ref, next);

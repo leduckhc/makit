@@ -182,7 +182,7 @@ const double _kUsagePanelMinHeight = 140;
 /// the footer's two bare icon controls agree.
 const double kUsageTargetSize = 36;
 
-/// Composer-footer control for context usage (SPEC-37): a [ContextUsageRing]
+/// Composer-footer control for context usage (SPEC-context-usage): a [ContextUsageRing]
 /// that opens [ContextUsageDetails] on tap.
 ///
 /// A 32pt tap target with no label, because the footer row is tight — the model
@@ -278,7 +278,7 @@ class ContextUsageButton extends ConsumerWidget {
                 // panel. Reachable for a frame when the window shrinks under an
                 // open popover. The height axis above was already safe, floored by
                 // `_kUsagePanelMinHeight`; this axis had no floor.
-                // (Found via SPEC-52's identity panel, which copied this sizing.)
+                // (Found via SPEC-session-identity's identity panel, which copied this sizing.)
                 width: math.max(
                   0,
                   math.min(
@@ -354,7 +354,7 @@ class ContextUsageButton extends ConsumerWidget {
 
 // ─── the details panel ───────────────────────────────────────────────────────
 
-/// Host-agnostic content of the context-usage panel (SPEC-37): the context
+/// Host-agnostic content of the context-usage panel (SPEC-context-usage): the context
 /// reading up top, then the cumulative session totals, then cost.
 ///
 /// The two token figures are deliberately kept in separate blocks with the
@@ -365,8 +365,8 @@ class ContextUsageButton extends ConsumerWidget {
 class ContextUsageDetails extends ConsumerWidget {
   /// Creates the panel for [usage].
   ///
-  /// [sessionId] is optional: without it the panel is exactly the SPEC-37 one.
-  /// With it, the SPEC-47 D11 session-effort rollup is appended.
+  /// [sessionId] is optional: without it the panel is exactly the SPEC-context-usage one.
+  /// With it, the SPEC-session-timings D11 session-effort rollup is appended.
   const ContextUsageDetails({super.key, required this.usage, this.sessionId});
 
   /// The snapshot to describe.
@@ -561,7 +561,7 @@ class _Footnote extends StatelessWidget {
   }
 }
 
-/// The session-effort rollup (SPEC-47 D11): how old this session is and how
+/// The session-effort rollup (SPEC-session-timings D11): how old this session is and how
 /// much agent time is actually in it.
 ///
 /// Lives in this panel because it is already the "facts about this session"
@@ -582,7 +582,7 @@ class SessionEffortSection extends StatelessWidget {
   /// Totals derived from this session's completed turns.
   final TurnRollup rollup;
 
-  /// Epoch ms the session was created, or null on a pre-SPEC-47 server (D12).
+  /// Epoch ms the session was created, or null on a pre-SPEC-session-timings server (D12).
   final int? createdAt;
 
   /// Server-now, for the age (D15 — never the device clock).

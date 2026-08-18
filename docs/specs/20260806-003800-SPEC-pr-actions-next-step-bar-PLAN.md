@@ -1,0 +1,255 @@
+# SPEC-pr-actions-next-step-bar — Implementation plan
+
+Spec: [`20260806-003800-SPEC-pr-actions-next-step-bar.md`](./20260806-003800-SPEC-pr-actions-next-step-bar.md)
+Mockups: [`mockups/pr-actions.html`](../../mockups/pr-actions.html) (survey),
+[`mockups/pr-actions-next-step.html`](../../mockups/pr-actions-next-step.html) (as-built)
+
+Ground rules (AGENTS.md): failing test first, SOLID/YAGNI, surgical diffs,
+`server/` is pnpm-only, `flutter analyze` clean, every changed line traceable to the spec.
+
+## Status
+
+Phases 1–6 are **already implemented and green** on `feat-pr-actions`:
+**1768 app tests, 930 server tests, both analyzers clean.** They are recorded here because the spec
+is normative and the plan must be auditable against the diff — not as work to redo.
+
+Phases 7 and 8 were the remaining work when this plan was written — spec §11's two open gaps, then
+the review loop. Both are now closed; the chart below is the current state, not a forecast.
+
+```text
+Phase 1  derivation core (pure)                                    ✅ done
+Phase 2  server: baseRefName, wrapUp, git primitives               ✅ done
+Phase 3  desktop bar (B1) + detail + menu + confirms               ✅ done
+Phase 4  mobile row + session chip + single-focus sheet            ✅ done
+Phase 5  markReady + updateBranch                                  ✅ done
+Phase 6  squashMerge + magic Fix                                   ✅ done
+Phase 7  close G1–G4 (spec §11)                                    ✅ done
+Phase 8  review loop ×3 (codex ×2, ocr) + PR review → fix verified    ✅ done
+```
+
+---
+
+## Phase 1 · Derivation core ✅
+
+`app/lib/ui/widgets/pr_signals.dart` + `pr_tone.dart`.
+
+`prStatus()`, `PrStatus`/`PrSignal`/`PrCta`, sealed `PrRemedy`
+(`PromptRemedy`|`DirectRemedy`|`MagicRemedy`), `PrDirectOp`, `needsConfirm`, `prRemedyLabel`,
+`prRemedyIcon`, `prStatusFor(locateWorktree result)`, `prToneColor`, `PrToneDot`.
+
+Verify: `flutter test test/ui/widgets/pr_signals_test.dart` — **63 tests**, pinning every row of spec
+§5 plus the two overrides, `isQuiet`, `needsConfirm`, check progress, and the `CI failing` fallback.
+
+## Phase 2 · Server: base branch + wrap up ✅
+
+- `git.ts`: `syncBaseBranch` (fetch → count → `merge --ff-only` in the hosting worktree, or
+  `fetch origin <b>:<b>` when it is only a ref; returns `{updated, reason?}`), `deleteBranch` (`-D`,
+  silent when already gone).
+- `manager.ts`: `wrapUpWorktree` composing `removeWorktree` → `deleteBranch` → `syncBaseBranch`,
+  returning `WrapUpResult`.
+- `queries.ts`/`gateway.ts`/`protocol.ts`: `baseRefName` end to end, optional.
+- `ws/commands/worktree.ts`: `worktree.wrapUp`.
+- App: `WrapUpReport` + `summary`, `storeController.wrapUpWorktree`.
+
+Verify: `pnpm exec tsx --test src/git.test.ts src/manager.test.ts`; the fast-forward **refusal** on a
+divergent base is its own test. Wire-verified on the stub loop against a real bare-`origin` fixture:
+worktree removed, branch deleted, `main` fast-forwarded to `origin/main`.
+
+## Phase 3 · Desktop bar ✅
+
+`pr_bar.dart` rewritten: `_Reason` (dot + identity + loud fact, `Text.rich`, one ellipsis),
+`_MoreLink`, `PrCtaButton` + `_SplitButton` in three registers (idle outline / tonal prompt / filled
+direct). `pr_detail.dart`: `showPrDetail`, `PrDetailBody`, `_FactRow`, `buildPrActionMenu` (grouped,
+disabled-with-reason), `PrCheckRow` (moved from the deleted `pr_sheet.dart`). `wrap_up.dart`:
+`runPrRemedy` + `showPrDirectConfirm`.
+
+Verify: `flutter test test/desktop/chat/pr_bar_test.dart` — **41 tests**.
+
+## Phase 4 · Mobile ✅
+
+`PrPill` → `PrStatusChip` (dot + `#42 · loud fact`, suppressed when `isQuiet`), `SessionPrChip`
+rewritten to take a `PrStatus`, `PrDetailBody` gains `showCta` (hero + pinned CTA) for the sheet.
+`ReposState.locateWorktree` added; the three orphaned per-field scans removed.
+
+Verify: `flutter test test/ui/session/session_pr_test.dart` (**21**), `test/home_screen_test.dart`,
+`test/ui/home/repo_list_density_test.dart`.
+
+## Phase 5 · Mark ready + Update branch ✅
+
+`PrMutation` union, `prMutationArgv` (by number), `gateway.mutatePr` + cache invalidation,
+`manager.markPrReady`/`updatePrBranch` via a shared `_mutatePr`, two `CmdKind`s, `PrDirectOp`
+entries, `needsConfirm` false for both, menu gathers direct ops from **every** signal.
+
+Verify: server tests + `pr_signals_test.dart`; wire-verified on the stub loop (both commands routed
+and refused correctly with `no pull request for feat/draft` on a remote-less repo).
+
+## Phase 6 · Squash & merge + magic Fix ✅
+
+`merge-squash` argv, `manager.squashMergePr`, `pr.squashMerge`, `ready to merge` signal (row 10),
+`MagicRemedy` + `magicFixPrompt` + `prMagicFixPromptPreference` + its Settings row (`_PrPromptRow`
+generalised off the enum), `needsConfirm` true for merge, merge-specific confirm copy.
+
+Verify: `pr_signals_test.dart`, `pr_bar_test.dart`, `session_pr_test.dart`.
+
+---
+
+## Phase 7 · Close G1–G4 ✅
+
+### T7.1 — Wrap up's confirm must name the branch it deletes (spec §11 G1)
+
+**Failing test first**, in `test/desktop/chat/pr_bar_test.dart`:
+
+```dart
+testWidgets('wrap up names the branch it will delete', (tester) async {
+  // Wrap up runs `git branch -D <branch>` (SPEC-pr-actions-next-step-bar §6.1 step 3) but the dialog
+  // never said so: the step was guarded on an identity that is always '#42' here.
+  await tester.pumpWidget(_host(..., pr: _pr(state: 'MERGED'), branch: 'feat/x'));
+  await tester.tap(find.text('Wrap up'));
+  await tester.pumpAndSettle();
+  expect(find.textContaining('Delete the local branch feat/x'), findsOneWidget);
+});
+```
+
+**Fix.** `showPrDirectConfirm` cannot recover the branch from `status.identity` once a PR exists, so
+the branch must be passed in. Thread it through every hop that currently lacks it:
+
+`PrComposerBar` / `PrStatusChip` / `SessionPrChip` (all already hold `worktree.branch`)
+→ **`runPrRemedy`** (the intermediary that *calls* the dialog — it has no `branch` parameter today, so
+the fix does not compile without this hop) → `showPrDirectConfirm`.
+
+Then drop the `status.hasPr ? …` derivation.
+
+- Smallest correct change; no new state.
+- Callers that genuinely have no branch (detached worktree) pass null and the step is omitted — which
+  is then *true*, because `wrapUpWorktree` also skips `deleteBranch` for a detached worktree (already
+  tested server-side).
+
+### T7.2 — Discard worktree also deletes the branch (spec §11 G2) — **decided: option A**
+
+The plan originally recommended keeping the branch, on the grounds that `git branch -D` on unmerged
+work is silent loss. **That reasoning was wrong** and the review caught it: a closed PR necessarily had
+a pushed head, so `origin/<branch>` still holds the commits and a local delete is recoverable by
+re-fetch. Reopening the PR also survives a local delete. With the loss argument gone, symmetry wins —
+a verb called *Discard* that leaves the branch behind is not discarding, and the current dialog copy
+already implies it does.
+
+**Failing tests first.** Server (`manager.test.ts`): discarding removes the worktree *and* deletes its
+branch, and refuses the primary checkout. App (`pr_bar_test.dart`): the closed-PR confirm names the
+branch it will delete.
+
+**Fix.** Add `manager.discardWorktree(projectId, worktreePath)` = `removeWorktree` + `deleteBranch`
+(both already tested primitives), register `worktree.discard`, point `PrDirectOp.discardWorktree` at it
+instead of `worktree.remove`. Leave `worktree.remove` alone — the sidebar and the mobile long-press
+still use it, and their semantics ("remove this worktree") are deliberately narrower.
+
+### T7.3 — Make remedy dispatch testable (spec §11 G3)
+
+**Failing test first:** a non-confirming op (`markReady`) shows no dialog and completes — currently
+impossible to assert, because `runPrRemedy` reaches `storeControllerProvider` and leaves a pending
+timer.
+
+**Fix.** Extract the side-effecting half behind an injectable seam:
+
+```dart
+typedef PrOpRunner = Future<void> Function(PrDirectOp op);   // one hop, one reason to change
+```
+
+Provide it from a Riverpod provider whose default calls the store; tests override it with a fake that
+completes synchronously. `runPrRemedy` keeps the decision logic (`needsConfirm` → confirm → dispatch)
+and loses the direct provider read. This is the same change that closes §10's admitted gap.
+
+### T7.4 — Carry the uncommitted count structurally (spec §11 G4)
+
+**Failing test first:** rewording the uncommitted label must not remove the "will be lost" warning.
+
+**Fix.** Stop inferring it from `s.label.contains('uncommitted')`. Either pass
+`uncommittedFiles` into `showPrDirectConfirm` from the caller that already knows it, or add a
+`PrSignal.kind` discriminator. Prefer the former — one parameter, no new type.
+
+### T7.5 — Documentation accuracy
+
+- Spec §6.1's wrap-up sequence had sessions before the worktree removal; the code does the reverse
+  (and *archives* live sessions rather than stopping them). Fixed in the spec; **the confirm dialog and
+  `mockups/pr-actions-next-step.html` repeat the same wrong order and wording** and must follow.
+- One-line doc comment on `PrSignal.remedy`: `MagicRemedy` never appears there, only on `PrCta`.
+
+### Rejected findings
+
+| Finding | Why rejected |
+| --- | --- |
+| "`Mark ready`/`Update branch` are YAGNI — cut them" | They were flagged to the user as speculative and explicitly approved (*"do it, of course"*). Provenance now recorded in spec §6.4 |
+| "Extract `prRemedyLabel`/`prRemedyIcon` into `pr_remedy.dart`" | Reviewer rated it low priority; the file is cohesive at ~450 lines and the churn (imports across 6 files) buys nothing today. Revisit if it grows |
+| "Tone promotion may be removable" | Contingent on cutting `markReady`, which is staying |
+
+## Phase 8 · Review loop ✅
+
+Three passes run; every finding and rejection is recorded in
+[`20260806-003800-SPEC-pr-actions-next-step-bar-REVIEW.md`](./20260806-003800-SPEC-pr-actions-next-step-bar-REVIEW.md).
+**9 behaviour findings accepted and fixed** (spec §11 G5–G13), **9 maintainability/test findings
+accepted**, **4 rejected with reasons** (2 recorded as spec §11a limitations). All three reviewers
+independently found the home-sheet no-op (G5), which is the strongest signal in the set.
+
+### Round two
+
+The first round reviewed the pre-fix state, so the fixes themselves were unreviewed — a second round
+targeted exactly those. It found **1 blocker, 5 major, 4 minor**, all accepted:
+
+- **The dialog could name a branch the server would not delete.** The confirm shows the branch from the
+  app's snapshot; the server resolves it again at execution time. Check out something else in that
+  worktree in between and `git branch -D` would take the *new* branch — unwarned, and unrecoverable if
+  unpushed. Fixed with an `expectBranch` guard that refuses on mismatch.
+- **G11 was not actually closed:** the server reported `branchReason` and the app dropped it, so a
+  failed branch deletion still said "Removed feat/x".
+- **`openPrs` was not invalidated by a mutation**, so the "New worktree from PR" picker could keep
+  offering a squash-merged PR (checkout then fails) or show a ready PR as a draft.
+- `ScaffoldMessenger` used across an await without a `mounted` check, in two places.
+- `hasPr` still inferred domain state from `identity.startsWith('#')` — and `#42` is a legal branch name.
+- Two of round one's own tests were behaviour-insensitive, including one whose name claimed it survived
+  a label reword while never rewording anything.
+- The as-built mockup was stale in three further passages, and the spec's own §6.1 "steps 1–3 throw"
+  became false the moment G11 made the branch leg best-effort.
+
+**Round three** reviewed round two's fixes — same three passes, same rule that a fix is not reviewed
+until someone has looked at it. What it found, in `20260806-003800-SPEC-pr-actions-next-step-bar-REVIEW.md` as H1–H14:
+
+- **`dart format` had never been run on the feature**: twelve of its own files were unformatted, so
+  `flutter-ci.yml`'s `--set-exit-if-changed` step would have failed the branch. No reviewer can see
+  this; only running the formatter can.
+- **The generation guard did not cover a cold `openPrs`**: while the first list for a repo is in flight
+  it is in neither the cache nor the generation map, so a mutation bumped nothing and the pre-mutation
+  list seeded the cache the mutation had just emptied.
+- **Not caching a stale answer is only half the guard**: a caller arriving *after* the mutation still
+  joined the in-flight promise and was handed the pre-mutation state.
+- **Two consumers still read `identity.startsWith('#')`**, so G18 was not actually closed — a branch
+  named `#42` was drawn as if it had a PR.
+- **Stale dimmed the PR number**, which spec §8 and the code's own comment both forbid; the test that
+  claimed otherwise only checked the text.
+- **"Create PR" was keyed off the *recognised* state rather than the PR**, so a PR in a state the
+  derivation does not know offered to open a second one.
+- A restored test: the round-one rewrite deleted the only coverage of `openPrUrl`'s failure path.
+
+Final: **1768 app tests, 930 server tests**, `flutter analyze`, `dart format`, `pnpm typecheck` and
+`pnpm test` all clean.
+
+Three independent passes over the diff and the docs. Findings are triaged — **fix the real and
+verified, reject the rest with a reason**, and record which.
+
+| Pass | Tool | Focus |
+| --- | --- | --- |
+| R1 | `codex exec` (gpt-5.6-sol, high) | code quality + correctness |
+| R2 | `codex exec` (gpt-5.6-sol, high) | adherence to this spec + plan; TDD/SOLID/YAGNI/clean code |
+| R3 | `ocr` (claude-opus-4.6, high) | code only — `ocr` reads diffs, not markdown |
+
+Gate for done: all three passes triaged, every accepted finding fixed with a test where it is a
+behaviour change, and `flutter analyze` + `dart format --set-exit-if-changed` + `flutter test` +
+`pnpm typecheck` + `pnpm test` green.
+
+## Risks
+
+| Risk | Mitigation |
+| --- | --- |
+| `gh pr merge --squash` is unverified against a live PR (no test repo with a real PR) | Argv unit-tested; routing wire-tested; flagged in the summary as the one unexercised hop |
+| A concurrent writer overwrote a test file mid-session once already | Re-check `git status` and file contents before each commit |
+| T7.2 makes Discard destructive to a branch | Behind the existing confirm, which now names the branch (T7.1); commits survive on `origin/<branch>` |
+| Squash-merge is irreversible for the user | Confirm dialog + `needsConfirm` test |
+| `baseRefName` absent on an older server | Optional field + server-side fallback to the repo default branch, both tested |

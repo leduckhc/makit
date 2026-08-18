@@ -1,4 +1,4 @@
-/// SPEC-51 decision 5 — the claim that makes replacing a preview group safe:
+/// SPEC-preview-groups decision 5 — the claim that makes replacing a preview group safe:
 /// a worktree group's membership is *derived*, so re-opening a branch whose
 /// preview tab was displaced brings its running agents straight back. Only the
 /// hand-made split/tab arrangement is lost.

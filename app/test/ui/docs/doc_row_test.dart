@@ -67,9 +67,9 @@ void main() {
     ) async {
       await _pump(
         tester,
-        _doc(title: 'SPEC-46 — Docs preview', relPath: 'docs/x.md'),
+        _doc(title: 'SPEC-doc-preview — Docs preview', relPath: 'docs/x.md'),
       );
-      expect(find.text('SPEC-46 — Docs preview'), findsOneWidget);
+      expect(find.text('SPEC-doc-preview — Docs preview'), findsOneWidget);
       // The bare filename is never shown as the title.
       expect(find.text('x.md'), findsNothing);
     });
@@ -108,14 +108,17 @@ void main() {
     ) async {
       await _pump(
         tester,
-        _doc(relPath: 'docs/specs/SPEC-46.md'),
+        _doc(relPath: 'docs/specs/SPEC-doc-preview.md'),
         pathStyle: DocPathStyle.relative,
       );
       // The relative path is wrapped in LTR isolates (\u2066/\u2069) for the
       // RTL paragraph, same as the absolute path styling.
-      expect(find.text('\u2066docs/specs/SPEC-46.md\u2069'), findsOneWidget);
+      expect(
+        find.text('\u2066docs/specs/SPEC-doc-preview.md\u2069'),
+        findsOneWidget,
+      );
       // No worktreePath prefix.
-      expect(find.text('/repo/docs/specs/SPEC-46.md'), findsNothing);
+      expect(find.text('/repo/docs/specs/SPEC-doc-preview.md'), findsNothing);
     });
 
     test('docFullPath joins worktree and relPath without a double slash', () {

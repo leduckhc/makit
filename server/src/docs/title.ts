@@ -1,7 +1,7 @@
 /**
- * makit — SPEC-46 D4/D14: give a document a human name.
+ * makit — SPEC-doc-preview D4/D14: give a document a human name.
  *
- * `2026-08-07-SPEC-44-ports-forward.md` is unreadable on a 375 pt row, and the
+ * `20260807-004400-SPEC-ports-forward.md` is unreadable on a 375 pt row, and the
  * real name is already inside the file. Pure extractors below, with one thin IO
  * shell (`readDocMeta`) that reads only a bounded prefix — a title lives in the
  * first few hundred bytes, so there is no reason to pull 5 MB to find it.

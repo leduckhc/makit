@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D10 rev 2: the doc listener, bound only while it is in use.
+ * makit — SPEC-doc-preview D10 rev 2: the doc listener, bound only while it is in use.
  *
  * rev 1 bound a routable port at startup and kept it open for the whole life of
  * the server, whether or not anything was ever published. That is an always-on

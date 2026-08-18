@@ -288,7 +288,7 @@ void main() {
     });
   });
 
-  group('SPEC-47 D1 end timestamps', () {
+  group('SPEC-session-timings D1 end timestamps', () {
     test('tool.call.end records endedTs from the ending event', () {
       final items = foldEvents([
         _ev(1, EventKind.toolCallStart, {'callId': 'c', 'name': 'bash'}),

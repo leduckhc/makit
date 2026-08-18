@@ -303,8 +303,8 @@ It is not a version pin, but it moves with one. See section 11.
 Change it in the same commit as any deployment-target edit.
 `app/test/deployment_target_doc_test.dart` enforces that.
 
-**Do not touch** `docs/specs/2026-08-06-SPEC-40-composer-footer-space.md` or
-`docs/specs/2026-08-06-SPEC-40-PLAN.md`. They also say `3.44.4`, but as the
+**Do not touch** `docs/specs/20260806-004000-SPEC-composer-footer-space.md` or
+`docs/specs/20260806-004000-SPEC-composer-footer-space-PLAN.md`. They also say `3.44.4`, but as the
 recorded SDK for a past performance measurement. Rewriting them falsifies the
 record.
 
@@ -483,9 +483,9 @@ print(r[d['current_release']['stable']]['version'])"
    |---|---|---|---|---|---|
    | `ide_launcher_light.png` | 800×600 | 79 | 0.016% | 10/255 | 3 clusters in one 52×24 button |
    | `ide_launcher_dark.png` | 800×600 | 74 | 0.015% | 11/255 | same |
-   | `spec37_panel_codex.png` | 340×620 | 159 | 0.075% | 12/255 | 4× 14×14px, the panel's 4 corners |
-   | `spec37_panel_pi.png` | 340×620 | 159 | 0.075% | 12/255 | same |
-   | `spec37_panel_tightening.png` | 340×620 | 163 | 0.077% | 13/255 | same |
+   | `context_usage_panel_codex.png` | 340×620 | 159 | 0.075% | 12/255 | 4× 14×14px, the panel's 4 corners |
+   | `context_usage_panel_pi.png` | 340×620 | 159 | 0.075% | 12/255 | same |
+   | `context_usage_panel_tightening.png` | 340×620 | 163 | 0.077% | 13/255 | same |
 
    No file changed size.
    No changed pixel sits in a text region.
@@ -496,7 +496,7 @@ print(r[d['current_release']['stable']]['version'])"
    Two traps if you re-measure.
    First, the two commands regenerate **seven** goldens.
    Only these five may move.
-   `ide_launcher_menu.png` and `spec37_ring_ladder.png` must stay identical.
+   `ide_launcher_menu.png` and `context_usage_ring_ladder.png` must stay identical.
    A sixth changed file means layout moved, and this finding is then void.
    Second, Pillow 10 and later default `Image.getbbox()` to `alpha_only=True`
    on RGBA.
@@ -579,9 +579,9 @@ git add macos/Podfile macos/Podfile.lock macos/Runner.xcodeproj/project.pbxproj 
         analysis_options.yaml pubspec.lock \
         test/desktop/chat/goldens/ide_launcher_light.png \
         test/desktop/chat/goldens/ide_launcher_dark.png \
-        test/ui/composer/goldens/spec37_panel_codex.png \
-        test/ui/composer/goldens/spec37_panel_pi.png \
-        test/ui/composer/goldens/spec37_panel_tightening.png
+        test/ui/composer/goldens/context_usage_panel_codex.png \
+        test/ui/composer/goldens/context_usage_panel_pi.png \
+        test/ui/composer/goldens/context_usage_panel_tightening.png
 
 # Those are the only five goldens expected to move. Confirm no sixth did:
 git status --short -- test/                 # must list exactly the five above
@@ -589,7 +589,7 @@ git status --short -- test/                 # must list exactly the five above
 
 **Why the explicit list rather than `git add test/`:** the two commands above
 regenerate seven goldens.
-`ide_launcher_menu.png` and `spec37_ring_ladder.png` must stay identical.
+`ide_launcher_menu.png` and `context_usage_ring_ladder.png` must stay identical.
 A sixth changed file means something other than corner anti-aliasing changed.
 Layout or text moved, and the "cosmetic only" finding above is then void.
 Staging the whole directory hides that.

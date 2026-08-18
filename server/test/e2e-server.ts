@@ -82,11 +82,11 @@ function parseArgs(argv: string[]): E2EArgs {
  * of them:
  *
  *  - `:5173 vite`      — owned by the project, healthy → killable, watchable, and
- *                        the one eligible for a browser forward (SPEC-44).
- *  - `:5175 vite`      — owned but **refused** (a wedged zombie): the case SPEC-43
+ *                        the one eligible for a browser forward (SPEC-ports-forward).
+ *  - `:5175 vite`      — owned but **refused** (a wedged zombie): the case SPEC-ports-kill
  *                        exists for, and NOT forwardable (it never spoke HTTP).
  *  - `:5432 postgres`  — published by a docker container, bound `0.0.0.0`
- *                        (SPEC-42 D13: docker is ownership, reach stays exposed).
+ *                        (SPEC-ports-global-view D13: docker is ownership, reach stays exposed).
  *  - `:5180`, `:5181`  — orphans, running from a worktree that is gone, so the
  *                        orphans section and `Kill all orphans (2)` appear.
  *  - `:22 sshd`        — an unowned system listener, which must be refused.
@@ -154,7 +154,7 @@ function makeDeterministicPortsExec(projectPath: string, killed: Set<number>) {
           `p${E2E_PIDS.vite}`, "fcwd", `n${projectPath}`,
           `p${E2E_PIDS.zombie}`, "fcwd", `n${projectPath}`,
           // The orphans' cwd is the REMOVED worktree: that plus the port history
-          // below is what makes them classify as orphans (SPEC-42 D10).
+          // below is what makes them classify as orphans (SPEC-ports-global-view D10).
           `p${E2E_PIDS.orphanA}`, "fcwd", `n${E2E_GONE_WORKTREE}`,
           `p${E2E_PIDS.orphanB}`, "fcwd", `n${E2E_GONE_WORKTREE}`,
           `p${E2E_PIDS.sshd}`, "fcwd", "n/",
@@ -207,7 +207,7 @@ function seedDeviceRegistry(home: string, bearer: string, cliBearer: string): vo
     pairedAt: Date.now(),
     lastSeenAt: Date.now(),
   };
-  // SPEC-46 D2: the CLI is its OWN device, with `caps: ["client"]` — while the
+  // SPEC-cli-as-client D2: the CLI is its OWN device, with `caps: ["client"]` — while the
   // phone above has no `caps` at all, which means full access. Two distinct
   // bearers is the whole point: sharing one would authenticate the CLI as the
   // phone, so no test here could ever catch a path that confuses "client" with
@@ -305,7 +305,7 @@ async function main(): Promise<void> {
     manager,
     cert,
     registry,
-    // SPEC-41: a deterministic port scan so the e2e loop exercises the real
+    // SPEC-open-ports: a deterministic port scan so the e2e loop exercises the real
     // ports.snapshot frame path (attribute + broadcast) rather than an
     // indicator nothing feeds. One listener whose cwd IS the project, so it is
     // attributed to that project's primary worktree.
@@ -331,7 +331,7 @@ async function main(): Promise<void> {
       });
       return env as unknown as UIResponse;
     },
-    // Parity with serve.ts (SPEC-37): without this the harness would silently
+    // Parity with serve.ts (SPEC-performance-metrics-dashboard): without this the harness would silently
     // bypass the makit-pi-usage route, so a real-mode run would "pass" while the
     // extension's reports went nowhere.
     onUsage: (sessionId, usage) => manager.getSession(sessionId)?.recordUsage(usage),
@@ -347,7 +347,7 @@ async function main(): Promise<void> {
   await manager.ensureDefaultSessions();
   if (args.mode === "real") assertFakeModelInEffect(manager);
 
-  // SPEC-46: every CLI session verb probes the control socket first (C4) — that
+  // SPEC-cli-as-client: every CLI session verb probes the control socket first (C4) — that
   // is where it gets exit 3 and where `cli.grant` mints its credential. Without
   // one here the keyless loop could not drive `makit new|tail|wait` at all, so
   // the harness answers the two verbs the CLI actually uses.

@@ -91,7 +91,7 @@ class FakeServer {
       branch: 'fix-tab-drag-and-drop',
     )..events.addAll(_scriptClaude('s-claude-1'));
 
-    // Cold-start content for the Closed view (SPEC-29). These live in
+    // Cold-start content for the Closed view (SPEC-session-lifecycle-resume-list-delete). These live in
     // [_sessions] like every other session: as separate literals they could be
     // listed but never reopened, and never appeared in any snapshot.
     _sessions['s-closed-1'] = _FakeSession(
@@ -417,7 +417,7 @@ class FakeServer {
   }
 
   /// Start emitting a plausible `metrics.sample` about once a second so widget
-  /// tests and the keyless stub loop render real charts (SPEC-37). The first
+  /// tests and the keyless stub loop render real charts (SPEC-performance-metrics-dashboard). The first
   /// frame carries a short `history` backfill, matching the real server.
   void _startMetrics() {
     _metricsTimer?.cancel();
@@ -501,19 +501,19 @@ class FakeServer {
   /// kill visibly works in demo mode.
   final Set<int> _killedPorts = {};
 
-  /// Ports the demo user has asked to be told about (SPEC-44 D7).
+  /// Ports the demo user has asked to be told about (SPEC-ports-forward D7).
   final Set<int> _watchedPorts = {5173};
 
   /// Emit one plausible `ports.snapshot`, covering every state the ports UI can
-  /// render so demo mode exercises the whole surface (SPEC-41 → SPEC-44):
+  /// render so demo mode exercises the whole surface (SPEC-open-ports → SPEC-ports-forward):
   ///
   ///  * `:5173 vite`   — healthy, owned by the first feature-branch worktree, so
   ///                     a glyph lights on that row. Watched by default, and the
   ///                     one port a browser forward is offered for.
-  ///  * `:5175 vite`   — owned but **refused**: the wedged zombie SPEC-43's kill
+  ///  * `:5175 vite`   — owned but **refused**: the wedged zombie SPEC-ports-kill's kill
   ///                     exists for. No `openUrl`, so no forward is offered.
   ///  * `:9787 serve`  — wildcard-bound, `exposed`, 404 — the security read.
-  ///  * `:5432 postgres` — published by a docker container (SPEC-42 D13): the row
+  ///  * `:5432 postgres` — published by a docker container (SPEC-ports-global-view D13): the row
   ///                     names the CONTAINER, and `reach` still says `exposed`.
   ///  * `:5180`/`:5181` — orphans whose worktree is gone, which is what makes the
   ///                     orphans section and `Kill all orphans (2)` appear.
@@ -550,7 +550,7 @@ class FakeServer {
       'command': command,
       'startedAt': now - upMs,
       // Absent, never null: the app's decoder treats absence as "not known",
-      // which is the whole point of these fields (SPEC-41).
+      // which is the whole point of these fields (SPEC-open-ports).
       'worktreePath': ?worktreePath,
       'sessionId': ?sessionId,
       'health': ?health,
@@ -698,10 +698,10 @@ class FakeServer {
       case 'ports.watch':
         _emit(Envelope(t: MsgType.ack, id: env.id));
         // Mirror the real server: on watch-on, paint from a plausible snapshot
-        // immediately (SPEC-41). A no-op on watch-off — no ambient polling.
+        // immediately (SPEC-open-ports). A no-op on watch-off — no ambient polling.
         if (env.body['on'] == true) _pushPorts();
         return;
-      // SPEC-43/44: the demo answers the destructive and capability commands so
+      // SPEC-ports-kill/44: the demo answers the destructive and capability commands so
       // the confirms lead somewhere. Deliberately shallow — it reports the happy
       // outcome and re-pushes the snapshot; the refusal table is the real
       // server's job and is covered by its own tests.
@@ -1110,7 +1110,7 @@ class _FakeSession {
   String? branch;
   bool pending;
 
-  /// Closed (SPEC-29): the agent was released. Excluded from the active
+  /// Closed (SPEC-session-lifecycle-resume-list-delete): the agent was released. Excluded from the active
   /// snapshot, reported by `session.listClosed`, restored by `session.reopen`.
   /// Always starts live — the demo's cold-start closed rows are static fixtures.
   bool closed = false;

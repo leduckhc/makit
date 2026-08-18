@@ -1,7 +1,7 @@
 /**
- * T14 (SPEC-46) — `makit send`: post a message to a session (`send.message`).
+ * T14 (SPEC-cli-as-client) — `makit send`: post a message to a session (`send.message`).
  *
- * `--attach` (SPEC-33) uploads the bytes to `POST /media` on the same HTTPS
+ * `--attach` (SPEC-user-attachments) uploads the bytes to `POST /media` on the same HTTPS
  * listener that carries the socket, then references the returned `mediaId` on the
  * turn. The failure modes matter more than the happy path: a file that cannot be
  * uploaded must **refuse the turn**, never send it as text-only — that would turn

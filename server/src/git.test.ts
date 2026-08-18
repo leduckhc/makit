@@ -662,7 +662,7 @@ test("listLocalBranches returns every local branch, sorted", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-48 — the default-branch override, and why it must be checked rather than
+// SPEC-per-repo-settings — the default-branch override, and why it must be checked rather than
 // trusted.
 //
 // The consumer is concrete: `origin/HEAD` is genuinely absent after a

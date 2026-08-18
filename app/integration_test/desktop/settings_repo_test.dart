@@ -1,4 +1,4 @@
-// SPEC-48 T6.2 — the per-repo Settings path, mounted for real.
+// SPEC-per-repo-settings T6.2 — the per-repo Settings path, mounted for real.
 //
 // What this proves that the unit and widget tests cannot: the WHOLE path from the
 // live repo snapshot through the dynamic registry to a rendered row, inside the

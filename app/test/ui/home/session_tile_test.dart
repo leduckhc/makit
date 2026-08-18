@@ -156,7 +156,7 @@ void main() {
     expect(conn.closeCalls, 1);
   });
 
-  // SPEC-46 D10: a handed-off session appears in the list on its own, so the
+  // SPEC-cli-as-client D10: a handed-off session appears in the list on its own, so the
   // row must explain its lineage — including the outgoing agent's reason.
   testWidgets('a session with lineage captions the handoff reason', (
     tester,
@@ -193,7 +193,7 @@ void main() {
     expect(find.textContaining('stuck on a rebase'), findsOneWidget);
   });
 
-  // SPEC-46 U4: a *fork* sets `parentId` with no `handoffReason` — it is an
+  // SPEC-cli-as-client U4: a *fork* sets `parentId` with no `handoffReason` — it is an
   // adapter-native branch of the conversation, not a written handoff (D6). The
   // fallback wording must therefore not claim a handoff happened, or every forked
   // session is mislabelled in the one place the user meets it.

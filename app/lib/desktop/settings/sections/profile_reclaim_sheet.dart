@@ -1,4 +1,4 @@
-/// The stale-profile reclaim sheet (SPEC-50 D9, mockup card 7).
+/// The stale-profile reclaim sheet (SPEC-profiles D9, mockup card 7).
 ///
 /// Orphans are **offered, never reaped** (D9): a dev profile whose origin folder
 /// is gone is listed with its size, selectable, and deletable in bulk — but a

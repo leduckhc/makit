@@ -21,9 +21,9 @@
           "changed": true
         },
         {
-          "key": "/repo/makit-wt:docs/specs/2026-08-07-SPEC-44-ports-forward.md",
-          "relPath": "docs/specs/2026-08-07-SPEC-44-ports-forward.md",
-          "title": "SPEC-44 — Ports P4: forward a loopback port to the phone",
+          "key": "/repo/makit-wt:docs/specs/20260807-004400-SPEC-ports-forward.md",
+          "relPath": "docs/specs/20260807-004400-SPEC-ports-forward.md",
+          "title": "SPEC-ports-forward — Ports P4: forward a loopback port to the phone",
           "kind": "md",
           "bytes": 18422,
           "modifiedAt": 1500,

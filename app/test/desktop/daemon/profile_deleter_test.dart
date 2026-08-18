@@ -1,5 +1,5 @@
-// Unit tests for [ProfileDeleter] (SPEC-50 P3, D8).
-// Co-located with the code under test (per SPEC-03 desktop layout).
+// Unit tests for [ProfileDeleter] (SPEC-profiles P3, D8).
+// Co-located with the code under test (per SPEC-desktop-control-app desktop layout).
 // ignore_for_file: depend_on_referenced_packages
 import 'dart:io';
 

@@ -10,7 +10,7 @@ const double kSettingsDetailMaxWidth = 720;
 /// Right pane: renders the selected [section]'s body via its registry builder.
 ///
 /// Wrapped in a [PageStorageKey] so each section keeps its own scroll offset
-/// (best-effort restoration per SPEC-13 §C). The body is capped at
+/// (best-effort restoration per SPEC-desktop-settings-rework §C). The body is capped at
 /// [kSettingsDetailMaxWidth] and centered so it doesn't span an overly wide
 /// window.
 class SettingsDetailPane extends StatelessWidget {

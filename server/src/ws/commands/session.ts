@@ -1,5 +1,5 @@
 /**
- * Session-domain `cmd` handlers (SPEC-19, moved verbatim from server.ts's
+ * Session-domain `cmd` handlers (SPEC-decomposition-and-dedup, moved verbatim from server.ts's
  * `buildCommandRouter`): send.message, session.action, cancel, session.kill,
  * session.spawn, agents.list, session.setAgent, session.list, session.attach.
  */
@@ -19,11 +19,11 @@ import {
 import type { CommandRouter } from "../command_router.js";
 import type { CommandDeps } from "./deps.js";
 
-/** Per-message attachment cap (SPEC-33 §3.3). A prompt, not a gallery. */
+/** Per-message attachment cap (SPEC-user-attachments §3.3). A prompt, not a gallery. */
 export const MAX_ATTACHMENTS = 8;
 
 /**
- * SPEC-46 C3: `session.transcript` clamps `limit` to this window. A bounded
+ * SPEC-cli-as-client C3: `session.transcript` clamps `limit` to this window. A bounded
  * tail is the whole point of the command (D5) — an unbounded slice would defeat
  * it — and 200 is generous for the "quote the last few turns" use it serves.
  */
@@ -48,7 +48,7 @@ export type ParsedAttachments =
   | { ok: false; reason: "unresolved" | "too_many" };
 
 /**
- * Resolve the wire `attachments` array against the media store (SPEC-33 §3.3).
+ * Resolve the wire `attachments` array against the media store (SPEC-user-attachments §3.3).
  *
  * Two failure modes, treated differently on purpose:
  *
@@ -87,7 +87,7 @@ export function parseAttachments(raw: unknown, store: MediaStore): ParsedAttachm
  * Parse the optional `session.spawn` `configOptions` picks from the wire:
  * an array of `{id, value}` where `value` is a string or boolean. Anything
  * malformed is dropped here; semantic validation (against the cached catalog)
- * happens in the manager (SPEC-27).
+ * happens in the manager (SPEC-new-session-config-at-spawn).
  */
 function parseConfigPicks(
   raw: unknown,
@@ -114,7 +114,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.BadRequest, "send.message requires a string `text`");
       return;
     }
-    // SPEC-33: images the user attached. Resolved here, so an adapter never sees
+    // SPEC-user-attachments: images the user attached. Resolved here, so an adapter never sees
     // an id it cannot turn into bytes.
     const parsed = parseAttachments(ctx.env.attachments, deps.media ?? sharedMediaStore());
     if (!parsed.ok) {
@@ -144,7 +144,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // onto the same in-flight re-attach rather than starting a second agent.
     //
     // ...ForInput, because a message is unambiguous intent to continue: it also
-    // reopens a session the idle sweeper closed (SPEC-29 option D), so an
+    // reopens a session the idle sweeper closed (SPEC-session-lifecycle-resume-list-delete option D), so an
     // auto-close is invisible to the user. Plain `sub` deliberately does NOT do
     // this — reading a closed transcript must not respawn an agent.
     await manager.ensureLiveForInput(sid);
@@ -201,7 +201,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
     }
-    // SPEC-35: stop means stop. Pending mid-turn messages are dropped rather
+    // SPEC-mid-turn-steering-and-queue: stop means stop. Pending mid-turn messages are dropped rather
     // than fired into the context the user just aborted.
     session.clearQueue();
     await session.adapter.cancel();
@@ -209,7 +209,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   /**
-   * Drop ONE pending mid-turn message (SPEC-35). An id the server no longer
+   * Drop ONE pending mid-turn message (SPEC-mid-turn-steering-and-queue). An id the server no longer
    * holds is a race the user cannot avoid — the message was flushed between the
    * tap and this frame — so it acks instead of erroring.
    */
@@ -233,7 +233,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   /**
-   * Edit a pending mid-turn message (SPEC-38). Empty text cancels it. A stale id
+   * Edit a pending mid-turn message (SPEC-pending-queue-edit-reorder). Empty text cancels it. A stale id
    * (the message flushed between the tap and this frame) acks like
    * `queue.cancel`; a missing `text` is a real client bug and errors.
    */
@@ -261,7 +261,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   /**
-   * Send ONE pending message now (SPEC-39 — the tray's ⤒): interrupt the running
+   * Send ONE pending message now (SPEC-queue-tray-and-promote — the tray's ⤒): interrupt the running
    * turn so the promoted message is delivered next, keeping the rest queued.
    *
    * This is `cancel`'s per-message opposite, so it must not borrow its
@@ -289,7 +289,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   /**
-   * Reorder the pending messages (SPEC-38). `ids` is a hint — see
+   * Reorder the pending messages (SPEC-pending-queue-edit-reorder). `ids` is a hint — see
    * `Session.reorderQueue`: a queue that flushed under the user cannot make this
    * fail, so only a non-array `ids` is an error.
    */
@@ -322,7 +322,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
-  // Close (SPEC-29): release the agent and reclaim its process, keeping the
+  // Close (SPEC-session-lifecycle-resume-list-delete): release the agent and reclaim its process, keeping the
   // session resumable. The fresh snapshot omits closed sessions; reopen
   // restores it.
   r.register("session.close", async (ctx) => {
@@ -351,14 +351,14 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
-  // Return the closed sessions (SPEC-29) for the "Show closed" list. Unlike
+  // Return the closed sessions (SPEC-session-lifecycle-resume-list-delete) for the "Show closed" list. Unlike
   // the active `sessions.snapshot` (which omits them), this is an explicit
   // request/ack so closed sessions only load when the user asks.
   r.register("session.listClosed", async (ctx) => {
     ctx.ack({ sessions: await manager.listClosedSessions() });
   });
 
-  // SPEC-46 C3 (D5): a BOUNDED transcript slice for `makit handoff --carry`.
+  // SPEC-cli-as-client C3 (D5): a BOUNDED transcript slice for `makit handoff --carry`.
   // The last `limit` events, oldest-first, served from the event store (not the
   // session's in-memory cache) and returned VERBATIM — the same wire shape as
   // fanout, no projection (D7). Rendering the slice into a fenced block is CLI
@@ -393,7 +393,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   r.register("session.spawn", async (ctx) => {
-    // SPEC-46 D9/D10 — lineage by subject, not by field:
+    // SPEC-cli-as-client D9/D10 — lineage by subject, not by field:
     //
     // - An **agent-scoped** token's parent IS its own session. A body `parentId`
     //   naming a different session is a forgery attempt and is refused (not
@@ -426,7 +426,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
         return;
       }
       origin = "agent";
-      // SPEC-46 D9/T11: depth + live-child count are recomputed server-side from
+      // SPEC-cli-as-client D9/T11: depth + live-child count are recomputed server-side from
       // persisted lineage; the forgeable MAKIT_SPAWN_DEPTH is display-only.
       const boundError = manager.checkSpawnBounds(parentId);
       if (boundError) {
@@ -456,11 +456,11 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // for a new branch / a PR): the first message starts the agent there.
     const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
     const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;
-    // Optional pre-spawn config picks (SPEC-27): [{id, value}] validated against
+    // Optional pre-spawn config picks (SPEC-new-session-config-at-spawn): [{id, value}] validated against
     // the cached catalog by the manager (unknown ids/values dropped) and applied
     // at first-message launch.
     const configOptions = parseConfigPicks(ctx.env.configOptions);
-    // SPEC-46 D13: the approval policy may be RELAXED (`yolo`) only by a human
+    // SPEC-cli-as-client D13: the approval policy may be RELAXED (`yolo`) only by a human
     // credential. An agent setting `yolo` would be granting itself the
     // unsupervised shell access the audience ladder exists to keep under a
     // human's eye, so it is refused (not silently downgraded). A stricter
@@ -493,7 +493,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack({ sessionId: newSession.id });
   });
 
-  // SPEC-46 U4: session.fork — an adapter-native fork of a live session at its
+  // SPEC-cli-as-client U4: session.fork — an adapter-native fork of a live session at its
   // head (codex `thread/fork`). Deliberately NOT `handoff` (D6): a handoff
   // carries a written manifest across harnesses, a fork is a high-fidelity
   // branch of the same conversation, so it is gated on the adapter's own
@@ -651,7 +651,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       return;
     }
     try {
-      // Adapter-native discovery (SPEC-29): ask each available agent over its
+      // Adapter-native discovery (SPEC-session-lifecycle-resume-list-delete): ask each available agent over its
       // own protocol (ACP `session/list`, codex `thread/list`) instead of
       // scraping pi transcript files. Already omits the server-internal path.
       const sessions = await manager.listAgentSessions(projectId);

@@ -1,4 +1,4 @@
-/// Daemon lifecycle service for the macOS desktop control app (SPEC-03).
+/// Daemon lifecycle service for the macOS desktop control app (SPEC-desktop-control-app).
 ///
 /// The control socket can only talk to a *running* daemon, so *starting* a
 /// stopped one means spawning the `makit` CLI (`makit start`). This service wraps

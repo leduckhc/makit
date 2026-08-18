@@ -1,0 +1,489 @@
+# SPEC-message-navigator — Implementation plan
+
+Spec: [`20260801-003400-SPEC-message-navigator.md`](./20260801-003400-SPEC-message-navigator.md)
+
+Ground rules (AGENTS.md): failing test first, SOLID/YAGNI, surgical diffs,
+`flutter analyze --fatal-infos` clean, `app/tool/audit.sh` green.
+Flutter binary: `/Users/le/Work/Vibe/flutter/bin/flutter` (not on PATH).
+App-only change — **no `server/` work, no protocol change.**
+
+> **Superseded in part.** A later review cut this feature to the two affordances
+> that ship — the desktop rail and the mobile messages sheet.
+>
+> Removed by that review: **T9** (outline), **T10** (breadcrumb), **T11** (palette),
+> their options/providers/preferences, and **T5**'s style picker, which is now a
+> single rail switch plus the rail's three options. **T8** (scrubber) was already
+> removed before it, for its own reasons (deviation 10).
+>
+> Still shipping: **T1–T4** (prefs/enum, `userMessagePositions`, the sliver jump
+> target, `TranscriptJumper`), **T6** (mount point), **T7** (rail) and **T5b** (the
+> mobile sheet).
+>
+> Every reference below to a removed style — including
+> `message_navigator_outline_test.dart`, `message_navigator_palette_test.dart` and
+> `message_navigator_breadcrumb_test.dart` — describes work that existed and is now
+> deleted. See the banner on the spec.
+
+## Status (commit 7c356e9)
+
+| Task | State |
+|---|---|
+| T1 prefs + enum + shared providers | ✅ done — 9 tests |
+| T2 `userMessagePositions` | ✅ done — 6 tests |
+| T3 jump target in the sliver | ✅ done — 8 tests, incl. the one-frame assertion |
+| T4 `TranscriptJumper` | ✅ done — 11 tests |
+| T5 Settings picker (desktop) | ✅ done — 6 tests |
+| T6 mount point (both surfaces) | ✅ done |
+| T7 rail | ✅ done — 11 tests |
+| T5b mobile | ✅ done — **a sheet from the session-actions menu**; no mobile settings (9 tests) |
+| T8 scrubber | ⛔ built, then **removed** — see deviation 10 |
+| T9 outline | ✅ done — 15 tests |
+| T10 breadcrumb | ✅ done — 11 tests |
+| T11 palette | ✅ done — 11 tests |
+| T12 docs sweep | ✅ done — `docs/UX.md` §3; no new design tokens |
+
+**Complete.** 1212 tests green, `analyze --fatal-infos` and `tool/audit.sh` clean.
+
+11. **A premise expired mid-flight.** The spec justified mobile having no picker with "the
+   preference system does not reach mobile". The mobile-parity work then moved
+   `prefs/` from `desktop/settings/` to `store/` and mobile now loads a
+   `PreferencesController` — so that reason is void. The *decision* stands on its own
+   (mobile has no styles to configure); the comments and spec were corrected rather than
+   left asserting a constraint that no longer exists.
+12. **`My messages` sits above the config group in the actions menu.** Main added a
+   capability-gated menu with a test asserting *zero* dividers when neither Model nor
+   Thinking applies ("a rule under nothing"). Grouping the new item with Rename — both
+   always available — keeps that guard passing untouched, rather than editing another PR's
+   test to fit mine.
+10. **The scrubber was deleted after being built.** It existed to be the touch style; once
+   mobile moved to a session-actions sheet it had no constituency, and on a pointer it just
+   duplicates the rail less legibly. Removal was a straight deletion — enum value, options
+   class + provider, two preference entries, bridge, settings rows, widget, 12 tests — because
+   the unknown-id fallback means a stored `"scrubber"` decodes to the default (now covered by
+   its own test). No migration was written for the two orphaned `chat.navigator.scrub.*` keys:
+   they would inflate `modifiedCount`, but this branch has never shipped, so no user can hold
+   them.
+8. **Mobile does not use a navigator style at all** — `My messages` in the session-actions
+   menu opens a sheet, and the mobile on/off switch plus its controller were deleted (there
+   is no on-screen chrome left to disable). The five styles are pointer designs, and a phone
+   has no screen to spend on permanent furniture.
+9. **The landing flash was dead code.** It was specified, plumbed and unit-tested at the
+   notifier level — and rendered by *nothing*, so it never appeared. Now
+   `JumpFlashHighlight` wraps user rows via `chatItemWidget` and fades its own outline;
+   `message_navigator_sheet_test.dart` asserts the border, the fade and the replay-on-repeat.
+   It matters most on mobile, where the sheet dismisses on pick.
+7. **Mobile's style was briefly `outline`, not `scrubber`.** The plan assumed the scrubber because it
+   was designed touch-first. It is still pointer work in practice: a thumb landing on one of
+   N markers ~18pt apart down a 22pt edge strip, against the iOS back-swipe, hiding the
+   preview under itself. Outline needs no precision and suits a small screen better.
+   Switching exposed a latent bug — every top-anchored navigator positioned from the top of
+   the transcript `Stack`, i.e. *behind* mobile's floating glass bar. The overlay now takes
+   a `topInset` and pads once for all five; `message_navigator_outline_test.dart` pins it
+   (and fails at 12pt against a 100pt bar without the fix).
+
+Deviations from the plan as written, all deliberate:
+
+1. **`effectiveStyle` coercion never existed.** Replaced by per-surface provider
+   overrides, so a hover-only style on mobile is unreachable by construction. T1's
+   truth-table test became a "the default is `off`" test.
+2. **Per-style *options* needed the same treatment as the style.** `railOptionsProvider`
+   (shared) is overridden from the three rail preferences by
+   `desktop/settings/prefs/navigator_preference_bridge.dart`. The storage schema is
+   unchanged; only the read path differs. Without this, `ui/` would have imported
+   `desktop/`.
+3. **`topVisibleChildIndex` is cached at the end of layout**, not computed on demand: the
+   rail reads it during *build*, where a render object's `constraints` are not yet valid
+   (this threw `Bad state: A RenderObject does not have any constraints before it has been
+   laid out` the first time).
+4. **The jumper has no fast path.** It was written (per the plan) to `jumpTo` a
+   built row's known offset and only fall back to the in-layout request. But
+   `jumpTo(offset)` lands the row at the viewport's *near* edge while the in-layout
+   correction lands it at the *top*, so the same click behaved differently
+   depending on whether the row happened to be built — which the breadcrumb hit
+   and had grown a held-selection workaround for. Both are deleted; one path
+   serves both cases and a test pins the landing as idempotent.
+5. **Outline needed a provider, not a widget seam.** A tapped prompt cannot reach
+   the `TranscriptJumper` (the overlay is the row's *sibling* in the surface
+   `Stack`, not its ancestor), so it posts its item position to
+   `outlineExitJumpProvider` and `MessageOutline` performs the jump.
+6. **The landing flash has no `Timer`.** A pending timer trips `flutter_test`'s
+   "a Timer is still pending" assert in any test that jumps without pumping 900ms — a
+   footgun for all five navigators' tests. `JumpFlash` carries a serial instead and the
+   row owns the animation.
+
+## Gate before any code
+
+**T0 is a decision, not a task.** Two open questions from the spec block the shape of
+T5 and T7 respectively:
+
+- **D1 — picker treatment:** expanding radio list (spec's assumption) vs `SegmentedButton`.
+  Changes T5's widget only; the schema is identical either way.
+- **D2 — default tick spacing:** spec assumes `6` ("cosy"). Changes one constant in T1 +
+  the golden expectations in T7.
+
+Both are settled by opening `mockups/chat-navigator-settings.html` and
+`mockups/user-message-rail.html`. Do not start T5/T7 until they are answered; T1–T4 are
+unaffected and can start immediately.
+
+## Phase ordering
+
+```
+Phase 1 (parallel — pure, no UI, no shared files)
+  T1 prefs + enum + coercion      T2 userMessageIndices      T3 offsetForIndex
+        │                               │                          │
+        │                               └──────────┬───────────────┘
+        │                                          │
+        │                              Phase 2 (needs T2+T3)
+        │                                 T4 TranscriptJumper  ← the hard one
+        │                                          │
+  Phase 3 (needs T1)                               │
+     T5 Settings picker (desktop) ───────┐        │
+     T5b Mobile on/off switch  ──────────┤        │
+                                          │        │
+                              Phase 4 (needs T1+T4+T5)
+                                 T6 navigator mount point
+                                          │
+        ┌────────────────┬────────────────┼────────────────┬───────────────┐
+  Phase 5 (parallel, all need T6 — one new file each, no shared edits)
+     T7 Rail         T8 Scrubber      T9 Outline      T10 Breadcrumb   T11 Palette
+        │                │
+     (P1 ships)      (mobile unblocked)
+                                          │
+                              Phase 6
+                                 T12 docs + audit sweep
+```
+
+**T4 is the risk.** Everything downstream is a widget over a working jump. If T4 slips,
+T7–T11 can be built against its interface (`TranscriptJumper.jumpToItem(int)`) with a stub
+that only handles already-built rows, and wired last.
+
+**Parallelism is real here:** T7–T11 each create exactly one new file under
+`lib/ui/session/navigator/` and touch nothing else. Only T6 edits `chat_transcript.dart`,
+only T5 edits `agents_chat_section.dart`, only T1 edits `preference_entries.dart`. Safe to
+dispatch as concurrent agents after T6 lands.
+
+---
+
+## T1 · Preferences, enum, per-surface style provider
+
+**Files:** `app/lib/desktop/settings/prefs/preference_entries.dart` (edit),
+`app/lib/ui/session/navigator/navigator_style.dart` (new, **shared**).
+
+`navigator_style.dart` (shared) holds the enum **and the provider shared UI reads**, so
+`lib/ui/` never imports `lib/desktop/`:
+
+```dart
+enum MessageNavigatorStyle { off, rail, scrubber, palette, breadcrumb, outline }
+
+/// Overridden at each app root. `off` is the floor: a surface that forgets to
+/// override gets no navigator rather than a broken one.
+final messageNavigatorStyleProvider =
+    Provider<MessageNavigatorStyle>((ref) => MessageNavigatorStyle.off);
+```
+
+- **Desktop root** (`desktop_app.dart`) overrides it with `ref.preference(messageNavigatorStylePreference)`.
+- **Mobile root** (`main.dart`) overrides it with `enabled ? scrubber : off` — see T5b.
+- There is **no** `effectiveStyle` coercion function. A hover-only style is unreachable on
+  mobile by construction, not by a call the next contributor can forget.
+- All 11 entries per spec §Preference schema; every one appended to `kPreferenceEntries`.
+- `_decodeNavigatorStyle` returns `null` for an unknown name (→ controller falls back to
+  `defaultValue`). Do **not** throw, do **not** default inside the decoder.
+- Spacing is a plain `int` (6/10/14), not an enum — the segmented control maps labels to
+  values, and a future custom value needs no migration.
+
+**Tests** (`app/test/message_navigator_prefs_test.dart`):
+- round-trip every entry through encode/decode;
+- `decode('quantum')` → `null`, and the controller then yields `MessageNavigatorStyle.rail`;
+- `decode(42)` / `decode(null)` → `null` (wrong-type tolerance);
+- the provider's default is `off` (assert it — this is the safe-floor guarantee);
+- **sibling persistence:** set `rail.spacing = 14`, switch style to `outline`, switch back
+  → spacing is still 14. *(This is the one the naive implementation gets wrong; assert it
+  at the controller level, not the widget level.)*
+
+**Verify:** `cd app && flutter test test/message_navigator_prefs_test.dart`
+
+---
+
+## T2 · `userMessageIndicesProvider`
+
+**File:** `app/lib/ui/session/navigator/user_message_indices.dart` (new).
+
+```dart
+/// Indices into chatItemsProvider of items the user sent, ascending.
+final userMessageIndicesProvider = Provider.family<List<int>, String>(...);
+```
+
+- Derived from `chatItemsProvider` — no new store state, no new protocol field.
+- Must be **stable across streaming**: appending an assistant item, or a token landing in
+  the tail item, must not change existing entries. Use the same ascending item order as
+  the provider; the reversal is the list view's concern, not this provider's.
+- Return `const []` for an unknown/empty session rather than throwing.
+
+**Tests** (`app/test/message_navigator_indices_test.dart`):
+- mixed transcript → only user indices, ascending;
+- empty / assistant-only → `[]`;
+- appending an assistant item leaves prior indices identical (identity check on the list
+  contents, and assert no rebuild storm — read twice, expect equal);
+- a user message that is still streaming is included (it exists, it is jumpable).
+
+**Verify:** `cd app && flutter test test/message_navigator_indices_test.dart`
+
+---
+
+## T3 · Jump target support in the anchored sliver
+
+**File:** `app/lib/ui/session/transcript_list.dart` (edit — additive).
+
+Two additions to `_AnchoredSliverList` / `_RenderAnchoredSliverList`. **Read the class doc
+comment at lines 111-131 before writing a line of this** — it explains why the correction
+must happen in layout, and this task lives or dies on that.
+
+1. `double? offsetForIndex(int childIndex)` — read-only lookup over the *laid-out* children;
+   `null` when un-built. Never triggers layout, never estimates (estimation is the
+   controller's job; mixing them hides which number the caller got). Also expose
+   `meanBuiltExtent`.
+2. `int? jumpTargetChild` — when set, `performLayout` locates that child among the laid-out
+   children and, if its `layoutOffset` differs from the desired viewport position by > 4pt,
+   returns the delta as `SliverGeometry.scrollOffsetCorrection` (exactly as the existing
+   anchor path does), then clears the target when within tolerance. Guard with an internal
+   attempt counter and **abandon at 5** so we stay under `RenderViewport`'s own correction
+   limit rather than tripping its assert.
+
+Existing anchoring behaviour must be untouched: the jump target takes precedence for the
+frames it is set, and `shouldAnchor` resumes afterwards. Do **not** modify
+`findChildIndexCallback`, keep-alives, or the anchor-selection logic.
+
+**Tests** (extend `app/test/transcript_anchor_test.dart`):
+- `offsetForIndex`: built row matches `tester.getTopLeft`; far-off-screen row → `null`;
+  out-of-range → `null`, no throw;
+- `jumpTargetChild` set to an off-screen child → after **one** `pump` the child is at the
+  desired position (assert: **exactly one frame**, which is the whole point — a post-frame
+  implementation would need two and would paint a wrong one in between);
+- pathological: a target whose extent keeps moving → abandons at 5 attempts, no framework
+  assert, no infinite layout;
+- **regression:** every existing assertion in this file still passes, and anchoring still
+  works on the frame *after* a jump completes.
+
+**Verify:** `cd app && flutter test test/transcript_anchor_test.dart`
+
+---
+
+## T4 · `TranscriptJumper`
+
+**File:** `app/lib/ui/session/navigator/transcript_jumper.dart` (new).
+
+Thin controller over T3. `jumpToItem(int itemPosition)`:
+
+1. Convert item position → child index using **`transcriptChildIndexFinder`'s expression**
+   (`items.length - 1 - p + (hasTrailer ? 1 : 0)`) — import/reuse it, do not restate it.
+   `hasTrailer` and `itemCount` are live values (the working indicator comes and goes;
+   `outline` hides rows), so read them at call time.
+2. `offsetForIndex` non-null → `controller.jumpTo(offset)`. Done, one frame, no correction.
+3. Null → seed `jumpTo(meanBuiltExtent × distance)` clamped to `[0, maxScrollExtent]` **and**
+   set `jumpTargetChild`. Layout does the rest inside the same frame.
+4. `flashItem(position)` — a `ValueNotifier<int?>`/`Set` the rows watch, cleared after 900ms;
+   applied unconditionally, including when the jump abandoned short.
+
+Hard constraints, each a test:
+- **No `addPostFrameCallback` correction loop anywhere in this file.** A grep for
+  `addPostFrameCallback` in `navigator/` should return nothing.
+- **No `animateTo`.** Stacked animations during token streams (SPEC-chat-scroll-anchoring).
+- Overlapping jumps: the later target replaces the earlier; never interleave.
+- No side effects on fold state (`expandedTranscriptRowsProvider`) or anchoring.
+
+**Tests** (`app/test/message_navigator_jump_test.dart`):
+- built target → one `jumpTo`, `jumpTargetChild` never set;
+- un-built target → lands within 4pt; assert the **frame count**, not just the position;
+- index transform: correct landing with `hasTrailer` true *and* false, and while `outline`
+  is active (different `itemCount`) — three cases, because this is the off-by-one trap;
+- out-of-range / empty transcript → no-op, no throw;
+- overlapping jumps → last target wins;
+- **regression (required):** after a jump, (a) an expanded tool row is still expanded,
+  (b) a subsequent incoming item still anchors per SPEC-chat-scroll-anchoring, (c) no pending animation;
+- flash clears after 900ms, and is applied even when the target was already on screen and
+  when the jump abandoned short.
+
+**Verify:** `cd app && flutter test test/message_navigator_jump_test.dart test/transcript_anchor_test.dart`
+
+---
+
+## T5 · Settings — `Message navigator` subsection
+
+**File:** `app/lib/desktop/settings/sections/agents_chat_section.dart` (edit),
+plus `app/lib/desktop/settings/sections/message_navigator_prefs.dart` (new) for the rows.
+
+- New `SettingsSectionHeader(title: 'Message navigator')` **above** the existing
+  `PR actions` header, blurb: *"How you jump back to your own messages in a long
+  transcript."*
+- Treatment per **D1**. Assuming the radio list: one `SettingsGroup` whose children are
+  the 6 style rows; the selected row is followed by its options block. Only the selected
+  style's options are built — not built-and-hidden.
+- Option controls: `SegmentedButton<int>` for spacing, `Switch` for booleans, a read-only
+  `⌘/` chip + "Change…" link to the Shortcuts section for the palette shortcut.
+- Per-row reset (↺) reusing the `SettingsResetButton` / `ref.preferenceModified` idiom
+  already in `_PrPromptRow`.
+- **Do not** clear sibling styles' options when switching style (T1 asserts this at the
+  controller level; here just don't write them).
+- Rows for styles not yet implemented (per phase) render with a `[coming soon]` treatment
+  from `coming_soon.dart` rather than being absent — the enum ships complete.
+
+**Tests** (`app/test/desktop/settings/message_navigator_section_test.dart`):
+- 6 style rows render; exactly one selected;
+- selecting a style writes the preference and expands **only** its options;
+- toggling each option writes the matching entry;
+- reset restores defaults and hides the reset affordance;
+- switching style away and back shows the retained spacing (widget-level companion to
+  T1's controller-level test).
+
+**Verify:** `cd app && flutter test test/desktop/settings/`
+
+---
+
+## T5b · Mobile on/off switch
+
+**Files:** `app/lib/ui/settings/settings_screen.dart` (edit), `app/lib/main.dart` (edit).
+
+Mobile does **not** get the picker (SPEC-message-navigator §Surface matrix — the preference system is
+desktop-only and porting it is its own spec). It gets one switch so success criterion 4
+survives.
+
+**Ordering caveat:** the switch's "on" state renders `scrubber`, which does not exist until
+**T8**. Land the persistence + provider override here, but the "on → navigator visible"
+assertions belong with T8 — until then "on" correctly renders nothing, and the test should
+assert that rather than pretend otherwise.
+
+- One `SwitchListTile`: *Message navigator* / subtitle *"Drag the right edge to jump back
+  to your own messages"*, sitting with the other mobile settings rows.
+- Persist a single bool via the `SharedPreferences` instance `main.dart` already creates
+  (line ~44), following `RecentModelsController.load(prefs)` (`lib/store/recent_models.dart`)
+  — the SPEC-model-picker-menu-per-model-config precedent for mobile-reachable persisted state. Key:
+  `chat.navigator.mobileEnabled`, default **true**.
+- Override `messageNavigatorStyleProvider` at the mobile root with
+  `enabled ? MessageNavigatorStyle.scrubber : MessageNavigatorStyle.off`.
+- Do **not** import anything from `lib/desktop/` here.
+
+**Tests** (`app/test/message_navigator_mobile_test.dart`):
+- default (no stored value) → scrubber renders in the transcript;
+- toggling the switch off → **no** navigator descendant, and the bool is persisted;
+- relaunch with the bool false → still off;
+- the mobile settings screen imports nothing from `lib/desktop/` (a source-level assertion
+  is fine, and cheap insurance for the parity rule).
+
+**Verify:** `cd app && flutter test test/message_navigator_mobile_test.dart`
+
+---
+
+## T6 · Mount point in the shared transcript
+
+**File:** `app/lib/ui/session/chat_transcript.dart` (edit).
+
+- One `Stack` child above the transcript, chosen by `ref.watch(messageNavigatorStyleProvider)`.
+  No coercion and no platform sniffing here — each app root already supplied the right value
+  (T1). **In particular: do not reach for `MediaQuery.navigationMode`** — it is
+  `{traditional, directional}` focus-traversal for TV remotes and says nothing about
+  pointers (and is used nowhere in this repo). If a future task genuinely needs live pointer
+  detection, that is `RendererBinding.instance.mouseTracker.mouseIsConnected`, not
+  `navigationMode` and not `Platform.isIOS`.
+- `off` builds **nothing** — no `SizedBox.shrink()` wrapper with listeners attached, no
+  scroll subscription. The escape hatch must actually cost nothing.
+- Mounted here (shared) so mobile and desktop cannot drift — do **not** add it to
+  `session_screen.dart` and `desktop_chat_pane.dart` separately.
+- Navigators receive `(scrollController, userMessageIndices, jumper)` — they never reach
+  into the store themselves.
+
+**Tests** (`app/test/chat_transcript_test.dart`, extend):
+- each style renders its own widget and *only* its own (no leaked siblings — the mockup
+  pass caught this class of bug);
+- `off` renders no navigator descendant;
+- the provider drives the choice: overriding it to each style renders that widget only.
+
+**Verify:** `cd app && flutter test test/chat_transcript_test.dart`
+
+---
+
+## Phase 5 — one navigator per task, all parallel
+
+Each is a single new file under `app/lib/ui/session/navigator/`, one new test file, no
+shared edits. Common requirements for **all five**:
+
+- `Semantics(label: 'your message N of M')` on every interactive element.
+- **Keyboard reachability is designed, not asserted.** For the hover-revealed styles (rail,
+  scrubber) specify what puts focus on the cluster and what reveals the peek without a
+  pointer — if the answer is "nothing", say so in the widget doc and rely on `palette`
+  (T11) as the keyboard path, rather than claiming an accessibility story that does not exist.
+- Respect `MediaQuery.disableAnimations` (reduce motion) — no ripple, no fades.
+- Inert while streaming where the spec says so; never intercept a gesture the transcript
+  needs.
+- Colours from `ColorScheme` / the tuned tokens only — no raw `Colors.*` (DESIGN.md).
+
+### T7 · `rail.dart`
+Cosy top-right cluster per spec §"The rail, precisely": 1.5pt hairlines, `spacing` apart,
+**60% opacity** (38% fails WCAG 1.4.11's 3:1 for UI components); ripple ±3 with width falloff **and** vertical push; peek card on the crest;
+`primary` current-position tick; pointer→index over a 70pt strip (never hit-test ticks).
+**Tests:** tick count = user-message count; spacing per preference (6/10/14); crest and
+falloff widths at the exact neighbour distances; `ripple: false` → no vertical push and
+only the focused tick grows; `encodeLength: false` → uniform widths; pointer at the
+cluster's first/last edge maps to index 0 / N-1; click calls `jumpToItem`; reduce-motion
+disables the ripple; **contrast test** asserting the resting tick colour reaches 3:1
+against `surface` in both light and dark themes.
+
+### T8 · `scrubber.dart` — **unblocks mobile**
+Drag the trailing 22pt strip; snap to nearest node; preview card (+ relative time when
+`timestamps`); `liveScroll: true` scrolls during drag, `false` previews and jumps on
+release. **Tests:** drag maps to nearest index; `liveScroll` both ways (assert *when* the
+scroll happens); card content with/without timestamps; release outside the strip still
+commits; does not swallow the iOS edge-swipe-back region.
+
+### T9 · `outline.dart`
+Global fold reusing SPEC-inline-expandable-tool-rows's expansion machinery — a mode flag, **not** a second widget
+tree. Hides assistant rows; also tool rows when `hideTools`; per-prompt "N rows hidden"
+when `showCounts`; clicking a prompt exits the mode and lands on it.
+**Tests:** row visibility per both options; exiting keeps the clicked prompt in view;
+entering/leaving does not lose individual tool-row fold state.
+
+### T10 · `breadcrumb.dart`
+Glass chip (match `JumpToNewestButton`'s tint/radius) showing the governing prompt;
+◀ ▶ hop; counter when `counter`; dimmed when pinned to newest / streaming if `autoHide`.
+**Tests:** the label tracks the governing prompt across scroll; ◀ ▶ clamp at both ends;
+`autoHide` dims at the tail and restores on scroll-up; `counter: false` hides the count.
+
+### T11 · `palette.dart`
+Overlay list; filter; ↑↓ previews (jump + flash) without closing; ⏎ jumps and closes;
+`esc` closes; `searchAll` widens the corpus to all roles with a role tag. Shortcut
+registered in the desktop keymap (`keymap_scope.dart`) — **rebindable in Shortcuts**, not
+hard-coded here.
+**Tests:** filter narrowing; `searchAll` corpus size and tags; ↑↓ preview does not close;
+⏎ closes and lands; keyboard-only traversal reaches everything.
+
+**Verify (each):** `cd app && flutter test test/message_navigator_<style>_test.dart`
+
+---
+
+## T12 · Docs + audit sweep
+
+- `docs/UX.md`: one paragraph on the navigator + the "markers by index, never offset"
+  constraint, so the next person does not reintroduce a proportional gutter.
+- `DESIGN.md`: **no new tokens** — confirm the rail uses `onSurfaceVariant` /
+  `primary` / `surfaceContainer` only. If a new value crept in, remove it rather than
+  document it.
+- Delete the two mockups from `mockups/` **only if** the user says so — they are the
+  design record for D1/D2 and are cheap to keep.
+
+**Verify:** `cd app && flutter analyze --fatal-infos && flutter test && ./tool/audit.sh`
+
+---
+
+## Definition of done
+
+1. From any scroll position, any prior user message is reachable in ≤ 2 interactions
+   (spec goal 1) — demonstrated by the T4 + T7 tests, not by hand-waving.
+2. `off` renders zero navigator descendants and attaches zero listeners.
+3. `transcript_anchor_test.dart` passes **unchanged** — anchoring and fold state are
+   untouched by every navigator.
+4. Mobile never renders a hover-only style (impossible by construction), and mobile can
+   turn the navigator off (criterion 4 holds on both surfaces).
+5. `grep -r addPostFrameCallback lib/ui/session/navigator/` returns **nothing** — the jump
+   corrects in layout, never after the frame.
+6. `flutter analyze --fatal-infos` clean, `flutter test` green, `tool/audit.sh` green.
+7. Each phase committed separately (repo has a background process that can revert
+   uncommitted edits — verify with `git grep <token> HEAD` after committing).

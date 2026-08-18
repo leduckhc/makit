@@ -257,7 +257,7 @@ test("publish refuses a non-allowlisted extension, minting no grant", async () =
 });
 
 // The command layer refuses a worktreePath the index never reported; the service
-// answers that question against its own worktree source (SPEC-44 owner model).
+// answers that question against its own worktree source (SPEC-ports-forward owner model).
 test("isIndexedWorktree is true only for a worktree the index reported", () => {
   const h = makeService({
     listWorktrees: () => [{ worktreePath: "/wt", baseBranch: "main", currentBranch: "feat" }],

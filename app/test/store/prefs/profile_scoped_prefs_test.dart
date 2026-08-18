@@ -1,4 +1,4 @@
-// Unit tests for [ProfileScopedPrefs] (SPEC-50 D11).
+// Unit tests for [ProfileScopedPrefs] (SPEC-profiles D11).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/prefs/profile_scoped_prefs.dart';
 import 'package:shared_preferences/shared_preferences.dart';

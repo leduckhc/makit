@@ -88,7 +88,7 @@ class RepoSettingsView {
   final List<String> branches;
 
   /// False on a client that may read but not write: per-repo writes are accepted
-  /// only from a loopback connection (SPEC-48 D16), so a paired phone shows the
+  /// only from a loopback connection (SPEC-per-repo-settings D16), so a paired phone shows the
   /// same values read-only rather than offering a control that would be refused.
   final bool editable;
 

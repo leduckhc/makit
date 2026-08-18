@@ -1,4 +1,4 @@
-/// SPEC-09 Slice 1 — first-run onboarding readiness.
+/// SPEC-onboarding-and-tray-polish Slice 1 — first-run onboarding readiness.
 ///
 /// Pure, dependency-free state machine. Given the current pairing +
 /// notification-permission state, it returns the first unsatisfied onboarding
@@ -29,7 +29,7 @@ enum NotificationPermission {
 /// The ordered onboarding gates. The wizard shows the first unsatisfied one.
 ///
 /// Reachability ("is a server reachable?") is *informational* and folded into
-/// the [pair] step per SPEC-09 resolved decision 1 — it is not a separate gate,
+/// the [pair] step per SPEC-onboarding-and-tray-polish resolved decision 1 — it is not a separate gate,
 /// because the router only routes into onboarding when unpaired.
 enum OnboardingStep {
   /// No stored creds yet → scan a QR / paste a pair URL.

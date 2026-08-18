@@ -1,4 +1,4 @@
-// T2 — SPEC-34: positions of the user's own messages within the transcript.
+// T2 — SPEC-message-navigator: positions of the user's own messages within the transcript.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/chat_items.dart';

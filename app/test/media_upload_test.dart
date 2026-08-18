@@ -7,7 +7,7 @@ import 'package:makit/transport/media_client.dart';
 
 import 'media_client_test.dart' show kPng;
 
-/// Stands in for the desktop's `POST /media` route (SPEC-33 T1). Records the
+/// Stands in for the desktop's `POST /media` route (SPEC-user-attachments T1). Records the
 /// request so the test can assert the method, content type, and bearer, and can
 /// be told to fail with a specific status.
 class _FakeUploadServer {

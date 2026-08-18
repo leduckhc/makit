@@ -1,6 +1,6 @@
 /**
  * `makit approve <id> [--deny]` — answer a session's pending tool-permission
- * prompt (a `confirmAction`) from the terminal (SPEC-46 U3).
+ * prompt (a `confirmAction`) from the terminal (SPEC-cli-as-client U3).
  *
  * `--deny` answers `approved: false`. Denial is always an explicit user act:
  * with no pending prompt the verb exits non-zero, it never silently picks the

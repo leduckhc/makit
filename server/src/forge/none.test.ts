@@ -7,7 +7,7 @@ import { hasBudgetReporting } from "./types.js";
 
 test("a lookup is none, not unknown — there is nothing to look for, by instruction", async () => {
   // The distinction from `unsupported` is the reason this gateway exists. `unknown`
-  // makes the app hold a stale PR pill and keep retrying (SPEC-32 §6.5), which is
+  // makes the app hold a stale PR pill and keep retrying (SPEC-github-gateway-and-budget §6.5), which is
   // precisely the chatter setting the provider to None is meant to stop.
   const g = createNoForgeGateway();
   assert.deepEqual(await g.prForBranch("/r", "b"), { kind: "none" });

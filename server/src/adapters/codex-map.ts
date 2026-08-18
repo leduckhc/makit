@@ -73,7 +73,7 @@ export class CodexEventMapper {
   }
 
   /**
-   * `thread/tokenUsage/updated` → one `session.usage` snapshot (SPEC-37).
+   * `thread/tokenUsage/updated` → one `session.usage` snapshot (SPEC-context-usage).
    *
    * codex sends this once per turn with BOTH a cumulative `total` and the single
    * `last` request. Only `last` describes context occupancy: its `inputTokens`
@@ -221,7 +221,7 @@ export class CodexEventMapper {
     }
   }
 
-  // ---- tool-result media (SPEC-22) -----------------------------------------
+  // ---- tool-result media (SPEC-assistant-display-media) -----------------------------------------
 
   /** Store every image block in `result` and emit one `agent.media` per new blob. */
   private ingestToolMedia(callId: string, result: unknown): void {

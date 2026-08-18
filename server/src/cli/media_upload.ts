@@ -1,5 +1,5 @@
 /**
- * Uploading an attachment from the terminal (SPEC-46 `send --attach`, SPEC-33).
+ * Uploading an attachment from the terminal (SPEC-cli-as-client `send --attach`, SPEC-user-attachments).
  *
  * `POST /media` rides the same HTTPS listener as the socket and authenticates
  * with the same bearer, so this is a plain request — with two deliberate choices:

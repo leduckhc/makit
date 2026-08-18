@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// SPEC-48 D8 — the snackbar layer is gone, and stays gone.
+/// SPEC-status-and-activity D8 — the snackbar layer is gone, and stays gone.
 ///
 /// A convention ("post to the StatusCenter instead") loses to the path of least
 /// resistance: `ScaffoldMessenger.of(context).showSnackBar(...)` is three words

@@ -1,4 +1,4 @@
-/// Flutter frame-timing collector for the metrics panel (SPEC-37 Tier 1).
+/// Flutter frame-timing collector for the metrics panel (SPEC-performance-metrics-dashboard Tier 1).
 ///
 /// Registers a [SchedulerBinding] timings callback into a fixed 600-frame ring
 /// and derives p50/p95/dropped from it. The callback is registered **only while

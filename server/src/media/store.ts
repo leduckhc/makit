@@ -1,6 +1,6 @@
 /**
  * MediaStore — content-addressed blob store for assistant display media
- * (SPEC-22): images and GIFs an agent produced (a `read` of a PNG, an MCP
+ * (SPEC-assistant-display-media): images and GIFs an agent produced (a `read` of a PNG, an MCP
  * screenshot tool, a file the agent referenced in markdown).
  *
  * Why a store instead of inlining bytes in the event: session events are
@@ -55,7 +55,7 @@ export interface MediaDescriptor {
 }
 
 /**
- * A resolved user attachment (SPEC-33): a stored blob plus the display name the
+ * A resolved user attachment (SPEC-user-attachments): a stored blob plus the display name the
  * client suggested. This is the shape that crosses `UserInput` into an adapter,
  * i.e. the descriptor the server has already **verified exists**, unlike the
  * `WireAttachment` the app sends (which is only an id).

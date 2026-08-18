@@ -1,4 +1,4 @@
-// A driven walkthrough of the pending-message queue (SPEC-35/36) on the **macOS**
+// A driven walkthrough of the pending-message queue (SPEC-mid-turn-steering-and-queue/36) on the **macOS**
 // desktop surface, for screen capture.
 //
 // Not an assertion suite — a *camera path*, like `pending_queue_tour.dart` (its

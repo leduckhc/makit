@@ -1,4 +1,4 @@
-/// The starter pane's pending-session picks (SPEC-45 D2) — the harness it will
+/// The starter pane's pending-session picks (SPEC-starter-pane-parity D2) — the harness it will
 /// run and the config values that ride the spawn.
 ///
 /// Held app-wide and keyed by the starter's draft key (deliberately **not**

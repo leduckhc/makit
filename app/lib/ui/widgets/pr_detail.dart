@@ -33,7 +33,7 @@ import 'pr_tone.dart';
 import 'sheet_header.dart';
 
 /// Why a pull request can report a build verdict with no checks to show: GitHub
-/// answered with the rollup only. SPEC-32 sheds the per-check lookup when the
+/// answered with the rollup only. SPEC-github-gateway-and-budget sheds the per-check lookup when the
 /// quota is tight, which is also why the bar's wording is the vague `CI failing`
 /// rather than a count.
 const kShedChecksNote =

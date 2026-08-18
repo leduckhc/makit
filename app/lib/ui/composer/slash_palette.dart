@@ -44,7 +44,7 @@ List<SlashCmd> filterSlashCommands(
 
   final seen = <String>{};
   final matches = <SlashCmd>[];
-  // SPEC-38: the built-in **client** commands (`/cancel`, `/new`, `/model`, …)
+  // SPEC-pending-queue-edit-reorder: the built-in **client** commands (`/cancel`, `/new`, `/model`, …)
   // are excluded when editing a QUEUED message. `handleClientCommand` intercepts
   // those app-side and acts *now*, so inside a message that sends later they
   // would promise behaviour the send path does not implement.

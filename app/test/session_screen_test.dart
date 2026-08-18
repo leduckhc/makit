@@ -445,126 +445,127 @@ void main() {
     expect(messageY, greaterThan(screenH / 2));
   });
 
-  // ─── SPEC-40: the real screen must wire the ring to the trailing slot ──────
+  // ─── SPEC-composer-footer-space: the real screen must wire the ring to the trailing slot ──────
 
-  testWidgets('SPEC-40 — the session screen does not starve its model pill', (
-    tester,
-  ) async {
-    // The call-site half of SPEC-40. `Composer` can be correct while a screen
-    // still passes the ring as a footer ACTION, which is the bug: an
-    // equal-share `Flexible` reserves half the row for a 36pt control.
-    //
-    // Every part of this fixture is load-bearing (see the plan's T5):
-    //  - usage is seeded with BOTH halves of the ratio, or ContextUsageButton
-    //    renders SizedBox.shrink() and the starvation never happens;
-    //  - configOptions are pi-shaped, so there is a model pill at all;
-    //  - the composer is focused, because mobile only shows the footer when
-    //    `alwaysExpanded || _isFocused`.
-    const sessionId = 's1';
-    const model = 'anthropic/Claude Opus 4.6';
-    tester.view.physicalSize = const Size(393, 812);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
+  testWidgets(
+    'SPEC-composer-footer-space — the session screen does not starve its model pill',
+    (tester) async {
+      // The call-site half of SPEC-composer-footer-space. `Composer` can be correct while a screen
+      // still passes the ring as a footer ACTION, which is the bug: an
+      // equal-share `Flexible` reserves half the row for a 36pt control.
+      //
+      // Every part of this fixture is load-bearing (see the plan's T5):
+      //  - usage is seeded with BOTH halves of the ratio, or ContextUsageButton
+      //    renders SizedBox.shrink() and the starvation never happens;
+      //  - configOptions are pi-shaped, so there is a model pill at all;
+      //  - the composer is focused, because mobile only shows the footer when
+      //    `alwaysExpanded || _isFocused`.
+      const sessionId = 's1';
+      const model = 'anthropic/Claude Opus 4.6';
+      tester.view.physicalSize = const Size(393, 812);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
 
-    final session = Session(
-      id: sessionId,
-      projectId: 'p1',
-      agent: 'pi',
-      title: 'Session',
-      status: SessionStatus.idle,
-      policy: ApprovalPolicy.askOnRisky,
-    );
+      final session = Session(
+        id: sessionId,
+        projectId: 'p1',
+        agent: 'pi',
+        title: 'Session',
+        status: SessionStatus.idle,
+        policy: ApprovalPolicy.askOnRisky,
+      );
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          connectionControllerProvider.overrideWith(
-            (ref) => ConnectionController(const _EmptyStorage()),
-          ),
-          projectsProvider.overrideWithValue(ProjectsState(const [])),
-          sessionsProvider.overrideWithValue(SessionsState([session])),
-          chatItemsProvider(sessionId).overrideWithValue(const []),
-          sessionMetaProvider(sessionId).overrideWithValue(
-            const SessionMeta(
-              thinking: '',
-              models: [],
-              configOptions: [
-                SessionConfigOption(
-                  id: 'model',
-                  name: 'Model',
-                  category: 'model',
-                  type: ConfigOptionType.select,
-                  currentValue: model,
-                  options: [ConfigOptionValue(value: model, name: model)],
-                ),
-                SessionConfigOption(
-                  id: 'thought_level',
-                  name: 'Thinking',
-                  category: 'thought_level',
-                  type: ConfigOptionType.select,
-                  currentValue: 'high',
-                  options: [ConfigOptionValue(value: 'high', name: 'high')],
-                ),
-              ],
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(const _EmptyStorage()),
             ),
-          ),
-          sessionUsageProvider(sessionId).overrideWithValue(
-            const SessionUsage(
-              contextTokens: 288000,
-              contextWindow: 1000000,
-              measuredAt: 1,
+            projectsProvider.overrideWithValue(ProjectsState(const [])),
+            sessionsProvider.overrideWithValue(SessionsState([session])),
+            chatItemsProvider(sessionId).overrideWithValue(const []),
+            sessionMetaProvider(sessionId).overrideWithValue(
+              const SessionMeta(
+                thinking: '',
+                models: [],
+                configOptions: [
+                  SessionConfigOption(
+                    id: 'model',
+                    name: 'Model',
+                    category: 'model',
+                    type: ConfigOptionType.select,
+                    currentValue: model,
+                    options: [ConfigOptionValue(value: model, name: model)],
+                  ),
+                  SessionConfigOption(
+                    id: 'thought_level',
+                    name: 'Thinking',
+                    category: 'thought_level',
+                    type: ConfigOptionType.select,
+                    currentValue: 'high',
+                    options: [ConfigOptionValue(value: 'high', name: 'high')],
+                  ),
+                ],
+              ),
             ),
-          ),
-          sessionActionErrorProvider(sessionId).overrideWithValue(null),
-          commandsProvider(sessionId).overrideWithValue(const []),
-        ],
-        child: const MaterialApp(home: SessionScreen(sessionId: sessionId)),
-      ),
-    );
-    await tester.pump();
+            sessionUsageProvider(sessionId).overrideWithValue(
+              const SessionUsage(
+                contextTokens: 288000,
+                contextWindow: 1000000,
+                measuredAt: 1,
+              ),
+            ),
+            sessionActionErrorProvider(sessionId).overrideWithValue(null),
+            commandsProvider(sessionId).overrideWithValue(const []),
+          ],
+          child: const MaterialApp(home: SessionScreen(sessionId: sessionId)),
+        ),
+      );
+      await tester.pump();
 
-    // Focus the composer so the footer renders at all.
-    await tester.tap(find.byType(TextField));
-    await tester.pumpAndSettle();
+      // Focus the composer so the footer renders at all.
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
 
-    // Preconditions asserted before the measurement, so a fixture regression
-    // can never masquerade as a pass.
-    expect(find.byType(ContextUsageRing), findsOneWidget);
-    expect(find.text('Claude Opus 4.6'), findsOneWidget);
+      // Preconditions asserted before the measurement, so a fixture regression
+      // can never masquerade as a pass.
+      expect(find.byType(ContextUsageRing), findsOneWidget);
+      expect(find.text('Claude Opus 4.6'), findsOneWidget);
 
-    final paragraph = tester.renderObject<RenderParagraph>(
-      find.descendant(
-        of: find.text('Claude Opus 4.6'),
-        matching: find.byType(RichText),
-      ),
-    );
-    // What the label wants, in the pill's own style.
-    // The scaler is mirrored from the pill's own context so this baseline
-    // cannot silently diverge if the fixture ever sets one. It is not a full
-    // copy of the pill's measurement (that also merges DefaultTextStyle, bold
-    // text and locale) — it does not need to be: this test compares a share,
-    // and both sides render in the same tree.
-    final pillContext = tester.element(find.byType(ModelConfigPill));
-    final wanted = TextPainter(
-      text: TextSpan(
-        text: 'Claude Opus 4.6',
-        style: Theme.of(pillContext).textTheme.labelMedium,
-      ),
-      maxLines: 1,
-      textDirection: TextDirection.ltr,
-      textScaler: MediaQuery.textScalerOf(pillContext),
-    )..layout();
-    addTearDown(wanted.dispose);
+      final paragraph = tester.renderObject<RenderParagraph>(
+        find.descendant(
+          of: find.text('Claude Opus 4.6'),
+          matching: find.byType(RichText),
+        ),
+      );
+      // What the label wants, in the pill's own style.
+      // The scaler is mirrored from the pill's own context so this baseline
+      // cannot silently diverge if the fixture ever sets one. It is not a full
+      // copy of the pill's measurement (that also merges DefaultTextStyle, bold
+      // text and locale) — it does not need to be: this test compares a share,
+      // and both sides render in the same tree.
+      final pillContext = tester.element(find.byType(ModelConfigPill));
+      final wanted = TextPainter(
+        text: TextSpan(
+          text: 'Claude Opus 4.6',
+          style: Theme.of(pillContext).textTheme.labelMedium,
+        ),
+        maxLines: 1,
+        textDirection: TextDirection.ltr,
+        textScaler: MediaQuery.textScalerOf(pillContext),
+      )..layout();
+      addTearDown(wanted.dispose);
 
-    // On this screen the composer is 377pt wide (393 minus its padding), so
-    // the label lands 2.5pt short of the 187.5pt it wants and clips a single
-    // character. What matters is the share, and it was measured both ways on
-    // this exact test: with the ring as a footer ACTION the label got 47% of
-    // what it wants; with the ring in the trailing slot it gets 99%.
-    expect(
-      paragraph.size.width / wanted.width,
-      greaterThan(0.95),
-      reason: 'the ring must not be taking a flex share of the pill row',
-    );
-  });
+      // On this screen the composer is 377pt wide (393 minus its padding), so
+      // the label lands 2.5pt short of the 187.5pt it wants and clips a single
+      // character. What matters is the share, and it was measured both ways on
+      // this exact test: with the ring as a footer ACTION the label got 47% of
+      // what it wants; with the ring in the trailing slot it gets 99%.
+      expect(
+        paragraph.size.width / wanted.width,
+        greaterThan(0.95),
+        reason: 'the ring must not be taking a flex share of the pill row',
+      );
+    },
+  );
 }

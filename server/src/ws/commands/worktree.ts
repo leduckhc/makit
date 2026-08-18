@@ -1,5 +1,5 @@
 /**
- * Worktree-domain `cmd` handlers (SPEC-19, moved verbatim from server.ts's
+ * Worktree-domain `cmd` handlers (SPEC-decomposition-and-dedup, moved verbatim from server.ts's
  * `buildCommandRouter`): worktree.create, pr.list, worktree.createFromPr,
  * branch.rename, worktree.remove.
  */
@@ -18,7 +18,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // deletable) but kept consistent so there is one vocabulary on the wire.
     // `||` (not `??`): an explicit empty string must fall through to the alias
     // and then to `undefined`, exactly as the old nested ternary did.
-    // TODO(SPEC-51): drop the `baseBranch` alias one release after the app ships
+    // TODO(SPEC-target-branch): drop the `baseBranch` alias one release after the app ships
     // with `targetBranch`.
     const rawTarget = ctx.env.targetBranch || ctx.env.baseBranch;
     const targetBranch = rawTarget ? String(rawTarget) : undefined;
@@ -196,7 +196,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // success -- the one irreversible failure in this rename. Delete the alias a
     // release after the app ships with the new key. `||` keeps the old nested
     // ternary's truthiness semantics (an empty string falls through).
-    // TODO(SPEC-51): drop the `baseBranch` alias one release after the app ships
+    // TODO(SPEC-target-branch): drop the `baseBranch` alias one release after the app ships
     // with `targetBranch`.
     const rawTarget = ctx.env.targetBranch || ctx.env.baseBranch;
     const targetBranch = rawTarget ? String(rawTarget) : undefined;

@@ -1,4 +1,4 @@
-// Tests for the profile-switch sequence (SPEC-50 D10).
+// Tests for the profile-switch sequence (SPEC-profiles D10).
 //
 // `verifyThenHandOver` is the safety property of a switch: the target must be
 // confirmed *answering* before anything is torn down, so a target that cannot

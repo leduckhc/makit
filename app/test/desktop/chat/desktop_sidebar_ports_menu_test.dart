@@ -1,4 +1,4 @@
-// SPEC-42 P2a T5 — the `Ports (n)…` worktree overflow item (D8). It opens the
+// SPEC-ports-global-view P2a T5 — the `Ports (n)…` worktree overflow item (D8). It opens the
 // global Ports screen pre-filtered to the repo; it does NOT lift the popover's
 // private controller.
 //

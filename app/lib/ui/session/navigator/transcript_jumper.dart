@@ -1,5 +1,5 @@
 /// Turns "bring my Nth message on screen" into a landed scroll position
-/// (SPEC-34).
+/// (SPEC-message-navigator).
 ///
 /// Three index spaces are in play and conflating them lands the user one message
 /// away from where they asked:

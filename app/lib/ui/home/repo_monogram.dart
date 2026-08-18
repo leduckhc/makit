@@ -7,11 +7,11 @@ import '../../app/theme.dart';
 /// Deterministic, so the same repo shows the same colour on every device with no
 /// state to sync and nothing to configure — which is the point. A custom image is
 /// a byte-transfer path with size and type validation, not a settings row, so it
-/// is deliberately not offered here (SPEC-48 D14).
+/// is deliberately not offered here (SPEC-per-repo-settings D14).
 ///
 /// Shared with the repo list rather than reimplemented there: two independently
 /// drawn marks for the same repo drift in colour and letter, and the Settings
-/// sidebar plus the repo-centric home are exactly two such places (SPEC-48 D15).
+/// sidebar plus the repo-centric home are exactly two such places (SPEC-per-repo-settings D15).
 class RepoMonogram extends StatelessWidget {
   const RepoMonogram({required this.name, this.size = 22, this.hue, super.key});
 

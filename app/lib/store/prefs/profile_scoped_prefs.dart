@@ -12,7 +12,7 @@
 /// and `resetStatic()` is `@visibleForTesting` (it also drops a cache other
 /// controllers still hold references through), so it is not an option. Moving the
 /// profile segment out of the plugin's global prefix and into keys we compose
-/// ourselves removes the global mutable state entirely (SPEC-50 D11).
+/// ourselves removes the global mutable state entirely (SPEC-profiles D11).
 ///
 /// **The migration is a no-op.** `shared_preferences` composes stored keys by
 /// plain concatenation, `'$_prefix$key'`, so with the plugin left at its default

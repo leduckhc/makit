@@ -1,5 +1,5 @@
 /**
- * Churn-proof CPU ledger (SPEC-37 decision 4).
+ * Churn-proof CPU ledger (SPEC-performance-metrics-dashboard decision 4).
  *
  * Agents spawn short-lived children (ripgrep, bash) that exit between the 1 Hz
  * ticks. If we only summed the pids present in the current tick, a turn that

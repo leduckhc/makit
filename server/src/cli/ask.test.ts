@@ -1,5 +1,5 @@
 /**
- * U2 (SPEC-46 P2) — `makit ask <id> MSG`: put a question to a session and print
+ * U2 (SPEC-cli-as-client P2) — `makit ask <id> MSG`: put a question to a session and print
  * only the answer.
  *
  * This is the cross-harness delegation verb: one agent asks another ("ask the

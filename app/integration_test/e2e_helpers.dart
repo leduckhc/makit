@@ -115,7 +115,7 @@ Future<void> pumpUntil(
 
 /// Navigate from a session to the phone's Settings screen and back.
 ///
-/// Used by the queue tour (SPEC-38) to film the placement preference moving the
+/// Used by the queue tour (SPEC-pending-queue-edit-reorder) to film the placement preference moving the
 /// pending queue between the composer and the transcript. Goes via Home because
 /// that is the only route with a Settings entry point — filming the real path a
 /// user takes is the point of a tour.

@@ -1,4 +1,4 @@
-// Scratch AUDIT harness for the SPEC-41 §2a desktop ports popover, rendered
+// Scratch AUDIT harness for the SPEC-open-ports §2a desktop ports popover, rendered
 // against `mockups/open-ports.html` §2a. Same conventions as
 // `ports_screen_sim_test.dart`: real fonts, real theme, real clock.
 //

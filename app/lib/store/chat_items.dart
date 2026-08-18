@@ -1,6 +1,6 @@
 /// Chat item tree + event folding — the folded view of the session event
 /// stream that the chat list actually renders. Extracted from `models.dart`
-/// (SPEC-19), pairs with SPEC-16 S4.
+/// (SPEC-decomposition-and-dedup), pairs with SPEC-app-chat-simplification S4.
 library;
 
 import '../transport/protocol.dart';
@@ -31,7 +31,7 @@ sealed class ChatItem {
   final int ts;
 }
 
-/// A descriptor for one image the user attached (SPEC-33), as it arrives on the
+/// A descriptor for one image the user attached (SPEC-user-attachments), as it arrives on the
 /// `user.message` payload. Bytes are NOT here — they are fetched from
 /// `GET /media/<mediaId>` — because this event is replayed in full on resume.
 class MediaAttachmentRef {
@@ -49,7 +49,7 @@ class MediaAttachmentRef {
 
   /// The `send.message` form: **id + name only**. The bytes went up to
   /// `POST /media` first and the server resolves the id against its own store
-  /// (SPEC-33 §3.3), so sending `mime` would be a claim the server ignores.
+  /// (SPEC-user-attachments §3.3), so sending `mime` would be a claim the server ignores.
   Map<String, Object?> toWire() => {
     'mediaId': mediaId,
     if (name != null) 'name': name,
@@ -82,7 +82,7 @@ class MediaAttachmentRef {
   }
 
   /// Parse the `attachments` array off a `user.message` payload. Absent (all
-  /// pre-SPEC-33 history) or malformed → empty.
+  /// pre-SPEC-user-attachments history) or malformed → empty.
   static List<MediaAttachmentRef> parseList(Object? raw) {
     if (raw is! List) return const [];
     return [for (final e in raw) ?tryParse(e)];
@@ -115,11 +115,11 @@ class UserMessageItem extends ChatItem {
   });
   final String text;
 
-  /// Images sent with this message (SPEC-33). Empty for a text-only turn.
+  /// Images sent with this message (SPEC-user-attachments). Empty for a text-only turn.
   final List<MediaAttachmentRef> attachments;
 
   /// True when this message was injected into the turn that was ALREADY running
-  /// instead of starting a new one (SPEC-35). Only codex can do it; the bubble
+  /// instead of starting a new one (SPEC-mid-turn-steering-and-queue). Only codex can do it; the bubble
   /// is captioned so the user can tell steering from queueing.
   final bool steered;
 }
@@ -152,7 +152,7 @@ class AgentMessageItem extends ChatItem {
 }
 
 /// An image or GIF the agent produced (a tool result, or a local file it
-/// referenced) — SPEC-22. Carries only the descriptor: the bytes are fetched
+/// referenced) — SPEC-assistant-display-media. Carries only the descriptor: the bytes are fetched
 /// lazily from the server's `/media/<mediaId>` route, so replaying a long
 /// transcript costs nothing until a row scrolls into view.
 class AgentMediaItem extends ChatItem {
@@ -196,7 +196,7 @@ class ThinkingItem extends ChatItem {
 
   /// Timestamp of the last observed reasoning event — the final `agent.thinking`
   /// or, for a still-streaming card, the most recent `agent.thinking.delta`
-  /// (SPEC-47 D1). Null when no terminal/delta event has landed. [ts] stays the
+  /// (SPEC-session-timings D1). Null when no terminal/delta event has landed. [ts] stays the
   /// start, so the reasoning span is `[ts, lastTs]`.
   final int? lastTs;
 
@@ -244,7 +244,7 @@ class ToolCallItem extends ChatItem {
   final Map<String, dynamic>? details;
   final ToolRisk risk;
 
-  /// Timestamp of the `tool.call.end` that closed this call (SPEC-47 D1), or
+  /// Timestamp of the `tool.call.end` that closed this call (SPEC-session-timings D1), or
   /// null when no terminal event was observed. Null is NOT "still running":
   /// codex can leave an aborted call with no end forever (D6a), so a live
   /// counter must freeze at its turn's close rather than trust this. [ts] stays
@@ -293,7 +293,7 @@ class ErrorItem extends ChatItem {
   final String message;
 }
 
-/// A closed turn's receipt row (SPEC-47 D9): a dim `2m 13s · 14 tools`, plus a
+/// A closed turn's receipt row (SPEC-session-timings D9): a dim `2m 13s · 14 tools`, plus a
 /// `… waiting on you` gate token when the turn was actually blocked. Projected
 /// into the chat items from [deriveTurns] at the closing edge — NOT built inside
 /// [foldEvents] (D18). [seq]/[ts] are the closing `idle`'s, so it orders after
@@ -506,7 +506,7 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         // Action error — handled by store, surfaces as a snackbar, not a chat item.
         break;
       case EventKind.sessionUsage:
-        // Context/cost snapshot (SPEC-37) — handled by store, rendered as chrome.
+        // Context/cost snapshot (SPEC-context-usage) — handled by store, rendered as chrome.
         break;
     }
   }

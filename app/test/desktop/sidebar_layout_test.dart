@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 
-/// Contract test for the sidebar layout providers (SPEC-12 WS-D): sane defaults
+/// Contract test for the sidebar layout providers (SPEC-desktop-sidebar-topbar-restructure WS-D): sane defaults
 /// and clamp bounds. The interactive clamp-on-drag path is exercised at the
 /// widget level in desktop_chat_shell_test.dart.
 void main() {

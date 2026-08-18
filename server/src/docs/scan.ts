@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46: collect a worktree's documents into `DocDTO[]`.
+ * makit — SPEC-doc-preview: collect a worktree's documents into `DocDTO[]`.
  *
  * One shape, one loop: {@link docCandidates} yields worktree-relative paths
  * (from git under D1 rev 2, or the allowlist walk when git cannot answer or the

@@ -1,4 +1,4 @@
-/// SPEC-46 — the global Docs screen (Option A, mockup Card 2).
+/// SPEC-doc-preview — the global Docs screen (Option A, mockup Card 2).
 ///
 /// A sibling to the Ports screen: an app bar with a count subtitle, a search
 /// field (titles AND paths), a filter row (All / Mockups / Specs / Changed with

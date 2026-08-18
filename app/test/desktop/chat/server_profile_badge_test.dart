@@ -1,4 +1,4 @@
-// Tests for the profile switcher UI (SPEC-50 D10).
+// Tests for the profile switcher UI (SPEC-profiles D10).
 //
 // The switch itself lives in `_ProfileHostState.switchTo` in desktop_app.dart,
 // which owns the ProviderScope and cannot be built in a widget test. What IS

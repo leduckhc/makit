@@ -2,7 +2,7 @@
 
 /**
  * Full-stack control-plane e2e harness for the macOS desktop control app
- * (SPEC-03). The counterpart of `e2e-server.ts` (which serves the mobile client
+ * (SPEC-desktop-control-app). The counterpart of `e2e-server.ts` (which serves the mobile client
  * over WS): this one exposes the daemon's **control socket** so the real
  * desktop screens (`app/integration_test/desktop/`) can drive the genuine
  * NDJSON control protocol against a real {@link createServerBackend}.

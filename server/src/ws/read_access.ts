@@ -1,5 +1,5 @@
 /**
- * One rule for "may this principal read this session?" (SPEC-46 D17).
+ * One rule for "may this principal read this session?" (SPEC-cli-as-client D17).
  *
  * It lives in its own module because four separate paths reach session data —
  * `fanout`, `handleSub`, the `sessions.snapshot` pushed on auth, and
@@ -9,7 +9,7 @@
  * appear without a decision.
  *
  * The rule itself: a **human** principal (a phone with no caps, or the CLI's
- * `client` cap) reads everything, exactly as before SPEC-46 — nothing here may
+ * `client` cap) reads everything, exactly as before SPEC-cli-as-client — nothing here may
  * narrow what already-paired devices can see. A **session-scoped** principal (an
  * agent token, D3) reads its own session and its **descendants**: an agent that
  * handed work off to a child is entitled to watch what it started, but not its

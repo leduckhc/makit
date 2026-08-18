@@ -1,5 +1,5 @@
 /**
- * gateway.ts — the single door for every GitHub read (SPEC-32 §5, §6.4).
+ * gateway.ts — the single door for every GitHub read (SPEC-github-gateway-and-budget §5, §6.4).
  *
  * All five call sites (repo_service, pr_watcher, worktree cmds) route through
  * here so cost, cache, dedupe, concurrency, and spend accounting live in one
@@ -240,7 +240,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
    * Bumped whenever a mutation invalidates a key. A lookup that was already in
    * flight when that happened describes the *pre*-mutation state, so it must not
    * be written to the cache on arrival — otherwise the invalidation is undone and
-   * the UI keeps reporting the state the mutation just changed (SPEC-38 §7).
+   * the UI keeps reporting the state the mutation just changed (SPEC-pr-actions-next-step-bar §7).
    *
    * Deliberately **not** pruned, and deliberately not TTL'd like {@link cache}.
    * An entry is one `string`/`number` pair per branch the user has actually

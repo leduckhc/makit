@@ -1,5 +1,5 @@
 /**
- * T12 (SPEC-46) — `makit new`: a session is born in the terminal, in its own
+ * T12 (SPEC-cli-as-client) — `makit new`: a session is born in the terminal, in its own
  * worktree.
  *
  * D15 is the load-bearing decision here: a session **owns a worktree**, always,

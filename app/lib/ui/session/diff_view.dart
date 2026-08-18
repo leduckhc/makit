@@ -1,5 +1,5 @@
 /// Diff-rendering widgets for tool detail views. Extracted from
-/// `tool_renderers.dart` (SPEC-19).
+/// `tool_renderers.dart` (SPEC-decomposition-and-dedup).
 ///
 /// - [DiffLineRow] colours a computed [DiffLine] (added/removed/context).
 /// - [DiffText] colours diff text that already carries its own gutter markers

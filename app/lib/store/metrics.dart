@@ -1,4 +1,4 @@
-/// Performance-metrics models + providers (SPEC-37).
+/// Performance-metrics models + providers (SPEC-performance-metrics-dashboard).
 ///
 /// Tolerant by construction, mirroring [GithubBudget]: a malformed field
 /// degrades to a null/empty value rather than taking down the socket, and the
@@ -162,7 +162,7 @@ class SamplerMetrics {
   /// Nullable for the same reason as [SurfaceMetrics.cpuPercent].
   final double? cpuPercent;
 
-  /// **Null by design** (SPEC-37 decision 16): the sampler runs inside the
+  /// **Null by design** (SPEC-performance-metrics-dashboard decision 16): the sampler runs inside the
   /// server process, so its resident share is not separately attributable.
   /// The server previously sent `process.memoryUsage().rss` here, which merely
   /// restated the server row under an "own cost" label — the one dishonest

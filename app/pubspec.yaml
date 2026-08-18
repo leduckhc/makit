@@ -45,20 +45,20 @@ dependencies:
   # needs input. Pinned exactly (native code). Pulls in timezone + http
   # transitively (used by the plugin's scheduling API, which we don't call).
   flutter_local_notifications: 22.2.0  # publisher: dexterx.dev — MaikuB
-  # SPEC-08 seam: the background notification-response isolate persists a
-  # pending-action queue here (non-secret action metadata, drained by SPEC-07).
+  # SPEC-actionable-notifications seam: the background notification-response isolate persists a
+  # pending-action queue here (non-secret action metadata, drained by SPEC-background-wake-notifications).
   shared_preferences: 2.5.5          # publisher: flutter.dev — pending-action queue
   # On-device diagnostic log file (SPEC — in-app logging). Already resolved as a
   # transitive dep of the plugins above; promoted to a direct dep here.
   path_provider: ^2.1.0              # publisher: flutter.dev — app-support dir for makit.log
-  # ---------------- SPEC-03 desktop control app (macOS only) ----------
+  # ---------------- SPEC-desktop-control-app desktop control app (macOS only) ----------
   # Pinned exactly: tray_manager + window_manager have native Swift/Obj-C
   # code. qr_flutter is pure-Dart (safe for caret).
   tray_manager: 0.5.3                # publisher: leanflutter.dev — macOS menubar system tray
   window_manager: 0.5.2              # publisher: leanflutter.dev — macOS window sizing/position
   qr_flutter: ^4.1.0                 # publisher: theyakka.com — pure-Dart QR code rendering
   phosphoricons_flutter: ^1.0.0      # publisher: lucaszafret.com.br — Phosphor icons (Dart 3.x compatible)
-  # ---------------- SPEC-33 user attachments ---------------------------
+  # ---------------- SPEC-user-attachments user attachments ---------------------------
   # Pinned exactly: all three ship native code. Picker sources for the
   # composer's paperclip (image_picker = gallery/camera on mobile,
   # file_selector = desktop open dialog).
@@ -70,7 +70,7 @@ dependencies:
   # why `rustup` is a REQUIRED build prerequisite: without it the plugin
   # downloads precompiled binaries that pubspec.lock does not hash-verify.
   # `tool/audit.sh` fails the build when rustup is missing — do not remove that
-  # check while this dependency is present. See SPEC-33 §4.3.
+  # check while this dependency is present. See SPEC-user-attachments §4.3.
   super_clipboard: 0.9.1             # publisher: nativeshell.dev — pasteboard image reads
 
 dev_dependencies:

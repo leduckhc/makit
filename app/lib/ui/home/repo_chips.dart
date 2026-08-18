@@ -105,7 +105,7 @@ const double _kChipLabelMaxWidth = 190;
 ///
 /// **No capsule.** The row already carries an accent bar and a branch name, and
 /// a third filled element is the chrome direction B set out to remove — the
-/// mockup's §6 row is plain text between the two (SPEC-38 §8 D15).
+/// mockup's §6 row is plain text between the two (SPEC-pr-actions-next-step-bar §8 D15).
 ///
 /// Replaces the old `PR #42` pill, whose colour was the only signal it carried:
 /// you could see that *something* was wrong but not what, and a merged PR looked
@@ -364,7 +364,7 @@ String branchAgeLabel(DateTime? committedAt) {
   return '${(d.inDays / 365).floor()}y ago';
 }
 
-/// What a worktree's accent bar says about it (SPEC-19, direction C). Ordered
+/// What a worktree's accent bar says about it (SPEC-decomposition-and-dedup, direction C). Ordered
 /// by urgency; [worktreeAccent] resolves a worktree's sessions to one of these.
 enum WorktreeAccent {
   /// A session is blocked on the user — approve a tool call, answer a question.

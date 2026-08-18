@@ -1,4 +1,4 @@
-/// The worktree-row docs glyph (SPEC-46, mockup Card 2 right frame): a
+/// The worktree-row docs glyph (SPEC-doc-preview, mockup Card 2 right frame): a
 /// trailing-column file icon in the slot next to the ports plug. Renders
 /// nothing when the worktree owns no docs, so a quiet branch adds no weight —
 /// the same discipline as `ports_glyph.dart`.

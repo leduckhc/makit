@@ -1,4 +1,4 @@
-/// Notifications section body (SPEC-13 migration map).
+/// Notifications section body (SPEC-desktop-settings-rework migration map).
 ///
 /// Desktop is the control surface, so the one real knob today is the
 /// **reminder delay**: how long an unanswered server request stays on-screen

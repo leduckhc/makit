@@ -1,7 +1,7 @@
 /**
  * AgentFactory: construct the concrete {@link AgentAdapter} for an agent id.
  *
- * Extracted from {@link SessionManager} (SPEC-19) so adapter selection lives
+ * Extracted from {@link SessionManager} (SPEC-decomposition-and-dedup) so adapter selection lives
  * in one place rather than inline in the manager's spawn/attach paths. Pure —
  * no manager state.
  */
@@ -22,7 +22,7 @@ function piAcpBin(): string {
 
 /**
  * The ACP spawn spec for pi (via the `pi-acp` bridge). Shared by the live
- * adapter build and the throwaway capability probe (SPEC-27) so both drive the
+ * adapter build and the throwaway capability probe (SPEC-new-session-config-at-spawn) so both drive the
  * exact same binary.
  */
 export function piAcpSpec(): AcpSpawnSpec {
@@ -51,7 +51,7 @@ export function codexSpawnArgs(
  *   bridge spawns `pi --mode rpc` itself), driven through {@link AcpAdapter}.
  * - `codex` runs native via `codex app-server` ({@link CodexAppServerAdapter}).
  *   `codex-native` is a back-compat alias for sessions persisted before the id
- *   was folded into `codex` (SPEC-27).
+ *   was folded into `codex` (SPEC-new-session-config-at-spawn).
  */
 export function buildAdapter(agentId: string): { agent: string; adapter: AgentAdapter } {
   switch (agentId) {

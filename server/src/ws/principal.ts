@@ -1,7 +1,7 @@
 /**
- * The authenticated subject behind a WS connection (SPEC-46 D17).
+ * The authenticated subject behind a WS connection (SPEC-cli-as-client D17).
  *
- * Before SPEC-46 an authed socket had a `deviceId` + `deviceLabel` and nothing
+ * Before SPEC-cli-as-client an authed socket had a `deviceId` + `deviceLabel` and nothing
  * else, so every authed socket could dispatch every command and received every
  * session's events. That was correct while the only clients were the user's own
  * phone and desktop app; it stops being correct the moment an **agent** holds a
@@ -29,7 +29,7 @@ export interface Principal {
   readonly label: string;
   /**
    * What this credential may do. **Undefined means full access** — every device
-   * paired before SPEC-46 has no `caps`, and must keep working untouched.
+   * paired before SPEC-cli-as-client has no `caps`, and must keep working untouched.
    */
   readonly caps?: readonly DeviceCap[];
   /**

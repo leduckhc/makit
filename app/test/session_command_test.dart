@@ -1,4 +1,4 @@
-// SPEC-52 C2b — the `/session` CLIENT command (D7).
+// SPEC-session-identity C2b — the `/session` CLIENT command (D7).
 //
 // This is the entire point of the feature. pi's own `/session` is an AGENT
 // command, so typed into makit's composer it falls through to

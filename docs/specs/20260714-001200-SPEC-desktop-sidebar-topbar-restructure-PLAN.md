@@ -1,0 +1,126 @@
+# SPEC-desktop-sidebar-topbar-restructure — Execution plan (parallelizable)
+
+**Spec:** [20260714-001200-SPEC-desktop-sidebar-topbar-restructure.md](20260714-001200-SPEC-desktop-sidebar-topbar-restructure.md)
+**Plan date:** 2026-07-14 · reflects the working tree as of this date (part of the
+spec is already implemented; this plan covers only what remains).
+
+> **Status: EXECUTED.** All lanes and the integration checkpoint below are
+> complete — see the [Completion addendum](`#completion-addendum-2026-07-14`). The audit
+> table is kept as a historical pre-execution snapshot.
+
+## Current state (audit, not aspiration)
+
+| Piece | File | State |
+|---|---|---|
+| Contract (providers + 250/450/320 constants) | `app/lib/desktop/chat/sidebar_layout.dart` | ✅ landed |
+| Foldable + resizable shell, drag handle | `app/lib/desktop/chat/desktop_chat_shell.dart` | ✅ landed |
+| Sidebar: fold button, collapsible worktrees, PR line, single-line tiles, `_StatusDot` | `app/lib/desktop/chat/desktop_sidebar.dart` | ✅ landed, **minus decision 8** (untitled → agent-name fallback) |
+| Pane: branch lookup + header divider removed | `app/lib/desktop/chat/desktop_chat_pane.dart` | ⚠️ **half done** — `_PaneHeader` still has the unused `branch` field and still renders `BranchChip` / `SessionStatusChip` / agent subtitle; no unfold affordance |
+| Tests (new + updated) | `app/test/desktop/*` | ❌ not started |
+| Verification (`analyze` + `test`) | — | ❌ not run since edits |
+
+> The tree currently does **not** compile-check cleanly by assumption — Lane 2
+> must run before the integration checkpoint, and nothing else should be
+> considered "done" until that checkpoint passes.
+
+## Lanes
+
+Three lanes, **disjoint file ownership**, no ordering between them. Each lane is
+self-contained enough to hand to a separate agent/engineer in a worktree.
+
+```text
+Lane 1 (sidebar)   → verify: flutter analyze --no-pub (file-local)
+Lane 2 (pane)      → verify: flutter analyze --no-pub (file-local)
+Lane 3 (tests)     → verify: tests compile; expected to pass only after 1+2 merge
+   └── all three merge → Integration checkpoint
+```
+
+### Lane 1 — Sidebar: decision-8 fallback
+**Owns:** `app/lib/desktop/chat/desktop_sidebar.dart` (only)
+
+- In `_SessionTile`, change the untitled fallback from `session.id` to
+  `session.agent` (empty agent → keep `session.id` as last resort). Pending
+  behavior (`'new session'`) unchanged.
+
+### Lane 2 — Pane header: finish the slim-down + unfold affordance
+**Owns:** `app/lib/desktop/chat/desktop_chat_pane.dart` (only)
+
+- `_PaneHeader`: delete the `branch` field/param, `BranchChip`,
+  `SessionStatusChip`, the `draft` tag row, and the agent-name subtitle
+  `Text`; shrink `AgentAvatar` to `size: 24`; keep title + actions menu.
+- Watch `sidebarCollapsedProvider` (import `sidebar_layout.dart`,
+  `_PaneHeader` is already a `ConsumerWidget`). When collapsed:
+  - inset the header content left (~72px) to clear the macOS traffic lights,
+  - show a leading `Show sidebar` `IconButton` (`Icons.view_sidebar_outlined`)
+    that sets the provider back to `false`,
+  - wrap the header strip in `DragToMoveArea` so the window stays draggable
+    where the sidebar's drag strip used to be (import
+    `package:window_manager/window_manager.dart`).
+- Apply the same collapsed-state inset/affordance to `_NoSelection` **or**
+  render the header shell even with no session — pick the simpler; the unfold
+  button must be reachable when no session is selected.
+
+### Lane 3 — Tests
+**Owns:** `app/test/desktop/desktop_chat_shell_test.dart` (new),
+`app/test/desktop/sidebar_layout_test.dart` (new),
+`app/test/desktop/desktop_sidebar_test.dart`,
+`app/test/desktop/desktop_chat_pane_test.dart`
+
+Written against the spec's public behavior (widget class names and provider API
+are stable), so this lane does not need Lanes 1–2 merged to be *written* — only
+to *pass*.
+
+- `sidebar_layout_test.dart` (new): defaults (`collapsed == false`,
+  `width == 320`); clamp math used by the shell stays within 250–450.
+- `desktop_sidebar_test.dart`:
+  - keep existing cases (repo/worktree/session titles, `+12/−3`, `PR #42`,
+    DRAFTS/`draft`, empty state) — update any that asserted on the removed
+    preview subtitle if present;
+  - add: tapping the worktree branch row hides its session titles, tapping
+    again shows them;
+  - add: fold `IconButton` (tooltip `Hide sidebar`) sets
+    `sidebarCollapsedProvider` to `true`;
+  - add: untitled session renders its agent name (decision 8).
+- `desktop_chat_pane_test.dart`:
+  - keep existing cases (empty state, header shows title);
+  - add: header contains no `BranchChip`, no `SessionStatusChip`, no
+    agent-subtitle text;
+  - add: with `sidebarCollapsedProvider` overridden to `true`, a
+    `Show sidebar` button is present and tapping it sets the provider to
+    `false`; with `false`, the button is absent.
+
+## Integration checkpoint (serial, after all lanes merge)
+
+1. `cd app && flutter analyze --no-pub` → zero issues.
+2. `flutter test --no-pub test/desktop` → green (includes the pre-existing
+   `desktop_chat_pane_menu_test.dart`, which must not regress).
+3. Manual smoke (macOS): fold hides sidebar → unfold button appears past the
+   traffic lights and restores it; drag handle resizes 250–450; worktree row
+   toggles its sessions; running session shows a pulsing dot; pane header is
+   avatar + title + menu only.
+4. Optional: snapshot the skeleton (`POST /api/skeletons/makit-macos-desktop/versions`)
+   noting "implemented in app" so the next diff has a clean baseline.
+
+## Merge notes
+
+- Lanes may land in any order; only the checkpoint is ordered.
+- If run as parallel agents: one worktree per lane, merge Lane 2 first if any
+  conflict-adjacent churn appears (it owns the only file currently in a broken
+  intermediate state).
+
+## Completion addendum (2026-07-14)
+
+All three lanes landed (commits `1642a8a`, `bb62fe5` + follow-ups). Deltas from
+the plan as written:
+
+- Lane 3 additionally created `desktop_chat_shell_test.dart` (fold/unfold
+  roundtrip, resize clamp at both bounds) as the shell-level regression guard.
+- Two-pass review (code+spec, QA/UX) added follow-ups beyond the lanes:
+  `_StatusDot` tooltip + semantics (a11y), controller gated to pulsing states
+  and synced on in-place status transitions (`didUpdateWidget`),
+  `_WorktreeGroup` keyed by worktree id, decision-8 fallback applied to the
+  pane header too, and the shared chrome constants (`kTitleBarStripHeight`,
+  `kTrafficLightInset`) hoisted into `sidebar_layout.dart`.
+- Integration checkpoint result: `flutter analyze --fatal-infos` clean,
+  `dart format` clean, full suite green, `flutter build macos --debug`
+  succeeds. Review request: PR #50.

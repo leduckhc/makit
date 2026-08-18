@@ -1,5 +1,5 @@
 /**
- * macOS launchd LaunchAgent integration (SPEC-01, phase 5).
+ * macOS launchd LaunchAgent integration (SPEC-daemon-control-plane, phase 5).
  *
  * `makit service install` writes a LaunchAgent plist to
  * `~/Library/LaunchAgents/dev.makit.plist`; `makit service uninstall` removes it.

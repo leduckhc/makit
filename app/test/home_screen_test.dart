@@ -107,7 +107,7 @@ void main() {
   });
 
   testWidgets('a worktree with no live session still renders', (tester) async {
-    // Matching the desktop sidebar (SPEC-11): every worktree is listed, whether
+    // Matching the desktop sidebar (SPEC-repo-centric-home): every worktree is listed, whether
     // or not a session is running in it — a branch with work on it is the thing
     // you most want to start a session *on*, so hiding it hid the entry point.
     final repo = _repo(

@@ -1,4 +1,4 @@
-/// Shortcuts section body (SPEC-13 migration map).
+/// Shortcuts section body (SPEC-desktop-settings-rework migration map).
 ///
 /// Migrates the keyboard-shortcuts UI out of the retired `KeymapSettingsScreen`
 /// into the two-pane Settings surface. Lists every [ShortcutAction] grouped by
@@ -82,7 +82,7 @@ class ShortcutsSection extends ConsumerWidget {
 
 /// A single shortcut row: label + description, the current chord chip, a
 /// per-row reset (↺, shown only when the chord differs from its default —
-/// SPEC-13 #9), and tap-to-rebind.
+/// SPEC-desktop-settings-rework #9), and tap-to-rebind.
 class _ShortcutRow extends ConsumerWidget {
   const _ShortcutRow({
     required this.action,

@@ -117,7 +117,7 @@ test("WireErrorCode exposes canonical codes", () => {
   assert.equal(WireErrorCode.BadRequest, "bad_request");
 });
 
-// ── SPEC-41 ────────────────────────────────────────────────────────────────
+// ── SPEC-open-ports ────────────────────────────────────────────────────────────────
 // `ports.snapshot` is a HOST-WIDE broadcast, so it lives in snapshots.json (the
 // frame fixtures) and must be rejected by `decodeSessionEvent`.
 //
@@ -137,7 +137,7 @@ test("ports.snapshot decodes as a frame but never as a session event", () => {
   );
 });
 
-// ── SPEC-42 P2b ────────────────────────────────────────────────────────────
+// ── SPEC-ports-global-view P2b ────────────────────────────────────────────────────────────
 // The orphan/collision annotations are OPTIONAL fields on an EXISTING event, so
 // no `EventKind` / `HOST_ONLY_KINDS` entry is added. This asserts both halves
 // still hold with the richer payload: the frame round-trips, and the carve-out
@@ -165,7 +165,7 @@ test("ports.snapshot carries orphan and collision annotations", () => {
   assert.equal(collision.collision?.withBranch, "chore/deps");
 });
 
-// ── SPEC-46 ────────────────────────────────────────────────────────────────
+// ── SPEC-cli-as-client ────────────────────────────────────────────────────────────────
 // `docs.snapshot` is a HOST-WIDE broadcast (D11), so it lives in snapshots.json
 // and must be rejected by `decodeSessionEvent`. This mirrors the ports.snapshot
 // guard above, and the rejection genuinely depends on the runtime
@@ -213,10 +213,10 @@ test("docs.snapshot carries extracted titles, and absent optionals stay absent",
   );
   assert.equal(board.changed, true);
 
-  const spec = docs.find((d) => d.relPath.includes("SPEC-44"));
+  const spec = docs.find((d) => d.relPath.includes("SPEC-ports-forward"));
   assert.ok(spec, "fixture must cover a spec markdown");
   assert.equal(spec.docStatus, "Draft");
-  assert.ok(spec.title.startsWith("SPEC-44 —"), "title comes from the H1");
+  assert.ok(spec.title.startsWith("SPEC-ports-forward —"), "title comes from the H1");
 
   const bare = docs.find((d) => d.relPath === "README.md");
   assert.ok(bare, "fixture must cover a doc with no optional fields set");
@@ -235,12 +235,12 @@ test("DocDTO.key is <worktreePath>:<relPath> and is derivable, not opaque", () =
   }
 });
 
-// ── SPEC-42 P2c ─────────────────────────────────────────────────────
+// ── SPEC-ports-global-view P2c ─────────────────────────────────────────────────────
 // `docker` is a third OPTIONAL annotation on the same event (D13): an ownership
 // fact, never a `reach`. The fixture's container port is bound to `0.0.0.0`, so
 // this also pins the half of D13 that is easiest to regress — the annotation
 // must not rewrite `reach` into a `docker` value the type does not have. (Kept
-// alongside the SPEC-46 docs tests: they are separate contracts on the same
+// alongside the SPEC-doc-preview docs tests: they are separate contracts on the same
 // snapshots.json, not a replacement for this one.)
 test("ports.snapshot carries a docker annotation without touching reach", () => {
   const frame = snapshots.find((f) => f.kind === "ports.snapshot");

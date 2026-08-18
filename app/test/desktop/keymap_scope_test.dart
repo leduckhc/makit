@@ -642,7 +642,7 @@ void main() {
     );
   });
 
-  // SPEC-42 P2a, corrected: the desktop shell is a plain `MaterialApp` (only
+  // SPEC-ports-global-view P2a, corrected: the desktop shell is a plain `MaterialApp` (only
   // mobile uses `MaterialApp.router`), so this shortcut must not depend on a
   // GoRouter being in context — it pushes on the shell's own Navigator.
   testWidgets('Ctrl+Shift+P opens the Ports screen on this Navigator', (
@@ -677,7 +677,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(PortsScreen), findsOneWidget);
   });
-  // ── SPEC-49 D8/D9: copy the newest notice from the record ──────────────────
+  // ── SPEC-notice-layer D8/D9: copy the newest notice from the record ──────────────────
 
   testWidgets('Ctrl+Shift+C copies the newest notice', (tester) async {
     final keymap = await controller();
@@ -759,7 +759,7 @@ void main() {
     container.read(settingsOpenProvider.notifier).state = true;
     await tester.pump();
 
-    // SPEC-49 D9: the gate is a principle, not a list of exceptions.
+    // SPEC-notice-layer D9: the gate is a principle, not a list of exceptions.
     await pressCtrl(tester, LogicalKeyboardKey.keyC, shift: true);
     expect(copied, isEmpty);
     // The sibling assertion that proves the gate is intact rather than holed.

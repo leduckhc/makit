@@ -172,7 +172,7 @@ Future<String?> showLandsInPicker(
   final store = ref.read(storeControllerProvider.notifier);
   // Capture the StatusCenter BEFORE the picker opens: reading `ref.status` once
   // the modal returns would hit a disposed ref if the owning widget unmounted
-  // while it was open, throwing and silently losing the target change (SPEC-48
+  // while it was open, throwing and silently losing the target change (SPEC-per-repo-settings
   // lifetime rule — enforced by status_lifetime_test).
   final status = ref.status;
   // The request is in flight before the route's first build, and the user can

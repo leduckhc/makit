@@ -1,4 +1,4 @@
-/// The docs vocabulary (SPEC-46): pure helpers + the kind accents, so the row,
+/// The docs vocabulary (SPEC-doc-preview): pure helpers + the kind accents, so the row,
 /// the glyph, the popover and the preview toolbar cannot drift apart. No
 /// widgets — the colours live here, the pixels live in the widgets.
 library;

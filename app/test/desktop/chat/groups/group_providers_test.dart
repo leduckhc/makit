@@ -1,4 +1,4 @@
-// SPEC-30 — the shared seam: membership resolution, placement mode, and the
+// SPEC-tab-groups — the shared seam: membership resolution, placement mode, and the
 // decision-15 "which group already holds this session?" lookup.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

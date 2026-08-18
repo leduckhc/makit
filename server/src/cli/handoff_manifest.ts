@@ -1,5 +1,5 @@
 /**
- * Pure parse + render for the SPEC-46 handoff manifest (D5). Kept free of I/O so
+ * Pure parse + render for the SPEC-cli-as-client handoff manifest (D5). Kept free of I/O so
  * it can be unit-tested without a server, mirroring `render.ts`.
  *
  * The producer is an LLM writing the manifest that becomes the *entire*

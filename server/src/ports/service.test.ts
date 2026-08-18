@@ -23,7 +23,7 @@ interface Harness {
   tick: () => void;
   cleared: () => number;
   setExec: (e: Exec) => void;
-  /** Signals the service asked for, in order (SPEC-43 — never a real kill). */
+  /** Signals the service asked for, in order (SPEC-ports-kill — never a real kill). */
   signals: () => { pid: number; sig: string }[];
   /** Sleeps the service awaited, in ms (the SIGTERM grace window). */
   sleeps: () => number[];
@@ -447,7 +447,7 @@ test("a THROWING history read keeps the scan alive (scanOk reflects the scan, no
   assert.equal(h.snapshots[0]!.ports[0]!.orphan, undefined);
 });
 
-// ── SPEC-42 P2c: the docker overlay (D13) ────────────────────────────────────
+// ── SPEC-ports-global-view P2c: the docker overlay (D13) ────────────────────────────────────
 
 /** A listener held by docker's host-side proxy on a published port. */
 const DOCKER_LISTENER_OUT = ["p901", "u501", "f3", "PTCP", "n0.0.0.0:5432"].join("\n");
@@ -512,7 +512,7 @@ test("no docker-proxy listener → `docker ps` is never spawned at all", async (
   assert.equal(h.dockerCount(), 0);
 });
 
-// ── SPEC-43 P3a: killPort — the orchestrator (D1/D2) ───────────────────────
+// ── SPEC-ports-kill P3a: killPort — the orchestrator (D1/D2) ───────────────────────
 //
 // No real process is ever signalled: `signal` and `sleep` are injected, and the
 // scripted `exec` decides what the "fresh" scans see. The classifier's own
@@ -733,7 +733,7 @@ test("D7: every attempt writes ONE audit line — info on a kill, warn on a refu
   }
 });
 
-// ── SPEC-43 P3b: killOrphans (D5) ──────────────────────────────────────────
+// ── SPEC-ports-kill P3b: killOrphans (D5) ──────────────────────────────────────────
 
 /**
  * A scan with two orphan listeners (5180, 5181) plus one owned port. `killed`
@@ -872,7 +872,7 @@ test("killOrphans refuses everything when the fresh scan failed", async () => {
   assert.deepEqual(h.signals(), []);
 });
 
-// ── SPEC-44 P4a: watched ports (D7/D8) ─────────────────────────────────────
+// ── SPEC-ports-forward P4a: watched ports (D7/D8) ─────────────────────────────────────
 
 test("a watched, listening port is marked watched:true; others are absent", async () => {
   const h = harness({

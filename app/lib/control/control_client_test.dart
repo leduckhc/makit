@@ -1,4 +1,4 @@
-// Test file colocated under lib/ per SPEC-03 Stream A layout; flutter_test is a
+// Test file colocated under lib/ per SPEC-desktop-control-app Stream A layout; flutter_test is a
 // dev dependency, which is expected here.
 // ignore_for_file: depend_on_referenced_packages
 

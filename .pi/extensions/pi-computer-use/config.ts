@@ -1,6 +1,6 @@
 /**
  * Opt-in gate for pi-side computer use. Deliberately duplicates the small
- * env-var contract of `server/src/adapters/computer_use.ts` (SPEC-36) instead of
+ * env-var contract of `server/src/adapters/computer_use.ts` (SPEC-computer-use) instead of
  * importing it: this file is loaded by **pi's** module loader inside pi's own
  * process, not by the makit server, so it must stay dependency-free.
  *

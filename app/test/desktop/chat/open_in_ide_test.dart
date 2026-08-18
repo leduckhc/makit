@@ -157,7 +157,7 @@ void main() {
     testWidgets('a null path disables the launcher (nothing to open)', (
       tester,
     ) async {
-      // SPEC-30 decision 11: a board with no focused pane owns no scope, so the
+      // SPEC-tab-groups decision 11: a board with no focused pane owns no scope, so the
       // launcher is disabled rather than lying about a target.
       await tester.pumpWidget(
         const ProviderScope(

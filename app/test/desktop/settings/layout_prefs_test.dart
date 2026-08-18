@@ -8,7 +8,7 @@ import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  group('auto-split threshold (SPEC-30 decision 9)', () {
+  group('auto-split threshold (SPEC-tab-groups decision 9)', () {
     test('defaults to 3 and round-trips through the store', () async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();

@@ -1,5 +1,5 @@
 /**
- * Control-plane protocol codec tests (SPEC-01, phase 1).
+ * Control-plane protocol codec tests (SPEC-daemon-control-plane, phase 1).
  *
  * The wire format is newline-delimited JSON over the unix control socket.
  * The codec must round-trip valid messages and NEVER throw on malformed

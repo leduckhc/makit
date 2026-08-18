@@ -16,8 +16,8 @@ import 'settings_reset_button.dart';
 
 /// Agents & Chat section body.
 ///
-/// Wires the **message navigator** leaf (SPEC-34) and the **PR actions** leaf
-/// (SPEC-23): an editable prompt per composer PR
+/// Wires the **message navigator** leaf (SPEC-message-navigator) and the **PR actions** leaf
+/// (SPEC-pr-status-and-actions): an editable prompt per composer PR
 /// action (Create PR / Fix PR / Resolve comments). A blank field means "use the
 /// built-in default", so the shipped prompts can evolve without stomping a
 /// user's edit. The remaining leaves are reserved `[coming soon]` placeholders.

@@ -1,0 +1,666 @@
+[
+ {
+  "old": "2026-07-05-SPEC-01-daemon-control-plane.md",
+  "new": "20260705-000100-SPEC-daemon-control-plane.md",
+  "slug": "daemon-control-plane",
+  "legacy": "SPEC-01",
+  "num": 1,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-05-SPEC-02-cli-client-subcommands.md",
+  "new": "20260705-000200-SPEC-cli-client-subcommands.md",
+  "slug": "cli-client-subcommands",
+  "legacy": "SPEC-02",
+  "num": 2,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-05-SPEC-03-ARCHITECTURE-AND-PLAN.md",
+  "new": "20260705-000300-SPEC-desktop-control-app-ARCHITECTURE-AND-PLAN.md",
+  "slug": "desktop-control-app",
+  "legacy": "SPEC-03",
+  "num": 3,
+  "kind": "ARCHITECTURE-AND-PLAN"
+ },
+ {
+  "old": "2026-07-05-SPEC-03-desktop-control-app.md",
+  "new": "20260705-000300-SPEC-desktop-control-app.md",
+  "slug": "desktop-control-app",
+  "legacy": "SPEC-03",
+  "num": 3,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-05-SPEC-04-multiplexer-adapter-layer.md",
+  "new": "20260705-000400-SPEC-multiplexer-adapter-layer.md",
+  "slug": "multiplexer-adapter-layer",
+  "legacy": "SPEC-04",
+  "num": 4,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-05-SPEC-05-session-in-pane-spawning.md",
+  "new": "20260705-000500-SPEC-session-in-pane-spawning.md",
+  "slug": "session-in-pane-spawning",
+  "legacy": "SPEC-05",
+  "num": 5,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-07-SPEC-06-composer-adaptive-input.md",
+  "new": "20260707-000600-SPEC-composer-adaptive-input.md",
+  "slug": "composer-adaptive-input",
+  "legacy": "SPEC-06",
+  "num": 6,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-08-SPEC-07-background-wake-notifications.md",
+  "new": "20260708-000700-SPEC-background-wake-notifications.md",
+  "slug": "background-wake-notifications",
+  "legacy": "SPEC-07",
+  "num": 7,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-08-SPEC-07-notifications-async-loop.md",
+  "new": "20260708-000701-SPEC-notifications-async-loop.md",
+  "slug": "notifications-async-loop",
+  "legacy": "SPEC-07",
+  "num": 7,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-08-SPEC-08-actionable-notifications.md",
+  "new": "20260708-000800-SPEC-actionable-notifications.md",
+  "slug": "actionable-notifications",
+  "legacy": "SPEC-08",
+  "num": 8,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-10-SPEC-09-onboarding-and-tray-polish.md",
+  "new": "20260710-000900-SPEC-onboarding-and-tray-polish.md",
+  "slug": "onboarding-and-tray-polish",
+  "legacy": "SPEC-09",
+  "num": 9,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-12-SPEC-10-desktop-chat-app.md",
+  "new": "20260712-001000-SPEC-desktop-chat-app.md",
+  "slug": "desktop-chat-app",
+  "legacy": "SPEC-10",
+  "num": 10,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-12-SPEC-11-repo-centric-home.md",
+  "new": "20260712-001100-SPEC-repo-centric-home.md",
+  "slug": "repo-centric-home",
+  "legacy": "SPEC-11",
+  "num": 11,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-14-SPEC-12-PLAN.md",
+  "new": "20260714-001200-SPEC-desktop-sidebar-topbar-restructure-PLAN.md",
+  "slug": "desktop-sidebar-topbar-restructure",
+  "legacy": "SPEC-12",
+  "num": 12,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-07-14-SPEC-12-desktop-sidebar-topbar-restructure.md",
+  "new": "20260714-001200-SPEC-desktop-sidebar-topbar-restructure.md",
+  "slug": "desktop-sidebar-topbar-restructure",
+  "legacy": "SPEC-12",
+  "num": 12,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-15-SPEC-13-desktop-settings-rework.md",
+  "new": "20260715-001300-SPEC-desktop-settings-rework.md",
+  "slug": "desktop-settings-rework",
+  "legacy": "SPEC-13",
+  "num": 13,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-16-SPEC-14-correctness-fixes.md",
+  "new": "20260716-001400-SPEC-correctness-fixes.md",
+  "slug": "correctness-fixes",
+  "legacy": "SPEC-14",
+  "num": 14,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-16-SPEC-15-server-adapter-consolidation.md",
+  "new": "20260716-001500-SPEC-server-adapter-consolidation.md",
+  "slug": "server-adapter-consolidation",
+  "legacy": "SPEC-15",
+  "num": 15,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-16-SPEC-16-app-chat-simplification.md",
+  "new": "20260716-001600-SPEC-app-chat-simplification.md",
+  "slug": "app-chat-simplification",
+  "legacy": "SPEC-16",
+  "num": 16,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-16-SPEC-17-server-hotpath-and-state.md",
+  "new": "20260716-001700-SPEC-server-hotpath-and-state.md",
+  "slug": "server-hotpath-and-state",
+  "legacy": "SPEC-17",
+  "num": 17,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-16-SPEC-18-boundary-hardening.md",
+  "new": "20260716-001800-SPEC-boundary-hardening.md",
+  "slug": "boundary-hardening",
+  "legacy": "SPEC-18",
+  "num": 18,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-16-SPEC-19-decomposition-and-dedup.md",
+  "new": "20260716-001900-SPEC-decomposition-and-dedup.md",
+  "slug": "decomposition-and-dedup",
+  "legacy": "SPEC-19",
+  "num": 19,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-17-SPEC-20-worktree-scoped-panes.md",
+  "new": "20260717-002000-SPEC-worktree-scoped-panes.md",
+  "slug": "worktree-scoped-panes",
+  "legacy": "SPEC-20",
+  "num": 20,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-18-SPEC-21-chat-scroll-anchoring.md",
+  "new": "20260718-002100-SPEC-chat-scroll-anchoring.md",
+  "slug": "chat-scroll-anchoring",
+  "legacy": "SPEC-21",
+  "num": 21,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-20-SPEC-22-assistant-display-media.md",
+  "new": "20260720-002200-SPEC-assistant-display-media.md",
+  "slug": "assistant-display-media",
+  "legacy": "SPEC-22",
+  "num": 22,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-21-SPEC-23-pr-status-and-actions.md",
+  "new": "20260721-002300-SPEC-pr-status-and-actions.md",
+  "slug": "pr-status-and-actions",
+  "legacy": "SPEC-23",
+  "num": 23,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-22-SPEC-24-inline-expandable-tool-rows.md",
+  "new": "20260722-002400-SPEC-inline-expandable-tool-rows.md",
+  "slug": "inline-expandable-tool-rows",
+  "legacy": "SPEC-24",
+  "num": 24,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-23-SPEC-25-ask-user-inline-in-chat.md",
+  "new": "20260723-002500-SPEC-ask-user-inline-in-chat.md",
+  "slug": "ask-user-inline-in-chat",
+  "legacy": "SPEC-25",
+  "num": 25,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-24-SPEC-26-PLAN.md",
+  "new": "20260724-002600-SPEC-acp-config-options-unified-composer-PLAN.md",
+  "slug": "acp-config-options-unified-composer",
+  "legacy": "SPEC-26",
+  "num": 26,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-07-24-SPEC-26-acp-config-options-unified-composer.md",
+  "new": "20260724-002600-SPEC-acp-config-options-unified-composer.md",
+  "slug": "acp-config-options-unified-composer",
+  "legacy": "SPEC-26",
+  "num": 26,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-24-SPEC-27-PLAN.md",
+  "new": "20260724-002700-SPEC-new-session-config-at-spawn-PLAN.md",
+  "slug": "new-session-config-at-spawn",
+  "legacy": "SPEC-27",
+  "num": 27,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-07-24-SPEC-27-new-session-config-at-spawn.md",
+  "new": "20260724-002700-SPEC-new-session-config-at-spawn.md",
+  "slug": "new-session-config-at-spawn",
+  "legacy": "SPEC-27",
+  "num": 27,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-24-SPEC-28-PLAN.md",
+  "new": "20260724-002800-SPEC-desktop-workspace-tabs-PLAN.md",
+  "slug": "desktop-workspace-tabs",
+  "legacy": "SPEC-28",
+  "num": 28,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-07-24-SPEC-28-desktop-workspace-tabs.md",
+  "new": "20260724-002800-SPEC-desktop-workspace-tabs.md",
+  "slug": "desktop-workspace-tabs",
+  "legacy": "SPEC-28",
+  "num": 28,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-26-SPEC-29-session-lifecycle-resume-list-delete.md",
+  "new": "20260726-002900-SPEC-session-lifecycle-resume-list-delete.md",
+  "slug": "session-lifecycle-resume-list-delete",
+  "legacy": "SPEC-29",
+  "num": 29,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-29-SPEC-30-PLAN.md",
+  "new": "20260729-003000-SPEC-tab-groups-PLAN.md",
+  "slug": "tab-groups",
+  "legacy": "SPEC-30",
+  "num": 30,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-07-29-SPEC-30-tab-groups.md",
+  "new": "20260729-003000-SPEC-tab-groups.md",
+  "slug": "tab-groups",
+  "legacy": "SPEC-30",
+  "num": 30,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-31-SPEC-31-PLAN.md",
+  "new": "20260731-003100-SPEC-model-picker-menu-per-model-config-PLAN.md",
+  "slug": "model-picker-menu-per-model-config",
+  "legacy": "SPEC-31",
+  "num": 31,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-07-31-SPEC-31-model-picker-menu-per-model-config.md",
+  "new": "20260731-003100-SPEC-model-picker-menu-per-model-config.md",
+  "slug": "model-picker-menu-per-model-config",
+  "legacy": "SPEC-31",
+  "num": 31,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-07-31-SPEC-32-PLAN.md",
+  "new": "20260731-003200-SPEC-github-gateway-and-budget-PLAN.md",
+  "slug": "github-gateway-and-budget",
+  "legacy": "SPEC-32",
+  "num": 32,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-07-31-SPEC-32-github-gateway-and-budget.md",
+  "new": "20260731-003200-SPEC-github-gateway-and-budget.md",
+  "slug": "github-gateway-and-budget",
+  "legacy": "SPEC-32",
+  "num": 32,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-01-SPEC-33-PLAN.md",
+  "new": "20260801-003300-SPEC-user-attachments-PLAN.md",
+  "slug": "user-attachments",
+  "legacy": "SPEC-33",
+  "num": 33,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-01-SPEC-33-user-attachments.md",
+  "new": "20260801-003300-SPEC-user-attachments.md",
+  "slug": "user-attachments",
+  "legacy": "SPEC-33",
+  "num": 33,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-01-SPEC-34-PLAN.md",
+  "new": "20260801-003400-SPEC-message-navigator-PLAN.md",
+  "slug": "message-navigator",
+  "legacy": "SPEC-34",
+  "num": 34,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-01-SPEC-34-message-navigator.md",
+  "new": "20260801-003400-SPEC-message-navigator.md",
+  "slug": "message-navigator",
+  "legacy": "SPEC-34",
+  "num": 34,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-02-SPEC-35-PLAN.md",
+  "new": "20260802-003500-SPEC-mid-turn-steering-and-queue-PLAN.md",
+  "slug": "mid-turn-steering-and-queue",
+  "legacy": "SPEC-35",
+  "num": 35,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-02-SPEC-35-mid-turn-steering-and-queue.md",
+  "new": "20260802-003500-SPEC-mid-turn-steering-and-queue.md",
+  "slug": "mid-turn-steering-and-queue",
+  "legacy": "SPEC-35",
+  "num": 35,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-02-SPEC-38-PLAN.md",
+  "new": "20260802-003800-SPEC-pending-queue-edit-reorder-PLAN.md",
+  "slug": "pending-queue-edit-reorder",
+  "legacy": "SPEC-38",
+  "num": 38,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-02-SPEC-38-pending-queue-edit-reorder.md",
+  "new": "20260802-003800-SPEC-pending-queue-edit-reorder.md",
+  "slug": "pending-queue-edit-reorder",
+  "legacy": "SPEC-38",
+  "num": 38,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-03-SPEC-37-PLAN.md",
+  "new": "20260803-003700-SPEC-performance-metrics-dashboard-PLAN.md",
+  "slug": "performance-metrics-dashboard",
+  "legacy": "SPEC-37",
+  "num": 37,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-03-SPEC-37-performance-metrics-dashboard.md",
+  "new": "20260803-003700-SPEC-performance-metrics-dashboard.md",
+  "slug": "performance-metrics-dashboard",
+  "legacy": "SPEC-37",
+  "num": 37,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-04-SPEC-36-computer-use.md",
+  "new": "20260804-003600-SPEC-computer-use.md",
+  "slug": "computer-use",
+  "legacy": "SPEC-36",
+  "num": 36,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-04-SPEC-39-queue-tray-and-promote.md",
+  "new": "20260804-003900-SPEC-queue-tray-and-promote.md",
+  "slug": "queue-tray-and-promote",
+  "legacy": "SPEC-39",
+  "num": 39,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-05-SPEC-37-context-usage-PLAN.md",
+  "new": "20260805-003700-SPEC-context-usage-PLAN.md",
+  "slug": "context-usage",
+  "legacy": "SPEC-37",
+  "num": 37,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-05-SPEC-37-context-usage.md",
+  "new": "20260805-003700-SPEC-context-usage.md",
+  "slug": "context-usage",
+  "legacy": "SPEC-37",
+  "num": 37,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-06-SPEC-38-PLAN.md",
+  "new": "20260806-003800-SPEC-pr-actions-next-step-bar-PLAN.md",
+  "slug": "pr-actions-next-step-bar",
+  "legacy": "SPEC-38",
+  "num": 38,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-06-SPEC-38-REVIEW.md",
+  "new": "20260806-003800-SPEC-pr-actions-next-step-bar-REVIEW.md",
+  "slug": "pr-actions-next-step-bar",
+  "legacy": "SPEC-38",
+  "num": 38,
+  "kind": "REVIEW"
+ },
+ {
+  "old": "2026-08-06-SPEC-38-pr-actions-next-step-bar.md",
+  "new": "20260806-003800-SPEC-pr-actions-next-step-bar.md",
+  "slug": "pr-actions-next-step-bar",
+  "legacy": "SPEC-38",
+  "num": 38,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-06-SPEC-40-PLAN.md",
+  "new": "20260806-004000-SPEC-composer-footer-space-PLAN.md",
+  "slug": "composer-footer-space",
+  "legacy": "SPEC-40",
+  "num": 40,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-06-SPEC-40-composer-footer-space.md",
+  "new": "20260806-004000-SPEC-composer-footer-space.md",
+  "slug": "composer-footer-space",
+  "legacy": "SPEC-40",
+  "num": 40,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-06-SPEC-41-PLAN.md",
+  "new": "20260806-004100-SPEC-open-ports-PLAN.md",
+  "slug": "open-ports",
+  "legacy": "SPEC-41",
+  "num": 41,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-06-SPEC-41-open-ports.md",
+  "new": "20260806-004100-SPEC-open-ports.md",
+  "slug": "open-ports",
+  "legacy": "SPEC-41",
+  "num": 41,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-07-SPEC-42-PLAN.md",
+  "new": "20260807-004200-SPEC-ports-global-view-PLAN.md",
+  "slug": "ports-global-view",
+  "legacy": "SPEC-42",
+  "num": 42,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-07-SPEC-42-ports-global-view.md",
+  "new": "20260807-004200-SPEC-ports-global-view.md",
+  "slug": "ports-global-view",
+  "legacy": "SPEC-42",
+  "num": 42,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-07-SPEC-43-PLAN.md",
+  "new": "20260807-004300-SPEC-ports-kill-PLAN.md",
+  "slug": "ports-kill",
+  "legacy": "SPEC-43",
+  "num": 43,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-07-SPEC-43-ports-kill.md",
+  "new": "20260807-004300-SPEC-ports-kill.md",
+  "slug": "ports-kill",
+  "legacy": "SPEC-43",
+  "num": 43,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-07-SPEC-44-PLAN.md",
+  "new": "20260807-004400-SPEC-ports-forward-PLAN.md",
+  "slug": "ports-forward",
+  "legacy": "SPEC-44",
+  "num": 44,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-07-SPEC-44-ports-forward.md",
+  "new": "20260807-004400-SPEC-ports-forward.md",
+  "slug": "ports-forward",
+  "legacy": "SPEC-44",
+  "num": 44,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-07-SPEC-45-starter-pane-parity.md",
+  "new": "20260807-004500-SPEC-starter-pane-parity.md",
+  "slug": "starter-pane-parity",
+  "legacy": "SPEC-45",
+  "num": 45,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-07-SPEC-46-PLAN.md",
+  "new": "20260807-004600-SPEC-cli-as-client-PLAN.md",
+  "slug": "cli-as-client",
+  "legacy": "SPEC-46",
+  "num": 46,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-07-SPEC-46-cli-as-client.md",
+  "new": "20260807-004600-SPEC-cli-as-client.md",
+  "slug": "cli-as-client",
+  "legacy": "SPEC-46",
+  "num": 46,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-09-SPEC-46-doc-preview.md",
+  "new": "20260809-004600-SPEC-doc-preview.md",
+  "slug": "doc-preview",
+  "legacy": "SPEC-46",
+  "num": 46,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-09-SPEC-47-session-timings.md",
+  "new": "20260809-004700-SPEC-session-timings.md",
+  "slug": "session-timings",
+  "legacy": "SPEC-47",
+  "num": 47,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-09-SPEC-48-status-and-activity.md",
+  "new": "20260809-004800-SPEC-status-and-activity.md",
+  "slug": "status-and-activity",
+  "legacy": "SPEC-48",
+  "num": 48,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-10-SPEC-48-PLAN.md",
+  "new": "20260810-004800-SPEC-per-repo-settings-PLAN.md",
+  "slug": "per-repo-settings",
+  "legacy": "SPEC-48",
+  "num": 48,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-10-SPEC-48-per-repo-settings.md",
+  "new": "20260810-004800-SPEC-per-repo-settings.md",
+  "slug": "per-repo-settings",
+  "legacy": "SPEC-48",
+  "num": 48,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-10-SPEC-49-PLAN.md",
+  "new": "20260810-004900-SPEC-notice-layer-PLAN.md",
+  "slug": "notice-layer",
+  "legacy": "SPEC-49",
+  "num": 49,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-10-SPEC-49-notice-layer.md",
+  "new": "20260810-004900-SPEC-notice-layer.md",
+  "slug": "notice-layer",
+  "legacy": "SPEC-49",
+  "num": 49,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-10-SPEC-50-profiles.md",
+  "new": "20260810-005000-SPEC-profiles.md",
+  "slug": "profiles",
+  "legacy": "SPEC-50",
+  "num": 50,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-11-SPEC-51-target-branch.md",
+  "new": "20260811-005100-SPEC-target-branch.md",
+  "slug": "target-branch",
+  "legacy": "SPEC-51",
+  "num": 51,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-11-SPEC-52-PLAN.md",
+  "new": "20260811-005200-SPEC-session-identity-PLAN.md",
+  "slug": "session-identity",
+  "legacy": "SPEC-52",
+  "num": 52,
+  "kind": "PLAN"
+ },
+ {
+  "old": "2026-08-11-SPEC-52-session-identity.md",
+  "new": "20260811-005200-SPEC-session-identity.md",
+  "slug": "session-identity",
+  "legacy": "SPEC-52",
+  "num": 52,
+  "kind": "spec"
+ },
+ {
+  "old": "2026-08-12-SPEC-51-preview-groups.md",
+  "new": "20260812-005100-SPEC-preview-groups.md",
+  "slug": "preview-groups",
+  "legacy": "SPEC-51",
+  "num": 51,
+  "kind": "spec"
+ }
+]

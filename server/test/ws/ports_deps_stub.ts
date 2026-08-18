@@ -1,5 +1,5 @@
 /**
- * Shared stubs for the ports-domain `CommandDeps` members (SPEC-43/44).
+ * Shared stubs for the ports-domain `CommandDeps` members (SPEC-ports-kill/44).
  *
  * Four `CommandRouter` harnesses need these six functions only so the object
  * satisfies `CommandDeps`; none of them exercises ports. Extracted so a signature

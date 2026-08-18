@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D10/D15: publish one document and produce a URL that works.
+ * makit — SPEC-doc-preview D10/D15: publish one document and produce a URL that works.
  *
  * `publishDoc` validates the document through {@link resolveDocPath} (the same
  * boundary the route uses), then asks an injected `reach()` for a **verified**

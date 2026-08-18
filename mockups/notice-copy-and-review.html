@@ -243,7 +243,7 @@
   <div class="lede info">
     <strong>First, a fact you should have.</strong> The bottom pop-up you are describing is Flutter’s
     <code>SnackBar</code>, and on <code>main</code> there are <strong>72 of them across 29 files</strong>.
-    On this branch (<code>feat/status</code>, uncommitted) there are <strong>zero</strong> — SPEC-48 already
+    On this branch (<code>feat/status</code>, uncommitted) there are <strong>zero</strong> — SPEC-status-and-activity already
     moved them to a top-anchored card plus a durable record. <em>So if you are still seeing bottom pop-ups,
     you are running a build without this branch.</em> That said: <strong>the replacement still fails both
     things you named</strong>, and this page is about fixing the notice itself, not where it lives.
@@ -803,17 +803,17 @@ path = '/Users/le/.worktrees/makit/feat-status'
               <td class="m">Strip line, 3 s, no transcript row. These must stay cheap.</td></tr>
             <tr><td class="k">Agent asks you something</td>
               <td class="m"><code>askUserQuestion</code></td>
-              <td class="m"><b>Already inline</b> (SPEC-25 <code>ask_card.dart</code>) — precedent for this
+              <td class="m"><b>Already inline</b> (SPEC-ask-user-inline-in-chat <code>ask_card.dart</code>) — precedent for this
                 whole idea, and proof the pattern reads well.</td></tr>
           </table>
           <ul class="why">
-            <li class="plus"><b>The precedent is shipped.</b> SPEC-25 already puts a machine-generated,
+            <li class="plus"><b>The precedent is shipped.</b> SPEC-ask-user-inline-in-chat already puts a machine-generated,
               interactive card in the transcript and settles it into a quiet resolved state. A failure row
               is the same shape with a smaller ask.</li>
             <li class="plus"><b>It makes “Retry” natural.</b> Retry in a floating toast is a race against a
               timer; retry on a transcript row is just a button that is still there tomorrow.</li>
             <li class="minus"><b>The transcript is server-backed; these events are client-only</b>
-              (SPEC-48 D9: nothing persisted). So the row is <em>local and ephemeral</em> — it survives
+              (SPEC-status-and-activity D9: nothing persisted). So the row is <em>local and ephemeral</em> — it survives
               scrollback but not a relaunch, and it must be visibly the app talking (the <code>makit</code>
               label), never mistaken for agent output.</li>
             <li class="minus"><b>Pollution risk is real.</b> Strictly failures and warnings that the user
@@ -908,7 +908,7 @@ path = '/Users/le/.worktrees/makit/feat-status'
         them kill both complaints outright — I would do those before touching layout. Rules 4–6 are the
         part that makes the notice stop feeling like an interruption: <em>it never covers anything, it is
         always in the same place, and the last few are always one gesture behind it.</em></p>
-      <p class="note"><b>What is unchanged.</b> SPEC-48’s <code>StatusCenter</code>, the severity model,
+      <p class="note"><b>What is unchanged.</b> SPEC-status-and-activity’s <code>StatusCenter</code>, the severity model,
         Activity, and the OS-notification layer all stand — this is the presentation of the notice, not the
         record behind it. And nothing here re-opens the bottom-centre slot: that belongs to the composer.</p>
     </div>

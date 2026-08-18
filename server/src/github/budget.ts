@@ -1,5 +1,5 @@
 /**
- * BudgetTracker — the GitHub quota measurement layer (SPEC-32 §6.1).
+ * BudgetTracker — the GitHub quota measurement layer (SPEC-github-gateway-and-budget §6.1).
  *
  * Pure and clock-injected: no `Date.now()`, no timers, no I/O. The gateway feeds
  * it `gh api rate_limit` output and its own spend; everything else keys off the

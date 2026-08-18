@@ -1,4 +1,4 @@
-/// Ports models + providers (SPEC-41).
+/// Ports models + providers (SPEC-open-ports).
 ///
 /// Tolerant by construction, mirroring [MetricsSample]: a malformed field
 /// degrades to a null/absent value rather than taking down the socket. The
@@ -71,7 +71,7 @@ class PortHealth {
   }
 }
 
-/// SPEC-42 D10. Why a listener is an orphan: its process cwd sits under a
+/// SPEC-ports-global-view D10. Why a listener is an orphan: its process cwd sits under a
 /// worktree that history records as removed, so nothing but the user will ever
 /// reclaim the port. Every field is individually optional (the absent-stays-
 /// absent rule): makit can prove the cwd is a dead worktree while knowing
@@ -105,7 +105,7 @@ class PortOrphan {
   );
 }
 
-/// SPEC-42 D12. The rival claimant for a port: another still-active worktree
+/// SPEC-ports-global-view D12. The rival claimant for a port: another still-active worktree
 /// that history says also binds it, so a dev server started here would fail to
 /// bind. Both fields are optional for the same absent-stays-absent reason.
 class PortCollision {
@@ -124,7 +124,7 @@ class PortCollision {
   );
 }
 
-/// SPEC-42 D13. The container that published this port, so a listener held by
+/// SPEC-ports-global-view D13. The container that published this port, so a listener held by
 /// `com.docker.backend` stops reading as unowned system noise. Ownership only:
 /// [PortInfo.reach] still reports the real bind, because "docker" would be the
 /// reassuring reading of a `0.0.0.0` publish.
@@ -194,18 +194,18 @@ class PortInfo {
   /// guessing.
   final String? openUrl;
 
-  /// SPEC-42 D10: this port outlived its worktree; absent unless orphaned.
+  /// SPEC-ports-global-view D10: this port outlived its worktree; absent unless orphaned.
   final PortOrphan? orphan;
 
-  /// SPEC-42 D12: another active worktree also binds this port; absent unless
+  /// SPEC-ports-global-view D12: another active worktree also binds this port; absent unless
   /// a collision was derived.
   final PortCollision? collision;
 
-  /// SPEC-42 D13: the container that published this port; absent when this is
+  /// SPEC-ports-global-view D13: the container that published this port; absent when this is
   /// not a container port, or when no docker daemon could be read at all.
   final PortDocker? docker;
 
-  /// SPEC-44 D7: the user asked to be told if this endpoint stops listening.
+  /// SPEC-ports-forward D7: the user asked to be told if this endpoint stops listening.
   ///
   /// A plain bool, not a nullable one: unlike every OTHER optional field here,
   /// "absent" and "false" mean the same thing for a watch (nobody asked), so
@@ -365,7 +365,7 @@ final portsForWorktreeProvider = Provider.family<List<PortInfo>, String>(
   (ref, path) => portsForWorktree(ref.watch(portsProvider), path),
 );
 
-/// The row-glyph state for a worktree (SPEC-41 §1).
+/// The row-glyph state for a worktree (SPEC-open-ports §1).
 final portsGlyphStateProvider = Provider.family<PortsGlyphState, String>(
   (ref, path) => portsGlyphState(ref.watch(portsProvider), path),
 );
@@ -373,7 +373,7 @@ final portsGlyphStateProvider = Provider.family<PortsGlyphState, String>(
 /// Ref-counted `ports.watch` gate, mirroring [MetricsWatchController].
 ///
 /// The endpoint a kill names, captured from the row the user was looking at
-/// (SPEC-43 D1/D8): the confirm dialog names this tuple and the command carries
+/// (SPEC-ports-kill D1/D8): the confirm dialog names this tuple and the command carries
 /// exactly it, so the server can re-verify that the process it signals is the
 /// one the user saw.
 class PortKillTarget {
@@ -416,7 +416,7 @@ class PortKillTarget {
   };
 }
 
-/// What became of a kill (SPEC-43 D2/D3). Mirrors the server's `PortKillOutcome`
+/// What became of a kill (SPEC-ports-kill D2/D3). Mirrors the server's `PortKillOutcome`
 /// plus [failed], which the server never sends — see [parsePortKillOutcome].
 enum PortKillOutcome {
   released,
@@ -478,7 +478,7 @@ class PortsKiller {
     }
   }
 
-  /// SPEC-43 P3b: kill every orphan the SERVER currently sees, and report one
+  /// SPEC-ports-kill P3b: kill every orphan the SERVER currently sees, and report one
   /// outcome per endpoint.
   ///
   /// The endpoints are deliberately not named by the client: the orphan set is
@@ -500,7 +500,7 @@ class PortsKiller {
   }
 }
 
-/// A minted forward: what to open, and when it dies (SPEC-44 P4b).
+/// A minted forward: what to open, and when it dies (SPEC-ports-forward P4b).
 class ForwardGrant {
   const ForwardGrant({
     required this.grantId,
@@ -556,7 +556,7 @@ class ForwardResult {
   final String? refusal;
 }
 
-/// Mints and revokes forwards (SPEC-44 P4b).
+/// Mints and revokes forwards (SPEC-ports-forward P4b).
 class PortsForwarder {
   PortsForwarder(this._request);
 
@@ -619,7 +619,7 @@ final portsForwarderProvider = Provider<PortsForwarder>((ref) {
   return PortsForwarder((body) => conn.request(MsgType.cmd, body));
 });
 
-/// Toggles the persisted "tell me if this stops listening" flag (SPEC-44 D7).
+/// Toggles the persisted "tell me if this stops listening" flag (SPEC-ports-forward D7).
 ///
 /// Identified by `(worktreePath, port)`, never the snapshot key: the point of a
 /// watch is to survive the dev-server restart that changes the pid.

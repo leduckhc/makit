@@ -1,4 +1,4 @@
-// Widget tests for the SPEC-28 desktop/iPad workspace view (Split/Tab model).
+// Widget tests for the SPEC-desktop-workspace-tabs desktop/iPad workspace view (Split/Tab model).
 // These run headless under `flutter test` (no macOS engine) using fake sessions
 // so each tab's DesktopChatPane resolves a real transcript + composer.
 //
@@ -81,7 +81,7 @@ ProviderContainer _container({
   ConnectionController? connection,
 
   /// The groups state to run under. Defaults to a single **worktree** group:
-  /// SPEC-30 decision 7 makes close-behaviour depend on the active group's kind
+  /// SPEC-tab-groups decision 7 makes close-behaviour depend on the active group's kind
   /// (a worktree group closes the session, a board unpins), and the suites here predate
   /// groups and assert the close path. The board's unpin path is covered in
   /// `selected_session_test.dart`.
@@ -589,7 +589,7 @@ void main() {
     });
   });
 
-  group('title strip (SPEC-30 decisions 10 & 11)', () {
+  group('title strip (SPEC-tab-groups decisions 10 & 11)', () {
     testWidgets('hosts the scrolling group rail and the pinned IDE launcher', (
       tester,
     ) async {

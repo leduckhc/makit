@@ -1,5 +1,5 @@
 /**
- * SPEC-46 D17 — **every** read path is gated on the principal, not just fanout.
+ * SPEC-cli-as-client D17 — **every** read path is gated on the principal, not just fanout.
  *
  * T5 gated `fanout` and the rev-3 acceptance box was written against it, which
  * gave false assurance: three sibling paths reached the same data without ever

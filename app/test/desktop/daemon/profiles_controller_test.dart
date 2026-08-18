@@ -1,4 +1,4 @@
-// Unit tests for [ProfilesController] (SPEC-50 P3).
+// Unit tests for [ProfilesController] (SPEC-profiles P3).
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/daemon/profile_registry.dart';

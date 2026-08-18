@@ -1,5 +1,5 @@
 /**
- * AuthGate principal tests (SPEC-46 T2/T3).
+ * AuthGate principal tests (SPEC-cli-as-client T2/T3).
  *
  * A successful `hello` must leave a {@link Principal} on the client — the
  * subject the router and fanout gate read. An unknown bearer must still close

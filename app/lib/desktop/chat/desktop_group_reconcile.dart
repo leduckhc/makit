@@ -1,4 +1,4 @@
-/// SPEC-30 — keeping each group's stored tree in line with what the server says
+/// SPEC-tab-groups — keeping each group's stored tree in line with what the server says
 /// exists. Extracted from `desktop_session_prune.dart` so a reader looking for
 /// "what closes a group when its worktree is deleted" finds it by filename, and
 /// so the session-vanish pruning next door stays one small idea.
@@ -21,7 +21,7 @@ import 'panes/workspace_controller.dart';
 import 'selected_worktree.dart';
 
 /// Brings the **active** group's canvas in line with its membership
-/// (SPEC-30 decisions 5, 9, 20).
+/// (SPEC-tab-groups decisions 5, 9, 20).
 ///
 /// * A worktree group is derived, so newcomers are placed, out-of-scope tabs are
 ///   dropped, and an empty scope seeds the in-pane starter — never switching
@@ -105,7 +105,7 @@ void reconcileActiveCanvas(Ref ref, SessionsState sessions) {
   return (state.activeSplitId, split?.activeTabId);
 }
 
-/// Closes every worktree group whose scope no longer exists (SPEC-30 decision 7
+/// Closes every worktree group whose scope no longer exists (SPEC-tab-groups decision 7
 /// tail: "its worktree group disappears with its scope").
 ///
 /// Detected reactively off the repo list, so it needs no hook in the UI-owned

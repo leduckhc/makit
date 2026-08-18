@@ -240,7 +240,7 @@
 
   <div class="lede">
     <strong>What this covers.</strong> makit has <strong>five</strong> independent status languages —
-    session status (6 states × 3 renderings), connection state, PR state, SPEC-48 severity, and OS
+    session status (6 states × 3 renderings), connection state, PR state, SPEC-status-and-activity severity, and OS
     notifications. Each was designed well on its own. Nobody has drawn them <em>together</em>, and
     <code>DESIGN.md</code>’s own rule is that a state must “read identically everywhere”. This page draws
     them together, finds three places where they contradict, and designs the one signal that is
@@ -249,7 +249,7 @@
   <div class="lede bad">
     <strong>The headline gap.</strong> You are in session A on your phone. Session B moves to
     <code>awaiting-approval</code>. The agent is now blocked, waiting on you. makit shows you
-    <strong>nothing</strong> — no toast (SPEC-48 D7 posts session lifecycle <em>silently</em>), no OS
+    <strong>nothing</strong> — no toast (SPEC-status-and-activity D7 posts session lifecycle <em>silently</em>), no OS
     notification (those only fire when backgrounded), no badge. The only signal is a dot changing colour on
     a screen you are not looking at. §4 fixes this.
   </div>
@@ -259,7 +259,7 @@
   <p class="secnote">
     <code>SessionStatus</code> has six values. Each is rendered by <code>SessionStatusDot</code> (colour +
     tooltip), <code>SessionStatusChip</code> (a terse pill), <code>notificationFor</code> (prose on the lock
-    screen) and — since SPEC-48 — an Activity severity. Four names for the same fact.
+    screen) and — since SPEC-status-and-activity — an Activity severity. Four names for the same fact.
   </p>
 
   <div class="card">
@@ -346,7 +346,7 @@
     <code>kStatusCaution</code> <span class="swatch" style="background:#E07B39"></span><code>#E07B39</code>
     exists precisely because “awaiting approval” is a stronger <em>act-now</em> than “awaiting input” —
     <code>DESIGN.md</code> says so, and five call sites honour it. <code>status_tone.dart</code> has
-    <strong>zero</strong> mentions of caution, so SPEC-48 flattens approval into <code>warning</code> amber.
+    <strong>zero</strong> mentions of caution, so SPEC-status-and-activity flattens approval into <code>warning</code> amber.
   </p>
 
   <div class="card">
@@ -376,7 +376,7 @@
           <p class="why">Three surfaces say orange, two say amber, for one session.</p>
         </div>
         <div style="flex:0 0 400px">
-          <p class="cap">proposed — add the tier SPEC-48 skipped</p>
+          <p class="cap">proposed — add the tier SPEC-status-and-activity skipped</p>
           <div class="specimen">
             <div class="r"><span class="lbl">sidebar tile</span>
               <span class="cell"><span class="sdot pulse" style="background:var(--caution)"></span>
@@ -489,7 +489,7 @@
   <!-- ══════════════════════════ 4 · THE GAP ══════════════════════════ -->
   <h2 class="sec">4 · The missing signal — attention, in-app, across sessions</h2>
   <p class="secnote">
-    SPEC-48 D7 says session lifecycle posts <em>silently</em> because “a session you are looking at already
+    SPEC-status-and-activity D7 says session lifecycle posts <em>silently</em> because “a session you are looking at already
     shows its own status dot, and the OS notification is what handles you-weren’t-looking”. Both clauses are
     true. Neither covers the case in between: <strong>app open, looking at a different session.</strong>
     On a phone that is <em>most</em> of the time, because a phone shows exactly one session.
@@ -517,7 +517,7 @@
       </table>
       <p class="note warn"><b>The design rule this exposes.</b> makit’s status layer conflates
         <em>events</em> (a thing happened; past tense; a record) with <em>states</em> (a thing is true; present
-        tense; resolves itself). SPEC-48 built an excellent event system and then routed states through it,
+        tense; resolves itself). SPEC-status-and-activity built an excellent event system and then routed states through it,
         which is why the states came out silent. Attention is the state-shaped primitive: it is never
         dismissed by the user, it <strong>disappears when the session stops needing you</strong>.</p>
     </div>
@@ -621,7 +621,7 @@
               <code>sessionsProvider</code> — the set of sessions in an awaiting state, minus the one on
               screen. No state to own, no queue, no timers, nothing to leak. Answer the approval and the bar
               is gone on the next frame.</li>
-            <li class="plus"><b>It makes SPEC-48’s D7 silence correct.</b> D7’s reasoning was right — a
+            <li class="plus"><b>It makes SPEC-status-and-activity’s D7 silence correct.</b> D7’s reasoning was right — a
               toast per finished turn <em>is</em> noise. The mistake was having only two volumes: toast, or
               nothing. This is the third: <em>persistent, quiet, and not in the way.</em></li>
             <li class="minus"><b>It costs 32 pt of the transcript</b> — and only when an agent is blocked
@@ -780,7 +780,7 @@
 
       <div class="grid" style="margin-top:24px">
         <div style="flex:0 0 300px">
-          <p class="cap">backgrounded — SPEC-08, unchanged</p>
+          <p class="cap">backgrounded — SPEC-actionable-notifications, unchanged</p>
           <div class="osnotif">
             <div class="top">
               <span class="appicon">mk</span>
@@ -793,10 +793,10 @@
             <div class="osacts"><div style="color:var(--primary)">Approve</div><div style="color:var(--error)">Deny</div></div>
           </div>
           <p class="why">Actionable from the lock screen; resolves without opening the app.
-            <b>Unchanged by any of this</b> — and after SPEC-48 it finally leaves a trace.</p>
+            <b>Unchanged by any of this</b> — and after SPEC-status-and-activity it finally leaves a trace.</p>
         </div>
         <div style="flex:0 0 300px">
-          <p class="cap">force-quit — SPEC-07 wake, content-free</p>
+          <p class="cap">force-quit — SPEC-background-wake-notifications wake, content-free</p>
           <div class="osnotif">
             <div class="top">
               <span class="appicon">mk</span>
@@ -873,7 +873,7 @@
               the chip’s tooltip (<em>“statuses last updated 4m ago”</em>). Cheap, and it stops the UI
               asserting things it cannot know.</li>
             <li class="minus"><b>Offline is a state, so it belongs in Activity too</b> — “Disconnected” /
-              “Reconnected” with the elapsed gap is exactly the durable record SPEC-48 exists for, and
+              “Reconnected” with the elapsed gap is exactly the durable record SPEC-status-and-activity exists for, and
               today the chip is the only witness.</li>
             <li class="plus"><b>Demo mode being always-visible is correct</b> and is the only status that
               earns permanent chrome, because everything else on screen is fake.</li>
@@ -935,7 +935,7 @@
           <td class="k">6</td>
           <td class="k">Connection transitions post to Activity</td>
           <td class="m"><code>store/connection.dart</code> → <code>StatusCenter</code></td>
-          <td class="m">“Disconnected 12:04 → reconnected 12:09” is the durable record SPEC-48 is for;
+          <td class="m">“Disconnected 12:04 → reconnected 12:09” is the durable record SPEC-status-and-activity is for;
             today the chip is the only witness and it forgets instantly.</td>
         </tr>
         <tr>
@@ -946,7 +946,7 @@
             at all”.</td>
         </tr>
       </table>
-      <p class="note"><b>What I am not proposing.</b> No new OS notification triggers (SPEC-07/08 decide
+      <p class="note"><b>What I am not proposing.</b> No new OS notification triggers (SPEC-background-wake-notifications/08 decide
         what buzzes; this only changes what the app shows while you hold it). No persistence (D9 stands).
         No per-source mute settings. And no toast for session state — that was the right call, it just
         needed a third volume rather than a louder one.</p>
@@ -956,7 +956,7 @@
   <p class="sub" style="margin-top:34px">
     <code>mockups/status-language-ios-macos.html</code> · companion to
     <code>mockups/activity-ios-macos.html</code> · tokens from <code>DESIGN.md</code> ·
-    behaviour from <code>docs/NOTIFICATIONS.md</code>, SPEC-07/08/48
+    behaviour from <code>docs/NOTIFICATIONS.md</code>, SPEC-background-wake-notifications/08/48
   </p>
 </div>
 </body>

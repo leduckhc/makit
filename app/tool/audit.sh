@@ -91,7 +91,7 @@ set -e
 
 # ------------------------------------------------------------ 6. format check
 step "6. dart format --set-exit-if-changed (our sources)"
-# Scoped to our own sources, not `.`: cargokit (super_native_extensions, SPEC-33)
+# Scoped to our own sources, not `.`: cargokit (super_native_extensions, SPEC-user-attachments)
 # writes a generated `build_tool_runner.dart` into `build/`, which is unformatted
 # and would make this gate permanently dirty on any machine that has built once.
 if "$DART_BIN" format --set-exit-if-changed --output=none \
@@ -166,7 +166,7 @@ else
 fi
 
 # ------------------------------------------------- 10. rust toolchain present
-# super_clipboard (SPEC-33 §4.3) is implemented in Rust. Quoting the package:
+# super_clipboard (SPEC-user-attachments §4.3) is implemented in Rust. Quoting the package:
 # "If you don't have Rust installed, the plugin will automatically download
 # precompiled binaries for target platform." Those binaries are fetched at build
 # time and are NOT covered by pubspec.lock's sha256 hashes (SECURITY.md §3/§4),
@@ -182,7 +182,7 @@ else
   red "  ✗ super_clipboard is locked but rustup/cargo is not on PATH"
   red "    Without it the plugin downloads precompiled binaries that"
   red "    pubspec.lock does not hash-verify. Install: https://rustup.rs"
-  red "    (see SECURITY.md and docs/specs/…SPEC-33…§4.3)"
+  red "    (see SECURITY.md and docs/specs/…SPEC-user-attachments…§4.3)"
   fail=1
 fi
 

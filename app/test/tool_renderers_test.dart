@@ -1,5 +1,5 @@
 /// Tests for the tool renderer registry — proves the lookup, summary lines,
-/// and the inline body views (SPEC-24) without spinning up a simulator.
+/// and the inline body views (SPEC-inline-expandable-tool-rows) without spinning up a simulator.
 library;
 
 import 'package:flutter/material.dart';

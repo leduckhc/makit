@@ -22,7 +22,7 @@ import '../../store/store.dart';
 import '../../transport/protocol.dart';
 
 // Re-export the wizard's test entrypoint so existing importers of
-// `srv_request_handler.dart` keep resolving it after the SPEC-19 split.
+// `srv_request_handler.dart` keep resolving it after the SPEC-decomposition-and-dedup split.
 export 'srv_dialogs/ask_wizard.dart' show debugAskWizardFor;
 
 class SrvRequestHandler extends ConsumerStatefulWidget {
@@ -57,7 +57,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   /// the user resumes the app without acting on the notification, we can still
   /// present the dialog (the `srvRequests` stream has no replay). Soft-capped
   /// so a long backgrounded session can't grow it without bound (mirrors the
-  /// SPEC-07 status-notification queue); oldest entries are evicted first.
+  /// SPEC-background-wake-notifications status-notification queue); oldest entries are evicted first.
   final Map<String, Envelope> _pendingBackground = {};
   static const _kMaxPendingBackground = 50;
 
@@ -245,7 +245,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   Future<void> _presentDialog(Envelope env) async {
     final kind = env.body['kind'] as String? ?? 'unknown';
 
-    // askUserQuestion renders inline (SPEC-25) — it needs no Navigator, so
+    // askUserQuestion renders inline (SPEC-ask-user-inline-in-chat) — it needs no Navigator, so
     // handle it before the navigator-context guard below.
     if (kind == 'askUserQuestion') {
       final questions = _normaliseQuestions(env.body);
@@ -514,7 +514,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   Widget build(BuildContext context) => widget.child;
 }
 
-/// SPEC-46 D14 — a self-describing header for a prompt whose session the phone
+/// SPEC-cli-as-client D14 — a self-describing header for a prompt whose session the phone
 /// may never have subscribed to. Sourced entirely from the `srv.request`
 /// envelope's `session` block (title, agent/harness, handoff origin), never
 /// from cached store state, so a stranded prompt reached at rung 3 of the D13

@@ -1,5 +1,5 @@
 /**
- * `makit handoff` — hand this session's work to a fresh one (SPEC-46 T19).
+ * `makit handoff` — hand this session's work to a fresh one (SPEC-cli-as-client T19).
  *
  * The gesture the spec exists for: "this session is done / stuck / out of
  * context — write a handoff and continue, maybe on another harness." The

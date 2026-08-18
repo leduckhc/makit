@@ -1,9 +1,9 @@
 /**
- * How every `makit` session verb reaches a running makit (SPEC-46 D1/D2, C4).
+ * How every `makit` session verb reaches a running makit (SPEC-cli-as-client D1/D2, C4).
  *
  * One place, because the order matters and it is the same for every verb:
  *
- *   1. probe the **control socket** first — a dead daemon is SPEC-02's message
+ *   1. probe the **control socket** first — a dead daemon is SPEC-cli-client-subcommands's message
  *      and exit `3`, never a stack trace and never a WSS timeout;
  *   2. resolve the CLI's own credential on that same round trip (an agent's
  *      `MAKIT_CLI_TOKEN`, else `~/.makit/cli.json`, else mint via `cli.grant`);

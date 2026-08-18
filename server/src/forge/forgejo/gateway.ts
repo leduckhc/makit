@@ -14,7 +14,7 @@
  *
  * What remains is a cache (to keep the home-screen fan-out cheap) and strict
  * discipline about the difference between "no PR" and "could not tell", which is
- * SPEC-32 §6.5 and the reason every failure path below returns `unknown`.
+ * SPEC-github-gateway-and-budget §6.5 and the reason every failure path below returns `unknown`.
  */
 
 import type { OpenPr, PullRequestInfo } from "../../git.js";
@@ -312,7 +312,7 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
         return hit;
       }
       // The server asked us to wait. `throttled`, not `none`: a pause is not
-      // evidence that the branch has no PR (SPEC-32 §6.5).
+      // evidence that the branch has no PR (SPEC-github-gateway-and-budget §6.5).
       if (throttled()) return { kind: "unknown", reason: "throttled" };
     }
 
@@ -366,7 +366,7 @@ export function createForgejoGateway(deps: ForgejoGatewayDeps): ForgeGateway {
       // thread, and only via a reviews -> comments walk. Until that walk is
       // verified against an instance with real review threads, the count is
       // declared unmeasured rather than reported as 0 -- a plain 0 would render
-      // as "no unresolved comments" and be believed (SPEC-32 §6.5).
+      // as "no unresolved comments" and be believed (SPEC-github-gateway-and-budget §6.5).
       unresolvedComments: 0,
       unresolvedUnknown: true,
     };

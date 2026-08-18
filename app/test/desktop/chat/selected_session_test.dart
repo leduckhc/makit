@@ -1,5 +1,5 @@
 // Unit tests for the ref-based session/worktree selection helpers on the
-// SPEC-28 workspace model. These take a [WidgetRef] rather than a [Ref], so
+// SPEC-desktop-workspace-tabs workspace model. These take a [WidgetRef] rather than a [Ref], so
 // tests capture one from a bare [Consumer] button press.
 import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -111,7 +111,7 @@ Future<void> _invoke(
 void main() {
   setUp(resetNodeIds);
 
-  // SPEC-30 Lane 7 / decision 7: unpin-vs-close is a property of the ACTIVE
+  // SPEC-tab-groups Lane 7 / decision 7: unpin-vs-close is a property of the ACTIVE
   // GROUP'S KIND, not of the affordance — so the tab ✕ and ⌘⇧W cannot disagree.
   group('closeTabAndSession by group kind (decision 7)', () {
     /// Runs [close] against a container whose active group is [group], with
@@ -278,17 +278,18 @@ void main() {
       expect(container.read(groupsControllerProvider).previewGroupId, isNull);
     });
 
-    testWidgets('mints a preview group when the pref is on (SPEC-51)', (
-      tester,
-    ) async {
-      final container = _previewContainer(enabled: true);
-      addTearDown(container.dispose);
+    testWidgets(
+      'mints a preview group when the pref is on (SPEC-preview-groups)',
+      (tester) async {
+        final container = _previewContainer(enabled: true);
+        addTearDown(container.dispose);
 
-      await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
-      final groups = container.read(groupsControllerProvider);
-      expect(groups.previewGroupId, groups.activeGroupId);
-      expect(groups.previewGroup!.worktreePath, _wtA.path);
-    });
+        await _invoke(tester, container, (ref) => selectWorktree(ref, _wtA));
+        final groups = container.read(groupsControllerProvider);
+        expect(groups.previewGroupId, groups.activeGroupId);
+        expect(groups.previewGroup!.worktreePath, _wtA.path);
+      },
+    );
 
     testWidgets('browsing branches never grows the rail past one preview', (
       tester,
@@ -376,86 +377,88 @@ void main() {
       expect(container.read(selectedSessionProvider), 's1');
     });
 
-    testWidgets('closeActiveTab closes the orphaned session (SPEC-29)', (
-      tester,
-    ) async {
-      // SPEC-30 decision 7 made this kind-dependent: closing is the WORKTREE
-      // group's behaviour (membership is derived, so ending the session is the
-      // only way off that canvas). On a board the same path unpins instead —
-      // covered in "closeTabAndSession by group kind".
-      final conn = _FastConn();
-      final container = ProviderContainer(
-        overrides: [
-          connectionControllerProvider.overrideWith((_) => conn),
-          sessionsProvider.overrideWithValue(SessionsState([_session('s1')])),
-          groupsControllerProvider.overrideWith(
-            (ref) => GroupsController.ephemeral(
-              GroupsState(
-                groups: [
-                  Group.worktree(
-                    id: 'g1',
-                    projectId: 'p1',
-                    worktreePath: '/tmp/wt/feat-x',
-                    label: 'feat/x',
-                    tree: WorkspaceController.seedWorkspace(),
-                  ),
-                ],
-                activeGroupId: 'g1',
+    testWidgets(
+      'closeActiveTab closes the orphaned session (SPEC-session-lifecycle-resume-list-delete)',
+      (tester) async {
+        // SPEC-tab-groups decision 7 made this kind-dependent: closing is the WORKTREE
+        // group's behaviour (membership is derived, so ending the session is the
+        // only way off that canvas). On a board the same path unpins instead —
+        // covered in "closeTabAndSession by group kind".
+        final conn = _FastConn();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith((_) => conn),
+            sessionsProvider.overrideWithValue(SessionsState([_session('s1')])),
+            groupsControllerProvider.overrideWith(
+              (ref) => GroupsController.ephemeral(
+                GroupsState(
+                  groups: [
+                    Group.worktree(
+                      id: 'g1',
+                      projectId: 'p1',
+                      worktreePath: '/tmp/wt/feat-x',
+                      label: 'feat/x',
+                      tree: WorkspaceController.seedWorkspace(),
+                    ),
+                  ],
+                  activeGroupId: 'g1',
+                ),
               ),
             ),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-      _workspace(container).revealSession('s1');
+          ],
+        );
+        addTearDown(container.dispose);
+        _workspace(container).revealSession('s1');
 
-      await _invoke(tester, container, closeActiveTab);
+        await _invoke(tester, container, closeActiveTab);
 
-      // Closing the sole tab orphans s1 → it is closed (soft, recoverable).
-      final close = conn.sent.firstWhere(
-        (b) => b['kind'] == 'session.close',
-        orElse: () => const {},
-      );
-      expect(close['sessionId'], 's1');
-    });
+        // Closing the sole tab orphans s1 → it is closed (soft, recoverable).
+        final close = conn.sent.firstWhere(
+          (b) => b['kind'] == 'session.close',
+          orElse: () => const {},
+        );
+        expect(close['sessionId'], 's1');
+      },
+    );
 
-    testWidgets('closeActiveTab does NOT close an untouched draft (SPEC-29)', (
-      tester,
-    ) async {
-      final conn = _FastConn();
-      final container = ProviderContainer(
-        overrides: [
-          connectionControllerProvider.overrideWith((_) => conn),
-          groupsControllerProvider.overrideWith(
-            (ref) => GroupsController.ephemeral(
-              GroupsState(
-                groups: [
-                  Group.worktree(
-                    id: 'g1',
-                    projectId: 'p1',
-                    worktreePath: '/tmp/wt/feat-x',
-                    label: 'feat/x',
-                    tree: WorkspaceController.seedWorkspace(),
-                  ),
-                ],
-                activeGroupId: 'g1',
+    testWidgets(
+      'closeActiveTab does NOT close an untouched draft (SPEC-session-lifecycle-resume-list-delete)',
+      (tester) async {
+        final conn = _FastConn();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith((_) => conn),
+            groupsControllerProvider.overrideWith(
+              (ref) => GroupsController.ephemeral(
+                GroupsState(
+                  groups: [
+                    Group.worktree(
+                      id: 'g1',
+                      projectId: 'p1',
+                      worktreePath: '/tmp/wt/feat-x',
+                      label: 'feat/x',
+                      tree: WorkspaceController.seedWorkspace(),
+                    ),
+                  ],
+                  activeGroupId: 'g1',
+                ),
               ),
             ),
-          ),
-          sessionsProvider.overrideWithValue(
-            SessionsState([_session('d1', pending: true)]),
-          ),
-        ],
-      );
-      addTearDown(container.dispose);
-      _workspace(container).revealSession('d1');
+            sessionsProvider.overrideWithValue(
+              SessionsState([_session('d1', pending: true)]),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        _workspace(container).revealSession('d1');
 
-      await _invoke(tester, container, closeActiveTab);
+        await _invoke(tester, container, closeActiveTab);
 
-      // A never-started draft has no history worth preserving — closing its tab
-      // must not close it (no empty entry in the Closed list).
-      expect(conn.sent.any((b) => b['kind'] == 'session.close'), isFalse);
-    });
+        // A never-started draft has no history worth preserving — closing its tab
+        // must not close it (no empty entry in the Closed list).
+        expect(conn.sent.any((b) => b['kind'] == 'session.close'), isFalse);
+      },
+    );
 
     testWidgets('closeActiveSplit is a no-op on the sole split', (
       tester,

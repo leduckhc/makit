@@ -1,4 +1,4 @@
-/// SPEC-07 Slice 2 — push-token registration seam.
+/// SPEC-background-wake-notifications Slice 2 — push-token registration seam.
 ///
 /// [pushRegisterBody] is the pure `cmd` body the app sends after a successful
 /// (re)connect. [PushRegistrar] isolates native APNs/FCM token retrieval behind
@@ -72,7 +72,7 @@ class ProvidedPushRegistrar implements PushRegistrar {
   }
 }
 
-/// Method-channel-backed registrar (SPEC-07 W4 Dart half). Listens on the
+/// Method-channel-backed registrar (SPEC-background-wake-notifications W4 Dart half). Listens on the
 /// `makit/push` channel that iOS `AppDelegate` invokes with the hex APNs token.
 ///
 /// The token can arrive AFTER the socket connects, so this stores the latest

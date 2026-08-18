@@ -199,12 +199,12 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _cycleTab(ref, 1);
       case ShortcutAction.prevTab:
         _cycleTab(ref, -1);
-      // SPEC-49 D8: reads the record, not the screen, so it still answers
+      // SPEC-notice-layer D8: reads the record, not the screen, so it still answers
       // "what was that?" after the notice has faded. Deliberately placed below
       // the settings gate above (D9): copy is not exempt from it.
       case ShortcutAction.copyNewestNotice:
         _copyNewestNotice(ref);
-      // SPEC-30 decision 16: ⌘1…⌘9 activate the 1st–9th group. A tenth group
+      // SPEC-tab-groups decision 16: ⌘1…⌘9 activate the 1st–9th group. A tenth group
       // has no binding, so it is only reachable by click or scroll.
       case ShortcutAction.switchGroup1:
       case ShortcutAction.switchGroup2:
@@ -225,14 +225,14 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
 
   /// Activates the [index]th group (0-based) when it exists; a no-op otherwise,
   /// so a shortcut for a group that isn't there does nothing rather than
-  /// wrapping around (SPEC-30 decision 16).
+  /// wrapping around (SPEC-tab-groups decision 16).
   void _switchToGroup(WidgetRef ref, int index) {
     final groups = ref.read(groupsControllerProvider).groups;
     if (index >= groups.length) return;
     ref.read(groupsControllerProvider.notifier).activate(groups[index].id);
   }
 
-  /// Group-aware split (SPEC-30 decision 13). In a **worktree group** the branch
+  /// Group-aware split (SPEC-tab-groups decision 13). In a **worktree group** the branch
   /// already answers "where does it run?", so the new split is seeded with the
   /// group's scope and lands on the harness picker — **never a dialog**. On a
   /// **board** there is no scope, so it asks first with the New-worktree dialog
@@ -256,7 +256,7 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     });
   }
 
-  /// Group-aware new tab (SPEC-30 decision 13). A **worktree group** adds a tab
+  /// Group-aware new tab (SPEC-tab-groups decision 13). A **worktree group** adds a tab
   /// hinted with the group's scope — the harness picker, no dialog. A **board**
   /// asks with the New-worktree dialog first, then opens the confirmed worktree
   /// as a new tab in the active split.
@@ -325,7 +325,7 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
 
   /// Cycles the active split's active tab by [delta] (wrapping). No-op when the
   /// active split has a single tab.
-  /// Puts the newest notice on the clipboard (SPEC-49 D8).
+  /// Puts the newest notice on the clipboard (SPEC-notice-layer D8).
   ///
   /// Silent when the record is empty: a shortcut that does nothing is better
   /// than one that clears your clipboard to tell you there was nothing to copy.

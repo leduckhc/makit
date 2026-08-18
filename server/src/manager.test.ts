@@ -28,7 +28,7 @@ function stubAdapter(started: SpawnOpts[], calls: string[] = []): AgentAdapter {
   (e as any).start = async (opts: SpawnOpts) => {
     started.push(opts);
     // Adopt (or mint) a native id so the manager persists a resume handle,
-    // mirroring the real adapters (SPEC-29).
+    // mirroring the real adapters (SPEC-session-lifecycle-resume-list-delete).
     (e as any).agentSessionId = opts.resumeAgentSessionId ?? `stub-${opts.sessionId ?? "x"}`;
   };
   (e as any).send = async () => {};
@@ -347,7 +347,7 @@ test("removeWorktree deletes the worktree from disk", async () => {
   }
 });
 
-test("removeWorktree preserves closed sessions and auto-closes live ones (SPEC-29)", async () => {
+test("removeWorktree preserves closed sessions and auto-closes live ones (SPEC-session-lifecycle-resume-list-delete)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
   const cwd = makeGitRepo();
@@ -396,11 +396,11 @@ test("removeWorktree preserves closed sessions and auto-closes live ones (SPEC-2
   }
 });
 
-test("listRepos counts only live sessions in worktree.sessionIds (SPEC-29)", async () => {
+test("listRepos counts only live sessions in worktree.sessionIds (SPEC-session-lifecycle-resume-list-delete)", async () => {
   // The field's own protocol doc says it links the sessions bound to the worktree,
   // and closed ones are hidden from `listSessions()` and so from every
   // client-side session list — their ids resolved to nothing in the consumers that
-  // map this field to rows, and SPEC-38's wrap-up brief counted them as work left
+  // map this field to rows, and SPEC-pr-actions-next-step-bar's wrap-up brief counted them as work left
   // behind. `listRepos` is handed `allSessions()`, which keeps them.
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
@@ -436,7 +436,7 @@ test("listRepos counts only live sessions in worktree.sessionIds (SPEC-29)", asy
   }
 });
 
-test("reopen of an orphaned session detaches it to the repo root (SPEC-29)", async () => {
+test("reopen of an orphaned session detaches it to the repo root (SPEC-session-lifecycle-resume-list-delete)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
   const cwd = realpathSync(makeGitRepo());
@@ -484,7 +484,7 @@ test("reopen of an orphaned session detaches it to the repo root (SPEC-29)", asy
   }
 });
 
-test("reopen of a session whose worktree is still live preserves its binding (SPEC-29)", async () => {
+test("reopen of a session whose worktree is still live preserves its binding (SPEC-session-lifecycle-resume-list-delete)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
   const cwd = realpathSync(makeGitRepo());
@@ -606,7 +606,7 @@ test("spawnPendingSession is a draft: no worktree, no agent started", async () =
   }
 });
 
-// SPEC-46 U4 — the promotion trap. A forked draft carries the forked thread id
+// SPEC-cli-as-client U4 — the promotion trap. A forked draft carries the forked thread id
 // as `resumeAgentSessionId`; when the first message promotes it, that id MUST
 // reach the adapter's start() so the child continues the forked conversation
 // (codex `thread/resume`). If promotion started a fresh thread instead, the
@@ -1433,7 +1433,7 @@ test("reattachSession resumes a cold pi session and continues the durable seq sp
       const live = await mgr2.reattachSession(sessionId);
       assert.equal(live.id, sessionId);
       assert.equal(started.length, 1); // adapter really started
-      assert.equal(started[0].resumeAgentSessionId !== undefined, true); // resumed via native id (SPEC-29)
+      assert.equal(started[0].resumeAgentSessionId !== undefined, true); // resumed via native id (SPEC-session-lifecycle-resume-list-delete)
 
       // A new event must get the NEXT seq (no reset / collision).
       live.adapter.emit("event", { ts: 20, kind: "user.message", payload: { text: "after reattach" } });
@@ -1620,7 +1620,7 @@ test("promotePendingSession routes a draft-promotion failure through the session
  * the process reaped. Order matters — unsubscribing a thread after SIGTERM is
  * pointless, and skipping the reap is what leaked ~1 GB of resident agents.
  */
-test("closeSession closes the agent session before reaping the process (SPEC-29)", async () => {
+test("closeSession closes the agent session before reaping the process (SPEC-session-lifecycle-resume-list-delete)", async () => {
   const store = new SqliteEventStore();
   const cwd = mkdtempSync(join(tmpdir(), "makit-close-"));
   try {
@@ -1646,7 +1646,7 @@ test("closeSession closes the agent session before reaping the process (SPEC-29)
  * A wedged agent must not be able to keep its memory: a close that rejects is
  * logged and the reap still happens.
  */
-test("closeSession still reaps when the graceful close rejects (SPEC-29)", async () => {
+test("closeSession still reaps when the graceful close rejects (SPEC-session-lifecycle-resume-list-delete)", async () => {
   const store = new SqliteEventStore();
   const cwd = mkdtempSync(join(tmpdir(), "makit-close-fail-"));
   try {
@@ -1675,7 +1675,7 @@ test("closeSession still reaps when the graceful close rejects (SPEC-29)", async
   }
 });
 
-test("closeSession hides a session from the active list but keeps it (SPEC-29)", async () => {
+test("closeSession hides a session from the active list but keeps it (SPEC-session-lifecycle-resume-list-delete)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
   const cwd = mkdtempSync(join(tmpdir(), "makit-arch-"));
@@ -1716,7 +1716,7 @@ test("closeSession hides a session from the active list but keeps it (SPEC-29)",
   }
 });
 
-test('listClosedSessions omits sessions whose project was removed (SPEC-29)', async () => {
+test('listClosedSessions omits sessions whose project was removed (SPEC-session-lifecycle-resume-list-delete)', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'makit-mgr-'));
   const store = new SqliteEventStore(join(cwd, '.makit.db'));
   try {
@@ -1841,7 +1841,7 @@ function prGateway(pr: { number: number; branch: string } | null, ok = true) {
       opts?: { interactive?: boolean },
     ) {
       lookups.push({ branch, interactive: opts?.interactive === true });
-      // A background lookup below SPEC-32's reserve is shed to `unknown`. Only an
+      // A background lookup below SPEC-github-gateway-and-budget's reserve is shed to `unknown`. Only an
       // interactive one draws on the reserve, so this stub answers accordingly.
       if (!opts?.interactive) return { kind: "unknown" as const };
       return pr && pr.branch === branch
@@ -2004,7 +2004,7 @@ test("a PR mutation reports gh's own error rather than failing silently", async 
 
 test("a PR mutation looks its PR up interactively, so a tight quota cannot hide it", async () => {
   // These three are button presses. `findOpenPr` collapses `unknown` to null, so a
-  // background lookup shed below SPEC-32's reserve made "Mark ready" fail with
+  // background lookup shed below SPEC-github-gateway-and-budget's reserve made "Mark ready" fail with
   // "no pull request for feat/x" — for a PR that plainly exists — exactly when the
   // account is throttled. The reserve exists for user-initiated work; drawing on
   // it is the difference between a working button and a lying error.
@@ -2058,7 +2058,7 @@ test("a PR mutation on a worktree with no PR is refused", async () => {
   }
 });
 
-// ── discard (SPEC-38 T7.2) ──────────────────────────────────────────────────
+// ── discard (SPEC-pr-actions-next-step-bar T7.2) ──────────────────────────────────────────────────
 // A closed PR's worktree AND its branch go. Symmetry with wrap up: a verb called
 // "discard" that leaves the branch behind is not discarding. The commits survive
 // on origin/<branch>, since a PR cannot exist without a pushed head.
@@ -2260,7 +2260,7 @@ test("ensureLive leaves history-only, closed, draft and unknown sessions alone",
     // History-only: nothing to resume, so it stays read-only rather than
     // silently starting a FRESH agent that has lost the transcript.
     await mgr.ensureLive("sess-noresume");
-    // Closed is a deliberate stop (SPEC-29) — resurrect only via reopen.
+    // Closed is a deliberate stop (SPEC-session-lifecycle-resume-list-delete) — resurrect only via reopen.
     await mgr.ensureLive("sess-closed");
     // A draft also holds a DetachedAdapter; it must promote, never re-attach.
     const draft = await mgr.spawnPendingSession(mgr.listProjects()[0].id);
@@ -2432,7 +2432,7 @@ test("a replaced adapter can no longer feed the session it was swapped out of", 
     await mgr.ensureDefaultSessions();
     const session = mgr.allSessions()[0]!;
     const outgoing = session.adapter;
-    // Busy + unsteerable, so the message lands in the pending queue (SPEC-35).
+    // Busy + unsteerable, so the message lands in the pending queue (SPEC-mid-turn-steering-and-queue).
     outgoing.emit("status", "running");
     await session.sendUserMessage("queued while running");
     assert.equal(session.queuedMessages.length, 1, "precondition: one queued message");
@@ -2456,7 +2456,7 @@ test("a replaced adapter can no longer feed the session it was swapped out of", 
   }
 });
 
-test("SPEC-46 D9: MAKIT_SPAWN_DEPTH reports the session's real depth (display only)", async () => {
+test("SPEC-cli-as-client D9: MAKIT_SPAWN_DEPTH reports the session's real depth (display only)", async () => {
   // D9 makes the *guard* recompute depth server-side and ignore this variable,
   // precisely because an agent can forge it. That is exactly why it must still be
   // honest: an agent reads it to decide whether to hand off again, and a value
@@ -2502,7 +2502,7 @@ test("SPEC-46 D9: MAKIT_SPAWN_DEPTH reports the session's real depth (display on
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-46 D3 — an agent's token dies with its session
+// SPEC-cli-as-client D3 — an agent's token dies with its session
 //
 // `startOpts` mints a MAKIT_CLI_TOKEN per session and re-attach drops the old
 // one, but D3 says the token is "revoked when it ends" — and kill/close end a
@@ -2558,7 +2558,7 @@ test("D3: the token authenticates as its OWN session, so revocation is attributa
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-46 D9 — the fan-out bound holds against concurrent spawns
+// SPEC-cli-as-client D9 — the fan-out bound holds against concurrent spawns
 //
 // The command layer checks the bound and `spawnPendingSession` then awaits
 // (listWorktrees) before registering the session, so the count the check read is
@@ -2759,7 +2759,7 @@ test("a message racing a close waits for teardown, then reopens the session", as
 
 /**
  * Closing drops queued mid-turn messages, mirroring `cancel`'s "stop means stop"
- * (SPEC-35). Without this, the `idle` an adapter's `close()` emits triggers
+ * (SPEC-mid-turn-steering-and-queue). Without this, the `idle` an adapter's `close()` emits triggers
  * `flushNext()` and a queued message is sent into the agent being reaped.
  */
 test("closeSession drops queued mid-turn messages instead of flushing them into a dying agent", async () => {
@@ -2878,7 +2878,7 @@ test("reopenSession on an already-open session is a no-op", async () => {
   }
 });
 
-// --- SPEC-52 C1b: agentSessionId + transcriptPath in the projected DTO ---------
+// --- SPEC-session-identity C1b: agentSessionId + transcriptPath in the projected DTO ---------
 
 // A real UUIDv7 pi session id (see transcript-path.test.ts for the collision pair).
 const SPEC51_ID = "019fa9f4-443d-7d86-8f4c-d9c4988ddf4f";
@@ -2909,7 +2909,7 @@ function withSpec51AgentDir(body: (agentDir: string) => void): void {
   }
 }
 
-test("listSessions resolves transcriptPath from the WORKTREE slug, not the project slug (SPEC-52 D3)", () => {
+test("listSessions resolves transcriptPath from the WORKTREE slug, not the project slug (SPEC-session-identity D3)", () => {
   withSpec51AgentDir((agentDir) => {
     const store = new SqliteEventStore();
     const projectPath = "/repo/root";
@@ -2942,7 +2942,7 @@ test("listSessions resolves transcriptPath from the WORKTREE slug, not the proje
   });
 });
 
-test("listSessions projects transcriptPath into the DTO (SPEC-52)", () => {
+test("listSessions projects transcriptPath into the DTO (SPEC-session-identity)", () => {
   const store = new SqliteEventStore();
   // A resumeSessionPath is authoritative and dir-independent, so this proves the
   // whole path-into-DTO wiring without depending on a slug lookup.
@@ -2956,7 +2956,7 @@ test("listSessions projects transcriptPath into the DTO (SPEC-52)", () => {
   }
 });
 
-test("listSessions projects agentSessionId into the DTO (SPEC-52)", () => {
+test("listSessions projects agentSessionId into the DTO (SPEC-session-identity)", () => {
   const store = new SqliteEventStore();
   seedColdSession(store, "sess-id", { agentSessionId: "pi-42" });
   try {
@@ -2968,7 +2968,7 @@ test("listSessions projects agentSessionId into the DTO (SPEC-52)", () => {
   }
 });
 
-test("a draft projects neither agentSessionId nor transcriptPath (SPEC-52 D9)", async () => {
+test("a draft projects neither agentSessionId nor transcriptPath (SPEC-session-identity D9)", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-c1b-draft-"));
   try {
     const mgr = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
@@ -2982,7 +2982,7 @@ test("a draft projects neither agentSessionId nor transcriptPath (SPEC-52 D9)", 
   }
 });
 
-test("a closed/cold session still projects its agentSessionId (SPEC-29 persistence)", async () => {
+test("a closed/cold session still projects its agentSessionId (SPEC-session-lifecycle-resume-list-delete persistence)", async () => {
   const store = new SqliteEventStore();
   seedColdSession(store, "sess-closed", { agentSessionId: "pi-cold", closed: true });
   try {

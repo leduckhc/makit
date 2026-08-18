@@ -1,12 +1,12 @@
 /// Pure request→notification mapping, actionId→response mapping, and the
 /// notification-payload codec. No Flutter/plugin imports so it stays unit
-/// testable and reusable from the (SPEC-07) background isolate.
+/// testable and reusable from the (SPEC-background-wake-notifications) background isolate.
 library;
 
 import 'dart:convert';
 
 /// Canonical `srv.response` body builder — the single source of truth for the
-/// shapes the app sends back to the server (SPEC-18 T4). Both the in-app dialog
+/// shapes the app sends back to the server (SPEC-boundary-hardening T4). Both the in-app dialog
 /// path (`SrvRequestHandler`) and the notification-action path
 /// ([responseForAction]) build their responses here so the two can never drift.
 ///

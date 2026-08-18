@@ -1,5 +1,5 @@
 /**
- * GitHub-domain `cmd` handlers (SPEC-32 §6.6): manual budget refresh, pause, and
+ * GitHub-domain `cmd` handlers (SPEC-github-gateway-and-budget §6.6): manual budget refresh, pause, and
  * the foreground watch.
  *
  * `github.refresh` and `github.pause` ack immediately, then mutate the gateway

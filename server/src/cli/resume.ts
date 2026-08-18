@@ -1,6 +1,6 @@
 /**
  * `makit resume <id>` — bring a cold, resumable session back to a live agent
- * (SPEC-46 T14).
+ * (SPEC-cli-as-client T14).
  *
  * A thin client of `session.attach` (D1): the same command the app's re-attach
  * path uses. The server re-hydrates the session and re-attaches it to a fresh

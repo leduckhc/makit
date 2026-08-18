@@ -130,7 +130,7 @@ export interface ProcTableResult {
    * This flag is the difference between "no processes" and "we could not look",
    * and it matters: an empty table is indistinguishable from every agent having
    * exited, so a caller that ignored `ok` would report a working agent as gone —
-   * the same defect SPEC-32 fixed for PR pills vanishing under rate limits.
+   * the same defect SPEC-github-gateway-and-budget fixed for PR pills vanishing under rate limits.
    */
   ok: boolean;
   table: Map<number, ProcRow>;

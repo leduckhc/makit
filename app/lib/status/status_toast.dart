@@ -5,7 +5,7 @@
 /// Mounted once, above the Navigator (`MaterialApp.builder`), beside
 /// `SrvRequestHandler`. Nothing here owns state that matters: dismissing a toast
 /// or missing it entirely loses nothing, because the [StatusCenter] holds the
-/// record (SPEC-48 D5).
+/// record (SPEC-status-and-activity D5).
 library;
 
 import 'dart:async';
@@ -61,7 +61,7 @@ class _StatusToastLayerState extends ConsumerState<StatusToastLayer> {
   final ToastQueue _queue = ToastQueue();
   final Map<String, Timer> _timers = <String, Timer>{};
 
-  /// Ids whose dwell is paused because the user is reading them (SPEC-49 D4).
+  /// Ids whose dwell is paused because the user is reading them (SPEC-notice-layer D4).
   final Set<String> _held = <String>{};
   StreamSubscription<StatusChange>? _sub;
 
@@ -75,14 +75,14 @@ class _StatusToastLayerState extends ConsumerState<StatusToastLayer> {
     if (!mounted) return;
     switch (change) {
       // Silent posts are history, not news: the surface already showed the user
-      // the thing (SPEC-48 D7).
+      // the thing (SPEC-status-and-activity D7).
       case StatusPosted(silent: true):
         return;
       case StatusPosted(:final event):
         setState(() => _queue.push(event));
         // Restart the clock on every post: a repeat that just bumped the count
         // is news again, and deserves the full dwell. Unless the card is being
-        // held — SPEC-49 D4's hold outranks that, and a timer here would
+        // held — SPEC-notice-layer D4's hold outranks that, and a timer here would
         // dismiss the notice under the pointer that is reading or copying it.
         // The release in `_setHeld` starts the fresh dwell instead.
         if (_held.contains(event.id)) return;
@@ -109,7 +109,7 @@ class _StatusToastLayerState extends ConsumerState<StatusToastLayer> {
 
   /// Attention arrived at or left the card for [id]. Holding cancels its dwell;
   /// releasing restarts the **whole** dwell rather than the remainder, because a
-  /// notice you looked away from is news again (SPEC-49 D4) — the same judgement
+  /// notice you looked away from is news again (SPEC-notice-layer D4) — the same judgement
   /// a coalesced repeat already gets above.
   void _setHeld(StatusEvent event, bool held) {
     if (held) {
@@ -148,7 +148,7 @@ class _StatusToastLayerState extends ConsumerState<StatusToastLayer> {
       children: [
         widget.child,
         // Top-anchored: the snackbar's bottom slot sits on the composer, the one
-        // control DESIGN.md protects (SPEC-48 D6).
+        // control DESIGN.md protects (SPEC-status-and-activity D6).
         Positioned(
           top: 0,
           right: 0,
@@ -221,7 +221,7 @@ class StatusToastCard extends StatefulWidget {
 
   /// Called when the user's attention enters or leaves this card (pointer hover
   /// or keyboard focus). The layer owns the dwell timers, so it is the layer
-  /// that pauses them — the card only reports what it observes (SPEC-49 D4).
+  /// that pauses them — the card only reports what it observes (SPEC-notice-layer D4).
   final void Function(bool held)? onAttention;
 
   @override
@@ -255,7 +255,7 @@ class _StatusToastCardState extends State<StatusToastCard> {
     );
     if (!mounted) return;
     // In place, not a second toast: confirming a copy by posting an event you
-    // could then copy is a hall of mirrors (SPEC-49 D6).
+    // could then copy is a hall of mirrors (SPEC-notice-layer D6).
     setState(() => _copied = true);
     _copyReset?.cancel();
     _copyReset = Timer(
@@ -277,7 +277,7 @@ class _StatusToastCardState extends State<StatusToastCard> {
           : '${statusSeverityLabel(e.severity)}: ${e.displayTitle}',
       // Assistive tech gets the action by name, not just a tappable rectangle:
       // a notice whose whole point is "you can re-read this" must not be
-      // pointer-only (SPEC-49 D2).
+      // pointer-only (SPEC-notice-layer D2).
       customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
         const CustomSemanticsAction(label: 'Copy'): _copy,
       },
@@ -292,7 +292,7 @@ class _StatusToastCardState extends State<StatusToastCard> {
           child: InkWell(
             // The whole card copies. Copy is the one thing that cannot be done
             // any other way, and the 13 px glyph this replaces was the smallest
-            // target on the card at the worst moment (SPEC-49 D1, D7).
+            // target on the card at the worst moment (SPEC-notice-layer D1, D7).
             onTap: _copy,
             onFocusChange: _setHeld,
             borderRadius: BorderRadius.circular(kRadius12),
@@ -345,7 +345,7 @@ class _StatusToastCardState extends State<StatusToastCard> {
                                       _held
                                           // Held: the whole payload, selectable,
                                           // because the tail of a stack trace is
-                                          // the part worth reading (SPEC-49 D5).
+                                          // the part worth reading (SPEC-notice-layer D5).
                                           ? SelectableText(
                                               e.detail!.trimRight(),
                                               style: text.labelSmall

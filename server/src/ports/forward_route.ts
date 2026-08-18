@@ -1,6 +1,6 @@
 /**
  * forward_route — authenticated HTTP proxy for a forwarded loopback port
- * (SPEC-44 D1/D5).
+ * (SPEC-ports-forward D1/D5).
  *
  * This is `media/route.ts` again, not a new transport: one more `request`
  * listener on the HTTPS listener(s) that already carry the WebSocket, gated by

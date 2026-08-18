@@ -157,9 +157,9 @@ test("already-trusted (localhost) hello acks without a token", () => {
   assert.equal(snapshotsFor, client);
 });
 
-// ── SPEC-37: the app's reported pid is accepted ONLY on a loopback socket ────
+// ── SPEC-performance-metrics-dashboard: the app's reported pid is accepted ONLY on a loopback socket ────
 
-test("hello {pid} on a loopback client sets appPid (SPEC-37 decision 6)", () => {
+test("hello {pid} on a loopback client sets appPid (SPEC-performance-metrics-dashboard decision 6)", () => {
   const gate = new AuthGate({ registry: fakeRegistry({}), onAuthenticated: () => {} });
   const client = fakeClient(true);
   (client as { isLocal: boolean }).isLocal = true;
@@ -169,7 +169,7 @@ test("hello {pid} on a loopback client sets appPid (SPEC-37 decision 6)", () => 
   assert.equal(client.appPid, 4242, "a loopback client's reported pid is accepted");
 });
 
-test("hello {pid} on a non-loopback client is ignored, appPid stays unset (SPEC-37 decision 6)", () => {
+test("hello {pid} on a non-loopback client is ignored, appPid stays unset (SPEC-performance-metrics-dashboard decision 6)", () => {
   const device = { id: "dev-x", label: "phone", bearer: "good" };
   const gate = new AuthGate({
     registry: fakeRegistry({ bearers: { good: device } }),

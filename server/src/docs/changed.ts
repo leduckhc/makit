@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D5: which docs differ from the branch's merge base.
+ * makit — SPEC-doc-preview D5: which docs differ from the branch's merge base.
  *
  * `changed` is the review question — *what did this branch add or touch* — not
  * "dirty in the working tree". It reuses the same `base...HEAD` merge-base diff

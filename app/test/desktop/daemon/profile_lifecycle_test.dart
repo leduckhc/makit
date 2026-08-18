@@ -1,5 +1,5 @@
-// Unit tests for [ProfileLifecycle] (SPEC-50 P3, D7/D8).
-// Co-located with the code under test (per SPEC-03 desktop layout).
+// Unit tests for [ProfileLifecycle] (SPEC-profiles P3, D7/D8).
+// Co-located with the code under test (per SPEC-desktop-control-app desktop layout).
 // ignore_for_file: depend_on_referenced_packages
 import 'dart:io';
 
@@ -285,7 +285,7 @@ void main() {
         // The SIGTERM handler closes the socket ~100ms before the process
         // actually exits. Confirming on the socket alone would greenlight a
         // delete while the daemon is still alive and may still be writing
-        // makit.db-wal (SPEC-50 D8).
+        // makit.db-wal (SPEC-profiles D8).
         var aliveChecks = 0;
         final lifecycle = ProfileLifecycle(
           resolver: _resolver(),

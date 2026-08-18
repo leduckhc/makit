@@ -1,5 +1,5 @@
 /**
- * SPEC-41 finding 27 regression: port attribution must work even when PR
+ * SPEC-open-ports finding 27 regression: port attribution must work even when PR
  * enrichment (the `gh`-backed phase) never resolves. The scanner reads worktree
  * paths from the GIT-ONLY snapshot, which runs before enrichment and never
  * touches the network — so a missing / unauthenticated / rate-limited / slow

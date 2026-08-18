@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/ui/session/elapsed.dart';
 
 void main() {
-  group('formatElapsed — the ladder (SPEC-47 D13/D14)', () {
+  group('formatElapsed — the ladder (SPEC-session-timings D13/D14)', () {
     test('one decimal only in the 2–10s band, trailing .0 stripped', () {
       expect(formatElapsed(2400), '2.4s');
       expect(formatElapsed(9100), '9.1s');
@@ -58,7 +58,7 @@ void main() {
     });
   });
 
-  group('elapsedMs — span arithmetic (SPEC-47 D1/D10b)', () {
+  group('elapsedMs — span arithmetic (SPEC-session-timings D1/D10b)', () {
     test('a finished span is end minus start', () {
       expect(elapsedMs(start: 1000, end: 3400), 2400);
     });

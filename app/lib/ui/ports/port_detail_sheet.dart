@@ -1,8 +1,8 @@
-/// SPEC-41 mobile sheet 2 — one port, every fact spelled out, then the two P1
+/// SPEC-open-ports mobile sheet 2 — one port, every fact spelled out, then the two P1
 /// actions (Open / Copy URL), which are hidden when the port never answered
 /// HTTP (`openUrl` absent) rather than guessing a URL.
 ///
-/// SPEC-43 adds the one destructive control, and only here: `Kill this process…`
+/// SPEC-ports-kill adds the one destructive control, and only here: `Kill this process…`
 /// is the **last** row, past a danger divider, ~a whole sheet below the first
 /// tap and still behind a confirm (mockup §2b). Sheet 1 stays button-free — §10
 /// rejects an inline kill in a scrollable list.
@@ -30,11 +30,11 @@ import 'ports_vocabulary.dart';
 /// Height of an action row (Open / Copy URL), a comfortable touch target.
 const double _kActionRowHeight = 50;
 
-/// The divider that fences the destructive row off (SPEC-43 D8). Keyed so a test
+/// The divider that fences the destructive row off (SPEC-ports-kill D8). Keyed so a test
 /// can prove the fence exists, not just the label.
 const Key kPortKillDivider = ValueKey('port-kill-divider');
 
-/// The "Watch this port" switch (SPEC-44 D7/D8). Keyed for tests.
+/// The "Watch this port" switch (SPEC-ports-forward D7/D8). Keyed for tests.
 const Key kPortWatchToggle = ValueKey('port-watch-toggle');
 
 /// True on the platforms where a host loopback port is genuinely unreachable, so
@@ -66,7 +66,7 @@ Future<void> showPortDetailSheet(
         branchLabel: branchLabel,
         sessionLabel: sessionLabel,
         nowMs: DateTime.now().millisecondsSinceEpoch,
-        // SPEC-44 D7: only an OWNED port can be watched — the identity is
+        // SPEC-ports-forward D7: only an OWNED port can be watched — the identity is
         // `(worktreePath, port)`, so an unowned listener has nothing to key on.
         //
         // The sheet owns the switch's position while it is open (see
@@ -81,7 +81,7 @@ Future<void> showPortDetailSheet(
                 port: port.port,
                 on: on,
               ),
-        // SPEC-44 P4b: only offered where `Open` cannot work — a loopback port
+        // SPEC-ports-forward P4b: only offered where `Open` cannot work — a loopback port
         // on a device that is not the host. On the desktop the port is local, so
         // forwarding it to yourself would be nonsense.
         onForward: _isHandheld && portIsForwardable(port)
@@ -132,10 +132,10 @@ class PortDetailSheetBody extends StatefulWidget {
   final int nowMs;
 
   /// Invoked by the destructive row. **Null hides the row entirely** — which is
-  /// how an unverifiable port (SPEC-43 D1) ends up with no kill affordance.
+  /// how an unverifiable port (SPEC-ports-kill D1) ends up with no kill affordance.
   final VoidCallback? onKill;
 
-  /// Toggles the "stopped listening" alert (SPEC-44). Null hides the switch —
+  /// Toggles the "stopped listening" alert (SPEC-ports-forward). Null hides the switch —
   /// an unowned port has no `(worktreePath, port)` identity to watch by.
   ///
   /// Returns whether the server accepted the write. A `Future<bool>`, not a
@@ -143,7 +143,7 @@ class PortDetailSheetBody extends StatefulWidget {
   /// will wait for and never get, so the switch has to be able to go back.
   final Future<bool> Function(bool on)? onWatchChanged;
 
-  /// Hands the port to the system browser (SPEC-44 P4b). Non-null only when this
+  /// Hands the port to the system browser (SPEC-ports-forward P4b). Non-null only when this
   /// device cannot reach the port directly, which is also when it REPLACES
   /// `Open`: offering a link to this device's own `127.0.0.1` would be a button
   /// that always fails.
@@ -303,7 +303,7 @@ class _PortDetailSheetBodyState extends State<PortDetailSheetBody> {
               onTap: () => _copy(context),
             ),
           ],
-          // Opt-in alerts (SPEC-44 D8): per port, never ambient — an always-on
+          // Opt-in alerts (SPEC-ports-forward D8): per port, never ambient — an always-on
           // port notification would fire on every rebuild.
           if (widget.onWatchChanged != null)
             SwitchListTile(

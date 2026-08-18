@@ -1,0 +1,15 @@
+{
+  "app/lib/store/models.dart:585": "context-usage",
+  "server/src/protocol.ts:152": "context-usage",
+  "server/src/session.ts:28": "context-usage",
+  "mockups/session-timings.html:388": "context-usage",
+  "app/test/sim/ports_screen_sim_test.dart:245": "context-usage",
+  "docs/specs/20260811-005200-SPEC-session-identity.md:109": "context-usage",
+  "server/src/ws/client.ts:53": "doc-preview",
+  "server/src/ws/commands/deps.ts:73": "doc-preview",
+  "app/test/connection_controller_test.dart:307": "doc-preview",
+  "app/test/ui/widgets/magic_fix_prompt_test.dart:1": "pr-actions-next-step-bar",
+  "server/src/server.ts:961": "pr-actions-next-step-bar",
+  "app/lib/store/store.dart:966": "target-branch",
+  "app/lib/store/store.dart:1136": "target-branch"
+}

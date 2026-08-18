@@ -1,5 +1,5 @@
 /**
- * SPEC-43 P3a acceptance — the real thing: a real `node` listener, in a real git
+ * SPEC-ports-kill P3a acceptance — the real thing: a real `node` listener, in a real git
  * worktree, killed through the real `PortsService.killPort` with the real
  * `process.kill`.
  *
@@ -10,7 +10,7 @@
  * SIGTERM, and a real socket release.
  *
  * Skipped with a printed reason where `lsof` is not on PATH, exactly like
- * `acceptance.test.ts` (the SPEC-41 T9 lesson about Linux CI parity).
+ * `acceptance.test.ts` (the SPEC-open-ports T9 lesson about Linux CI parity).
  */
 
 import assert from "node:assert/strict";

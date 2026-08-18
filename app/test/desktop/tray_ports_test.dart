@@ -1,4 +1,4 @@
-// SPEC-42 P2c T16 — the menubar's Ports submenu (D15).
+// SPEC-ports-global-view P2c T16 — the menubar's Ports submenu (D15).
 //
 // Lives under `test/` (not beside the code like the older tray suite) because
 // `flutter test` does not run tests inside `lib/`, and this behaviour has to be

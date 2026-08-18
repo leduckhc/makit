@@ -12,7 +12,7 @@
  *
  * Screenshots then reach the phone for free: pi-acp puts raw tool-result bytes in
  * `rawOutput`, and makit's ACP mapper already ingests image blocks from there
- * into the media store (SPEC-22).
+ * into the media store (SPEC-assistant-display-media).
  *
  * Install (once):
  *   ln -s "$PWD/.pi/extensions/pi-computer-use" ~/.pi/agent/extensions/pi-computer-use

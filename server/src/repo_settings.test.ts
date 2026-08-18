@@ -194,7 +194,7 @@ test("valid values survive the parse", () => {
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-48 D4' — re-pointing a repository's root path.
+// SPEC-per-repo-settings D4' — re-pointing a repository's root path.
 //
 // A different rule set from the worktree root, and the differences are the
 // interesting part:

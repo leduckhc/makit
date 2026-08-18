@@ -1,5 +1,5 @@
 /**
- * Server-backed control backend tests (SPEC-01, phase 6).
+ * Server-backed control backend tests (SPEC-daemon-control-plane, phase 6).
  *
  * `createServerBackend` adapts the running server's existing internals
  * (registry, manager, cert, connected clients) to the ControlBackend the

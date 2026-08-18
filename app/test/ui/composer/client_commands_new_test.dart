@@ -1,4 +1,4 @@
-// Behavioural test for the `/new` client command (SPEC-30 decision 18): it must
+// Behavioural test for the `/new` client command (SPEC-tab-groups decision 18): it must
 // start the fresh agent in the CURRENT pane's worktree. Spawning with no
 // worktree used to be legal, but since the client became responsible for
 // resolving the worktree before spawning, a bare spawn silently runs the agent

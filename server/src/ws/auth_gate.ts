@@ -31,7 +31,7 @@ export interface AuthRegistry {
 
 /**
  * The slice of the agent-token store the gate consults after the registry
- * (SPEC-46 T3/C2). A hit yields a session-scoped {@link Principal}.
+ * (SPEC-cli-as-client T3/C2). A hit yields a session-scoped {@link Principal}.
  */
 export interface AuthSessionTokens {
   authenticate(token: string): Principal | null;
@@ -42,7 +42,7 @@ export interface AuthGateDeps {
   /** Called after a successful `hello.ack`, to push initial snapshots. */
   onAuthenticated: (client: WsClient) => void;
   /**
-   * SPEC-46 (C2): the in-memory per-session agent-token store. Consulted only
+   * SPEC-cli-as-client (C2): the in-memory per-session agent-token store. Consulted only
    * when the registry does not know the bearer, so a phone bearer never pays
    * for the extra lookup and an agent token is a strictly additional subject.
    */
@@ -59,7 +59,7 @@ export class AuthGate {
     const pair = typeof env.pair === "string" ? env.pair : "";
     const label = typeof env.label === "string" ? env.label : "device";
 
-    // SPEC-37 decision 6: accept the app's reported pid ONLY on a loopback
+    // SPEC-performance-metrics-dashboard decision 6: accept the app's reported pid ONLY on a loopback
     // socket. A non-loopback client's pid is ignored silently (it still
     // connects normally) so "report your pid" never becomes "sample any pid".
     // Only a positive safe integer is a pid. Without this, NaN/0/-1/Infinity from a
@@ -95,7 +95,7 @@ export class AuthGate {
       client.authed = true;
       client.deviceLabel = device.label;
       client.deviceId = device.id;
-      // SPEC-46 D17: the subject the router + fanout gate read. `caps` is passed
+      // SPEC-cli-as-client D17: the subject the router + fanout gate read. `caps` is passed
       // through verbatim — undefined (an existing phone) stays undefined, which
       // `isFullAccess` reads as full access.
       client.principal = { deviceId: device.id, label: device.label, caps: device.caps };
@@ -105,7 +105,7 @@ export class AuthGate {
       return;
     }
 
-    // SPEC-46 C2: not a paired device — try the agent-token store. A hit is a
+    // SPEC-cli-as-client C2: not a paired device — try the agent-token store. A hit is a
     // session-scoped principal (caps read/send/spawn, `sessionId` set).
     const agent = this.deps.sessionTokens?.authenticate(bearer) ?? null;
     if (agent) {

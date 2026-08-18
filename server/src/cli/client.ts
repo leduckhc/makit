@@ -1,5 +1,5 @@
 /**
- * The shared WSS client for `makit`'s session verbs (SPEC-46, T6/D1).
+ * The shared WSS client for `makit`'s session verbs (SPEC-cli-as-client, T6/D1).
  *
  * The CLI is a first-class client — a peer of the phone on the SAME WSS
  * protocol, same `hello` auth, same DTOs — so it cannot drift from the app by
@@ -68,7 +68,7 @@ export interface SessionsSnapshot {
 export interface MakitClient {
   /**
    * The credential this connection authenticated with. Exposed because `POST
-   * /media` (SPEC-33) rides the same listener with the same bearer, so a verb
+   * /media` (SPEC-user-attachments) rides the same listener with the same bearer, so a verb
    * that attaches a file must not resolve a second one.
    */
   readonly bearer: string;

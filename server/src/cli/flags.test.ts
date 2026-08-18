@@ -1,5 +1,5 @@
 /**
- * The shared argv scanner (SPEC-46). The behaviour that matters most is the one
+ * The shared argv scanner (SPEC-cli-as-client). The behaviour that matters most is the one
  * the hand-written loops all got wrong: a value flag in last position.
  */
 import { test } from "node:test";

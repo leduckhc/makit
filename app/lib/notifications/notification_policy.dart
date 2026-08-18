@@ -80,7 +80,7 @@ class PendingNotification {
   final String sessionId;
 
   /// The status the session moved *into*. Carried so consumers can classify the
-  /// change (SPEC-48 maps it to a severity for the Activity record) without
+  /// change (SPEC-status-and-activity maps it to a severity for the Activity record) without
   /// pattern-matching on [content]'s prose.
   final SessionStatus status;
   final NotificationContent content;

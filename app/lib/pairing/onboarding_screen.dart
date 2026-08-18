@@ -10,7 +10,7 @@ import 'readiness.dart';
 ///
 /// Mostly this *is* the connect/servers surface — [PairingScreen] — which the
 /// user can reach at any time by backing out of the repos. The one exception is
-/// the notifications gate (SPEC-09 Slice 1), a skippable detour shown while that
+/// the notifications gate (SPEC-onboarding-and-tray-polish Slice 1), a skippable detour shown while that
 /// gate is the first unsatisfied onboarding step.
 ///
 /// Unlike before, [OnboardingStep.ready] renders too: the root is a real

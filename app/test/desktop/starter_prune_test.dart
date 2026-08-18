@@ -1,4 +1,4 @@
-/// SPEC-45 D10 — a removed worktree takes its starter drafts with it.
+/// SPEC-starter-pane-parity D10 — a removed worktree takes its starter drafts with it.
 ///
 /// The three starter key spaces (keyed `starter:` + a JSON `[projectId,
 /// worktreePath]` pair — see `starterDraftKey`) are app-wide and NOT

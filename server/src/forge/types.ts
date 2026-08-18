@@ -16,7 +16,7 @@
 
 import type { OpenPr, PullRequestInfo } from "../git.js";
 
-/** Three-way PR lookup result — a failed lookup is never `none` (SPEC-32 §6.5). */
+/** Three-way PR lookup result — a failed lookup is never `none` (SPEC-github-gateway-and-budget §6.5). */
 export type PrLookup =
   | { kind: "pr"; pr: PullRequestInfo }
   | { kind: "none" }

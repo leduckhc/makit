@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D1: which directories a worktree's doc index walks.
+ * makit — SPEC-doc-preview D1: which directories a worktree's doc index walks.
  *
  * An allowlist of roots, never a file tree: a tree invites traversal, needs
  * lazy loading, and buries the four directories a human opens under twelve they

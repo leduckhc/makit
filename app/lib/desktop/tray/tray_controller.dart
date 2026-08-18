@@ -158,7 +158,7 @@ class TrayController extends ChangeNotifier {
   /// Invoked when the user chooses "Quit Makit".
   final VoidCallback? onQuit;
 
-  /// Invoked when the user chooses "Open Ports…" (SPEC-42 D15).
+  /// Invoked when the user chooses "Open Ports…" (SPEC-ports-global-view D15).
   final VoidCallback? onOpenPorts;
 
   /// The last ports the app cached, as menu lines (see `tray_ports.dart`).
@@ -264,7 +264,7 @@ class TrayController extends ChangeNotifier {
 
   /// `Ports (n)` — the cached listeners, then "Open Ports…" (D15).
   ///
-  /// The entries are inert labels: killing a port is SPEC-43, so the menu
+  /// The entries are inert labels: killing a port is SPEC-ports-kill, so the menu
   /// deliberately offers no action on an individual row. "Open Ports…" lives
   /// inside this submenu so the top-level menu keeps its existing length.
   MenuItem _dynamicPortsSubmenu() => MenuItem.submenu(

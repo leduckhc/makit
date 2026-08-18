@@ -1,4 +1,4 @@
-/// SPEC-42 P2a — the session-tile ports glyph (D14).
+/// SPEC-ports-global-view P2a — the session-tile ports glyph (D14).
 ///
 /// A quieter sibling of the worktree row glyph: it renders only for a port
 /// whose process tree belongs to *this* session, drops the attention dot (the

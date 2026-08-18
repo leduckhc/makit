@@ -535,7 +535,7 @@ PrStatus prStatus({
     );
   } else if (open?.checkRollup == 'pending') {
     // The count lives in the check list, but the *verdict* lives in the rollup —
-    // and SPEC-32 sheds the list while keeping the rollup. Reading only the list
+    // and SPEC-github-gateway-and-budget sheds the list while keeping the rollup. Reading only the list
     // made a running build indistinguishable from an all-clear, which then
     // offered `Squash & merge` on a build that had not finished.
     signals.add(const PrSignal('CI still running', PrTone.quiet));
@@ -762,7 +762,7 @@ String prRemedyLabel(PrRemedy remedy) => switch (remedy) {
     // The bar names the *situation's* verb, which is terser than the menu label
     // ("Fix", not "Fix PR") because the bar has already said what is wrong. The
     // magic remedy wears the same "Fix" deliberately — both fix, and the sentence
-    // beside the button is what says how much (SPEC-38 §8 D12).
+    // beside the button is what says how much (SPEC-pr-actions-next-step-bar §8 D12).
     PrPromptAction.fixPr => 'Fix',
     PrPromptAction.pull => 'Pull',
     PrPromptAction.push => 'Push',

@@ -1,4 +1,4 @@
-/// Elapsed-span formatting for the transcript (SPEC-47 D13/D13a/D14/D10b).
+/// Elapsed-span formatting for the transcript (SPEC-session-timings D13/D13a/D14/D10b).
 ///
 /// Deliberately separate from the two duration formatters this app already has
 /// — `formatDuration` (`desktop/metrics/metrics_button.dart`) and
@@ -7,7 +7,7 @@
 /// and a day tier matters. This formats *a span that ended*, where sub-minute
 /// precision is the entire point — `formatDuration` renders every sub-second
 /// call as `0s` and collapses `2m 41s` to `2m`. Same units, different question;
-/// see SPEC-47 D13 for why they are not consolidated.
+/// see SPEC-session-timings D13 for why they are not consolidated.
 library;
 
 /// The elapsed milliseconds of a span, or null when it cannot be computed

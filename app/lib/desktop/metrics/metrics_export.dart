@@ -1,4 +1,4 @@
-/// SPEC-37 Tier 2 — snapshot export.
+/// SPEC-performance-metrics-dashboard Tier 2 — snapshot export.
 ///
 /// **Export is the only way a sample reaches disk**, and only when the user asks
 /// (decision 5: nothing is ever written to the event log or persisted otherwise).

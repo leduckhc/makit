@@ -1,5 +1,5 @@
 /**
- * SubscriptionHub fanout gate (SPEC-46 T5 / D17 rev 3).
+ * SubscriptionHub fanout gate (SPEC-cli-as-client T5 / D17 rev 3).
  *
  * `fanout` deliberately ignores subscription and auto-mirrors every session's
  * events to every authed client — correct for a phone, which must stay in sync

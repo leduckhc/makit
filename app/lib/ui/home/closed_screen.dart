@@ -9,7 +9,7 @@ import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
 import 'repo_chips.dart';
 
-/// The closed-sessions screen (SPEC-29) — the mobile counterpart of the
+/// The closed-sessions screen (SPEC-session-lifecycle-resume-list-delete) — the mobile counterpart of the
 /// desktop sidebar's Closed view. Closed sessions are not part of the
 /// active `sessions.snapshot`, so the list is fetched on demand and grouped by
 /// repo; each row restores back to the active list.

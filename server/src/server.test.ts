@@ -19,7 +19,7 @@ import type { AgentAdapter } from "./adapters/adapter.js";
 function fakeAdapter(pid?: number): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
   (e as unknown as { agent: string }).agent = "stub";
-  // SPEC-37: acp/codex expose `agentPid` structurally (it is deliberately not on
+  // SPEC-performance-metrics-dashboard: acp/codex expose `agentPid` structurally (it is deliberately not on
   // the AgentAdapter contract). A double without it makes every metrics agent-row
   // test vacuous, so opt in explicitly where a test needs a pid.
   if (pid !== undefined) (e as unknown as { agentPid: number }).agentPid = pid;
@@ -31,7 +31,7 @@ function fakeAdapter(pid?: number): AgentAdapter {
 }
 
 /**
- * SPEC-17 P2: a stream of per-token deltas must NOT re-broadcast the full
+ * SPEC-server-hotpath-and-state P2: a stream of per-token deltas must NOT re-broadcast the full
  * sessions snapshot (the O(clients × sessions) hot-path cliff), while a DTO-
  * visible change (status) still does. Drives a real WS server end-to-end and
  * counts `sessions.snapshot` frames on the wire.
@@ -114,7 +114,7 @@ test("streaming deltas do not re-broadcast the sessions snapshot; a status chang
   }
 });
 
-// ── SPEC-32 T6: github.budget broadcast + commands ────────────────────────────
+// ── SPEC-github-gateway-and-budget T6: github.budget broadcast + commands ────────────────────────────
 
 import { createGithubGateway, type ExecResult } from "./github/gateway.js";
 
@@ -197,7 +197,7 @@ async function withBudgetServer(
   }
 }
 
-test("a connecting client receives a github.budget event (SPEC-32)", async () => {
+test("a connecting client receives a github.budget event (SPEC-github-gateway-and-budget)", async () => {
   await withBudgetServer(async ({ nextEvent }) => {
     const env = await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
     const budget = (env as { budget?: Record<string, unknown> }).budget!;
@@ -208,7 +208,7 @@ test("a connecting client receives a github.budget event (SPEC-32)", async () =>
   });
 });
 
-test("github.refresh acks and re-broadcasts the budget (SPEC-32)", async () => {
+test("github.refresh acks and re-broadcasts the budget (SPEC-github-gateway-and-budget)", async () => {
   await withBudgetServer(async ({ send, nextEvent }) => {
     // Flush the connect-time budget event first.
     await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
@@ -220,7 +220,7 @@ test("github.refresh acks and re-broadcasts the budget (SPEC-32)", async () => {
   });
 });
 
-test("github.watch {watching:true} acks and pushes a snapshot at once (SPEC-32)", async () => {
+test("github.watch {watching:true} acks and pushes a snapshot at once (SPEC-github-gateway-and-budget)", async () => {
   await withBudgetServer(async ({ send, nextEvent }) => {
     await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
     send({ t: "cmd", id: "w1", kind: "github.watch", watching: true });
@@ -233,7 +233,7 @@ test("github.watch {watching:true} acks and pushes a snapshot at once (SPEC-32)"
   });
 });
 
-test("github.watch {watching:false} acks and unregisters the watcher (SPEC-32)", async () => {
+test("github.watch {watching:false} acks and unregisters the watcher (SPEC-github-gateway-and-budget)", async () => {
   await withBudgetServer(async ({ send, nextEvent }) => {
     await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
     send({ t: "cmd", id: "w1", kind: "github.watch", watching: true });
@@ -257,7 +257,7 @@ test("github.watch {watching:false} acks and unregisters the watcher (SPEC-32)",
   });
 });
 
-test("the fast snapshot goes to the watcher only, not to every client (SPEC-32)", async () => {
+test("the fast snapshot goes to the watcher only, not to every client (SPEC-github-gateway-and-budget)", async () => {
   await withBudgetServer(async ({ ws, send, nextEvent }) => {
     await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
     // A second client with no panel open — a paired phone has no budget UI at all.
@@ -293,7 +293,7 @@ test("the fast snapshot goes to the watcher only, not to every client (SPEC-32)"
   });
 });
 
-test("github.pause {paused:true} flips the level to paused (SPEC-32)", async () => {
+test("github.pause {paused:true} flips the level to paused (SPEC-github-gateway-and-budget)", async () => {
   await withBudgetServer(async ({ send, nextEvent }) => {
     // Ensure the budget is measured (so 'paused' is reachable), then pause.
     await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
@@ -311,7 +311,7 @@ test("github.pause {paused:true} flips the level to paused (SPEC-32)", async () 
   });
 });
 
-// ── SPEC-37 T6: metrics.sample wire event + metrics.watch command ─────────────
+// ── SPEC-performance-metrics-dashboard T6: metrics.sample wire event + metrics.watch command ─────────────
 
 /** A canned `ps` table whose only row is this process (so `app` can resolve). */
 function fakeMetricsExec(): (
@@ -453,7 +453,7 @@ async function openMetricsConn(port: number): Promise<MetricsConn> {
   return { ws, send, nextEvent, metricsFrames, allFrames, ping };
 }
 
-test("metrics.watch {on:true} acks then a sample WITH history arrives; the next has none (SPEC-37)", async () => {
+test("metrics.watch {on:true} acks then a sample WITH history arrives; the next has none (SPEC-performance-metrics-dashboard)", async () => {
   await withMetricsServer(async ({ connect, driveTick }) => {
     const c = await connect();
     // Prime the ring so the first watched frame carries history.
@@ -477,7 +477,7 @@ test("metrics.watch {on:true} acks then a sample WITH history arrives; the next 
   });
 });
 
-test("a non-watching authed client receives coarse samples but not watched ones (SPEC-37)", async () => {
+test("a non-watching authed client receives coarse samples but not watched ones (SPEC-performance-metrics-dashboard)", async () => {
   await withMetricsServer(async ({ connect, driveTick }) => {
     const watcher = await connect();
     const idle = await connect();
@@ -504,7 +504,7 @@ test("a non-watching authed client receives coarse samples but not watched ones 
   });
 });
 
-test("socket close clears the watcher and the cadence returns to idle (SPEC-37 leak guard)", async () => {
+test("socket close clears the watcher and the cadence returns to idle (SPEC-performance-metrics-dashboard leak guard)", async () => {
   await withMetricsServer(async ({ connect, driveTick, lastIntervalMs }) => {
     const c = await connect();
     await driveTick();
@@ -522,7 +522,7 @@ test("socket close clears the watcher and the cadence returns to idle (SPEC-37 l
   });
 });
 
-test("hello {pid} over loopback is accepted and colours the app row (SPEC-37 decision 6)", async () => {
+test("hello {pid} over loopback is accepted and colours the app row (SPEC-performance-metrics-dashboard decision 6)", async () => {
   await withMetricsServer(async ({ connect, driveTick }) => {
     const c = await connect();
     c.send({ t: "hello", id: "h1", pid: process.pid });
@@ -535,7 +535,7 @@ test("hello {pid} over loopback is accepted and colours the app row (SPEC-37 dec
   });
 });
 
-test("REGRESSION: driving samples never grows any session's event log (SPEC-37 decision 5)", async () => {
+test("REGRESSION: driving samples never grows any session's event log (SPEC-performance-metrics-dashboard decision 5)", async () => {
   await withMetricsServer(async ({ connect, driveTick, manager }) => {
     const projectId = manager.listProjects()[0].id;
     const session = await manager.spawnPiSession(projectId);
@@ -571,7 +571,7 @@ test("REGRESSION: driving samples never grows any session's event log (SPEC-37 d
   });
 });
 
-test("an exited session contributes no pid — a reused pid must not be attributed to it (SPEC-37)", async () => {
+test("an exited session contributes no pid — a reused pid must not be attributed to it (SPEC-performance-metrics-dashboard)", async () => {
   await withMetricsServer(async ({ connect, driveTick, manager }) => {
     const projectId = manager.listProjects()[0].id;
     const session = await manager.spawnPiSession(projectId);
@@ -596,7 +596,7 @@ test("an exited session contributes no pid — a reused pid must not be attribut
   });
 });
 
-test("a non-integer pid over loopback is rejected (SPEC-37 decision 6)", async () => {
+test("a non-integer pid over loopback is rejected (SPEC-performance-metrics-dashboard decision 6)", async () => {
   // 0, negatives, fractions, NaN and Infinity are all `typeof "number"`. Without a
   // safe-integer check each became `appPid` and the collector rendered a plausible
   // app row for a process that cannot exist.
@@ -616,9 +616,9 @@ test("a non-integer pid over loopback is rejected (SPEC-37 decision 6)", async (
   }
 });
 
-// ── SPEC-41: ports.watch leak guard — a socket close clears watchingPorts and
+// ── SPEC-open-ports: ports.watch leak guard — a socket close clears watchingPorts and
 // recounts the watchers, disarming the scanner (server.ts close handler). ─────
-test("SPEC-41: a socket close clears watchingPorts and disarms the port scanner", async () => {
+test("SPEC-open-ports: a socket close clears watchingPorts and disarms the port scanner", async () => {
   const home = mkdtempSync(join(tmpdir(), "makit-home-"));
   const project = mkdtempSync(join(tmpdir(), "makit-srv-proj-"));
   const prevHome = process.env.MAKIT_HOME;

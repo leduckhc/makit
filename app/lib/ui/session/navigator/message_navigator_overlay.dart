@@ -1,4 +1,4 @@
-/// The shared mount point for the message navigator (SPEC-34).
+/// The shared mount point for the message navigator (SPEC-message-navigator).
 ///
 /// Both the mobile `SessionScreen` and the desktop `DesktopChatPane` already
 /// wrap their transcript in a `Stack`; each adds this one child, so the

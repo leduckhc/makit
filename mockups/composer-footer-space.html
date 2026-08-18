@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>makit — Composer footer: space by need (SPEC-40)</title>
+<title>makit — Composer footer: space by need (SPEC-composer-footer-space)</title>
 <style>
   :root{
     --bg:#171717;--container-low:#1E1E1E;--container:#242424;--container-high:#2E2E2E;--container-highest:#383838;
@@ -114,7 +114,7 @@
 </style>
 
 <style>
-  /* SPEC-40 additions */
+  /* SPEC-composer-footer-space additions */
   .bar{height:10px;border-radius:5px;background:var(--container-high);position:relative;overflow:hidden}
   .bar > span{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
   .bar .now{background:#e88}
@@ -134,15 +134,15 @@
 </head>
 <body>
 
-<h1>Composer footer — give the controls the space they need <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-40</span></h1>
+<h1>Composer footer — give the controls the space they need <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-composer-footer-space</span></h1>
 <p class="sub">
   Every number on this page was measured in a Flutter widget test at <b>375 pt</b> with the real
   widgets and the real config-option shapes each adapter emits — not estimated, and not from the
-  earlier SPEC-37 sketch, which turned out to describe a session shape no adapter produces.
+  earlier SPEC-context-usage sketch, which turned out to describe a session shape no adapter produces.
 </p>
 
 <div class="note warn">
-  <strong>⚠ What SPEC-37 got wrong.</strong> It flagged "a 3-config-pill pi session needs 279 pt of a
+  <strong>⚠ What SPEC-context-usage got wrong.</strong> It flagged "a 3-config-pill pi session needs 279 pt of a
   267 pt budget" and drew three pills (<code>Sonnet</code>, <code>Sandbox</code>, <code>Approval</code>).
   No shipping adapter emits that: <b>pi</b> advertises <code>model</code> + <code>thought_level</code>,
   <b>codex</b> adds an optional <code>model_config</code>, and all of those <em>fold into the single
@@ -275,7 +275,7 @@
       <tr><td class="n">0</td><td>Space by need: pills <code>Expanded</code>, ring/[+]/send intrinsic</td><td>Structural. Alone it ends the overflow and multiplies the label by ~2.5×.</td></tr>
       <tr><td class="n">1</td><td>Model label drops the <code>provider/</code> prefix</td><td><code>pi-acp</code> sets <code>name = "provider/name"</code>. The provider is not what you check mid-turn, and the picker sheet still shows it in full.</td></tr>
       <tr><td class="n">2</td><td>Read-only chips hide <b>— built</b></td><td>They are decoration; the sheet shows the same values as live controls. <b>The deferral was wrong:</b> with both chips shown, codex rendered <code>gpt-5.6…</code> at 375 pt — 49% of its own model name — and the four-option shape still overflowed by 4.7 px at 320 pt. All-or-nothing, because dropping one chip reads as "unset" rather than "hidden".</td></tr>
-      <tr class="ghost"><td class="n">3</td><td>Standalone pills collapse into <code>⋯ N</code> → sheet <b>— still deferred</b></td><td>Same SPEC-31 pattern as the model pill. Not built: with steps 0–2 in place every shape — including the four-option one — fits at 320 pt with a readable model name, so a collapse has nothing left to earn. Trigger: a shape that still overflows, or drops the model label below 95% at 375 pt, <em>after</em> the chips have yielded.</td></tr>
+      <tr class="ghost"><td class="n">3</td><td>Standalone pills collapse into <code>⋯ N</code> → sheet <b>— still deferred</b></td><td>Same SPEC-model-picker-menu-per-model-config pattern as the model pill. Not built: with steps 0–2 in place every shape — including the four-option one — fits at 320 pt with a readable model name, so a collapse has nothing left to earn. Trigger: a shape that still overflows, or drops the model label below 95% at 375 pt, <em>after</em> the chips have yielded.</td></tr>
       <tr><td class="n">—</td><td><b>Never:</b> ellipsize the model name to fewer than a readable stub, hide the ring, or scroll the row</td><td>Scrolling would push the ring off-screen, and the ring exists to be glanceable.</td></tr>
     </table>
   </div>

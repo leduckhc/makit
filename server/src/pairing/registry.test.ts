@@ -102,7 +102,7 @@ test("authenticate scans all devices (constant-time, no early exit)", () =>
   }));
 
 // ---------------------------------------------------------------------------
-// SPEC-46 D2 — grantCli is idempotent in SHAPE as well as identity
+// SPEC-cli-as-client D2 — grantCli is idempotent in SHAPE as well as identity
 //
 // The CLI device is the subject every capability gate reads. `grantCli` returns
 // an existing `cli@<host>` row as-is, so a row that reached devices.json without

@@ -125,7 +125,7 @@ void main() {
       );
     });
 
-    test('openPorts defaults to ⌘⇧P on macOS (SPEC-42 D9)', () {
+    test('openPorts defaults to ⌘⇧P on macOS (SPEC-ports-global-view D9)', () {
       final map = Keymap.defaults(cmdIsPrimary: true);
       expect(
         map.chordFor(ShortcutAction.openPorts),
@@ -133,7 +133,7 @@ void main() {
       );
     });
 
-    test('openPorts defaults to ⌃⇧P off macOS (SPEC-42 D9)', () {
+    test('openPorts defaults to ⌃⇧P off macOS (SPEC-ports-global-view D9)', () {
       final map = Keymap.defaults(cmdIsPrimary: false);
       expect(
         map.chordFor(ShortcutAction.openPorts),
@@ -171,20 +171,23 @@ void main() {
       expect(map.conflictFor(send, ShortcutScope.global), isNull);
     });
 
-    test('openPorts ⌘⇧P is free in the global scope (SPEC-42 D9)', () {
-      final chord = map.chordFor(ShortcutAction.openPorts);
-      expect(
-        map.conflictFor(
-          chord,
-          ShortcutScope.global,
-          ignore: ShortcutAction.openPorts,
-        ),
-        isNull,
-      );
-    });
+    test(
+      'openPorts ⌘⇧P is free in the global scope (SPEC-ports-global-view D9)',
+      () {
+        final chord = map.chordFor(ShortcutAction.openPorts);
+        expect(
+          map.conflictFor(
+            chord,
+            ShortcutScope.global,
+            ignore: ShortcutAction.openPorts,
+          ),
+          isNull,
+        );
+      },
+    );
   });
 
-  group('Keymap group-switch bindings (SPEC-30 decision 16)', () {
+  group('Keymap group-switch bindings (SPEC-tab-groups decision 16)', () {
     final map = Keymap.defaults(cmdIsPrimary: true);
 
     test('⌘1…⌘9 are bound to the nine group-switch actions', () {

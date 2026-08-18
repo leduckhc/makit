@@ -729,7 +729,7 @@ void main() {
       expect(find.byType(HarnessCard), findsOneWidget);
       // The selected harness's catalog drives the composer pills before any
       // session exists. Reasoning (thought_level) folds into the model pill as
-      // a read-only signal-bar chip (SPEC-31) rather than a standalone pill.
+      // a read-only signal-bar chip (SPEC-model-picker-menu-per-model-config) rather than a standalone pill.
       expect(find.text('GPT-5'), findsOneWidget);
       expect(find.byType(ThinkingSignal), findsOneWidget);
       expect(find.text('Medium'), findsNothing);
@@ -777,7 +777,7 @@ void main() {
       await pumpStarter(tester, worktree: _wtA, agents: [_codex()]);
 
       expect(find.byType(PrComposerBar), findsOneWidget);
-      // On the composer's top edge, not a sibling above it (SPEC-38 mockup §5).
+      // On the composer's top edge, not a sibling above it (SPEC-pending-queue-edit-reorder mockup §5).
       expect(
         find.descendant(
           of: find.byType(Composer),
@@ -1050,113 +1050,116 @@ void main() {
     );
   });
 
-  // ─── SPEC-40: the desktop pane must wire the ring to the trailing slot ─────
+  // ─── SPEC-composer-footer-space: the desktop pane must wire the ring to the trailing slot ─────
 
-  group('SPEC-40 — desktop footer does not starve the model pill', () {
-    const model = 'anthropic/Claude Opus 4.6';
+  group(
+    'SPEC-composer-footer-space — desktop footer does not starve the model pill',
+    () {
+      const model = 'anthropic/Claude Opus 4.6';
 
-    testWidgets('a narrow pane still reads the model name', (tester) async {
-      // The desktop half of SPEC-40's call-site coverage. A split pane can be
-      // as narrow as a phone, and this is the wiring that decides whether the
-      // 36pt usage ring takes a flex share of the pill row.
-      //
-      // Fixture pinned the same way as the mobile case: usage seeded with BOTH
-      // halves of the ratio (or ContextUsageButton renders nothing and the
-      // starvation cannot happen), and pi-shaped configOptions so a model pill
-      // exists. Desktop sets alwaysExpanded, so no focus step is needed.
-      tester.view.physicalSize = const Size(520, 800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
+      testWidgets('a narrow pane still reads the model name', (tester) async {
+        // The desktop half of SPEC-composer-footer-space's call-site coverage. A split pane can be
+        // as narrow as a phone, and this is the wiring that decides whether the
+        // 36pt usage ring takes a flex share of the pill row.
+        //
+        // Fixture pinned the same way as the mobile case: usage seeded with BOTH
+        // halves of the ratio (or ContextUsageButton renders nothing and the
+        // starvation cannot happen), and pi-shaped configOptions so a model pill
+        // exists. Desktop sets alwaysExpanded, so no focus step is needed.
+        tester.view.physicalSize = const Size(520, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
 
-      final container = ProviderContainer(
-        overrides: [
-          sessionsProvider.overrideWithValue(SessionsState([_session()])),
-          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
-          chatItemsProvider('s1').overrideWithValue(const []),
-          sessionMetaProvider('s1').overrideWithValue(
-            const SessionMeta(
-              thinking: '',
-              models: [],
-              configOptions: [
-                SessionConfigOption(
-                  id: 'model',
-                  name: 'Model',
-                  category: 'model',
-                  type: ConfigOptionType.select,
-                  currentValue: model,
-                  options: [ConfigOptionValue(value: model, name: model)],
-                ),
-                SessionConfigOption(
-                  id: 'thought_level',
-                  name: 'Thinking',
-                  category: 'thought_level',
-                  type: ConfigOptionType.select,
-                  currentValue: 'high',
-                  options: [ConfigOptionValue(value: 'high', name: 'high')],
-                ),
-              ],
+        final container = ProviderContainer(
+          overrides: [
+            sessionsProvider.overrideWithValue(SessionsState([_session()])),
+            eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+            chatItemsProvider('s1').overrideWithValue(const []),
+            sessionMetaProvider('s1').overrideWithValue(
+              const SessionMeta(
+                thinking: '',
+                models: [],
+                configOptions: [
+                  SessionConfigOption(
+                    id: 'model',
+                    name: 'Model',
+                    category: 'model',
+                    type: ConfigOptionType.select,
+                    currentValue: model,
+                    options: [ConfigOptionValue(value: model, name: model)],
+                  ),
+                  SessionConfigOption(
+                    id: 'thought_level',
+                    name: 'Thinking',
+                    category: 'thought_level',
+                    type: ConfigOptionType.select,
+                    currentValue: 'high',
+                    options: [ConfigOptionValue(value: 'high', name: 'high')],
+                  ),
+                ],
+              ),
+            ),
+            sessionUsageProvider('s1').overrideWithValue(
+              const SessionUsage(
+                contextTokens: 288000,
+                contextWindow: 1000000,
+                measuredAt: 1,
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const MaterialApp(
+              home: Scaffold(body: DesktopChatPane(sessionId: 's1')),
             ),
           ),
-          sessionUsageProvider('s1').overrideWithValue(
-            const SessionUsage(
-              contextTokens: 288000,
-              contextWindow: 1000000,
-              measuredAt: 1,
-            ),
+        );
+        await tester.pumpAndSettle();
+
+        // Preconditions before the measurement, so a fixture regression cannot
+        // masquerade as a pass.
+        expect(find.byType(ContextUsageRing), findsOneWidget);
+        expect(find.text('Claude Opus 4.6'), findsOneWidget);
+        expect(
+          tester.getSize(find.byType(ContextUsageButton)).width,
+          kUsageTargetSize,
+        );
+
+        final paragraph = tester.renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.text('Claude Opus 4.6'),
+            matching: find.byType(RichText),
           ),
-        ],
-      );
-      addTearDown(container.dispose);
-
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: const MaterialApp(
-            home: Scaffold(body: DesktopChatPane(sessionId: 's1')),
+        );
+        // The scaler is mirrored from the pill's own context so this baseline
+        // cannot silently diverge if the fixture ever sets one. It is not a full
+        // copy of the pill's measurement (that also merges DefaultTextStyle, bold
+        // text and locale) — it does not need to be: this test compares a share,
+        // and both sides render in the same tree.
+        final pillContext = tester.element(find.byType(ModelConfigPill));
+        final wanted = TextPainter(
+          text: TextSpan(
+            text: 'Claude Opus 4.6',
+            style: Theme.of(pillContext).textTheme.labelMedium,
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+          maxLines: 1,
+          textDirection: TextDirection.ltr,
+          textScaler: MediaQuery.textScalerOf(pillContext),
+        )..layout();
+        addTearDown(wanted.dispose);
 
-      // Preconditions before the measurement, so a fixture regression cannot
-      // masquerade as a pass.
-      expect(find.byType(ContextUsageRing), findsOneWidget);
-      expect(find.text('Claude Opus 4.6'), findsOneWidget);
-      expect(
-        tester.getSize(find.byType(ContextUsageButton)).width,
-        kUsageTargetSize,
-      );
-
-      final paragraph = tester.renderObject<RenderParagraph>(
-        find.descendant(
-          of: find.text('Claude Opus 4.6'),
-          matching: find.byType(RichText),
-        ),
-      );
-      // The scaler is mirrored from the pill's own context so this baseline
-      // cannot silently diverge if the fixture ever sets one. It is not a full
-      // copy of the pill's measurement (that also merges DefaultTextStyle, bold
-      // text and locale) — it does not need to be: this test compares a share,
-      // and both sides render in the same tree.
-      final pillContext = tester.element(find.byType(ModelConfigPill));
-      final wanted = TextPainter(
-        text: TextSpan(
-          text: 'Claude Opus 4.6',
-          style: Theme.of(pillContext).textTheme.labelMedium,
-        ),
-        maxLines: 1,
-        textDirection: TextDirection.ltr,
-        textScaler: MediaQuery.textScalerOf(pillContext),
-      )..layout();
-      addTearDown(wanted.dispose);
-
-      expect(
-        paragraph.size.width / wanted.width,
-        greaterThan(0.95),
-        reason: 'the ring must not be taking a flex share of the pill row',
-      );
-    });
-  });
+        expect(
+          paragraph.size.width / wanted.width,
+          greaterThan(0.95),
+          reason: 'the ring must not be taking a flex share of the pill row',
+        );
+      });
+    },
+  );
 
   group('a prompt remedy while an inline ask is pending', () {
     // The bar is rendered by *both* composers (D11), but only one of them is

@@ -92,7 +92,7 @@ class _FakeTransport implements Transport {
 }
 
 void main() {
-  // Regression (SPEC-20 boot restore): a persisted worktree can build the
+  // Regression (SPEC-worktree-scoped-panes boot restore): a persisted worktree can build the
   // harness picker BEFORE the socket connects. `agentsProvider` used to fetch
   // eagerly and cache the swallowed-empty result forever, so every worktree
   // stayed on the "host default harness" fallback. It must stay loading while

@@ -1,10 +1,10 @@
-/// SPEC-38/37 — presentation: the pending queue lives in ONE mount point (above
+/// SPEC-pending-queue-edit-reorder/37 — presentation: the pending queue lives in ONE mount point (above
 /// the composer) and the preference picks how it looks there — hollow ghost
 /// bubbles or the compact tray.
 ///
 /// The third option, `inline` (the queue inside the transcript's trailer row), is
-/// deliberately gone: it was the only placement that had to touch SPEC-21's
-/// anchoring and SPEC-34's index map, and a queue that scrolls out of view is a
+/// deliberately gone: it was the only placement that had to touch SPEC-chat-scroll-anchoring's
+/// anchoring and SPEC-message-navigator's index map, and a queue that scrolls out of view is a
 /// queue you forget you armed.
 library;
 

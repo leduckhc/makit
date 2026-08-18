@@ -1,5 +1,5 @@
 /**
- * `makit run` — `new` + `wait` + print, in one command (SPEC-46 T17).
+ * `makit run` — `new` + `wait` + print, in one command (SPEC-cli-as-client T17).
  *
  * The composed form is what automation actually wants: start the work, block
  * until something happens, and let the exit code say what (D8). It reuses

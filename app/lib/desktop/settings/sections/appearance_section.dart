@@ -169,7 +169,7 @@ class _StartCollapsedRow extends ConsumerWidget {
 }
 
 /// How many agents a group opens side by side before new ones land as tabs
-/// (SPEC-30 decision 9). A **placement policy**: changing it never re-arranges
+/// (SPEC-tab-groups decision 9). A **placement policy**: changing it never re-arranges
 /// a group you already arranged — it decides where the next agent lands.
 class _AutoSplitThresholdRow extends ConsumerWidget {
   const _AutoSplitThresholdRow();
@@ -217,7 +217,7 @@ class _AutoSplitThresholdRow extends ConsumerWidget {
   }
 }
 
-/// SPEC-51 — preview (disposable) worktree tabs, VSCode-style. Opt-in: it trades
+/// SPEC-preview-groups — preview (disposable) worktree tabs, VSCode-style. Opt-in: it trades
 /// a browsed group's split/tab arrangement for a group bar that stays short.
 class _PreviewGroupsRow extends ConsumerWidget {
   const _PreviewGroupsRow();
@@ -297,7 +297,7 @@ class _TextScaleRow extends ConsumerWidget {
 }
 
 /// A per-row reset (↺) that occupies fixed width whether shown or hidden, so
-/// Accent color — reserved `[future]` placeholder (SPEC-13 §2). The app uses a
+/// Accent color — reserved `[future]` placeholder (SPEC-desktop-settings-rework §2). The app uses a
 /// single fixed green accent today; a picker needs theme plumbing that does not
 /// exist yet.
 class _AccentColorRow extends StatelessWidget {

@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// SPEC-48 D3 — `ref.status` must be resolved **before** the first `await`.
+/// SPEC-status-and-activity D3 — `ref.status` must be resolved **before** the first `await`.
 ///
 /// A `StatusCenter` is never null and never expires, which is why the old
 /// capture-the-`ScaffoldMessenger`-first dance is gone. But `ref` itself still
@@ -47,7 +47,7 @@ void main() {
   });
 
   test('a comment mentioning await does not create a false positive', () {
-    // Found while adding SPEC-52's identity panel, whose hoist comment
+    // Found while adding SPEC-session-identity's identity panel, whose hoist comment
     // legitimately names the rule it follows ("resolved before the first
     // `await`"). The scanner sliced `body.text` out of the ORIGINAL source, so
     // that comment supplied the "first await" and the correctly-hoisted

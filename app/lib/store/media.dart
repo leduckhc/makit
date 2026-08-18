@@ -1,4 +1,4 @@
-/// Providers for assistant display media (SPEC-22).
+/// Providers for assistant display media (SPEC-assistant-display-media).
 ///
 /// The endpoint is derived from the paired server (or the loopback dev
 /// override), so no widget needs to know how makit is connected — a media row

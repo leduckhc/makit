@@ -28,7 +28,7 @@ class SettingsSection {
   final IconData icon;
 
   /// A leading widget that replaces [icon] when the section has a mark of its own
-  /// — a repository's monogram (SPEC-48 D15).
+  /// — a repository's monogram (SPEC-per-repo-settings D15).
   ///
   /// Optional and additive rather than a widened `icon`: every app section is
   /// correctly described by a glyph, and only the generated per-repo sections need

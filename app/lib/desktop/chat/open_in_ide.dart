@@ -99,7 +99,7 @@ class OpenInIdeButton extends ConsumerWidget {
   const OpenInIdeButton({super.key, required this.path});
 
   /// The worktree directory to open, or **null** when there is nothing to open
-  /// (SPEC-30 decision 11: a board with no focused pane owns no scope). A null
+  /// (SPEC-tab-groups decision 11: a board with no focused pane owns no scope). A null
   /// path renders the launcher disabled rather than pointing it at nothing —
   /// the control never lies about a target.
   final String? path;
@@ -142,7 +142,7 @@ class OpenInIdeButton extends ConsumerWidget {
       child: MenuAnchor(
         alignmentOffset: const Offset(0, 4),
         menuChildren: [
-          // SPEC-30 decision 11: the button is icon-only *because* the menu
+          // SPEC-tab-groups decision 11: the button is icon-only *because* the menu
           // names the exact folder — "so the control cannot lie". Decision 10
           // also removed the title strip's branch label, so without this header
           // nothing on screen says which worktree will open. Non-interactive.

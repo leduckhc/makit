@@ -65,7 +65,7 @@ class RepositorySettingsPage extends ConsumerWidget {
   /// user. Dropping it left the row unchanged and silent — the exact "appears to save
   /// and does not" failure the server handler documents as unacceptable.
   ///
-  /// Posted to the StatusCenter, not a snackbar (SPEC-48 D8): the message lands on the
+  /// Posted to the StatusCenter, not a snackbar (SPEC-status-and-activity D8): the message lands on the
   /// Activity record, so it can be copied into a bug report rather than vanishing after
   /// four seconds. `ref.status` is hoisted BEFORE the await, because `ref` dies with its
   /// widget and this pane can close mid-flight — reaching for it afterwards would crash
@@ -211,7 +211,7 @@ class RepositorySettingsPage extends ConsumerWidget {
     await _write(ref, {'logoHue': picked < 0 ? null : picked});
   }
 
-  /// Re-point the repository (SPEC-48 D4\u2032).
+  /// Re-point the repository (SPEC-per-repo-settings D4\u2032).
   ///
   /// Distinct from the settings writes in two ways, both deliberate:
   ///

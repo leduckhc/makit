@@ -29,7 +29,7 @@ const _onSurfaceDark = Color(0xFFF5F5F5);
 const _mutedDark = Color(0xFF9E9E9E);
 const _hairlineDark = Color(0xFF333333);
 
-/// Dwell before a hover tooltip appears, app-wide (`SPEC-41 §Tooltips`:
+/// Dwell before a hover tooltip appears, app-wide (`SPEC-open-ports §Tooltips`:
 /// `TOOLTIP_DWELL_MS` = 500). Must stay ABOVE the ports popover's hover-open
 /// dwell so the two never race — pinned by `ports_popover_test.dart`.
 const Duration kTooltipDwell = Duration(milliseconds: 500);
@@ -73,7 +73,7 @@ ThemeData _build(Brightness brightness) {
     // Flutter's default `waitDuration` is `Duration.zero`, so a tooltip fires
     // the instant the pointer crosses any tooltipped control. Set here rather
     // than per widget: the ports popover's 350 ms hover dwell must never be
-    // raced by a tooltip (SPEC-41 §Tooltips locks 500), and a per-widget value
+    // raced by a tooltip (SPEC-open-ports §Tooltips locks 500), and a per-widget value
     // would let the next tooltip silently reintroduce the zero default.
     tooltipTheme: const TooltipThemeData(waitDuration: kTooltipDwell),
     textTheme: _makitTextTheme(
@@ -98,7 +98,7 @@ final makitDarkTheme = _build(Brightness.dark);
 /// Awaiting input, connecting/reconnecting, dev-fake, transient issues.
 const Color kStatusWarning = Color(0xFFE0A72E);
 
-/// Curated groups (SPEC-30 boards): violet, opposite the accent green that
+/// Curated groups (SPEC-tab-groups boards): violet, opposite the accent green that
 /// marks derived worktree groups. Used by the group bar, agent
 /// picker, and the sidebar's pin dots, so it belongs in the palette rather than
 /// in whichever widget happened to need it first.
@@ -124,7 +124,7 @@ const Color kDiffDel = Color(0xFFF85149);
 // (they already clear AA on the #171717 surface). See DESIGN.md → Colors.
 //
 // `_diffAddTextLight` is darker than AA on the bare surface strictly requires,
-// because these labels are also printed on their own tinted fill (the SPEC-41
+// because these labels are also printed on their own tinted fill (the SPEC-open-ports
 // port pill, `PortTokenPill`), which pulls the background toward the text. At
 // the old #1A7F37 that pairing measured 3.82:1; the hue caps out at 5.08:1 even
 // on pure white, so no fill or alpha tweak could rescue it — the token itself had

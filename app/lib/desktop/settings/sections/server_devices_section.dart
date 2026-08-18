@@ -1,4 +1,4 @@
-/// Server & Devices section body (SPEC-13 migration map, SPEC-50 D5/D6).
+/// Server & Devices section body (SPEC-desktop-settings-rework migration map, SPEC-profiles D5/D6).
 ///
 /// The Server group is exactly four rows: the active profile, the one
 /// reachability question, a pair-a-phone row, and a single collapsed
@@ -218,7 +218,7 @@ class _ActiveProfileRow extends ConsumerWidget {
   }
 }
 
-/// The one reachability question (SPEC-50 D5): two radios that each state their
+/// The one reachability question (SPEC-profiles D5): two radios that each state their
 /// *consequence*, an "allow plain Wi-Fi" fallback checkbox nested under "My
 /// devices", and a read-only current-address line. Committing a change applies
 /// immediately and restarts the daemon.
@@ -236,7 +236,7 @@ class _ReachabilityRow extends ConsumerWidget {
   }
 
   /// The current bind address, read-only. The detected-address dropdown is
-  /// deferred (SPEC-50 "does not do"); this renders the *effective* bind the
+  /// deferred (SPEC-profiles "does not do"); this renders the *effective* bind the
   /// daemon is configured for.
   ///
   /// Deliberately derived from [ServerConfig], not from the client connection:

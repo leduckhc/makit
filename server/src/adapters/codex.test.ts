@@ -29,7 +29,7 @@ function fakeAppServer(
       // Auto-respond to client → server requests.
       if (msg.method && msg.id !== undefined) {
         // `turn/steer` is scripted per-test: it is the one method whose ERROR
-        // shapes are load-bearing (SPEC-35 §Evidence).
+        // shapes are load-bearing (SPEC-mid-turn-steering-and-queue §Evidence).
         if (msg.method === "turn/steer" && opts.steer) {
           const scripted = opts.steer();
           queueMicrotask(() => feed({ id: msg.id, ...scripted }));
@@ -37,7 +37,7 @@ function fakeAppServer(
         }
         // `thread/fork` is scripted per-test: both its success shape (a NEW
         // thread id) and its rollout-precondition error are load-bearing
-        // (SPEC-46 U4 §Evidence).
+        // (SPEC-cli-as-client U4 §Evidence).
         if (msg.method === "thread/fork" && opts.fork) {
           const scripted = opts.fork();
           queueMicrotask(() => feed({ id: msg.id, ...scripted }));
@@ -368,7 +368,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
   ]);
 }
 
-// ---- SPEC-26: codex app-server config-option projection -------------------
+// ---- SPEC-acp-config-options-unified-composer: codex app-server config-option projection -------------------
 
 async function collectMeta(events: AdapterEvent[], ms = 1000): Promise<any> {
   await waitFor(() => events.some((e) => e.kind === "session.meta"), ms);
@@ -514,7 +514,7 @@ test("configOption thought_level action overrides the next turn's reasoning effo
   assert.equal(turn.params.effort, "high");
 });
 
-// ---------- capability projection + probe (SPEC-27) ------------------------
+// ---------- capability projection + probe (SPEC-new-session-config-at-spawn) ------------------------
 
 test("a forced non-default model initialises effort from that model", async () => {
   const fake = fakeAppServer();
@@ -581,7 +581,7 @@ test("probeCodexConfigOptions projects the app-server model/list surface (no thr
   assert.ok(options.some((o) => o.id === "thought_level"));
 });
 
-test("projectCodexThreadList filters by cwd, drops ephemeral, scales seconds→ms (SPEC-29)", () => {
+test("projectCodexThreadList filters by cwd, drops ephemeral, scales seconds→ms (SPEC-session-lifecycle-resume-list-delete)", () => {
   const res = {
     data: [
       { id: "t1", cwd: "/repo", preview: "hi", recencyAt: 1700000000, ephemeral: false },
@@ -602,7 +602,7 @@ test("projectCodexThreadList tolerates a malformed result", () => {
   assert.deepEqual(projectCodexThreadList({ data: "nope" }, "/repo"), []);
 });
 
-test("start({resumeAgentSessionId}) resumes via thread/resume, not thread/start (SPEC-29)", async () => {
+test("start({resumeAgentSessionId}) resumes via thread/resume, not thread/start (SPEC-session-lifecycle-resume-list-delete)", async () => {
   const fake = fakeAppServer();
   const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
   await adapter.start({ cwd: "/repo", sessionId: "m1", resumeAgentSessionId: "th-prev" });
@@ -616,13 +616,13 @@ test("start({resumeAgentSessionId}) resumes via thread/resume, not thread/start 
   await adapter.kill();
 });
 
-test("codex advertises the full session lifecycle capability set (SPEC-29)", () => {
+test("codex advertises the full session lifecycle capability set (SPEC-session-lifecycle-resume-list-delete)", () => {
   const adapter = new CodexAppServerAdapter();
   assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true, close: true });
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-46 U4 — thread/fork. The wire is settled (spiked against codex-cli
+// SPEC-cli-as-client U4 — thread/fork. The wire is settled (spiked against codex-cli
 // 0.146.0): `thread/fork {threadId}` → `{thread:{id, forkedFromId, …}}` with a
 // NEW id, and forking a thread with no completed turn fails
 // `-32600 no rollout found for thread id <id>`. Both are asserted here so a
@@ -672,7 +672,7 @@ test("forkSession() rejects with ForkPreconditionError when there is no rollout 
 });
 
 /**
- * SPEC-35 T2 — `turn/steer`. Ids and error strings are verbatim from the live
+ * SPEC-mid-turn-steering-and-queue T2 — `turn/steer`. Ids and error strings are verbatim from the live
  * spike against codex-cli 0.146.0 (spec §Evidence), so a protocol change shows
  * up here as a failure rather than as a silently-queued message in production.
  */

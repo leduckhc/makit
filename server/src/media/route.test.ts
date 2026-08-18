@@ -229,7 +229,7 @@ test("trustLoopback serves a bearer-less loopback client (dev --no-auth parity)"
   server.close();
 });
 
-// ---------- upload (SPEC-33) ----------------------------------------------
+// ---------- upload (SPEC-user-attachments) ----------------------------------------------
 //
 // The upload path is the *input* half of makit's media story: the phone POSTs a
 // screenshot, gets a content-addressed id back, and names that id in

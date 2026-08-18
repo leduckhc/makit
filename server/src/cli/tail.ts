@@ -1,6 +1,6 @@
 /**
  * `makit tail <id> [-f] [--since SEQ] [--json]` — replay a session's events and
- * optionally keep streaming (SPEC-46 T14). A thin client of `sub {fromSeq}`.
+ * optionally keep streaming (SPEC-cli-as-client T14). A thin client of `sub {fromSeq}`.
  *
  * Without `-f`: print the replay and exit `0` — the `sub` ack marks the end of
  * history (the server replays every event, then acks), so that is the cursor to

@@ -83,7 +83,7 @@ class NotificationController with WidgetsBindingObserver {
 
     // The record gets every one of these, foreground or not: an OS notification
     // is a tap on the shoulder that vanishes, and "which of my sessions wanted
-    // something, and when?" had no answer anywhere in the product (SPEC-48 D7).
+    // something, and when?" had no answer anywhere in the product (SPEC-status-and-activity D7).
     // Silent, because a session you are watching already shows its own status —
     // the history is the part that was missing, not the interruption.
     final status = _ref.status;

@@ -1,4 +1,4 @@
-/// The pending-queue placement setting (SPEC-38) — shared by both surfaces.
+/// The pending-queue placement setting (SPEC-pending-queue-edit-reorder) — shared by both surfaces.
 ///
 /// One control, one blurb, one place to change the copy: desktop mounts it in
 /// Settings › Agents & Chat, the phone in its own settings list. There is

@@ -1,5 +1,5 @@
 /**
- * A throwaway WSS server that speaks makit's client envelope (SPEC-46).
+ * A throwaway WSS server that speaks makit's client envelope (SPEC-cli-as-client).
  *
  * Test-only support module (not a `*.test.ts`, so the runner does not pick it
  * up). It exists because every CLI verb is a client of `cli/client.ts`, and each
@@ -36,7 +36,7 @@ export interface StubWssOpts {
    */
   srvRequests?: Record<string, unknown>[];
   /**
-   * Answer `POST /media` (SPEC-33) with this `mediaId`, recording each upload on
+   * Answer `POST /media` (SPEC-user-attachments) with this `mediaId`, recording each upload on
    * {@link StubWss.uploads}. Media rides the same HTTPS listener as the socket on
    * the real server, so the stub serves it from the same place.
    */

@@ -167,7 +167,7 @@ Dart↔platform chatter after startup.
 
 ## 4. Recommendation
 
-Because our desktop app is **macOS-first** (SPEC-03) and we want it *beautiful*,
+Because our desktop app is **macOS-first** (SPEC-desktop-control-app) and we want it *beautiful*,
 use a **hybrid**:
 
 1. **Keep `window_manager`** for sizing/position/show-focus (already wired in

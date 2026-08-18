@@ -2,7 +2,7 @@
  * ReverseRpc — server → app request/response correlation (the "askDevice"
  * seam used by the UI-transport bridge and dev commands).
  *
- * Sends an `srv.request` up an audience ladder (SPEC-46 D13a): the session's
+ * Sends an `srv.request` up an audience ladder (SPEC-cli-as-client D13a): the session's
  * own subscribers, then the nearest ancestor's subscribers via `parentOf`,
  * then every authed client, then the wake push (`onUndeliverable`). It resolves
  * with the first *authorized* `srv.response` (D13c). Times out after
@@ -20,7 +20,7 @@ import type { WsClient } from "./client.js";
 import { isAgentScoped } from "./principal.js";
 
 /**
- * SPEC-46 D14 — the fields the app needs to caption a prompt for a session it
+ * SPEC-cli-as-client D14 — the fields the app needs to caption a prompt for a session it
  * may never have subscribed to: the session's title, the agent/harness driving
  * it, and D10's handoff origin (`parentId`/`handoffReason`/`origin`).
  */
@@ -46,7 +46,7 @@ export interface ReverseRpcDeps {
    */
   parentOf?: (sessionId: string) => string | undefined;
   /**
-   * SPEC-46 D14 — the self-describing caption for `sessionId`'s prompt: title,
+   * SPEC-cli-as-client D14 — the self-describing caption for `sessionId`'s prompt: title,
    * agent/harness and handoff origin, attached to the `srv.request` so a client
    * reached at rung 3 (never subscribed, no cached session) can still caption
    * it. Absent, or returning `undefined` for an unknown/archived session, keeps
@@ -58,7 +58,7 @@ export interface ReverseRpcDeps {
    * (`sent === 0`). Returns the keep-pending gate: `true` keeps the request
    * pending (a real wake was dispatched, e.g. a content-free push), `false`
    * rejects immediately with "no subscribed clients to ask" (today's
-   * behaviour). Token presence alone is never sufficient — see SPEC-07.
+   * behaviour). Token presence alone is never sufficient — see SPEC-background-wake-notifications.
    */
   onUndeliverable?: (
     env: Envelope,
@@ -74,7 +74,7 @@ interface PendingRequest {
   /** Clients this request has already been delivered to (de-dupes replay). */
   deliveredTo: Set<WsClient>;
   /**
-   * SPEC-46 D13b — the resolved audience, stored so a newly-authed client is
+   * SPEC-cli-as-client D13b — the resolved audience, stored so a newly-authed client is
    * only replayed a prompt it was eligible for, and D13c can authorize the
    * response. A set of session ids: a client is eligible iff it is subscribed
    * to one of them. `undefined` means every authed client was the audience
@@ -108,7 +108,7 @@ export class ReverseRpc {
     let count = 0;
     for (const p of this.pending.values()) {
       if (p.deliveredTo.has(client)) continue;
-      // SPEC-46 D13b: re-send only what this client was eligible for. Without
+      // SPEC-cli-as-client D13b: re-send only what this client was eligible for. Without
       // this a device that was never in a prompt's audience would receive it
       // anyway on auth/`sub`.
       if (!this.isEligible(client, p)) continue;
@@ -122,7 +122,7 @@ export class ReverseRpc {
   /**
    * Route an incoming `srv.response` to its awaiting request (first wins).
    *
-   * SPEC-46 D13c: the answer is authorized against the sender. It is refused
+   * SPEC-cli-as-client D13c: the answer is authorized against the sender. It is refused
    * from an agent-scoped token (an agent approving its own tool call is the
    * supervision gap the ladder exists to close) and from any client outside
    * the prompt's stored audience. An unauthorized response is dropped, leaving
@@ -148,7 +148,7 @@ export class ReverseRpc {
    * (see {@link resolveAudience}); the first authorized response wins.
    */
   /**
-   * SPEC-46 D13a — resolve the audience for a prompt as a ladder:
+   * SPEC-cli-as-client D13a — resolve the audience for a prompt as a ladder:
    *   1. the session's own subscribers;
    *   2. else the nearest ancestor's subscribers, climbing via `parentOf`;
    *   3. else every authed client.
@@ -206,7 +206,7 @@ export class ReverseRpc {
       id,
       ...body,
       ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
-      // SPEC-46 D14: make the prompt self-describing for a client reached at
+      // SPEC-cli-as-client D14: make the prompt self-describing for a client reached at
       // rung 3 that never subscribed to (or has no cached copy of) the session.
       ...(caption ? { session: caption } : {}),
     } as Envelope;

@@ -8,7 +8,7 @@
  * {@link AcpEventMapper}. Tool-permission requests are surfaced to the phone
  * via `askUser` (confirmAction).
  *
- * pi runs through this adapter via the `pi-acp` bridge (SPEC-27), which spawns
+ * pi runs through this adapter via the `pi-acp` bridge (SPEC-new-session-config-at-spawn), which spawns
  * `pi --mode rpc` and bridges ACP JSON-RPC over stdio; makit no longer ships a
  * native pi adapter.
  */
@@ -67,7 +67,7 @@ export interface AcpTransport {
   dispose: () => void;
   /**
    * The OS pid of the agent subprocess, or `undefined` when the spawn faulted
-   * or the transport is an in-memory test double. Surfaced for SPEC-37
+   * or the transport is an in-memory test double. Surfaced for SPEC-performance-metrics-dashboard
    * process-tree attribution.
    */
   pid?: number;
@@ -81,7 +81,7 @@ export interface AcpAdapterOpts {
    */
   connect?: (cwd: string, env: Record<string, string>) => AcpTransport;
   /**
-   * Blob store for assistant display media (SPEC-22). Defaults to the shared
+   * Blob store for assistant display media (SPEC-assistant-display-media). Defaults to the shared
    * `~/.makit/media` store the `/media` route serves from; tests inject a
    * temp-dir store (or none, to skip ingestion).
    */
@@ -105,7 +105,7 @@ export class AcpAdapter extends SubprocessAdapter {
   private acpSessionId?: string;
   private makitSessionId = "";
   /**
-   * True while a `session/load` replay is in flight (SPEC-29). The session/update
+   * True while a `session/load` replay is in flight (SPEC-session-lifecycle-resume-list-delete). The session/update
    * client handler drops notifications during this window so the agent's
    * replayed history is NOT re-appended to makit's authoritative event log.
    */
@@ -156,7 +156,7 @@ export class AcpAdapter extends SubprocessAdapter {
 
   /**
    * Root pid of the agent's process tree, or `undefined` before `start()` and
-   * for a faulted spawn (SPEC-37). A per-adapter getter is intentional: only
+   * for a faulted spawn (SPEC-performance-metrics-dashboard). A per-adapter getter is intentional: only
    * the subprocess-backed adapters (acp, codex) have a pid, so widening the
    * shared `AgentAdapter` contract would force every test double and the
    * in-process `StubAdapter` to grow a member they cannot answer (YAGNI).
@@ -215,7 +215,7 @@ export class AcpAdapter extends SubprocessAdapter {
         clientCapabilities: {
           fs: { readTextFile: true, writeTextFile: true },
           terminal: false,
-          // We support boolean session config options (SPEC-26). Advertising this
+          // We support boolean session config options (SPEC-acp-config-options-unified-composer). Advertising this
           // lets agents include `type:"boolean"` entries in `configOptions`.
           session: { configOptions: { boolean: {} } },
         },
@@ -228,7 +228,7 @@ export class AcpAdapter extends SubprocessAdapter {
       ),
     ]);
     // Negotiate session-lifecycle capabilities from the initialize response
-    // (SPEC-29) so resume/list/delete/fork are gated on what the agent advertises.
+    // (SPEC-session-lifecycle-resume-list-delete) so resume/list/delete/fork are gated on what the agent advertises.
     this.capabilities = deriveAcpCapabilities(init);
 
     // Resume an existing session by its native ACP id when requested, preferring
@@ -299,7 +299,7 @@ export class AcpAdapter extends SubprocessAdapter {
   }
 
   /**
-   * Select {@link SpawnOpts.model} on the agent via the SPEC-26 config-option
+   * Select {@link SpawnOpts.model} on the agent via the SPEC-acp-config-options-unified-composer config-option
    * surface. Deliberately best-effort: an agent that does not offer the model is
    * left on its own default (with a loud warning) rather than being sent a value
    * it would reject — a session that starts on the wrong model is still usable,
@@ -325,7 +325,7 @@ export class AcpAdapter extends SubprocessAdapter {
   async send(input: UserInput): Promise<void> {
     if (!this.conn || !this.acpSessionId) throw new Error("AcpAdapter: send before start");
 
-    // SPEC-33: attachments are delivered as files in the worktree, named in the
+    // SPEC-user-attachments: attachments are delivered as files in the worktree, named in the
     // prompt. If that write fails there is nothing useful to send — a prompt
     // referencing an image the agent cannot open is worse than an error — so the
     // turn is abandoned with a real, persisted `session.error`.
@@ -374,7 +374,7 @@ export class AcpAdapter extends SubprocessAdapter {
 
   /**
    * Control actions from the app. `configOption` maps to ACP
-   * `session/set_config_option` (SPEC-26); `mode` maps to
+   * `session/set_config_option` (SPEC-acp-config-options-unified-composer); `mode` maps to
    * `session/set_session_mode` (legacy, for `modes`-only agents). Other actions
    * are silently ignored on this transport.
    */
@@ -481,7 +481,7 @@ export class AcpAdapter extends SubprocessAdapter {
   /**
    * Emit the session config as `session.meta`. Keeps the legacy
    * `{model, thinking, models, modes}` fields (migration window) and adds the
-   * unified `configOptions` list (SPEC-26) when the agent supports either.
+   * unified `configOptions` list (SPEC-acp-config-options-unified-composer) when the agent supports either.
    */
   private emitMeta(): void {
     const configOptions = this.buildConfigOptions();
@@ -525,7 +525,7 @@ export class AcpAdapter extends SubprocessAdapter {
         if (params.sessionId !== this.acpSessionId) return;
         // Silent-load: during a session/load replay, drop every update so the
         // agent's historical turns are not duplicated into makit's event log
-        // (SPEC-29). makit's SQLite log is the source of truth for the client.
+        // (SPEC-session-lifecycle-resume-list-delete). makit's SQLite log is the source of truth for the client.
         if (this.loading) return;
         // The agent can switch modes autonomously; keep the selector in sync.
         const u = params.update as {
@@ -746,7 +746,7 @@ export class AcpAdapter extends SubprocessAdapter {
   }
 }
 
-// ---------- capability negotiation (SPEC-29) -------------------------------
+// ---------- capability negotiation (SPEC-session-lifecycle-resume-list-delete) -------------------------------
 
 /**
  * Derive makit's {@link SessionCapabilities} from an ACP `initialize` response.
@@ -788,7 +788,7 @@ export function defaultConnect(spec: AcpSpawnSpec) {
   };
 }
 
-// ---------- capability probe (SPEC-27) -------------------------------------
+// ---------- capability probe (SPEC-new-session-config-at-spawn) -------------------------------------
 
 /**
  * Throwaway capability probe for an ACP harness (pi via `pi-acp`): spawn the
@@ -859,7 +859,7 @@ export async function probeAcpConfigOptions(
 }
 
 /**
- * List a cwd's prior ACP sessions via a throwaway connection (SPEC-29). Mirrors
+ * List a cwd's prior ACP sessions via a throwaway connection (SPEC-session-lifecycle-resume-list-delete). Mirrors
  * {@link probeAcpConfigOptions}: spawn the adapter's child in the target `cwd`,
  * `initialize`, and — only when the agent advertises `sessionCapabilities.list`
  * — call `session/list { cwd }`, normalizing each `SessionInfo` to
@@ -1083,7 +1083,7 @@ function permissionPreview(tc: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-// ---------- ACP config-option parsing (SPEC-26) ----------------------------
+// ---------- ACP config-option parsing (SPEC-acp-config-options-unified-composer) ----------------------------
 
 /**
  * Map an ACP v1 {@link AcpConfigOption} into makit's wire

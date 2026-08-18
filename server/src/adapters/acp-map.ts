@@ -24,7 +24,7 @@ export interface AcpMapperHooks {
   /** Agent-driven session rename (ACP `session_info_update.title`). */
   onTitle?: (title: string) => void;
   /**
-   * Persist an image payload (SPEC-22) and return its descriptor, or `null`
+   * Persist an image payload (SPEC-assistant-display-media) and return its descriptor, or `null`
    * when it is refused (disallowed mime, over the size cap, malformed base64).
    * Injected so this module stays I/O-free and unit-testable; the adapter wires
    * it to the content-addressed {@link MediaStore}. Synchronous on purpose: the
@@ -33,7 +33,7 @@ export interface AcpMapperHooks {
   putMedia?: (data: string, mime: string) => MediaDescriptor | null;
   /**
    * Rewrite markdown image references in a finalized agent message, ingesting
-   * any local files they point at (SPEC-22 phase 1b: agents commonly write a
+   * any local files they point at (SPEC-assistant-display-media phase 1b: agents commonly write a
    * file and then show it with `![](\/abs\/path.png)`, which the phone cannot
    * resolve). Injected for the same reason as {@link putMedia} — it touches the
    * filesystem. Applied only to the final message, never to streamed deltas.
@@ -141,7 +141,7 @@ export class AcpEventMapper {
       }
 
       case "usage_update": {
-        // Context window + cost for the session (SPEC-37). ACP reports only
+        // Context window + cost for the session (SPEC-context-usage). ACP reports only
         // aggregates — no per-category breakdown — so `totals` stays absent here.
         // Flush first: the message that consumed these tokens must land before
         // the snapshot that counts it.
@@ -248,7 +248,7 @@ export class AcpEventMapper {
     const terminal = status === "completed" || status === "failed";
     const argsReady = terminal || (status === "in_progress" && hasUsableArgs(cur));
     // `ask_user` is answered through a separate ACP permission request that the
-    // app renders as a live inline ask card (SPEC-25), so its row must not
+    // app renders as a live inline ask card (SPEC-ask-user-inline-in-chat), so its row must not
     // appear WHILE the question is open — that would duplicate the question (and
     // show a useless "Waiting for user input..." body). Hold it until the call
     // finishes: the app's persisted "answered ask" card IS this tool call, so

@@ -10,10 +10,10 @@ import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
 import 'selected_worktree.dart';
 
-/// Where a new worktree comes from (SPEC-30).
+/// Where a new worktree comes from (SPEC-tab-groups).
 enum _WorktreeFrom { existing, newBranch, fromPr }
 
-/// Opens the New-worktree dialog (SPEC-30): it asks **only** where the worktree
+/// Opens the New-worktree dialog (SPEC-tab-groups): it asks **only** where the worktree
 /// comes from — use an existing worktree, create a New-branch, or fork a
 /// From-PR worktree. It does **not** pick a harness, adjust config pills, or
 /// take a first message; those belong to the Choose-a-harness starter

@@ -1,4 +1,4 @@
-/// The ports row glyph (SPEC-41 §1): Phosphor `Plug`, tinted by state, with an
+/// The ports row glyph (SPEC-open-ports §1): Phosphor `Plug`, tinted by state, with an
 /// attention dot and a semantics label that names the state in words — colour
 /// is never the only signal (worktree_row.dart's rule). Renders nothing when
 /// the state is [PortsGlyphState.none].
@@ -41,7 +41,7 @@ class PortsGlyph extends StatelessWidget {
 
   /// Whether the attention/exposed dot (and the unknown `?`) ride the glyph.
   /// The session-tile glyph sets this false so it stays quieter than the row
-  /// glyph, which already carries attention (SPEC-42 D14).
+  /// glyph, which already carries attention (SPEC-ports-global-view D14).
   final bool showBadge;
 
   @override

@@ -139,7 +139,7 @@ class _SectionList extends StatelessWidget {
               borderRadius: BorderRadius.circular(kRadius8),
             ),
             // A section with a mark of its own draws it; everything else keeps its
-            // glyph. See SettingsSection.leading (SPEC-48 D15).
+            // glyph. See SettingsSection.leading (SPEC-per-repo-settings D15).
             leading: section.leading ?? Icon(section.icon),
             title: Text(section.title),
             onTap: () => onSelect(section.id),

@@ -1,5 +1,5 @@
 /**
- * Daemon service tests (SPEC-01, phase 4).
+ * Daemon service tests (SPEC-daemon-control-plane, phase 4).
  *
  * The service manages the background lifecycle (start/stop/restart/status/logs)
  * plus the PID file. We test the pure pieces (argv builder, PID file read/write,

@@ -1,4 +1,4 @@
-/// Attachment chips (SPEC-33) — the strip above the composer field showing what
+/// Attachment chips (SPEC-user-attachments) — the strip above the composer field showing what
 /// will be sent with the next message.
 ///
 /// One chip per staged image: thumbnail, name, and a state that is legible at a

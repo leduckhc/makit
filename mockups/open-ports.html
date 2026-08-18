@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>makit — Ports: what's listening, and whose branch owns it (SPEC-41 draft)</title>
+<title>makit — Ports: what's listening, and whose branch owns it (SPEC-open-ports draft)</title>
 <style>
   :root{
     /* App M3 neutral palette (dark) — matches lib/app/theme.dart */
@@ -280,7 +280,7 @@
 </head>
 <body>
 
-<h1>Ports — what's listening, and whose branch owns it <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-41 draft</span></h1>
+<h1>Ports — what's listening, and whose branch owns it <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-open-ports draft</span></h1>
 <p class="sub">
   A listening TCP port is treated as an attribute of a <strong>worktree</strong>, like its diff stat or its PR.
   Ownership comes from the process <code>cwd</code> plus a <code>ppid</code> ancestry walk, so <code>:5173</code> reads as
@@ -291,14 +291,14 @@
 </p>
 
 <div class="note" style="border-color:#2a6b46">
-  <strong>Build phasing (SPEC-41).</strong>
+  <strong>Build phasing (SPEC-open-ports).</strong>
   <span class="phase ph1">P1</span> ships now — scan + attribution + health, the row glyph, the desktop popover,
   the two mobile sheets, tooltips. Read-only: <b>Open</b> and <b>Copy URL</b> are the only actions, so nothing in
   P1 signals a process. <span class="phase phlater">P2</span> global Ports screen, orphans/collisions, docker,
   menubar. <span class="phase phlater">P3</span> kill + suggested port. <span class="phase phlater">P4</span>
   forward-to-phone + watched ports. Frames below are tagged; a <span class="phase phlater">P2</span>/<span class="phase phlater">P4</span>
   frame exists so the P1 shapes don't have to be redesigned to admit it.
-  Spec: <code>docs/specs/2026-08-06-SPEC-41-open-ports.md</code>.
+  Spec: <code>docs/specs/20260806-004100-SPEC-open-ports.md</code>.
 </div>
 
 <div class="note warn">
@@ -1057,7 +1057,7 @@
       </div>
 
       <div class="frame">
-        <div class="cap">Notification (reuses SPEC-07/08 actionable plumbing)</div>
+        <div class="cap">Notification (reuses SPEC-background-wake-notifications/08 actionable plumbing)</div>
         <div class="panel" style="width:340px;padding:0">
           <div style="padding:13px 14px">
             <div style="font-size:12.5px;font-weight:700;margin-bottom:3px">makit</div>

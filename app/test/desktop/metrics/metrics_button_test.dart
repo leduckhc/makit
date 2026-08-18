@@ -307,7 +307,7 @@ void main() {
       expect(find.textContaining('0.0%'), findsNothing);
     });
 
-    /// Decision 13 — the SPEC-32 vanishing-pill defect in a new hat. A failed
+    /// Decision 13 — the SPEC-github-gateway-and-budget vanishing-pill defect in a new hat. A failed
     /// `ps` must say so; it must not render zeros (which read as "idle") and
     /// must not silently drop the agents (which reads as "exited").
     testWidgets('a failed process table says measurement unavailable', (

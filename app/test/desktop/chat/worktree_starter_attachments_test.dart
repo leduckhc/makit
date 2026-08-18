@@ -1,4 +1,4 @@
-/// SPEC-45 D6/D7 — the starter pane can attach images to the message that
+/// SPEC-starter-pane-parity D6/D7 — the starter pane can attach images to the message that
 /// *starts* the session. `POST /media` needs no session, so the only thing that
 /// ever blocked this was the live pane's "a session must exist" guard.
 library;

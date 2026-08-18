@@ -1,5 +1,5 @@
 /**
- * SPEC-46 D9/T11 — the spawn-tree bounds, computed from persisted lineage.
+ * SPEC-cli-as-client D9/T11 — the spawn-tree bounds, computed from persisted lineage.
  *
  * D9 derives a spawn's `parentId` from the credential, so an agent can forge
  * nothing here. But persisted lineage is still not trusted blindly: a
@@ -13,7 +13,7 @@
 export interface LineageNode {
   readonly id: string;
   readonly parentId?: string;
-  /** Closed sessions are not counted as live children (SPEC-29). */
+  /** Closed sessions are not counted as live children (SPEC-session-lifecycle-resume-list-delete). */
   readonly closed?: boolean;
 }
 

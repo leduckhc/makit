@@ -111,7 +111,7 @@ Future<void> _pumpSheet(
     ),
   );
   await tester.pumpAndSettle();
-  // The sheet's detail is collapsed by default (SPEC-38 D15 / mockup §6). These
+  // The sheet's detail is collapsed by default (SPEC-pr-actions-next-step-bar D15 / mockup §6). These
   // tests are about what the detail *says*, so open it once here; the collapsing
   // itself is covered by its own tests below.
   //
@@ -318,7 +318,7 @@ void main() {
       expect(find.text('1 commit unpushed'), findsOneWidget);
       final headlineY = tester.getTopLeft(find.text('1 commit unpushed')).dy;
       // `.first` is the pinned CTA: the magic remedy and the CI prompt share the
-      // verb "Fix" (SPEC-38 §8 D12), so on a sheet that lists a failing build
+      // verb "Fix" (SPEC-pr-actions-next-step-bar §8 D12), so on a sheet that lists a failing build
       // both are on screen and the pinned one comes first in the tree.
       final ctaY = tester.getTopLeft(find.text('Fix').first).dy;
       final detailY = tester.getTopLeft(find.text('3 threads open')).dy;
@@ -500,7 +500,7 @@ void main() {
         onRun: (r) => ran = r,
       );
       // Two of them: the pinned button that composes all three, and the failing
-      // build's own row remedy. They share the verb by decision (SPEC-38 §8 D12)
+      // build's own row remedy. They share the verb by decision (SPEC-pr-actions-next-step-bar §8 D12)
       // — the pinned one is the wide button at the top.
       expect(find.text('Fix'), findsNWidgets(2));
       // The specific remedies are still there, one row each.
@@ -727,7 +727,7 @@ void main() {
 
     testWidgets('a shed check list says why it is empty', (tester) async {
       // The rollup is on screen claiming a build result; with no rows and no note
-      // that reads as the app having lost them (SPEC-32 sheds the per-check
+      // that reads as the app having lost them (SPEC-github-gateway-and-budget sheds the per-check
       // lookup to stay inside GitHub's quota).
       await _pumpDialogBody(tester, pr: _pr(rollup: 'fail'));
       expect(find.text('CI failing'), findsOneWidget);

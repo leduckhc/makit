@@ -1,6 +1,6 @@
 /**
  * MediaStore tests — content-addressed blob store for assistant display media
- * (SPEC-22). Every test uses a temp `MAKIT_HOME` so nothing touches `~/.makit`.
+ * (SPEC-assistant-display-media). Every test uses a temp `MAKIT_HOME` so nothing touches `~/.makit`.
  */
 
 import { test } from "node:test";

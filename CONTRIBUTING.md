@@ -72,6 +72,11 @@ These are enforced (see [`AGENTS.md`](./AGENTS.md)):
   style; don't refactor unrelated code.
 - **SOLID:** if you can't say why a change doesn't violate one of the five, it
   probably does.
+- **Specs are named by clock, not by counter.** Create one with
+  `scripts/new-spec.sh "a short title"`, and refer to it by slug
+  (`SPEC-cli-as-client`). Never hand-write the timestamp, and never add a spec
+  number — numbers clashed six times across parallel worktrees. See
+  [the naming convention](./docs/specs/README.md#spec-naming).
 
 ## Reporting security issues
 

@@ -80,7 +80,7 @@ test("revoke drops the grant; a second revoke reports it was already gone", () =
   assert.equal(store.revoke(g.grantId), false);
 });
 
-// SPEC-44 owner model: a grant is scoped to the device that minted it.
+// SPEC-ports-forward owner model: a grant is scoped to the device that minted it.
 test("revoke by a non-owner is a no-op indistinguishable from an unknown id", () => {
   const store = new DocGrantStore();
   const g = store.mint({

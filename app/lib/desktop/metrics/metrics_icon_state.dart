@@ -1,4 +1,4 @@
-/// The footer pulse icon's state machine (SPEC-37 Tier 1, decisions 12/14).
+/// The footer pulse icon's state machine (SPEC-performance-metrics-dashboard Tier 1, decisions 12/14).
 ///
 /// Kept a **pure** function of `(MetricsSample?, elevatedSince)` in its own file
 /// so the state table is unit-testable without pumping a widget. The one reading

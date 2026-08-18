@@ -1,4 +1,4 @@
-// SPEC-30 decision 16 — the index↔action mapping for the nine group-switch
+// SPEC-tab-groups decision 16 — the index↔action mapping for the nine group-switch
 // shortcuts. Guards against off-by-one drift in switchGroupAtIndex / groupIndex,
 // which keymap.dart and keymap_scope.dart consume.
 import 'package:flutter_test/flutter_test.dart';

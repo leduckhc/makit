@@ -1,6 +1,6 @@
-/// General section body (SPEC-13 migration map).
+/// General section body (SPEC-desktop-settings-rework migration map).
 ///
-/// Home for one-time, user-level actions. SPEC-50 D6 moves `Install CLI` here
+/// Home for one-time, user-level actions. SPEC-profiles D6 moves `Install CLI` here
 /// from the Server section: installing the bundled `makit` binary is a one-time
 /// action, and one-time actions belong with one-time actions.
 library;
@@ -38,7 +38,7 @@ class GeneralSection extends StatelessWidget {
 /// One-time install of the app-bundled `makit` CLI into `~/.local/bin/makit`.
 ///
 /// Shown only when the running app actually bundles a CLI (dev builds run from
-/// source do not). Moved here from the Server section (SPEC-50 D6).
+/// source do not). Moved here from the Server section (SPEC-profiles D6).
 class _InstallCliRow extends ConsumerWidget {
   const _InstallCliRow();
 

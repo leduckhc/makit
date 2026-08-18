@@ -7,16 +7,16 @@ import { join } from "node:path";
 import { titleFromHtml, titleFromMarkdown, statusFromMarkdown, readDocMeta, TITLE_READ_BYTES } from "./title.js";
 
 /**
- * SPEC-46 D4 (the title is extracted, never the filename) and D14 (docStatus is
+ * SPEC-doc-preview D4 (the title is extracted, never the filename) and D14 (docStatus is
  * opportunistic and absent rather than guessed). Inputs below are the shapes
  * this repo actually writes.
  */
 
 test("titleFromHtml takes the <title> element", () => {
-  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<title>makit — Ports: what's listening, and whose branch owns it (SPEC-41 draft)</title>`;
+  const html = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8" />\n<title>makit — Ports: what's listening, and whose branch owns it (SPEC-open-ports draft)</title>`;
   assert.equal(
     titleFromHtml(html),
-    "makit — Ports: what's listening, and whose branch owns it (SPEC-41 draft)",
+    "makit — Ports: what's listening, and whose branch owns it (SPEC-open-ports draft)",
   );
 });
 
@@ -39,8 +39,8 @@ test("titleFromHtml returns undefined when there is no title", () => {
 });
 
 test("titleFromMarkdown takes the first H1", () => {
-  const md = "# SPEC-41 — Ports: what's listening, and whose branch owns it\n\n**Status:** Implemented\n";
-  assert.equal(titleFromMarkdown(md), "SPEC-41 — Ports: what's listening, and whose branch owns it");
+  const md = "# SPEC-open-ports — Ports: what's listening, and whose branch owns it\n\n**Status:** Implemented\n";
+  assert.equal(titleFromMarkdown(md), "SPEC-open-ports — Ports: what's listening, and whose branch owns it");
 });
 
 test("titleFromMarkdown finds an H1 that is not the first line", () => {
@@ -100,9 +100,9 @@ test("readDocMeta falls back to the basename when nothing is extractable", () =>
 
 test("readDocMeta reads title and status off a real markdown file", () => {
   const dir = mkdtempSync(join(tmpdir(), "makit-title-"));
-  const p = join(dir, "2026-08-07-SPEC-44-ports-forward.md");
-  writeFileSync(p, "# SPEC-44 — Ports P4\n\n**Status:** Draft · **Priority:** P3\n");
-  assert.deepEqual(readDocMeta(p, "md"), { title: "SPEC-44 — Ports P4", docStatus: "Draft" });
+  const p = join(dir, "20260807-004400-SPEC-ports-forward.md");
+  writeFileSync(p, "# SPEC-ports-forward — Ports P4\n\n**Status:** Draft · **Priority:** P3\n");
+  assert.deepEqual(readDocMeta(p, "md"), { title: "SPEC-ports-forward — Ports P4", docStatus: "Draft" });
 });
 
 test("readDocMeta does not read the whole file to find a title", () => {

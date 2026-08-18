@@ -1,4 +1,4 @@
-// T7 — SPEC-34: the ripple rail.
+// T7 — SPEC-message-navigator: the ripple rail.
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_riverpod/flutter_riverpod.dart';

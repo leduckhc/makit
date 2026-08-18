@@ -44,7 +44,7 @@ void main() {
     }
   });
 
-  // SPEC-48: the unread count is printed ON the severity's own fill, and the
+  // SPEC-status-and-activity: the unread count is printed ON the severity's own fill, and the
   // scheme's obvious pairing is not good enough — `cs.surface` on the warning
   // amber is ~2.1:1 in light mode — so the pill measures its ink with `inkOn`.
   test('the unread count clears WCAG AA on every severity fill', () {
@@ -147,7 +147,7 @@ void main() {
     }
   });
 
-  // SPEC-38's tone-coloured surfaces. `prToneColor` returns dot/wash tokens —
+  // SPEC-pr-actions-next-step-bar's tone-coloured surfaces. `prToneColor` returns dot/wash tokens —
   // `kCheckFail` prints at 3.2:1 and `kCheckPending` at 2.4:1 on the light
   // surface — so text uses `prToneTextColor`, the same split `prStateStyle`
   // already makes between `color` and `textColor`.
@@ -182,7 +182,7 @@ void main() {
 
   test('a destructive CTA fill clears AA for its own label', () {
     // The muted error tint replaces the CI red on the one irreversible button
-    // (SPEC-38 §8 D13), so its pairing has to be measured too.
+    // (SPEC-pr-actions-next-step-bar §8 D13), so its pairing has to be measured too.
     for (final theme in [makitLightTheme, makitDarkTheme]) {
       final cs = theme.colorScheme;
       final fill = prDirectCtaFill(cs, PrTone.blocking, destructive: true);
@@ -233,7 +233,7 @@ void main() {
     );
   });
 
-  // SPEC-41 port tokens. Same shape as the tone-tinted chip above: a pill prints
+  // SPEC-open-ports port tokens. Same shape as the tone-tinted chip above: a pill prints
   // its label on a wash OF THAT LABEL, so the background moves toward the text
   // and the real ratio is lower than a check against the page suggests. Unlike
   // the PR chip this one DOES clear full AA in both themes, because the light

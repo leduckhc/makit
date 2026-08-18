@@ -1,6 +1,6 @@
 /**
  * `makit wait <id> [--for idle|approval|input|any] [--timeout S]` — block until
- * something happens to a session, and say which thing in the exit code (SPEC-46
+ * something happens to a session, and say which thing in the exit code (SPEC-cli-as-client
  * T16, D8).
  *
  * Without distinct codes a git hook or a CI job cannot tell "the agent finished"

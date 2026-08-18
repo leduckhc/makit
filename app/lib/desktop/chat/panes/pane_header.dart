@@ -16,7 +16,7 @@ import '../title_bar_strip.dart';
 import 'workspace_controller.dart';
 
 /// The docked pane header: the session title, the sidebar-unfold control when
-/// collapsed, and the session actions menu (SPEC-19, moved from
+/// collapsed, and the session actions menu (SPEC-decomposition-and-dedup, moved from
 /// desktop_chat_pane). Sits on the traffic-light row and keeps the window
 /// draggable where the sidebar's drag strip used to be.
 class PaneHeader extends ConsumerWidget {
@@ -31,7 +31,7 @@ class PaneHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final collapsed = ref.watch(sidebarCollapsedProvider);
-    // Same fallback order as the sidebar tiles (SPEC-12 decision 8):
+    // Same fallback order as the sidebar tiles (SPEC-desktop-sidebar-topbar-restructure decision 8):
     // title → agent name → raw session id.
     final title = sessionPaneTitle(session, fallbackId);
     final theme = Theme.of(context);

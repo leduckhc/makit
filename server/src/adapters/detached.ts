@@ -11,7 +11,7 @@ import { NO_SESSION_CAPABILITIES, type AgentAdapter, type SessionCapabilities, t
 
 export class DetachedAdapter extends EventEmitter implements AgentAdapter {
   readonly agent: string;
-  /** Cold sessions can do nothing until re-attached (SPEC-29). */
+  /** Cold sessions can do nothing until re-attached (SPEC-session-lifecycle-resume-list-delete). */
   readonly capabilities: SessionCapabilities = NO_SESSION_CAPABILITIES;
   readonly agentSessionId = undefined;
 
@@ -34,14 +34,14 @@ export class DetachedAdapter extends EventEmitter implements AgentAdapter {
     });
   }
 
-  /** A cold session has no turn to steer into (SPEC-35). */
+  /** A cold session has no turn to steer into (SPEC-mid-turn-steering-and-queue). */
   async steer(_input: UserInput): Promise<boolean> {
     return false;
   }
 
   async cancel(): Promise<void> {}
 
-  /** Nothing to release: the agent process is already gone (SPEC-29). */
+  /** Nothing to release: the agent process is already gone (SPEC-session-lifecycle-resume-list-delete). */
   async close(): Promise<void> {}
 
   async kill(): Promise<void> {

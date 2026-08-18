@@ -1,5 +1,5 @@
 /**
- * End-to-end attachment flow (SPEC-33 T11) — the whole feature over real
+ * End-to-end attachment flow (SPEC-user-attachments T11) — the whole feature over real
  * transports, with no mocks between the two halves:
  *
  *   `POST /media` (HTTPS, bearer/loopback) → `send.message {attachments}` (WSS)

@@ -69,7 +69,7 @@ void main() {
 
     test('ask_user: the answered call persists as a resolved ask row', () {
       // While the question is open pi-acp's tool call is held back (the live
-      // inline ask card carries it, SPEC-25). Once answered the row lands, so
+      // inline ask card carries it, SPEC-ask-user-inline-in-chat). Once answered the row lands, so
       // the question stays in the transcript as the quiet resolved card.
       final tools = toolsOf(foldFixture('ask-user'));
       expect(tools, hasLength(1));

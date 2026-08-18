@@ -144,7 +144,7 @@ test("R4: an unowned system listener → not_owned", () => {
   assert.deepEqual(decision, { signal: false, outcome: "not_owned" });
 });
 
-test("R4: a SPEC-42 orphan is killable even though it is unowned", () => {
+test("R4: a SPEC-ports-global-view orphan is killable even though it is unowned", () => {
   // Reclaiming an orphan is the point of the feature (§6): its worktree is gone,
   // so `worktreePath` is absent by definition and only the annotation proves it
   // was ever a dev server of ours.

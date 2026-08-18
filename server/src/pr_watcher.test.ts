@@ -222,7 +222,7 @@ test("closed watcher ignores sync and polling", async () => {
   assert.equal(changes(), 0);
 });
 
-// ── SPEC-32 T6: the cadence comes from the policy, and Infinity STOPS ─────────
+// ── SPEC-github-gateway-and-budget T6: the cadence comes from the policy, and Infinity STOPS ─────────
 
 /** A watcher that records every delay passed to setTimer (nothing ever fires). */
 function makeIntervalWatcher(intervalMs: () => number) {

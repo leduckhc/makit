@@ -466,7 +466,7 @@ export interface PullRequestInfo {
   /**
    * True when {@link unresolvedComments} was NOT actually fetched (the field was
    * shed to save quota, or REST — which cannot express it — supplied the PR).
-   * The count is then a placeholder 0, not a measured fact (SPEC-32 §6.5).
+   * The count is then a placeholder 0, not a measured fact (SPEC-github-gateway-and-budget §6.5).
    */
   unresolvedUnknown?: boolean;
 }
@@ -582,7 +582,7 @@ export function fetchOpenPr(gateway: GithubGateway, repoPath: string, branch: st
  * `unknown` to null errs towards permitting, which is right for a guard — but on
  * a button press it turns a shed lookup into "no pull request for <branch>", a
  * flat contradiction of the PR the user is looking at. Interactive lookups draw
- * on SPEC-32's reserve, which exists for exactly this.
+ * on SPEC-github-gateway-and-budget's reserve, which exists for exactly this.
  */
 export async function findOpenPr(
   gateway: GithubGateway,

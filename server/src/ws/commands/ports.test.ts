@@ -27,13 +27,13 @@ interface Recorder {
   router: CommandRouter;
   recounts: number;
   snapshotSends: WsClient[];
-  /** SPEC-43: every target `ports.kill` forwarded to the service. */
+  /** SPEC-ports-kill: every target `ports.kill` forwarded to the service. */
   killTargets: PortKillTarget[];
-  /** SPEC-43: immediate re-scan requests (only a releasing outcome earns one). */
+  /** SPEC-ports-kill: immediate re-scan requests (only a releasing outcome earns one). */
   rescans: number;
-  /** SPEC-44: watch-list writes the handler asked for. */
+  /** SPEC-ports-forward: watch-list writes the handler asked for. */
   watchWrites: { target: { worktreePath: string; port: number }; on: boolean }[];
-  /** SPEC-44 P4b: forward asks + stops the handler forwarded. */
+  /** SPEC-ports-forward P4b: forward asks + stops the handler forwarded. */
   forwardAsks: { worktreePath: string; port: number; browser?: boolean }[];
   stops: string[];
 }
@@ -160,7 +160,7 @@ test('a malformed payload does NOT disarm a client that is ALREADY watching (T8 
   assert.equal((c as ReturnType<typeof fakeClient>).sent.filter((f) => f.t === "ack").length, 1);
 });
 
-// ── SPEC-43 P3a: ports.kill ────────────────────────────────────────────────
+// ── SPEC-ports-kill P3a: ports.kill ────────────────────────────────────────────────
 
 const killDispatch = (
   r: CommandRouter,
@@ -250,7 +250,7 @@ test("an unparsable startedAt is refused rather than defaulted (D1)", async () =
   assert.equal((c as ReturnType<typeof fakeClient>).sent.filter((f) => f.t === "err").length, 1);
 });
 
-// ── SPEC-43 P3b: ports.killOrphans ─────────────────────────────────────────
+// ── SPEC-ports-kill P3b: ports.killOrphans ─────────────────────────────────────────
 
 test("ports.killOrphans acks a result PER endpoint (never one verdict)", async () => {
   const rec = setup("released");
@@ -282,7 +282,7 @@ test("ports.killOrphans that released NOTHING asks for no re-scan", async () => 
   assert.equal(rec.rescans, 0);
 });
 
-// ── SPEC-44 P4a: ports.watchPort ───────────────────────────────────────────
+// ── SPEC-ports-forward P4a: ports.watchPort ───────────────────────────────────────────
 
 const watchPortDispatch = (
   r: CommandRouter,
@@ -319,7 +319,7 @@ test("a malformed ports.watchPort writes NOTHING and errs", async () => {
   }
 });
 
-// ── SPEC-44 P4b: ports.forward / ports.forward.stop ────────────────────────
+// ── SPEC-ports-forward P4b: ports.forward / ports.forward.stop ────────────────────────
 
 const fwd = (r: CommandRouter, c: WsClient, env: Record<string, unknown>, kind = "ports.forward") =>
   r.dispatch(c, { v: 1, t: "cmd", id: "f1", kind, ...env } as never);

@@ -218,8 +218,8 @@ makit/
 - SQLite event log for reconnect/resume
 
 **M5 — notifications ✅**
-- Actionable lock-screen Approve/Deny/Reply ([SPEC-08](docs/specs/2026-07-08-SPEC-08-actionable-notifications.md))
-- Content-free APNs background wake ([SPEC-07](docs/specs/2026-07-08-SPEC-07-background-wake-notifications.md)) — see [push setup](docs/PUSH.md)
+- Actionable lock-screen Approve/Deny/Reply ([SPEC-actionable-notifications](docs/specs/20260708-000800-SPEC-actionable-notifications.md))
+- Content-free APNs background wake ([SPEC-background-wake-notifications](docs/specs/20260708-000700-SPEC-background-wake-notifications.md)) — see [push setup](docs/PUSH.md)
 - On-device checklists: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
 
 ## Not yet

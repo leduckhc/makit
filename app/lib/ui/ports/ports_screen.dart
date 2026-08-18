@@ -1,4 +1,4 @@
-/// SPEC-42 P2a — the global Ports screen ("everything, all repos").
+/// SPEC-ports-global-view P2a — the global Ports screen ("everything, all repos").
 ///
 /// A new nav destination beside Home / Closed. It renders the
 /// `ports.snapshot` the app already receives (no protocol, no scan): an
@@ -9,7 +9,7 @@
 /// only while the screen is up — the same discipline as the worktree row and
 /// the desktop sidebar.
 ///
-/// Honesty (SPEC-41 D7): a `scanOk:false` snapshot renders a degraded banner
+/// Honesty (SPEC-open-ports D7): a `scanOk:false` snapshot renders a degraded banner
 /// rather than a fake empty list.
 library;
 
@@ -38,7 +38,7 @@ const Key kPortsOrphansSection = ValueKey('ports-orphans-section');
 /// The collision banner (D12) — names the rival branch, no suggested port.
 const Key kPortsCollisionBanner = ValueKey('ports-collision-banner');
 
-/// The orphans section's bulk-kill button (SPEC-43 P3b). Keyed for tests.
+/// The orphans section's bulk-kill button (SPEC-ports-kill P3b). Keyed for tests.
 const Key kPortsKillAllOrphans = ValueKey('ports-kill-all-orphans');
 
 /// The global Ports screen. [repoId], when set (via `?repo=<id>`), pre-selects
@@ -55,7 +55,7 @@ class PortsScreen extends ConsumerStatefulWidget {
 
 class _PortsScreenState extends ConsumerState<PortsScreen> {
   // Hold the ref-counted ports watch while the screen is mounted, so the server
-  // scans `lsof` only while someone is looking (SPEC-41 §Delivery). Fire-and-
+  // scans `lsof` only while someone is looking (SPEC-open-ports §Delivery). Fire-and-
   // forget via the injected sink — never `request` (its ack-timeout timer would
   // leak from initState).
   late final PortsWatch _portsWatch = ref.read(portsWatchProvider);
@@ -106,7 +106,7 @@ class _PortsScreenState extends ConsumerState<PortsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        // Two lines: the name, and "how many / how stale". SPEC-41 §3 makes
+        // Two lines: the name, and "how many / how stale". SPEC-open-ports §3 makes
         // freshness a first-class fact because every verdict here is cached
         // (stale-while-revalidate); a screen with no age reads as live when it
         // may not be.
@@ -572,7 +572,7 @@ class _PortRow extends StatelessWidget {
 }
 
 /// The collision banner (D12): names the rival branch and stops there — there
-/// is deliberately NO suggested free port (that is SPEC-43/P3). One banner
+/// is deliberately NO suggested free port (that is SPEC-ports-kill/P3). One banner
 /// lists every colliding port so a duplicate [ValueKey] never lands in the
 /// tree.
 class _CollisionBanner extends StatelessWidget {
@@ -626,7 +626,7 @@ class _CollisionBanner extends StatelessWidget {
 /// The orphans group (D10): listeners whose worktree is gone, in their own
 /// section with the `was <branch>, removed Nd ago` provenance line (or cwd-only
 /// when history is thin), closed by the one button that earns the whole feature
-/// — `Kill all orphans (n)` (SPEC-43 P3b, mockup §6). Removing a worktree never
+/// — `Kill all orphans (n)` (SPEC-ports-kill P3b, mockup §6). Removing a worktree never
 /// kills its dev server, so these pile up for days.
 class _OrphansSection extends ConsumerWidget {
   const _OrphansSection({

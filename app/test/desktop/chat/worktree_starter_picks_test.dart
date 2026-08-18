@@ -1,4 +1,4 @@
-/// SPEC-45 D2 — the starter pane's *pending session* survives the tab switch
+/// SPEC-starter-pane-parity D2 — the starter pane's *pending session* survives the tab switch
 /// that recreates it: not only the typed message, but the harness it will run
 /// and the model / reasoning picks that ride the spawn.
 library;
@@ -167,7 +167,7 @@ Future<void> _pickModel(WidgetTester tester, String from, String to) async {
   await tester.pumpAndSettle();
   await tester.tap(find.text(to).last);
   await tester.pumpAndSettle();
-  // Close the sheet, which SPEC-31 keeps open after a pick.
+  // Close the sheet, which SPEC-model-picker-menu-per-model-config keeps open after a pick.
   await tester.tapAt(const Offset(10, 10));
   await tester.pumpAndSettle();
 }

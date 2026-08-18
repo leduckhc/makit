@@ -1,5 +1,5 @@
 /**
- * Control server (SPEC-01, phase 2).
+ * Control server (SPEC-daemon-control-plane, phase 2).
  *
  * A `net.createServer` on the unix-domain control socket that speaks the NDJSON
  * control protocol (see `protocol.ts`). It is split into two pieces:
@@ -59,7 +59,7 @@ export interface ControlBackend {
   devicesList(): Awaitable<DevicesListData>;
   devicesRevoke(args: { id: string }): Awaitable<DevicesRevokeData>;
   sessionsList(): Awaitable<SessionsListData>;
-  /** SPEC-46 (D2): mint (or return) the CLI's own device credential. */
+  /** SPEC-cli-as-client (D2): mint (or return) the CLI's own device credential. */
   cliGrant(): Awaitable<CliGrantData>;
   serverStop(): Awaitable<ServerStopData>;
   /**

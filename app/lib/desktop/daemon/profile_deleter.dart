@@ -1,4 +1,4 @@
-/// Atomic, four-store deletion of a server profile (SPEC-50 D8).
+/// Atomic, four-store deletion of a server profile (SPEC-profiles D8).
 ///
 /// A profile is not one directory. Erasing it means clearing **all four** of the
 /// stores that back it, or the leftovers rot:

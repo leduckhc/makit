@@ -1,4 +1,4 @@
-// Widget tests for the SPEC-30 New-worktree dialog: it asks ONLY where the
+// Widget tests for the SPEC-tab-groups New-worktree dialog: it asks ONLY where the
 // worktree comes from — a repository selector plus a New-branch / From-PR
 // source toggle. There is no harness grid and no first-message composer (those
 // belong to the Choose-a-harness starter you land on afterwards). Confirming

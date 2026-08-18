@@ -224,7 +224,7 @@ cheap backdrop blur).
 
 ### Composer
 Floating glass; 1-line at rest → grows on focus. Send button fades in only when
-the field is non-empty (SPEC-06). Cancel button appears only while running with
+the field is non-empty (SPEC-composer-adaptive-input). Cancel button appears only while running with
 empty input.
 
 ### Chat
@@ -259,7 +259,7 @@ hairline:
 `SessionStatusDot` (`desktop/chat/session_status_dot.dart`) is shared by sidebar
 tiles and the pane header so a session's status reads identically everywhere.
 
-### Status toast & Activity (SPEC-48)
+### Status toast & Activity (SPEC-status-and-activity)
 The app talking back to you. **Never** a `SnackBar` — that layer is gone, and
 `test/status/no_snackbar_test.dart` keeps it gone.
 
@@ -269,7 +269,7 @@ The app talking back to you. **Never** a `SnackBar` — that layer is gone, and
   Anchored **top**, right-aligned, `max-width 380` — *not* bottom-centre, because
   that slot belongs to the composer. Not glass: glass is reserved for the top bar
   and the composer.
-- **Copy-first (SPEC-49).** The **whole card** is the copy target — every
+- **Copy-first (SPEC-notice-layer).** The **whole card** is the copy target — every
   severity, including events with no `detail`, whose head line is still what a
   person wants to paste. There is no separate copy glyph: the 13 px button this
   replaced was the smallest target on the card at the worst moment. Confirmation
@@ -277,13 +277,13 @@ The app talking back to you. **Never** a `SnackBar` — that layer is gone, and
   reverts) and posts **no** event — a notice about a notice is a hall of mirrors.
   Opening keeps an explicit `caretRight` control, shown only when there is
   somewhere to go.
-- **Held while you read it (SPEC-49).** Pointer hover or keyboard focus pauses
+- **Held while you read it (SPEC-notice-layer).** Pointer hover or keyboard focus pauses
   the dwell and unfolds the whole `detail` as selectable monospace; leaving
   restarts the **full** dwell, because a notice you looked away from is news
   again. There is no cap: hover is an act that ends when the pointer leaves.
   Deliberately **not** triggered by pointer-down — on touch that would race the
   tap that copies, and an iPad runs the desktop shell.
-- **Reachable without a pointer (SPEC-49).** The card is focusable, `Enter` /
+- **Reachable without a pointer (SPEC-notice-layer).** The card is focusable, `Enter` /
   `Space` copy, and it carries a named `Copy` semantic action for assistive tech.
   `⌘⇧C` copies the newest notice from the **record**, so it still works after the
   card has faded.

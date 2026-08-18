@@ -1,4 +1,4 @@
-// The magic "Fix" prompt (SPEC-38 §6.2): the preamble, then the problems as a
+// The magic "Fix" prompt (SPEC-pr-actions-next-step-bar §6.2): the preamble, then the problems as a
 // checklist. The list is data, not wording — it must stay in precedence order and
 // must not be overridable, while the preamble must be.
 import 'package:flutter/material.dart';

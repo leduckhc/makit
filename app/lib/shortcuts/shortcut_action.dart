@@ -70,7 +70,7 @@ enum ShortcutAction {
     scope: ShortcutScope.global,
   ),
 
-  /// Open the global Ports screen (SPEC-42 D9).
+  /// Open the global Ports screen (SPEC-ports-global-view D9).
   openPorts(
     id: 'openPorts',
     label: 'Open Ports',
@@ -134,7 +134,7 @@ enum ShortcutAction {
     scope: ShortcutScope.global,
   ),
 
-  /// Put the newest notice on the clipboard (SPEC-49 D8).
+  /// Put the newest notice on the clipboard (SPEC-notice-layer D8).
   ///
   /// Reads the [StatusCenter] record rather than the screen, so it still works
   /// after the notice has faded — which is the half of "I cannot review what was
@@ -146,7 +146,7 @@ enum ShortcutAction {
     scope: ShortcutScope.global,
   ),
 
-  // SPEC-30 decision 16: ⌘1…⌘9 switch to the 1st–9th group. There is
+  // SPEC-tab-groups decision 16: ⌘1…⌘9 switch to the 1st–9th group. There is
   // deliberately no action for a tenth group — no wrap-around, no "⌘9 = last";
   // groups past the ninth are reached by clicking or scrolling the rail.
   /// Switch to the 1st group in the group bar.
@@ -249,7 +249,7 @@ enum ShortcutAction {
     return null;
   }
 
-  /// The 1st–9th group-switch actions, indexed 0–8 (SPEC-30 decision 16).
+  /// The 1st–9th group-switch actions, indexed 0–8 (SPEC-tab-groups decision 16).
   static const List<ShortcutAction> _switchGroupActions = [
     switchGroup1,
     switchGroup2,

@@ -1,5 +1,5 @@
 /**
- * kill.ts — the pure half of SPEC-43: *may* this endpoint be signalled?
+ * kill.ts — the pure half of SPEC-ports-kill: *may* this endpoint be signalled?
  *
  * Everything here is a total function over a **fresh** scan. It cannot signal,
  * spawn or wait, which is the point: the one decision that turns a user's tap
@@ -7,7 +7,7 @@
  * testable without a victim (`kill.test.ts` is the refusal table).
  *
  * Two disciplines the rest of the codebase already follows, applied here:
- *  - **Re-verify, never trust the snapshot key** (D1, SPEC-41 D6). A pid is a
+ *  - **Re-verify, never trust the snapshot key** (D1, SPEC-open-ports D6). A pid is a
  *    time-of-check-to-time-of-use hazard: pids are reused and a restart changes
  *    the pid for the same endpoint. So the client sends the whole
  *    `{address, port, pid, startedAt}` tuple it displayed and the server matches
@@ -64,7 +64,7 @@ export type KillDecision =
 /** The fresh scan the decision is made against. */
 export interface KillScan {
   ports: PortDTO[];
-  /** False when the scanner's commands did not run (SPEC-41 D7). */
+  /** False when the scanner's commands did not run (SPEC-open-ports D7). */
   scanOk: boolean;
 }
 
@@ -104,7 +104,7 @@ export function classifyKillTarget(
   );
   if (matched === undefined) return { signal: false, outcome: "identity_mismatch" };
 
-  // R4 — the whitelist proper: a live worktree owns it, or SPEC-42 proved it is
+  // R4 — the whitelist proper: a live worktree owns it, or SPEC-ports-global-view proved it is
   // an orphan (whose worktree is gone, so it can never have a `worktreePath`).
   const owned = matched.worktreePath !== undefined || matched.orphan !== undefined;
   if (!owned) return { signal: false, outcome: "not_owned" };

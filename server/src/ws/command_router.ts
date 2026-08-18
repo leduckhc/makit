@@ -43,7 +43,7 @@ export class CommandRouter {
 
   /**
    * Every registered command kind. Exists so the capability map's completeness
-   * can be a test (SPEC-46 C1): a kind added without a map entry is caught, not
+   * can be a test (SPEC-cli-as-client C1): a kind added without a map entry is caught, not
    * silently left agent-reachable.
    */
   kinds(): string[] {
@@ -54,7 +54,7 @@ export class CommandRouter {
     const kind = String(env.kind ?? "");
     const ctx = this.contextFor(client, env);
 
-    // SPEC-46 D17: the capability check is HERE, before handler lookup, so a
+    // SPEC-cli-as-client D17: the capability check is HERE, before handler lookup, so a
     // refused command never enters a handler. This is the single enforcement
     // point the principal exists for; a per-handler check would spread the rule
     // and still miss the non-command paths (fanout, srv.response).

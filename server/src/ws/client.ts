@@ -27,9 +27,9 @@ export interface WsClient {
   /** Registry id of the paired device, once authenticated (for `devices.list`). */
   deviceId?: string;
   /**
-   * The authenticated subject (SPEC-46 D17), set by `AuthGate` on a successful
+   * The authenticated subject (SPEC-cli-as-client D17), set by `AuthGate` on a successful
    * `hello`. **Undefined on an unauthed socket, and undefined means full access
-   * once authed** — every device paired before SPEC-46 has no capabilities, so
+   * once authed** — every device paired before SPEC-cli-as-client has no capabilities, so
    * the absence of a principal must never be read as "deny".
    *
    * Read by the command router (capability check) and by fanout (a
@@ -39,18 +39,18 @@ export interface WsClient {
   /**
    * True while this client is watching metrics (`metrics.watch {on:true}`).
    * Cleared on socket close so a panel closed by killing the window cannot pin
-   * the collector at 1 Hz forever (SPEC-37 decision 7).
+   * the collector at 1 Hz forever (SPEC-performance-metrics-dashboard decision 7).
    */
   watchingMetrics: boolean;
   /**
-   * True while this client is watching ports (`ports.watch {on:true}`, SPEC-41).
+   * True while this client is watching ports (`ports.watch {on:true}`, SPEC-open-ports).
    * Required (like {@link watchingMetrics}): every `WsClient` initialises it to
    * `false`. Cleared on socket close so a killed window cannot pin the `lsof`
    * scanner running forever.
    */
   watchingPorts: boolean;
   /**
-   * True while this client is watching docs (`docs.watch {on:true}`, SPEC-46).
+   * True while this client is watching docs (`docs.watch {on:true}`, SPEC-doc-preview).
    * Required (like {@link watchingPorts}): every `WsClient` initialises it to
    * `false`. Cleared on socket close so a killed window cannot keep the doc
    * index re-walking on every tree change forever.
@@ -58,7 +58,7 @@ export interface WsClient {
   watchingDocs: boolean;
   /**
    * True when the socket's remote address is loopback. Gates acceptance of the
-   * app's reported pid in `hello` (SPEC-37 decision 6) — a non-loopback client
+   * app's reported pid in `hello` (SPEC-performance-metrics-dashboard decision 6) — a non-loopback client
    * must connect normally but may not ask us to sample an arbitrary pid.
    */
   readonly isLocal: boolean;

@@ -1,5 +1,5 @@
 /**
- * docker.ts — the one place that knows anything about docker (SPEC-42 D13).
+ * docker.ts — the one place that knows anything about docker (SPEC-ports-global-view D13).
  *
  * A container that publishes a port is held on the host by docker's own proxy
  * process (`com.docker.backend` on Docker Desktop, `docker-proxy`/`dockerd` on
@@ -61,7 +61,7 @@ export type DockerReader = (timeoutMs?: number) => Promise<DockerRead>;
  * `:::5432->5432/tcp`, `[::]:5432->5432/tcp`. The HOST port (before `->`) is
  * the one `lsof` sees, so it is the only one captured. An entry with no host
  * part (`5432/tcp`, an unpublished port) does not match at all, and `/udp`
- * entries are excluded — SPEC-41 scans TCP only.
+ * entries are excluded — SPEC-open-ports scans TCP only.
  */
 const PUBLISH_TCP = /(?:^|[\s,])(?:\[[^\]]*\]|[^\s,]*):(\d+)->\d+\/tcp/g;
 

@@ -8,7 +8,7 @@ import 'selected_session.dart';
 import '../../status/activity_badge.dart';
 
 /// The top window-drag strip that stands in for the hidden OS titlebar
-/// (SPEC-19 shared widget). Owns the [DragToMoveArea] fill plus the
+/// (SPEC-decomposition-and-dedup shared widget). Owns the [DragToMoveArea] fill plus the
 /// traffic-light inset for an optional [leading] control (e.g. the sidebar
 /// toggle). The single widget behind the strips previously hand-rolled in
 /// `desktop_sidebar._Header`, `pane_tree_view`, and
@@ -114,7 +114,7 @@ class SidebarToggleControls extends ConsumerWidget {
       children: [
         SidebarToggleButton(collapse: collapse),
         ActivityPopoverButton(
-          // SPEC-30 D15's navigate-don't-mutate path, same as clicking the
+          // SPEC-tab-groups D15's navigate-don't-mutate path, same as clicking the
           // session in the sidebar.
           onOpenSession: (id) => selectSessionExclusive(ref, id),
         ),
@@ -123,7 +123,7 @@ class SidebarToggleControls extends ConsumerWidget {
   }
 }
 
-/// The sidebar fold/unfold button (SPEC-19 shared widget). [collapse] true hides
+/// The sidebar fold/unfold button (SPEC-decomposition-and-dedup shared widget). [collapse] true hides
 /// the sidebar ("Hide sidebar"); false restores it ("Show sidebar"). The single
 /// widget behind the three hand-rolled `PhosphorIconsLight.sidebarSimple` buttons in
 /// `desktop_sidebar`, `pane_tree_view`, and `desktop_chat_pane`.

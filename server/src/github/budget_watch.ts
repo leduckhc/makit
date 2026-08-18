@@ -1,5 +1,5 @@
 /**
- * Foreground budget watch (SPEC-32 §6.6) — the fast `/rate_limit` loop that runs
+ * Foreground budget watch (SPEC-github-gateway-and-budget §6.6) — the fast `/rate_limit` loop that runs
  * only while a client actually has the budget panel open.
  *
  * The background cadence is deliberately slow (`REFRESH_INTERVAL_MS`, 60s) and

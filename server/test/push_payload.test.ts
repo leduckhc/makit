@@ -73,7 +73,7 @@ test("badge reflects pendingCount", () => {
   assert.equal(buildWakePayload({ pendingCount: 3 }).aps.badge, 3);
 });
 
-// ── SPEC-44 D8: the port-down alert ────────────────────────────────────────
+// ── SPEC-ports-forward D8: the port-down alert ────────────────────────────────────────
 
 test("the port-down alert names the port and NOTHING else", () => {
   // The signature is the invariant, exactly as for the wake payload: only an

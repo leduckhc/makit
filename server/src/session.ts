@@ -24,8 +24,8 @@ import type { MediaAttachment } from "./media/store.js";
 
 /**
  * Event kinds that advance lastActivityAt but must never fan out the sessions
- * snapshot (SPEC-17 P2 hot path): per-token streaming deltas, plus `session.usage`
- * (SPEC-37), which arrives once per turn and changes no field of the session
+ * snapshot (SPEC-server-hotpath-and-state P2 hot path): per-token streaming deltas, plus `session.usage`
+ * (SPEC-context-usage), which arrives once per turn and changes no field of the session
  * list DTO — the turn's own events already trigger that broadcast.
  */
 const NO_FANOUT_KINDS: ReadonlySet<string> = new Set([
@@ -37,7 +37,7 @@ const NO_FANOUT_KINDS: ReadonlySet<string> = new Set([
 
 /**
  * A message the user submitted while the agent was busy, held until the agent
- * goes idle (SPEC-35). Kept in memory only: unsent intent must not go stale in
+ * goes idle (SPEC-mid-turn-steering-and-queue). Kept in memory only: unsent intent must not go stale in
  * a file across a restart.
  */
 interface QueuedMessage {
@@ -49,7 +49,7 @@ interface QueuedMessage {
 
 /**
  * Statuses in which the agent is working (or blocked on the user) and therefore
- * cannot take a fresh turn (SPEC-35). `error`/`exited` are deliberately absent:
+ * cannot take a fresh turn (SPEC-mid-turn-steering-and-queue). `error`/`exited` are deliberately absent:
  * a dead session must not silently swallow messages into a queue that will
  * never flush.
  */
@@ -60,7 +60,7 @@ const BUSY_STATUSES: ReadonlySet<SessionStatus> = new Set<SessionStatus>([
 ]);
 
 /**
- * The draft → started state machine as a discriminated union (SPEC-17 P4).
+ * The draft → started state machine as a discriminated union (SPEC-server-hotpath-and-state P4).
  *
  * - `draft`: agent creation is deferred until the first substantive user
  *   message. `agent` is the harness to launch; `pendingWorktreePath` binds the
@@ -80,13 +80,13 @@ export type SessionLifecycle =
       pendingWorktreePath?: string;
       branch?: string;
       /**
-       * Pre-spawn config picks (SPEC-27): `{id, value}` requests, validated
+       * Pre-spawn config picks (SPEC-new-session-config-at-spawn): `{id, value}` requests, validated
        * against the cached catalog, applied at launch after the real
        * session/thread starts and before the first prompt.
        */
       configPicks?: { id: string; value: string | boolean }[];
       /**
-       * SPEC-46 U4: a forked thread's native id. When set, promotion resumes
+       * SPEC-cli-as-client U4: a forked thread's native id. When set, promotion resumes
        * this thread (the adapter's `thread/resume`) instead of starting a fresh
        * one, so the child continues the forked conversation rather than a new
        * one that merely looks forked.
@@ -117,15 +117,15 @@ export interface SessionInit {
   lastPreview?: string;
   /** On-disk transcript path so a cold session can be re-attached (pi resume). */
   resumeSessionPath?: string;
-  /** Native agent session/thread id, restored on rehydration for resume (SPEC-29). */
+  /** Native agent session/thread id, restored on rehydration for resume (SPEC-session-lifecycle-resume-list-delete). */
   agentSessionId?: string;
-  /** Closed on rehydration (SPEC-29): hidden from the active list, still resumable. */
+  /** Closed on rehydration (SPEC-session-lifecycle-resume-list-delete): hidden from the active list, still resumable. */
   closed?: boolean;
   /** Restore the started-session branch/worktree on rehydration. */
   branch?: string;
   worktreePath?: string;
   /**
-   * SPEC-46 lineage (D10), restored on rehydration so a cold session still
+   * SPEC-cli-as-client lineage (D10), restored on rehydration so a cold session still
    * reports who it was handed off from. Set once at construction — lineage is
    * immutable for a session's life.
    */
@@ -143,7 +143,7 @@ export interface SessionInit {
 }
 
 /**
- * Hard ceiling on pending mid-turn messages per session (SPEC-35).
+ * Hard ceiling on pending mid-turn messages per session (SPEC-mid-turn-steering-and-queue).
  *
  * The queue is in-memory and appendable by any authenticated client for as long
  * as it can keep the agent busy, so it needs a bound. High enough that no real
@@ -173,13 +173,13 @@ export class Session extends EventEmitter {
   /**
    * Native agent session/thread id (ACP `sessionId`, codex `threadId`) once the
    * live adapter has started, so this makit session can be resumed after a
-   * server restart (SPEC-29). Undefined for drafts and cold/history-only
+   * server restart (SPEC-session-lifecycle-resume-list-delete). Undefined for drafts and cold/history-only
    * sessions until re-attached.
    */
   agentSessionId?: string;
 
   /**
-   * Closed (SPEC-29): the agent has been released and its process reclaimed.
+   * Closed (SPEC-session-lifecycle-resume-list-delete): the agent has been released and its process reclaimed.
    * A closed session is excluded from the active session list
    * (`SessionManager.listSessions`) but keeps its full event log + resume
    * handle, so `session.reopen` — or simply sending a message — resumes it.
@@ -188,11 +188,11 @@ export class Session extends EventEmitter {
   closed = false;
 
   /**
-   * SPEC-46 lineage (D10): the session this one was handed off / spawned from,
+   * SPEC-cli-as-client lineage (D10): the session this one was handed off / spawned from,
    * why, and which client created it. Immutable for the session's life, set at
    * construction and persisted so the app can caption "handed off from …" and
    * D9's depth/fan-out guard has something to count. Undefined for a session
-   * with no parent (every pre-SPEC-46 row, and every app-spawned session).
+   * with no parent (every pre-SPEC-cli-as-client row, and every app-spawned session).
    */
   readonly parentId?: string;
   readonly handoffReason?: string;
@@ -202,7 +202,7 @@ export class Session extends EventEmitter {
   private hydrateFrom?: () => SessionEvent[];
 
   /**
-   * Draft → started state machine (SPEC-17 P4). A fresh session is `started`
+   * Draft → started state machine (SPEC-server-hotpath-and-state P4). A fresh session is `started`
    * (live); {@link beginDraft} enters the draft phase and {@link markStarted}
    * transitions back out of it. The convention-enforced `pending*` fields are
    * derived from this union via the getters below (DTO shape is unchanged).
@@ -210,7 +210,7 @@ export class Session extends EventEmitter {
   private _lifecycle: SessionLifecycle = { phase: "started" };
 
   private readonly _events: SessionEvent[] = [];
-  /** Mid-turn messages awaiting delivery (SPEC-35), oldest first. */
+  /** Mid-turn messages awaiting delivery (SPEC-mid-turn-steering-and-queue), oldest first. */
   private readonly queued: QueuedMessage[] = [];
   /**
    * True while a queued message is being handed to the adapter. The tracker
@@ -305,7 +305,7 @@ export class Session extends EventEmitter {
     const prevPreview = this.lastPreview;
     const prevActivity = this.lastActivityAt;
 
-    // Some kinds must NOT fan out the sessions snapshot (SPEC-17 P2: no
+    // Some kinds must NOT fan out the sessions snapshot (SPEC-server-hotpath-and-state P2: no
     // O(clients × sessions) per-token cost). They still advance lastActivityAt;
     // the change is broadcast lazily on the next fan-out-eligible event.
     const isNoFanout = NO_FANOUT_KINDS.has(event.kind);
@@ -402,7 +402,7 @@ export class Session extends EventEmitter {
    * Delegates to the subprocess-backed adapters' `agentPid` getter; read
    * structurally because pid is NOT part of the shared `AgentAdapter` contract
    * (only acp/codex spawn a child). The metrics collector omits sessions with
-   * no pid rather than reporting a misleading 0 (SPEC-37 decision 11).
+   * no pid rather than reporting a misleading 0 (SPEC-performance-metrics-dashboard decision 11).
    */
   get agentPid(): number | undefined {
     return (this.adapter as { readonly agentPid?: number }).agentPid;
@@ -410,7 +410,7 @@ export class Session extends EventEmitter {
 
   /**
    * Adopt the live adapter's native session/thread id (ACP `sessionId`, codex
-   * `threadId`) as this session's durable resume handle (SPEC-29), persisting
+   * `threadId`) as this session's durable resume handle (SPEC-session-lifecycle-resume-list-delete), persisting
    * it so the session can be resumed after a server restart. Called by the
    * manager right after `adapter.start()` resolves. No-op when the adapter has
    * no id (e.g. the detached placeholder).
@@ -424,7 +424,7 @@ export class Session extends EventEmitter {
   }
 
   /**
-   * Set the closed flag (SPEC-29) and persist it. Emits `metaChanged` so the
+   * Set the closed flag (SPEC-session-lifecycle-resume-list-delete) and persist it. Emits `metaChanged` so the
    * server re-broadcasts the active session list (which now excludes closed
    * sessions). Returns whether the flag actually changed.
    */
@@ -438,7 +438,7 @@ export class Session extends EventEmitter {
 
   /**
    * Drop the recorded worktree/branch so the session buckets under the repo
-   * ROOT again (SPEC-29: restoring a session whose worktree was deleted runs it
+   * ROOT again (SPEC-session-lifecycle-resume-list-delete: restoring a session whose worktree was deleted runs it
    * at the repo root). Without this the stale path matches no live worktree, so
    * the session renders in no view. No-op for a draft or an already-root
    * session. Persists + emits so the active snapshot re-broadcasts.
@@ -473,7 +473,7 @@ export class Session extends EventEmitter {
   }
 
   /**
-   * Record and emit a `session.usage` snapshot (SPEC-37). Used by the loopback
+   * Record and emit a `session.usage` snapshot (SPEC-context-usage). Used by the loopback
    * bridge's `POST /usage` for pi, which reports no usage over ACP; the codex and
    * ACP paths arrive as ordinary adapter events instead. Latest-wins in the app,
    * and in `NO_FANOUT_KINDS` so it never re-broadcasts the sessions snapshot.
@@ -506,12 +506,12 @@ export class Session extends EventEmitter {
       // before/after comparison that decides whether to fan out metaChanged.
       this.emit("event", this.record({ ts: Date.now(), kind: "session.status", payload: { status } }));
       // The agent is ready for a new turn: hand it the next queued message
-      // (SPEC-35). One per transition — the next flush waits for the next idle.
+      // (SPEC-mid-turn-steering-and-queue). One per transition — the next flush waits for the next idle.
       if (status === "idle" && this.queued.length > 0) void this.flushNext();
     };
 
     // A dead agent will never flush the queue; drop it rather than leave chips
-    // pinned in the composer forever (SPEC-35).
+    // pinned in the composer forever (SPEC-mid-turn-steering-and-queue).
     const onExit = () => this.clearQueue();
 
     const onTitle = (title: string) => this.setTitle(title);
@@ -523,7 +523,7 @@ export class Session extends EventEmitter {
     adapter.on("title", onTitle);
   }
 
-  /** Live lifecycle state (SPEC-17 P4). Read-only view for typed transitions. */
+  /** Live lifecycle state (SPEC-server-hotpath-and-state P4). Read-only view for typed transitions. */
   get lifecycle(): SessionLifecycle {
     return this._lifecycle;
   }
@@ -581,7 +581,7 @@ export class Session extends EventEmitter {
   }
 
   /**
-   * Whether this session can be brought back to a live agent (SPEC-29): it
+   * Whether this session can be brought back to a live agent (SPEC-session-lifecycle-resume-list-delete): it
    * holds either a native agent session/thread id or a legacy pi transcript
    * path. Mirrors exactly what {@link SessionManager.reattachSession} accepts —
    * one predicate, so the DTO can never advertise less than the server will do.
@@ -611,7 +611,7 @@ export class Session extends EventEmitter {
     if (opts.title) this.setTitle(opts.title);
     this.persistMeta();
     // Draft → started flips DTO-visible fields (pending/branch/worktree), so
-    // trigger a sessions-snapshot re-broadcast (SPEC-17 P2).
+    // trigger a sessions-snapshot re-broadcast (SPEC-server-hotpath-and-state P2).
     this.emit("metaChanged");
   }
 
@@ -630,11 +630,11 @@ export class Session extends EventEmitter {
       pendingAgent: this.pendingAgent,
       branch: this.branch,
       worktreePath: this.worktreePath,
-      // SPEC-29: a session with a persisted resume handle can be brought back
+      // SPEC-session-lifecycle-resume-list-delete: a session with a persisted resume handle can be brought back
       // to a live agent after a server restart (cold ones are auto-attached).
       resumable: this.resumable,
       closed: this.closed,
-      // SPEC-46 lineage (D10): carried on the DTO so the app can caption
+      // SPEC-cli-as-client lineage (D10): carried on the DTO so the app can caption
       // "handed off from …" without a second lookup. Undefined for a session
       // with no parent.
       parentId: this.parentId,
@@ -654,7 +654,7 @@ export class Session extends EventEmitter {
   async sendUserMessage(text: string, attachments?: MediaAttachment[]) {
     const input = { text, ...(attachments?.length ? { attachments } : {}) };
 
-    // SPEC-35. Three cases, in this order:
+    // SPEC-mid-turn-steering-and-queue. Three cases, in this order:
     //  1. a queue already exists OR flushing is active -> append (never overtake
     //     an earlier message, including in the window between `idle` and the
     //     flush's next turn starting)
@@ -683,7 +683,7 @@ export class Session extends EventEmitter {
     // so that turn boundaries are unambiguous.
   }
 
-  /** Pending mid-turn messages, oldest first (SPEC-35). */
+  /** Pending mid-turn messages, oldest first (SPEC-mid-turn-steering-and-queue). */
   get queuedMessages(): readonly QueuedMessage[] {
     return this.queued;
   }
@@ -714,7 +714,7 @@ export class Session extends EventEmitter {
   }
 
   /**
-   * Replace a pending message's text (SPEC-38). Empty/whitespace text is a
+   * Replace a pending message's text (SPEC-pending-queue-edit-reorder). Empty/whitespace text is a
    * cancel — the user cleared the field, and a blank pending message is not a
    * thing. Returns false for an id the queue no longer holds (it was delivered
    * between the tap and this call), which callers treat as a no-op, not an error.
@@ -729,7 +729,7 @@ export class Session extends EventEmitter {
   }
 
   /**
-   * Reorder the queue (SPEC-38). `ids` is a **hint**, not an assertion: the
+   * Reorder the queue (SPEC-pending-queue-edit-reorder). `ids` is a **hint**, not an assertion: the
    * queue can flush between the user's tap and this call, so named ids take the
    * given order first, entries the client did not mention keep their relative
    * order after them, and unknown ids are ignored. A reorder can therefore never
@@ -757,7 +757,7 @@ export class Session extends EventEmitter {
 
   /**
    * Send one pending message NOW: interrupt the running turn, then let the
-   * normal flush deliver that message first (SPEC-39 — the tray's ⤒).
+   * normal flush deliver that message first (SPEC-queue-tray-and-promote — the tray's ⤒).
    *
    * Deliberately *not* built on `cancel`'s path: the `cancel` command clears the
    * whole queue ("stop means stop"), which is the opposite of what promote

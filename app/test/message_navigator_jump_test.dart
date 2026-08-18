@@ -1,4 +1,4 @@
-// T4 — SPEC-34: the controller that turns "my 3rd message" into a landed jump.
+// T4 — SPEC-message-navigator: the controller that turns "my 3rd message" into a landed jump.
 //
 // The trap this guards: three index spaces are in play (item position, reversed
 // child index, scroll offset) and the child index shifts by one whenever the

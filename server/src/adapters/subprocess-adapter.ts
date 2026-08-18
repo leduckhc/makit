@@ -22,13 +22,13 @@ export abstract class SubprocessAdapter extends EventEmitter implements AgentAda
   abstract readonly agent: string;
 
   /**
-   * Session-lifecycle capabilities (SPEC-29). Subclasses overwrite this: codex
+   * Session-lifecycle capabilities (SPEC-session-lifecycle-resume-list-delete). Subclasses overwrite this: codex
    * sets a static value; ACP populates it from the `initialize` response. The
    * safe default is all-false so a subclass that forgets degrades gracefully.
    */
   capabilities: SessionCapabilities = { ...NO_SESSION_CAPABILITIES };
 
-  /** Prompt media support (SPEC-33). Subclasses that accept images override it. */
+  /** Prompt media support (SPEC-user-attachments). Subclasses that accept images override it. */
 
   /** Native session/thread id, set by the subclass once `start()` resolves. */
   agentSessionId?: string;
@@ -64,7 +64,7 @@ export abstract class SubprocessAdapter extends EventEmitter implements AgentAda
   abstract kill(signal?: NodeJS.Signals): Promise<void>;
 
   /**
-   * No mid-turn injection by default (SPEC-35): the caller queues instead.
+   * No mid-turn injection by default (SPEC-mid-turn-steering-and-queue): the caller queues instead.
    * Only codex overrides this (`turn/steer`).
    */
   async steer(_input: UserInput): Promise<boolean> {

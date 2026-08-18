@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>makit — Context usage: ring + details panel (SPEC-37)</title>
+<title>makit — Context usage: ring + details panel (SPEC-context-usage)</title>
 <style>
   :root{
     --bg:#171717;--container-low:#1E1E1E;--container:#242424;--container-high:#2E2E2E;--container-highest:#383838;
@@ -115,7 +115,7 @@
 </head>
 <body>
 
-<h1>Context usage — ring + details panel <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-37</span></h1>
+<h1>Context usage — ring + details panel <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-context-usage</span></h1>
 <p class="sub">
   A circular gauge in the composer footer; tap/click opens the full detail. Real numbers throughout,
   from the verified runs: codex <code>19440/258400</code>, pi <code>29408/1000000 · $0.18</code>.
@@ -141,7 +141,7 @@
   name the row wants <b>500 pt</b> of natural width (model 225.5 + thinking 88 + mode 150.5 + ring 36)
   against the same 267 pt, so each label is squeezed to <b>21.8 pt</b>: one glyph plus an ellipsis
   (<code>C…</code>, <code>h…</code>, <code>A…</code>). Scrolling the row would push the ring ~250 pt
-  off-screen, so the fix is the SPEC-31 shape — fold the legacy model/thinking/mode trio into one pill that
+  off-screen, so the fix is the SPEC-model-picker-menu-per-model-config shape — fold the legacy model/thinking/mode trio into one pill that
   opens a sheet, as <code>ModelConfigFooter</code> already does for agents that send
   <code>configOptions</code>. Still out of scope here.
 </div>

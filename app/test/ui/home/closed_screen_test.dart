@@ -1,4 +1,4 @@
-// Mobile closed-sessions view (SPEC-29): lists the closed sessions the
+// Mobile closed-sessions view (SPEC-session-lifecycle-resume-list-delete): lists the closed sessions the
 // server holds, grouped by repo, and restores one back to the active list.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

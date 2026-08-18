@@ -83,7 +83,7 @@ void main() {
     // Tap the CARET, not the action. This used to tap `InkWell.first` — the
     // primary segment — so the menu never opened and this golden froze a button
     // snapshot under a name that promised a menu. It also meant the menu's
-    // appearance (including SPEC-30 decision 11's target header) was untested.
+    // appearance (including SPEC-tab-groups decision 11's target header) was untested.
     await tester.tap(find.byTooltip('Choose editor'));
     await tester.pumpAndSettle();
     await expectLater(

@@ -1,5 +1,5 @@
 /**
- * collector.ts — the one stateful piece of the metrics subsystem (SPEC-37 T5).
+ * collector.ts — the one stateful piece of the metrics subsystem (SPEC-performance-metrics-dashboard T5).
  *
  * Everything is injected (timers, clock, exec, the self/wire probes, the agent
  * list, storage stat, the app pid, the cpu-usage reader and the sink) so the

@@ -107,7 +107,7 @@ void main() {
     await tester.pumpWidget(_app(c));
     await tester.pumpAndSettle();
 
-    // Assert on the placeholder widget, not its copy — wording churn (SPEC-27)
+    // Assert on the placeholder widget, not its copy — wording churn (SPEC-new-session-config-at-spawn)
     // is what silently rotted this test before.
     expect(find.byType(EmptyPaneStarter), findsOneWidget);
     expect(

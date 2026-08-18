@@ -1,8 +1,8 @@
-// SPEC-52 B1 — the wire contract for session identity.
+// SPEC-session-identity B1 — the wire contract for session identity.
 //
 // Two OPTIONAL fields on `SessionDTO`: `agentSessionId` and `transcriptPath`.
 // Optional so a new app paired with an older server renders fewer rows rather
-// than a fabricated one — the same rule `createdAt` follows (SPEC-47 D12).
+// than a fabricated one — the same rule `createdAt` follows (SPEC-session-timings D12).
 //
 // The empty-string cases are not paranoia. `''` is what a sloppy or partially
 // migrated server sends for "I have no value", and an empty string here would

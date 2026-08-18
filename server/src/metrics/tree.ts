@@ -1,5 +1,5 @@
 /**
- * Whole-tree process attribution (SPEC-37 decision 3).
+ * Whole-tree process attribution (SPEC-performance-metrics-dashboard decision 3).
  *
  * Pure functions. The ppid index is built **once per tick** and reused for every
  * agent root, so a machine-wide `ps` costs one traversal, not one per pid.
@@ -27,7 +27,7 @@ export interface TreeTotals {
  * Map each parent pid to the list of its direct children. Built once per tick.
  *
  * Accepts a `ReadonlyMap` of anything carrying `pid`/`ppid` (the only fields it
- * reads): SPEC-41's ports attribution passes its `ProcInfo` table here without a
+ * reads): SPEC-open-ports's ports attribution passes its `ProcInfo` table here without a
  * cast, and metrics passes its full {@link ProcLike} rows — both satisfy the
  * narrowed value type structurally.
  */
@@ -70,7 +70,7 @@ export function descendants(index: Map<number, number[]>, root: number): number[
  *
  * Deliberately does **not** return `cpuSeconds`: summing only the pids present in
  * this tick would silently lose every short-lived child, which is exactly the
- * failure {@link CpuLedger} exists to prevent (SPEC-37 decision 4). CPU comes from
+ * failure {@link CpuLedger} exists to prevent (SPEC-performance-metrics-dashboard decision 4). CPU comes from
  * the ledger, exclusively — two functions returning a differently-meaning
  * `cpuSeconds` was a trap the first reviewer of this file walked into.
  *

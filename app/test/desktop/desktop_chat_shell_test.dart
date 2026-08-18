@@ -12,7 +12,7 @@ import 'package:makit/desktop/chat/split_tree_view.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 
-/// Shell-level regression guard for SPEC-12: the sidebar folds away fully and
+/// Shell-level regression guard for SPEC-desktop-sidebar-topbar-restructure: the sidebar folds away fully and
 /// resizes within [kSidebarMinWidth]–[kSidebarMaxWidth] via the drag handle.
 void main() {
   setUp(() {

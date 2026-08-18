@@ -9,7 +9,7 @@ import 'package:makit/store/store.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:makit/transport/transport.dart';
 
-/// SPEC-47 D15: the server clock is the only clock. The store keeps a single
+/// SPEC-session-timings D15: the server clock is the only clock. The store keeps a single
 /// [serverClockOffset] updated from the `ts` of each **live** event and never
 /// from replayed history.
 

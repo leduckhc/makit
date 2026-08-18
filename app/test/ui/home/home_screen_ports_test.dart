@@ -1,4 +1,4 @@
-// SPEC-42 P2a T7 — the home app-bar plug icon opens the global Ports screen,
+// SPEC-ports-global-view P2a T7 — the home app-bar plug icon opens the global Ports screen,
 // mirroring the Closed icon.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

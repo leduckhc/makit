@@ -79,7 +79,7 @@ final Uint8List _png = Uint8List.fromList([
   0x82,
 ]);
 
-/// Full-stack attachment flow (SPEC-33), with nothing faked between the app and
+/// Full-stack attachment flow (SPEC-user-attachments), with nothing faked between the app and
 /// the server: a real image on the real device pasteboard → the real
 /// `POST /media` upload over the pinned client → a real `send.message` naming
 /// the id → the stub agent's reply quoting the file it was handed.

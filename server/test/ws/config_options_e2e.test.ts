@@ -1,5 +1,5 @@
 /**
- * SPEC-26 configOptions wire e2e: a live WS client against a real
+ * SPEC-acp-config-options-unified-composer configOptions wire e2e: a live WS client against a real
  * {@link startWsServer} + {@link StubAdapter}. Proves the unified config
  * surface end-to-end over the wire:
  *   1. a spawned session emits `session.meta` carrying `configOptions`;

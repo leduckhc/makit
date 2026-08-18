@@ -1,4 +1,4 @@
-/// The live-tick seam for session-timing counters (SPEC-47 D5/D14/D21).
+/// The live-tick seam for session-timing counters (SPEC-session-timings D5/D14/D21).
 ///
 /// A running tool call, a streaming thought and the working indicator all need
 /// a number that advances once a second. They must NOT each own a
@@ -32,7 +32,7 @@ const Duration kLiveTickReducedMotionCadence = Duration(seconds: 5);
 
 /// A [ValueNotifier] whose value is "server-now" in ms, resampled from the
 /// shared [PulseClock] but notifying **only when the [cadence] bucket changes**
-/// (SPEC-47 D5). Live counters watch it and compute `serverNow - startTs`.
+/// (SPEC-session-timings D5). Live counters watch it and compute `serverNow - startTs`.
 ///
 /// [nowMs] is the server clock (device wall clock + the store's server offset,
 /// D15); it is injected so widget tests can drive an exact value rather than
@@ -72,7 +72,7 @@ class ServerNowTicker extends ValueNotifier<int> {
   }
 }
 
-/// The app-wide live clock at a given cadence in **seconds** (SPEC-47 D5). A
+/// The app-wide live clock at a given cadence in **seconds** (SPEC-session-timings D5). A
 /// family so a reduced-motion consumer can ask for the coarse 5 s tick (D21)
 /// from the same seam. Widget tests override this with a controllable notifier
 /// rather than asserting a label against a real wall clock.

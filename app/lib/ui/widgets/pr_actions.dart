@@ -14,7 +14,7 @@ const String _repoPushAsset = 'assets/icons/repo-push.png';
 const String _repoPullAsset = 'assets/icons/repo-pull.png';
 
 /// The canned-prompt actions offered by the composer's "PR actions" split
-/// button (SPEC-23). Each is an **app-owned, agent-agnostic prompt** — selecting
+/// button (SPEC-pr-status-and-actions). Each is an **app-owned, agent-agnostic prompt** — selecting
 /// one inserts its text into the composer (it does not auto-send), so the user
 /// reviews and hits Send. The prompt text is overridable per action in Settings
 /// → Agents & Chat; an empty override means "use [defaultPrompt]".

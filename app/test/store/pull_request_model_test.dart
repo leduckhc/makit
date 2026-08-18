@@ -63,7 +63,7 @@ void main() {
   test(
     'PullRequest.fromJson defaults stale/unresolvedUnknown false when absent',
     () {
-      // Every server that predates SPEC-32 omits these fields; the pill must
+      // Every server that predates SPEC-github-gateway-and-budget omits these fields; the pill must
       // still decode and render as a fresh, fully-known PR.
       final pr = PullRequest.fromJson({
         'number': 7,

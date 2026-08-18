@@ -1,5 +1,5 @@
 /**
- * watch.ts — the down-detector behind "`:5173` stopped listening" (SPEC-44 D8).
+ * watch.ts — the down-detector behind "`:5173` stopped listening" (SPEC-ports-forward D8).
  *
  * The whole design is one rule: **a watched port must be continuously
  * absent-or-refused for {@link WATCH_DOWN_GRACE_MS} before anything is sent, and

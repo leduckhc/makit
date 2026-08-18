@@ -2,7 +2,7 @@
 ///
 /// Shown for **every** profile. It used to render nothing for the installed one,
 /// which was right while profiles were invisible plumbing and wrong the moment
-/// they became something the user chooses (SPEC-50): a single-profile user sees
+/// they became something the user chooses (SPEC-profiles): a single-profile user sees
 /// one calm pill, and a multi-profile user is never left guessing which server a
 /// window is talking to.
 ///

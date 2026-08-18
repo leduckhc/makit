@@ -35,14 +35,14 @@ export interface Envelope {
 export type EventKind =
   /**
    * The user's own turn, echoed by the adapter so transcripts are complete.
-   * `payload.text` is the prompt; `payload.attachments` (SPEC-33) is an optional
+   * `payload.text` is the prompt; `payload.attachments` (SPEC-user-attachments) is an optional
    * array of **resolved** `MediaAttachment` descriptors
    * (`{mediaId, mime, sizeBytes, name?}`) for images the user attached — richer
    * than the inbound {@link WireAttachment}, which carries only an id + name. As with
    * `agent.media`, only the descriptor is carried — the app fetches bytes from
    * `GET /media/<mediaId>` — because the event log is replayed in full on resume.
    *
-   * `payload.steered === true` (SPEC-35) marks a message that was injected into
+   * `payload.steered === true` (SPEC-mid-turn-steering-and-queue) marks a message that was injected into
    * the turn that was ALREADY running instead of starting a new one. Present only
    * on the transports that can do it (codex `turn/steer`); the app captions the
    * bubble with it, which is the only way the user learns the difference between
@@ -52,7 +52,7 @@ export type EventKind =
   | "agent.message"
   | "agent.message.delta"
   /**
-   * Assistant display media (SPEC-22): an image/GIF the agent produced or
+   * Assistant display media (SPEC-assistant-display-media): an image/GIF the agent produced or
    * referenced. Carries only a descriptor — the bytes are fetched from
    * `GET /media/<mediaId>`, never inlined, because the event log is replayed
    * in full on every resume.
@@ -67,7 +67,7 @@ export type EventKind =
   | "session.error"
   | "session.commands"
   | "session.meta"
-  // NOTE (SPEC-18 T5): `session.action_error` is KEPT, not deleted. Although
+  // NOTE (SPEC-boundary-hardening T5): `session.action_error` is KEPT, not deleted. Although
   // the server does not yet EMIT it, it is a fully-wired app consumer (an
   // `ActionError` model + store reducer surface it as a snackbar in
   // session_screen.dart / desktop_chat_pane.dart). Deleting it would strand a
@@ -75,15 +75,15 @@ export type EventKind =
   // handlers (server.ts) / session.ts, which are out of this spec's scope.
   | "session.action_error"
   /**
-   * Context-window + cost snapshot for this session (SPEC-37). Latest-wins:
+   * Context-window + cost snapshot for this session (SPEC-context-usage). Latest-wins:
    * every update carries the whole picture, so the app keeps only the newest
    * and replay needs no folding. See {@link SessionUsageDTO}.
    */
   | "session.usage"
-  /** GitHub API budget snapshot (SPEC-32 §6.6) — a top-level broadcast event. */
+  /** GitHub API budget snapshot (SPEC-github-gateway-and-budget §6.6) — a top-level broadcast event. */
   | "github.budget"
   /**
-   * Host-wide performance sample (SPEC-37). Like {@link github.budget}, this is
+   * Host-wide performance sample (SPEC-performance-metrics-dashboard). Like {@link github.budget}, this is
    * a top-level broadcast event, NOT a session event: metrics describe the whole
    * makit host (server, app, every agent tree), not one session, and they must
    * **never** enter the append-only session log (spec decision 5). Writing them
@@ -93,7 +93,7 @@ export type EventKind =
   | "metrics.sample"
   /**
    * Every listening TCP port on the host, attributed to the worktree that owns
-   * it (SPEC-41). Like {@link github.budget} and {@link metrics.sample} this is a
+   * it (SPEC-open-ports). Like {@link github.budget} and {@link metrics.sample} this is a
    * top-level broadcast, NOT a session event: ports describe the machine, not one
    * session, and a 4-second snapshot must never enter the append-only session log.
    * Watch-gated — nothing is scanned or sent unless a client asked via
@@ -102,7 +102,7 @@ export type EventKind =
   | "ports.snapshot"
   /**
    * Every renderable document (`.md` / `.html`) inside each known worktree's
-   * allowlisted doc roots (SPEC-46). Like {@link ports.snapshot} this is a
+   * allowlisted doc roots (SPEC-doc-preview). Like {@link ports.snapshot} this is a
    * top-level broadcast, NOT a session event: documents describe the checkout,
    * not one session. Watch-gated — nothing is walked or sent unless a client
    * asked via `docs.watch`. See {@link DocsSnapshotDTO}.
@@ -110,7 +110,7 @@ export type EventKind =
   | "docs.snapshot";
 
 /**
- * Normalized context/cost usage for one session (SPEC-37), unified across three
+ * Normalized context/cost usage for one session (SPEC-context-usage), unified across three
  * sources that each report a different subset:
  *
  * - **codex** `thread/tokenUsage/updated` — full token breakdown + window, no cost.
@@ -149,7 +149,7 @@ export interface SessionUsageDTO {
   measuredAt: number;
 }
 
-/** Cumulative per-category token counts for a session (SPEC-37). */
+/** Cumulative per-category token counts for a session (SPEC-context-usage). */
 export interface SessionUsageTotals {
   total?: number;
   input?: number;
@@ -163,7 +163,7 @@ export interface SessionUsageTotals {
 }
 
 /**
- * GitHub API budget broadcast (SPEC-32 §6.6). Sent as a top-level
+ * GitHub API budget broadcast (SPEC-github-gateway-and-budget §6.6). Sent as a top-level
  * `event {kind:"github.budget", budget}` frame (not a session event) on a
  * budget level/throttle change and in the connect snapshot. `resetAt`/
  * `measuredAt` are epoch **ms**; `history` is 60 per-minute slots, oldest first.
@@ -198,7 +198,7 @@ export interface GithubBudgetDTO {
 }
 
 // ---------------------------------------------------------------------------
-// SPEC-37 metrics DTOs — the wire contract for the `metrics.sample` event.
+// SPEC-performance-metrics-dashboard metrics DTOs — the wire contract for the `metrics.sample` event.
 //
 // These live here, next to `github.budget`, because this is where the wire
 // contract lives; `metrics/collector.ts` imports them rather than duplicating
@@ -239,7 +239,7 @@ export interface MetricsSampleDTO {
   wire: { inBytesPerSec: number; outBytesPerSec: number; framesPerSec: number };
   storage: { eventLogBytes: number } | null;
   /**
-   * SPEC-37 decision 10 + 16 — what the measurement itself costs.
+   * SPEC-performance-metrics-dashboard decision 10 + 16 — what the measurement itself costs.
    *
    * `cpuPercent` is the CPU the tick burned over the *interval between* ticks
    * (null until a second tick gives an interval). `rssBytes` is **null**: the
@@ -256,7 +256,7 @@ export interface MetricsSampleDTO {
   procTableOk: boolean;
 }
 
-// SPEC-41 ports DTOs — the wire contract for the `ports.snapshot` event.
+// SPEC-open-ports ports DTOs — the wire contract for the `ports.snapshot` event.
 //
 // Every optional field means "not known", never "zero": a port whose `health` is
 // absent was not probed, and a port with no `worktreePath` is genuinely unowned.
@@ -321,7 +321,7 @@ export interface PortDTO {
    */
   openUrl?: string;
   /**
-   * SPEC-42 D10. Present only when this listener's cwd matches a worktree that
+   * SPEC-ports-global-view D10. Present only when this listener's cwd matches a worktree that
    * history records as REMOVED — i.e. nothing will ever reclaim the port but the
    * user. Mutually exclusive with {@link worktreePath}: an orphan is by
    * definition unowned. Absent for every port makit cannot prove is orphaned,
@@ -330,14 +330,14 @@ export interface PortDTO {
    */
   orphan?: PortOrphanDTO;
   /**
-   * SPEC-42 D12. Present when history shows a second ACTIVE worktree also claims
+   * SPEC-ports-global-view D12. Present when history shows a second ACTIVE worktree also claims
    * this port, so a dev server started there would fail to bind. Derived from
    * history, not from the live scan: the OS forbids two live LISTENs on one
    * endpoint, so the rival is by construction not currently running.
    */
   collision?: PortCollisionDTO;
   /**
-   * SPEC-42 D13. Present only when this listener is a port a docker container
+   * SPEC-ports-global-view D13. Present only when this listener is a port a docker container
    * published, so `com.docker.backend` stops reading as an unowned system
    * process. Ownership, NOT a reach: `reach` keeps reporting what the socket is
    * actually bound to (a published port on `0.0.0.0` stays `exposed`), because
@@ -347,7 +347,7 @@ export interface PortDTO {
    */
   docker?: PortDockerDTO;
   /**
-   * SPEC-44 D7/D8. True when the user asked to be told if this endpoint stops
+   * SPEC-ports-forward D7/D8. True when the user asked to be told if this endpoint stops
    * listening. Present only on a watched port — absent means "not watched", and
    * the app renders absence as absence (never a false-vs-unknown muddle).
    */
@@ -355,7 +355,7 @@ export interface PortDTO {
 }
 
 /**
- * Why a listener is an orphan. Every field is optional on purpose (SPEC-41's
+ * Why a listener is an orphan. Every field is optional on purpose (SPEC-open-ports's
  * absent-stays-absent rule): makit can often prove the cwd is a dead worktree
  * while knowing neither its branch nor when it was removed, and a fabricated
  * "removed 0d ago" would be worse than silence.
@@ -377,7 +377,7 @@ export interface PortCollisionDTO {
   withWorktreePath?: string;
 }
 
-/** The container that published a port (SPEC-42 D13). */
+/** The container that published a port (SPEC-ports-global-view D13). */
 export interface PortDockerDTO {
   /** Container name as `docker ps` reports it. */
   container: string;
@@ -406,7 +406,7 @@ export interface PortsSnapshotDTO {
 }
 
 /**
- * One renderable document inside a worktree (SPEC-46).
+ * One renderable document inside a worktree (SPEC-doc-preview).
  *
  * The index is an **allowlist** of doc roots (`mockups/`, `docs/`, root `*.md`),
  * not a file tree (D1): a tree invites traversal and buries the four
@@ -424,7 +424,7 @@ export interface DocDTO {
   /**
    * A **human** name, extracted from the file (D4): `<title>` for HTML, the
    * first ATX heading for markdown, and the basename only as a last resort.
-   * `2026-08-07-SPEC-44-ports-forward.md` is unreadable on a 375 pt row.
+   * `20260807-004400-SPEC-ports-forward.md` is unreadable on a 375 pt row.
    */
   title: string;
   kind: "md" | "html";
@@ -464,7 +464,7 @@ export interface DocsSnapshotDTO {
 }
 
 /**
- * An active publication of one document over the tailnet (SPEC-46 D9).
+ * An active publication of one document over the tailnet (SPEC-doc-preview D9).
  *
  * A URL that must open in Safari cannot carry a bearer *header*, so the
  * capability lives in the path: `/docs/<grantId>/<relPath>`. Publishing is
@@ -487,7 +487,7 @@ export interface DocGrantDTO {
 
 /**
  * The endpoint the user confirmed killing, captured from the row they saw
- * (SPEC-43 D1/D8).
+ * (SPEC-ports-kill D1/D8).
  */
 export interface PortKillTarget {
   address: string;
@@ -503,7 +503,7 @@ export interface PortKillTarget {
 }
 
 /**
- * Terminal outcome of one kill (SPEC-43 D2/D3).
+ * Terminal outcome of one kill (SPEC-ports-kill D2/D3).
  *
  * Refusals are OUTCOMES, not `err` frames: each one gets its own sentence in the
  * UI ("that process changed since you looked — rescan"), which a generic error
@@ -540,7 +540,7 @@ export interface PortKillResult {
 }
 
 /**
- * SPEC-44 D3: permission to proxy one loopback port to one device, for a while.
+ * SPEC-ports-forward D3: permission to proxy one loopback port to one device, for a while.
  *
  * `grantId` is a ROUTING key, not a capability: every proxied request still
  * carries the paired-device bearer, and the grant must belong to that device.
@@ -595,7 +595,7 @@ export interface SessionEvent {
 }
 
 /**
- * One attachment as it arrives on `send.message` (SPEC-33).
+ * One attachment as it arrives on `send.message` (SPEC-user-attachments).
  *
  * Deliberately just an id plus a display hint: the bytes were already uploaded
  * to the content-addressed store via `POST /media`, so the id is sufficient and
@@ -609,7 +609,7 @@ export interface WireAttachment {
 }
 
 /**
- * Generic, category-tagged session config model (SPEC-26). Mirrors ACP v1's
+ * Generic, category-tagged session config model (SPEC-acp-config-options-unified-composer). Mirrors ACP v1's
  * Session Config Options and the codex app-server projection: the composer
  * renders this ONE list (ordered by agent priority) instead of the bespoke
  * model/thinking/mode widgets. Carried on `session.meta` as `configOptions`,
@@ -662,7 +662,7 @@ export function isBusy(status: SessionStatus): boolean {
 export type ApprovalPolicy = "yolo" | "ask-on-risky" | "ask-always";
 
 /**
- * One message waiting to be delivered when the agent next goes idle (SPEC-35).
+ * One message waiting to be delivered when the agent next goes idle (SPEC-mid-turn-steering-and-queue).
  * Attachments are reported as a count, not as descriptors: the chip only needs
  * to say "and an image", and the bytes are already safe in the media store.
  */
@@ -681,7 +681,7 @@ export interface ProjectDTO {
   pinned: boolean;
   lastActivityAt: number;
   /**
-   * Per-repo settings, VERBATIM as persisted (SPEC-48).
+   * Per-repo settings, VERBATIM as persisted (SPEC-per-repo-settings).
    *
    * The key names are the stored ones -- `provider` and `logoHue`, not `gitProvider`
    * and `logo`. They differed until a review caught it, and a cast in the manager hid
@@ -759,7 +759,7 @@ export interface PullRequestDTO {
  * stats are measured against the repo's default branch; `pr` is present only
  * when an open GitHub PR heads this branch. `sessionIds` links the makit
  * sessions bound to this worktree — drafts included (their worktree is resolved
- * before the spawn), closed ones excluded (SPEC-29 hides those everywhere else,
+ * before the spawn), closed ones excluded (SPEC-session-lifecycle-resume-list-delete hides those everywhere else,
  * so their ids would resolve to nothing here).
  */
 export interface WorktreeDTO {
@@ -885,7 +885,7 @@ export interface SessionDTO {
   status: SessionStatus;
   policy: ApprovalPolicy;
   /**
-   * Epoch ms the session was created (SPEC-47 D12). Optional on the wire so a
+   * Epoch ms the session was created (SPEC-session-timings D12). Optional on the wire so a
    * newer app paired with an older server renders no age rather than a
    * fabricated one derived from an epoch-0 default.
    */
@@ -894,7 +894,7 @@ export interface SessionDTO {
   lastPreview: string;
   /**
    * Messages the user submitted while the agent was busy that this back end
-   * could not steer into the running turn (SPEC-35), oldest first. They are
+   * could not steer into the running turn (SPEC-mid-turn-steering-and-queue), oldest first. They are
    * delivered one per idle transition and are NOT in the event log until then,
    * so a cancelled one leaves no transcript trace. Carried on the DTO rather
    * than as an event kind precisely because it is live state: it must not
@@ -915,53 +915,53 @@ export interface SessionDTO {
   /**
    * True when this session can be brought back to a live agent after a server
    * restart — it has a persisted native session/thread id and its back end
-   * supports resume/load (SPEC-29). Cold resumable sessions are auto-attached
+   * supports resume/load (SPEC-session-lifecycle-resume-list-delete). Cold resumable sessions are auto-attached
    * by the app on subscribe; non-resumable cold sessions stay read-only.
    */
   resumable: boolean;
   /**
-   * Closed (SPEC-29): a soft, recoverable hide. Closed sessions are omitted
+   * Closed (SPEC-session-lifecycle-resume-list-delete): a soft, recoverable hide. Closed sessions are omitted
    * from the active `sessions.snapshot`; this flag is present for any surface
    * that explicitly lists closed sessions.
    */
   closed: boolean;
   /**
-   * Orphaned (SPEC-29): a closed session whose recorded worktree is no longer
+   * Orphaned (SPEC-session-lifecycle-resume-list-delete): a closed session whose recorded worktree is no longer
    * an active worktree of its project (e.g. the worktree was removed). Only set
    * on the `session.listClosed` result; undefined elsewhere. The branch ref
    * usually still exists, so resume can offer to recreate the worktree.
    */
   orphaned?: boolean;
   /**
-   * SPEC-46 lineage (D10). The session this one was handed off / spawned from,
+   * SPEC-cli-as-client lineage (D10). The session this one was handed off / spawned from,
    * **derived server-side from the spawning credential** (D9) and never taken
    * from the wire — a body `parentId` that disagrees with the caller's own
    * session is refused. Absent for a session with no parent (every session
-   * created before SPEC-46, and every one the app spawns).
+   * created before SPEC-cli-as-client, and every one the app spawns).
    */
   parentId?: string;
-  /** SPEC-46 (D10): why the handoff happened, as written by the outgoing agent. */
+  /** SPEC-cli-as-client (D10): why the handoff happened, as written by the outgoing agent. */
   handoffReason?: string;
-  /** SPEC-46 (D10): which client created this session. Absent means "app" (pre-SPEC-46 rows). */
+  /** SPEC-cli-as-client (D10): which client created this session. Absent means "app" (pre-SPEC-cli-as-client rows). */
   origin?: SessionOrigin;
   /**
    * The underlying agent's OWN session id — the native ACP `sessionId` or codex
-   * `threadId` (SPEC-52 D1). For pi this is pi's own session uuid, because
+   * `threadId` (SPEC-session-identity D1). For pi this is pi's own session uuid, because
    * `pi-acp` reuses it as the ACP session id, so it is exactly the value pi's
    * `/session` prints and `pi --session` accepts.
    *
    * Optional on the wire, deliberately: a newer app paired with an older server
    * must render one fewer row rather than a fabricated one. Same rule as
-   * `createdAt` (SPEC-47 D12). Undefined for a draft and for a back end with no
+   * `createdAt` (SPEC-session-timings D12). Undefined for a draft and for a back end with no
    * native session concept (`DetachedAdapter`, the stub).
    *
-   * Already persisted through `SessionMeta` (SPEC-29), so a CLOSED session still
+   * Already persisted through `SessionMeta` (SPEC-session-lifecycle-resume-list-delete), so a CLOSED session still
    * reports it — which is the point: yesterday's session id is still copyable.
    */
   agentSessionId?: string;
   /**
    * Absolute path to this session's transcript on the SERVER's host, or
-   * undefined when none was resolved (SPEC-52 D3).
+   * undefined when none was resolved (SPEC-session-identity D3).
    *
    * Resolved server-side only (D2): the slug algorithm is pi's and lives in
    * `pi-sessions.ts`, and the app cannot stat this filesystem to check itself.
@@ -977,15 +977,15 @@ export interface SessionDTO {
 }
 
 /**
- * SPEC-46 (D10): who created a session. Persisted on `SessionMeta` and carried
+ * SPEC-cli-as-client (D10): who created a session. Persisted on `SessionMeta` and carried
  * on `SessionDTO` so the app can caption "handed off from …" without a second
- * lookup. Absent (rather than `"app"`) on rows written before SPEC-46 — the
+ * lookup. Absent (rather than `"app"`) on rows written before SPEC-cli-as-client — the
  * migration does not backfill, because guessing an origin is worse than none.
  */
 export type SessionOrigin = "app" | "cli" | "agent";
 
 /**
- * SPEC-46 (D2/D3/D17): what a credential is allowed to do.
+ * SPEC-cli-as-client (D2/D3/D17): what a credential is allowed to do.
  *
  * A device with **no** `caps` is full access — that is what every already-paired
  * phone is, and the absence is load-bearing: adding `caps` must not retroactively
@@ -1011,7 +1011,7 @@ export const newId = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${
  * and omitted `session.action`, `session.setAgent`, `worktree.create`,
  * `session.list`, `project.*`, and `debug.*`.
  *
- * SPEC-07: `push.register` — the phone registers its content-free wake push
+ * SPEC-background-wake-notifications: `push.register` — the phone registers its content-free wake push
  * token: `cmd {kind:'push.register', token, platform, env?}`. The server
  * persists it per-device in `~/.makit/devices.json` so the WakeCoordinator can
  * wake a force-quit/suspended device. The payload NEVER carries session data.
@@ -1030,7 +1030,7 @@ export type CmdKind =
   | "session.listClosed"
   | "session.setAgent"
   /**
-   * SPEC-46 (D5/C3): a **bounded** read of a session's event log —
+   * SPEC-cli-as-client (D5/C3): a **bounded** read of a session's event log —
    * `{kind:'session.transcript', sessionId, limit}` → `ack {events}` with the
    * last `limit` events, oldest-first. Exists because `sub {fromSeq}` cannot
    * bound a tail: it takes no limit, no DTO publishes a latest seq to subtract
@@ -1038,13 +1038,13 @@ export type CmdKind =
    * filter runs. `makit handoff --carry last:N` is the caller.
    */
   | "session.transcript"
-  /** Drop ONE pending mid-turn message by `queuedId` (SPEC-35). */
+  /** Drop ONE pending mid-turn message by `queuedId` (SPEC-mid-turn-steering-and-queue). */
   | "queue.cancel"
-  /** Edit a pending mid-turn message; empty text cancels it (SPEC-38). */
+  /** Edit a pending mid-turn message; empty text cancels it (SPEC-pending-queue-edit-reorder). */
   | "queue.update"
-  /** Reorder the pending messages; `ids` is a hint, not an assertion (SPEC-38). */
+  /** Reorder the pending messages; `ids` is a hint, not an assertion (SPEC-pending-queue-edit-reorder). */
   | "queue.reorder"
-  /** Interrupt the turn so ONE pending message is delivered next (SPEC-39). */
+  /** Interrupt the turn so ONE pending message is delivered next (SPEC-queue-tray-and-promote). */
   | "queue.promote"
   // repos / projects / worktrees
   | "worktree.create"
@@ -1069,59 +1069,59 @@ export type CmdKind =
   | "agents.list"
   | "agents.refresh"
   /**
-   * SPEC-41: hold/release the host-wide port scan. `{kind:'ports.watch', on}` —
+   * SPEC-open-ports: hold/release the host-wide port scan. `{kind:'ports.watch', on}` —
    * nothing is scanned while no client is watching.
    */
   | "ports.watch"
   /**
-   * SPEC-46: hold/release the host-wide document index. Ref-counted exactly
+   * SPEC-doc-preview: hold/release the host-wide document index. Ref-counted exactly
    * like `ports.watch` — nothing is walked while no client is watching.
    */
   | "docs.watch"
   /**
-   * SPEC-46: read one markdown document's text over this channel (D7). Errors
+   * SPEC-doc-preview: read one markdown document's text over this channel (D7). Errors
    * for `kind === "html"`, which is only useful once a browser engine renders
    * it. `{kind:'docs.read', worktreePath, relPath}`.
    */
   | "docs.read"
   /**
-   * SPEC-46 D8 rev 2: open the document on the machine holding it, via the
+   * SPEC-doc-preview D8 rev 2: open the document on the machine holding it, via the
    * host's OS opener. **Local clients only** — a remote client cannot be served
    * this way and must publish instead. `{kind:'docs.open', worktreePath, relPath}`.
    */
   | "docs.open"
-  /** SPEC-46: publish one document over the tailnet, returning a {@link DocGrantDTO}. */
+  /** SPEC-doc-preview: publish one document over the tailnet, returning a {@link DocGrantDTO}. */
   | "docs.publish"
-  /** SPEC-46: revoke a publication by `grantId`. */
+  /** SPEC-doc-preview: revoke a publication by `grantId`. */
   | "docs.unpublish"
-  /** SPEC-46: list active publications, so the app can say "3 docs are shared". */
+  /** SPEC-doc-preview: list active publications, so the app can say "3 docs are shared". */
   | "docs.grants"
   /**
-   * SPEC-43: terminate ONE listening process the user is looking at. Carries the
+   * SPEC-ports-kill: terminate ONE listening process the user is looking at. Carries the
    * full identity tuple captured from the row it displayed
    * ({@link PortKillTarget}); the server re-verifies that tuple on a FRESH scan
    * before signalling (D1) and refuses on any mismatch. Request/ack — the ack
    * body carries a {@link PortKillResult}.
    */
   | "ports.kill"
-  /** SPEC-43 P3b: kill every listener currently classified as an orphan (D5). */
+  /** SPEC-ports-kill P3b: kill every listener currently classified as an orphan (D5). */
   | "ports.killOrphans"
   /**
-   * SPEC-44 P4a: opt in/out of a "stopped listening" alert for one endpoint.
+   * SPEC-ports-forward P4a: opt in/out of a "stopped listening" alert for one endpoint.
    * `{worktreePath, port, on}`; acks after the store write. Identified by
    * `(worktreePath, port)` (D7) because that is what survives a dev-server
    * restart — which is the whole point of watching it.
    */
   | "ports.watchPort"
   /**
-   * SPEC-44 P4b: mint a {@link ForwardGrantDTO} for one loopback port so this
+   * SPEC-ports-forward P4b: mint a {@link ForwardGrantDTO} for one loopback port so this
    * device can preview it. `{worktreePath, port, browser?}`; refused (with a
    * reason) for anything that is not a worktree-owned, HTTP-answering loopback
    * port. `browser:true` mints a grant the system browser can use (its id is then
    * the capability — see {@link ForwardGrantDTO.browser}).
    */
   | "ports.forward"
-  /** SPEC-44 P4b: revoke a grant early. `{grantId}`; always acks. */
+  /** SPEC-ports-forward P4b: revoke a grant early. `{grantId}`; always acks. */
   | "ports.forward.stop"
   | "push.register"
   | "client.log"

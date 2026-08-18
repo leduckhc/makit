@@ -1,5 +1,5 @@
 /**
- * SPEC-46 T20 / D13 — the audience ladder, stored eligibility, and response
+ * SPEC-cli-as-client T20 / D13 — the audience ladder, stored eligibility, and response
  * authorization.
  *
  * The ladder routes a stranded prompt (an agent-spawned session nobody has on a

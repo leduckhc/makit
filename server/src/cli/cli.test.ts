@@ -1,5 +1,5 @@
 /**
- * Unit tests for SPEC-02 CLI subcommands.
+ * Unit tests for SPEC-cli-client-subcommands CLI subcommands.
  *
  * Tests cover:
  *  - argv parsing for each subcommand

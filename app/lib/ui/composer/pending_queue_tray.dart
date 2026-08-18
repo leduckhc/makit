@@ -75,7 +75,7 @@ class PendingQueueTray extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: kSpace4),
         // Bounded like the bubbles, and for the same reason: on the phone this
         // floats over the transcript, and the transcript's bottom pad cannot grow
-        // to compensate without shifting what the user is reading (SPEC-21). Not
+        // to compensate without shifting what the user is reading (SPEC-chat-scroll-anchoring). Not
         // reversed: rows are oldest-first, so the top of the viewport is the row
         // that sends next.
         child: ConstrainedBox(
@@ -243,7 +243,7 @@ class _TrayRowState extends State<TrayRow> {
                   _ctrl!.text,
                   widget.commands,
                   // Agent commands only — client commands run NOW, and this
-                  // message runs later (SPEC-38).
+                  // message runs later (SPEC-pending-queue-edit-reorder).
                   includeBuiltins: false,
                 ),
                 selectedIndex: 0,

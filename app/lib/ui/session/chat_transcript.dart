@@ -114,7 +114,7 @@ Widget chatItemWidget(
   ChatItem item, {
   int position = -1,
 }) => switch (item) {
-  // SPEC-34: a pass-through unless active — the landing highlight after a jump.
+  // SPEC-message-navigator: a pass-through unless active — the landing highlight after a jump.
   UserMessageItem() => JumpFlashHighlight(
     sessionId: sessionId,
     position: position,
@@ -122,15 +122,15 @@ Widget chatItemWidget(
       text: item.text,
       ts: item.ts,
       attachments: item.attachments,
-      // SPEC-35: captions a message that went into the running turn.
+      // SPEC-mid-turn-steering-and-queue: captions a message that went into the running turn.
       steered: item.steered,
     ),
   ),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
-  // SPEC-47 D9: the dim line that closes a turn. Static text derived from
+  // SPEC-session-timings D9: the dim line that closes a turn. Static text derived from
   // timestamps, so it renders identically in a closed transcript (D19).
   TurnReceiptItem() => TurnReceipt(item: item),
-  // An image/GIF the agent produced (SPEC-22) — the one thing a terminal
+  // An image/GIF the agent produced (SPEC-assistant-display-media) — the one thing a terminal
   // client can't show. Rendered inline, tap for fullscreen.
   AgentMediaItem() => AgentMediaView(item: item),
   ThinkingItem() => ThinkingLine(
@@ -141,7 +141,7 @@ Widget chatItemWidget(
     streaming: item.streaming,
   ),
   // An answered askUserQuestion settles into a quiet resolved card (chosen
-  // highlighted, rest dimmed) rather than a foldable tool row (SPEC-25 #1).
+  // highlighted, rest dimmed) rather than a foldable tool row (SPEC-ask-user-inline-in-chat #1).
   ToolCallItem() when _isAnsweredAsk(item) => AnsweredAskCard(item: item),
   ToolCallItem() => ToolCallCard(
     item: item,
@@ -212,11 +212,11 @@ TranscriptTrailer trailerFor({required bool running, required bool awaiting}) =>
     ? TranscriptTrailer.ask
     : (running ? TranscriptTrailer.working : TranscriptTrailer.none);
 
-/// The trailing row's content, shared by both surfaces (SPEC-38).
+/// The trailing row's content, shared by both surfaces (SPEC-pending-queue-edit-reorder).
 ///
 /// Beyond the ask card / working indicator it also hosts the **inline** pending
 /// queue, which is why the queue needs no synthetic entries in [foldEvents]: the
-/// trailer is already a non-event row that SPEC-21's anchoring and SPEC-34's
+/// trailer is already a non-event row that SPEC-chat-scroll-anchoring's anchoring and SPEC-message-navigator's
 /// key→index map both account for.
 ///
 /// Order is deliberate — pending messages sit ABOVE the ask/working row, so the
@@ -245,7 +245,7 @@ class ThinkingLine extends ConsumerWidget {
   /// This row's identity in [expandedTranscriptRowsProvider].
   final String expansionKey;
 
-  /// When reasoning started (SPEC-47 D7), or null when unknown (previews/tests
+  /// When reasoning started (SPEC-session-timings D7), or null when unknown (previews/tests
   /// that render a bare line). With [lastTs]/[streaming] it drives the leading
   /// `Thought for 12s` / `Thinking … 41s` label.
   final int? startTs;
@@ -363,7 +363,7 @@ class ThinkingLine extends ConsumerWidget {
     );
   }
 
-  /// The leading `Thought for 12s` / `Thinking … 41s` label (SPEC-47 D7). Always
+  /// The leading `Thought for 12s` / `Thinking … 41s` label (SPEC-session-timings D7). Always
   /// shown (min `1s`), and — unlike the preview text — in `onSurfaceVariant` at
   /// FULL opacity, never the pre-existing 0.65 alpha that fails AA (D9b).
   Widget? _durationLabel(BuildContext context, WidgetRef ref) {
@@ -443,7 +443,7 @@ class ErrorBanner extends StatelessWidget {
 /// the surface ([transcriptRow]).
 class WorkingIndicator extends ConsumerStatefulWidget {
   /// Creates the indicator. When [sessionId] is set, a live turn counter is
-  /// shown beside the word (SPEC-47 D8).
+  /// shown beside the word (SPEC-session-timings D8).
   const WorkingIndicator({super.key, this.sessionId});
 
   /// The running session, so the counter can read its open turn's start.
@@ -515,7 +515,7 @@ class _WorkingIndicatorState extends ConsumerState<WorkingIndicator> {
     );
   }
 
-  /// The live turn counter (SPEC-47 D8): `47s` beside the word, off the shared
+  /// The live turn counter (SPEC-session-timings D8): `47s` beside the word, off the shared
   /// second-cadence ticker (D5). No 60 s escalation — a long turn is normal (D6).
   /// Null when there is no session or no open turn.
   Widget? _turnCounter(BuildContext context, ColorScheme cs) {

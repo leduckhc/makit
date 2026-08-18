@@ -1,5 +1,5 @@
 /**
- * Shared harness for the SPEC-46 session-verb CLI tests (`send`, `tail`,
+ * Shared harness for the SPEC-cli-as-client session-verb CLI tests (`send`, `tail`,
  * `resume`, `rm`, …).
  *
  * Every one of these verbs is a client of `cli/client.ts`, so every one of

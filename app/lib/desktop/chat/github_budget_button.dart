@@ -1,4 +1,4 @@
-/// SPEC-32 §7 — the desktop sidebar footer's GitHub API budget indicator.
+/// SPEC-github-gateway-and-budget §7 — the desktop sidebar footer's GitHub API budget indicator.
 ///
 /// A single [IconButton] (the GitHub mark, coloured by budget level) that opens
 /// an anchored popover explaining where the hourly quota went — including the

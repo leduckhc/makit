@@ -1,4 +1,4 @@
-/// SPEC-30 — the group tab strip: a horizontally scrolling rail of group tabs
+/// SPEC-tab-groups — the group tab strip: a horizontally scrolling rail of group tabs
 /// (swatch · label · live dot · count · ✕) plus a trailing `+` menu for a new
 /// board or reopening a recently-closed one.
 ///
@@ -102,7 +102,7 @@ class _GroupTab extends ConsumerWidget {
 
   final bool active;
 
-  /// SPEC-51 — this is the disposable group: the next branch click replaces it.
+  /// SPEC-preview-groups — this is the disposable group: the next branch click replaces it.
   final bool preview;
 
   @override
@@ -138,7 +138,7 @@ class _GroupTab extends ConsumerWidget {
       child: GestureDetector(
         // Boards are user-named, so a board tab offers Rename on right-click /
         // long-press. A worktree group's label is its branch — not editable, but
-        // a *preview* worktree tab offers the Keep gesture (SPEC-51 decision 4).
+        // a *preview* worktree tab offers the Keep gesture (SPEC-preview-groups decision 4).
         onSecondaryTapDown: isBoard || preview
             ? (d) => _showTabMenu(context, ref, d.globalPosition)
             : null,
@@ -216,7 +216,7 @@ class _GroupTab extends ConsumerWidget {
   }
 
   /// Right-click / long-press menu: Rename for a **board**, Keep for a
-  /// **preview** worktree tab (SPEC-51 decision 4). One menu rather than two
+  /// **preview** worktree tab (SPEC-preview-groups decision 4). One menu rather than two
   /// builders, so a tab that is both offers both items in a fixed order.
   Future<void> _showTabMenu(
     BuildContext context,

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Full-stack desktop control-plane e2e (SPEC-03). Boots the real daemon control
+# Full-stack desktop control-plane e2e (SPEC-desktop-control-app). Boots the real daemon control
 # socket (server/test/e2e-control-server.ts, StubAdapter — no real pi) and runs
 # the real macOS desktop app against it (integration_test/desktop/). Counterpart
 # to tool/e2e.sh, which does the mobile WS stack on an iOS simulator.

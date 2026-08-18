@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D1 rev 2: the candidate list for a worktree's doc index.
+ * makit — SPEC-doc-preview D1 rev 2: the candidate list for a worktree's doc index.
  *
  * rev 1 walked an allowlist (`mockups/`, `docs/`, plus root `*.md`). That was
  * tuned for *this* repo and generalises badly — a project keeping its docs in

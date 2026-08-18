@@ -1,5 +1,5 @@
 /**
- * Lane-1 (SPEC-27) `agents.list` / `agents.refresh` handler tests: the session
+ * Lane-1 (SPEC-new-session-config-at-spawn) `agents.list` / `agents.refresh` handler tests: the session
  * command registrars serve enriched descriptors from the capability cache and
  * `agents.refresh` forces a re-probe. Uses the real {@link CommandRouter} with
  * a minimal fake manager (only the two methods these handlers call).

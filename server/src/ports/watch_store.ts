@@ -1,5 +1,5 @@
 /**
- * watch_store — pure persistence for watched ports (SPEC-44 D7).
+ * watch_store — pure persistence for watched ports (SPEC-ports-forward D7).
  *
  * `$MAKIT_HOME/watched-ports.json` (override `MAKIT_WATCHED_PORTS_FILE`), shaped
  * as a flat array of `{worktreePath, port}`. Mirrors `history_store.ts` /
@@ -8,7 +8,7 @@
  * write failure is logged and swallowed.
  *
  * The identity is `(worktreePath, port)` and deliberately NOT the snapshot `key`:
- * SPEC-41 D6 forbids persisting `<pid>:<address>:<port>` because pids are reused
+ * SPEC-open-ports D6 forbids persisting `<pid>:<address>:<port>` because pids are reused
  * and a restart changes the pid for the same endpoint — and surviving a
  * dev-server restart is the entire point of watching one.
  */

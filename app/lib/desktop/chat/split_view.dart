@@ -682,7 +682,7 @@ class _TabChip extends ConsumerWidget {
     if (overlayState == null) return;
     final overlayBox = overlayState.context.findRenderObject();
     if (overlayBox is! RenderBox) return;
-    // Resolved before the `showMenu` await (SPEC-48 D3): `ref` dies with its
+    // Resolved before the `showMenu` await (SPEC-status-and-activity D3): `ref` dies with its
     // widget, and the copy path reports its outcome after an await.
     final status = ref.status;
     // The identity is hoisted for the SAME reason, and it is not optional care:
@@ -696,7 +696,7 @@ class _TabChip extends ConsumerWidget {
     // is sub-second for a right-click → click, and it is the RIGHT trade here:
     // the live-filling surface is the panel, which watches (D19). Rejected
     // alternative: guarding the late read with `context.mounted`, which keeps the
-    // read fresh but leaves `ref` use after an await — the hazard SPEC-48 D3
+    // read fresh but leaves `ref` use after an await — the hazard SPEC-status-and-activity D3
     // exists to remove.
     final identity = ref.read(sessionIdentityProvider(sessionId));
     final selected = await showMenu<String>(

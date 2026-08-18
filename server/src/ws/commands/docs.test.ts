@@ -216,7 +216,7 @@ test("docs.grants acks the current grant list", async () => {
   assert.equal(ack.grants[0]!.grantId, "g1");
 });
 
-// --- scoping of client-supplied identifiers (SPEC-44 owner model) ---
+// --- scoping of client-supplied identifiers (SPEC-ports-forward owner model) ---
 
 // A worktreePath the index never reported must be refused before it reaches the
 // filesystem — type-checking the value is not the same as trusting it.

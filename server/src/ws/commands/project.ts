@@ -1,5 +1,5 @@
 /**
- * Project-domain `cmd` handlers (SPEC-19, moved verbatim from server.ts's
+ * Project-domain `cmd` handlers (SPEC-decomposition-and-dedup, moved verbatim from server.ts's
  * `buildCommandRouter`): project.browse, project.add, project.remove.
  */
 
