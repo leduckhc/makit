@@ -6,7 +6,7 @@ description: Wire, verify, or debug computer use (cua-driver desktop control) in
 
 makit writes no desktop-driving code. It points both agents at the external
 [`cua-driver`](https://github.com/trycua/cua) binary over stdio MCP. Design rationale lives
-in [`docs/specs/2026-08-04-SPEC-36-computer-use.md`](../../docs/specs/2026-08-04-SPEC-36-computer-use.md).
+in [`docs/specs/20260804-003600-SPEC-computer-use.md`](../../../docs/specs/20260804-003600-SPEC-computer-use.md).
 
 ## Contents
 - [Two routes, one per agent](#two-routes-one-per-agent)
@@ -24,7 +24,7 @@ in [`docs/specs/2026-08-04-SPEC-36-computer-use.md`](../../docs/specs/2026-08-04
 
 Screenshots reach the phone on both paths: `CodexEventMapper` and `AcpEventMapper` ingest
 image blocks from MCP tool results into the media store via the shared
-`server/src/adapters/tool_media.ts` (SPEC-22).
+`server/src/adapters/tool_media.ts` (SPEC-assistant-display-media).
 
 ## Enable it
 
