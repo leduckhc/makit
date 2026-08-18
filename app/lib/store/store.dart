@@ -10,6 +10,7 @@ import '../transport/ws_client.dart';
 import 'cached_commands.dart';
 import 'connection.dart';
 import 'docs.dart';
+import 'event_batcher.dart';
 import 'metrics.dart';
 import 'models.dart';
 import 'ports.dart';
@@ -320,9 +321,18 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
 }
 
 class StoreController extends StateNotifier<StoreState> {
-  StoreController(this._ref, {int Function()? nowMs})
-    : _nowMs = nowMs ?? _deviceNowMs,
-      super(StoreState.empty()) {
+  StoreController(
+    this._ref, {
+    int Function()? nowMs,
+    Duration batchWindow = kDefaultBatchWindow,
+    FlushScheduler? batchSchedule,
+  }) : _nowMs = nowMs ?? _deviceNowMs,
+       super(StoreState.empty()) {
+    _batcher = EventBatcher(
+      onFlush: _applyLiveBatch,
+      window: batchWindow,
+      schedule: batchSchedule,
+    );
     _sub = _ref
         .read(connectionControllerProvider.notifier)
         .incoming
@@ -350,6 +360,10 @@ class StoreController extends StateNotifier<StoreState> {
       final prevId = prev?.activeServer?.id;
       final nextId = next.activeServer?.id;
       if (prevId != nextId) {
+        // Before anything else: the events waiting for a flush describe the old
+        // server's sessions. Applying them into the cleared store would
+        // resurrect one session of a desktop the user just left.
+        _batcher.drop();
         _subscribed.clear();
         _awaitingReplay.clear();
         _replayBuffer.clear();
@@ -411,6 +425,10 @@ class StoreController extends StateNotifier<StoreState> {
 
   final Ref _ref;
   StreamSubscription<Envelope>? _sub;
+
+  /// Collects live events and applies them in one batch per window. See
+  /// [EventBatcher] for why one update per token is too expensive.
+  late final EventBatcher _batcher;
 
   /// The device wall clock in epoch ms. Injected so tests can pin "now" while
   /// asserting the server-clock offset (SPEC-session-timings D15).
@@ -482,12 +500,32 @@ class StoreController extends StateNotifier<StoreState> {
       );
       return;
     }
-    state = reduce(state, decoded);
     if (decoded is SessionEventFrame) {
-      // Live branch only (a buffered replay returned above): correct the clock
-      // from this event's server `ts` (D15).
-      _serverClockOffset = decoded.event.ts - _nowMs();
-      _cacheCommands(decoded.event);
+      // Live event: collect it. [_applyLiveBatch] does the folding once the
+      // window closes.
+      _batcher.add(decoded.event);
+      return;
+    }
+    // Any other frame carries state the events must already be behind — a
+    // sessions snapshot, a budget, a ports list. Apply the pending batch first
+    // so the store never reads a cursor that lags the events it holds.
+    _batcher.flush();
+    state = reduce(state, decoded);
+  }
+
+  /// Apply one window's worth of live events in a single state update.
+  void _applyLiveBatch(List<SessionEvent> batch) {
+    var next = state;
+    for (final e in batch) {
+      next = reduceEvent(next, e);
+    }
+    state = next;
+    // D15: correct the clock from the newest live event of the batch. The window
+    // adds at most its own length to the reading, and the counters it feeds have
+    // a one-second granularity.
+    _serverClockOffset = batch.last.ts - _nowMs();
+    for (final e in batch) {
+      _cacheCommands(e);
     }
   }
 
@@ -527,6 +565,9 @@ class StoreController extends StateNotifier<StoreState> {
   /// Apply the buffered replay for [sessionId] in a single state assignment,
   /// then resume immediate folding for its live events.
   void _flushReplay(String sessionId) {
+    // Live events of OTHER sessions may wait for their window. Apply them first
+    // so a full-history replay cannot install a cursor ahead of them.
+    _batcher.flush();
     _awaitingReplay.remove(sessionId);
     final buffered = _replayBuffer.remove(sessionId);
     final full = _fullReplay.remove(sessionId);
@@ -591,6 +632,9 @@ class StoreController extends StateNotifier<StoreState> {
   }
 
   void _sendSub(String sessionId) {
+    // The cursor decides how much history to ask for, so it must count every
+    // event this client already holds — including a batch still in its window.
+    _batcher.flush();
     // Include the last-seen seq so the server replays only newer events on
     // reconnect instead of the whole history — but only once we hold that
     // history contiguously, or the cursor an auto-mirrored session advanced for
@@ -619,6 +663,10 @@ class StoreController extends StateNotifier<StoreState> {
     String text, {
     List<MediaAttachmentRef> attachments = const [],
   }) {
+    // The bubble takes the seq after the cursor, so every event this client has
+    // must be applied first — a batch inside its window included, or the guessed
+    // seq collides with a token that already arrived.
+    _batcher.flush();
     // Replay events have not advanced the public cursor yet, so assigning the
     // next seq here could collide with buffered history. The command still goes
     // to the server; its real user.message echo is ordered after the sub ack and
@@ -1382,6 +1430,7 @@ class StoreController extends StateNotifier<StoreState> {
 
   @override
   void dispose() {
+    _batcher.dispose();
     _sub?.cancel();
     super.dispose();
   }

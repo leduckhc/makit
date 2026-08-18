@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/store/event_batcher.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
@@ -74,6 +75,12 @@ class _Storage implements SecureStore {
   Future<void> delete({required String key}) async => data.remove(key);
 }
 
+/// Live events land one batch per window (see `EventBatcher`). Give the window
+/// time to close before asserting.
+Future<void> settleLiveBatch() => Future<void>.delayed(
+  kDefaultBatchWindow + const Duration(milliseconds: 10),
+);
+
 void main() {
   const deviceNow = 1_000_000;
 
@@ -132,7 +139,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     transport.pushEvent(1, deviceNow + 30000); // server is 30s ahead
-    await Future<void>.delayed(Duration.zero);
+    await settleLiveBatch();
 
     expect(store.serverClockOffset, 30000);
     expect(store.serverNowMs(), deviceNow + 30000);
@@ -158,7 +165,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     transport.pushEvent(1, deviceNow + 30000);
-    await Future<void>.delayed(Duration.zero);
+    await settleLiveBatch();
     expect(store.serverClockOffset, 30000);
 
     await container.read(connectionControllerProvider.notifier).switchTo(fpB);

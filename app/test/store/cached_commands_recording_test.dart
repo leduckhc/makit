@@ -9,6 +9,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/store/event_batcher.dart';
 import 'package:makit/store/cached_commands.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/secure_store.dart';
@@ -120,6 +121,12 @@ Map<String, dynamic> _session({
   return (container: container, transport: transport);
 }
 
+/// Live events land one batch per window (see `EventBatcher`). Give the window
+/// time to close before asserting.
+Future<void> settleLiveBatch() => Future<void>.delayed(
+  kDefaultBatchWindow + const Duration(milliseconds: 10),
+);
+
 void main() {
   test(
     'session.commands is cached under the session agent + project',
@@ -140,7 +147,7 @@ void main() {
           },
         ],
       );
-      await Future<void>.delayed(Duration.zero);
+      await settleLiveBatch();
 
       final cache = h.container.read(cachedCommandsControllerProvider.notifier);
       expect(cache.commandsFor('zed', 'p1').map((c) => c.name), [
