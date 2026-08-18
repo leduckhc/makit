@@ -7,7 +7,7 @@
  * Node ≥ 22.5 and is stable on the project's Node floor.
  */
 
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type { SessionEvent } from "../protocol.js";
 import type { EventStore, NewEvent, SessionMeta } from "./event_store.js";
 
@@ -15,12 +15,44 @@ export class SqliteEventStore implements EventStore {
   private readonly db: DatabaseSync;
   /** Next seq per session — avoids a MAX(seq) query on every append. */
   private readonly nextSeq = new Map<string, number>();
+  /**
+   * Prepared statements by SQL text. Every write used to call `db.prepare`, so
+   * an agent streaming a turn recompiled the same two statements per token.
+   */
+  private readonly statements = new Map<string, StatementSync>();
 
   constructor(path = ":memory:") {
     this.db = new DatabaseSync(path);
     this.db.exec("PRAGMA journal_mode = WAL;");
+    // WAL + NORMAL is the pairing WAL exists for: a commit writes to the log and
+    // returns, and the OS flushes it. The default FULL fsyncs EVERY commit, which
+    // an agent streaming tokens pays per event. NORMAL risks only the last
+    // commits in an OS crash or power loss — never in a process crash — and this
+    // log is a transcript, not a ledger.
+    this.db.exec("PRAGMA synchronous = NORMAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.migrate();
+  }
+
+  /** A prepared statement for [sql], compiled once per store. */
+  private stmt(sql: string): StatementSync {
+    let s = this.statements.get(sql);
+    if (s === undefined) {
+      s = this.db.prepare(sql);
+      this.statements.set(sql, s);
+    }
+    return s;
+  }
+
+  /** How many distinct statements this store has compiled (for the test). */
+  get compiledStatementCount(): number {
+    return this.statements.size;
+  }
+
+  /** Read one pragma, as a string. For the tests that pin the write path. */
+  pragma(name: string): string {
+    const row = this.db.prepare(`PRAGMA ${name}`).get() as Record<string, unknown> | undefined;
+    return String(Object.values(row ?? {})[0] ?? "");
   }
 
   private migrate(): void {
@@ -97,9 +129,9 @@ export class SqliteEventStore implements EventStore {
   reserveSeq(sessionId: string): number {
     let seq = this.nextSeq.get(sessionId);
     if (seq === undefined) {
-      const row = this.db
-        .prepare("SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM events WHERE session_id = ?")
-        .get(sessionId) as { maxSeq: number };
+      const row = this.stmt(
+        "SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM events WHERE session_id = ?",
+      ).get(sessionId) as { maxSeq: number };
       seq = Number(row.maxSeq) + 1;
     }
     this.nextSeq.set(sessionId, seq + 1);
@@ -107,9 +139,9 @@ export class SqliteEventStore implements EventStore {
   }
 
   appendAt(sessionId: string, seq: number, e: NewEvent): SessionEvent {
-    this.db
-      .prepare("INSERT INTO events (session_id, seq, ts, kind, payload) VALUES (?, ?, ?, ?, ?)")
-      .run(sessionId, seq, e.ts, e.kind, JSON.stringify(e.payload ?? {}));
+    this.stmt(
+      "INSERT INTO events (session_id, seq, ts, kind, payload) VALUES (?, ?, ?, ?, ?)",
+    ).run(sessionId, seq, e.ts, e.kind, JSON.stringify(e.payload ?? {}));
     // A reserved seq may be written out of order (an aggregate lands after the
     // events that followed its deltas), so never let it pull the counter back.
     const next = this.nextSeq.get(sessionId) ?? 0;
@@ -118,11 +150,9 @@ export class SqliteEventStore implements EventStore {
   }
 
   read(sessionId: string, fromSeq = 0): SessionEvent[] {
-    const rows = this.db
-      .prepare(
-        "SELECT seq, ts, kind, payload FROM events WHERE session_id = ? AND seq > ? ORDER BY seq ASC",
-      )
-      .all(sessionId, fromSeq) as Array<{ seq: number; ts: number; kind: string; payload: string }>;
+    const rows = this.stmt(
+      "SELECT seq, ts, kind, payload FROM events WHERE session_id = ? AND seq > ? ORDER BY seq ASC",
+    ).all(sessionId, fromSeq) as Array<{ seq: number; ts: number; kind: string; payload: string }>;
     return rows.map((r) => this.hydrate(sessionId, r));
   }
 
@@ -134,11 +164,9 @@ export class SqliteEventStore implements EventStore {
    */
   readTail(sessionId: string, limit: number): SessionEvent[] {
     if (limit <= 0) return [];
-    const rows = this.db
-      .prepare(
-        "SELECT seq, ts, kind, payload FROM events WHERE session_id = ? ORDER BY seq DESC LIMIT ?",
-      )
-      .all(sessionId, limit) as Array<{ seq: number; ts: number; kind: string; payload: string }>;
+    const rows = this.stmt(
+      "SELECT seq, ts, kind, payload FROM events WHERE session_id = ? ORDER BY seq DESC LIMIT ?",
+    ).all(sessionId, limit) as Array<{ seq: number; ts: number; kind: string; payload: string }>;
     return rows.reverse().map((r) => this.hydrate(sessionId, r));
   }
 
@@ -156,9 +184,8 @@ export class SqliteEventStore implements EventStore {
   }
 
   saveSession(m: SessionMeta): void {
-    this.db
-      .prepare(
-        `INSERT INTO sessions
+    this.stmt(
+      `INSERT INTO sessions
            (id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, agent_session_id, branch, worktree_path, closed, parent_id, handoff_reason, origin)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
@@ -177,8 +204,7 @@ export class SqliteEventStore implements EventStore {
            parent_id = excluded.parent_id,
            handoff_reason = excluded.handoff_reason,
            origin = excluded.origin`,
-      )
-      .run(
+    ).run(
         m.id,
         m.projectId,
         m.agent,

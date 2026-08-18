@@ -376,7 +376,10 @@ export class Session extends EventEmitter {
       const s = (event.payload as { status?: SessionStatus }).status;
       if (s) this.status = s;
     }
-    this.persistMeta();
+    // A streamed token moves nothing but `lastActivityAt`, and the next real
+    // event carries that. Persisting here meant a full 17-column session upsert
+    // per token — 1.66 M of them across one profile log, for data nothing read.
+    if (!isNoFanout) this.persistMeta();
 
     // Fan out a sessions-snapshot trigger for a real, non-streaming DTO change
     // (status/preview/lastActivityAt). Errors and tool events now refresh the
