@@ -12,7 +12,7 @@ Use after implementing any makit feature that spans server + app (wire field, ne
 4. For native-plugin paths (clipboard, pickers) that a simulator cannot exercise, add a macOS case under `app/integration_test/desktop/` and run `flutter test integration_test/desktop/<f>_test.dart -d macos`.
 5. When touching adapters, update `src/adapters/stub.ts` too — it implements `send()` independently, so both e2e loops silently bypass unported logic.
 6. Finish with `cd app && tool/audit.sh` (includes the stub e2e as step 5) and `dart format lib test tool integration_test`.
-7. Probe real runtime shapes with a throwaway script instead of assuming: `cp /tmp/probe.ts server/probe.ts && node --import tsx probe.ts` (e.g. it revealed the default session has worktreePath == null).
+7. Probe real runtime shapes with a throwaway script instead of assuming. The script must live in `server/` AND run from there, or Node cannot resolve `ws` and the other deps: `cp /tmp/probe.ts server/probe.ts && (cd server && node --import tsx probe.ts); rm -f server/probe.ts`. (This one revealed that the default session has worktreePath == null.) Delete the scratch file even when the probe fails.
 
 ## Pitfalls
 - `Clipboard.getData` has NO default mock in flutter_test — an un-mocked call never completes and the test HANGS rather than fails. Install a `SystemChannels.platform` mock handler.

@@ -47,7 +47,7 @@ before pushing changes that touch the app ↔ server boundary:
 - **Mobile stub e2e** (real app ↔ TLS WS server, StubAdapter, iOS simulator):
   ```sh
   cd server && pnpm secure:install   # once
-  cd app && flutter pub get          # once
+  cd app && flutter pub get --enforce-lockfile   # once
   app/tool/e2e.sh --mode=stub        # pick a sim with MAKIT_SIM_NAME="iPhone 17 Pro"
   ```
 - **Desktop control-plane e2e** (real macOS control app ↔ daemon control
@@ -64,8 +64,9 @@ macOS job in `real-pi-e2e`) can also be run on demand from the Actions tab.
 ## Engineering standards
 
 The standards live in one place: [`AGENTS.md`](./AGENTS.md). It lists the rules
-we enforce (TDD, SOLID, simplicity first, surgical changes, ASD-STE100 prose),
-the commands, and the definition of done. `app/AGENTS.md` and `server/AGENTS.md`
+we enforce, the commands, and the definition of done. The rules cover TDD,
+SOLID, simplicity first, surgical changes, and ASD-STE100 prose.
+`app/AGENTS.md` and `server/AGENTS.md`
 add the rules for each side. [`docs/ENGINEERING.md`](./docs/ENGINEERING.md) §1
 explains the reasoning behind them.
 

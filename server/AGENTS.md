@@ -35,7 +35,7 @@ Tests sit beside the code as `*.test.ts`.
 ## Rules that bite here
 
 - **Update `src/adapters/stub.ts` whenever you change an adapter.** It implements
-  `send()` on its own, so both e2e loops bypass logic you forget to port there.
+  `send()` on its own. So both e2e loops bypass logic you forget to port there.
 - **Parse at the boundary.** WS frames, agent stdout, and files become typed
   values in the codec. Never use `as` outside that layer.
 - **Register, do not extend a switch.** Add a command or event to its table.

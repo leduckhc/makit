@@ -20,7 +20,8 @@ If a section of `AGENTS.md` turns into numbered steps, move it into a skill.
 ```
 .agents/skills/
 ├── <name>/SKILL.md          # makit procedures — written here, reviewed in PRs
-└── vendor/dart-lang/        # vendored upstream skills, see below
+├── vendor/dart-lang/        # vendored upstream skills, see below
+└── vendor/verify.sh         # integrity gate for the vendored copies
 ```
 
 Which harnesses read this directory:
@@ -54,6 +55,8 @@ Rules that come from experience, not taste:
 - Record the **traps**, not the happy path. The happy path is in `docs/`.
 - Use only spec fields in the frontmatter: `name`, `description`, `license`,
   `compatibility`, `metadata`. Other fields make some harnesses fail the file.
+- Keep sentences at 20 words or fewer, as [`AGENTS.md`](../../AGENTS.md) asks.
+  A trap you cannot parse at speed is a trap you will hit again.
 
 ## Vendored skills (`vendor/dart-lang/`)
 
@@ -62,21 +65,36 @@ Twelve Dart and Flutter skills come from
 the repo root records the source, the upstream path, and a hash per skill.
 
 Keep only skills this repo can actually use. A skill for a package we do not
-depend on still costs prompt budget, and it steals description budget from the
+depend on still costs prompt budget. It also steals description budget from the
 skills that matter. Nine were removed for that reason: they covered `intl`,
 `http`, `json_serializable`, `ffigen`, native FFI assets, `mockito`, `checks`,
 widget previews, and Dart CLI apps. None of those appear in `app/pubspec.yaml`
 or `server/package.json`.
 
-To refresh a vendored skill, replace its `SKILL.md` from upstream and update its
-entry in `skills-lock.json`.
+### Integrity
 
-> **Known gap:** the `computedHash` values do not match a `sha256` of the
-> committed files. The fetch tool injected a `metadata:` block after hashing, so
-> the lock records provenance but verifies nothing today. Treat a vendored skill
-> as reviewed code, not as verified code.
+Each entry carries two hashes:
+
+- `computedHash` — what the fetch tool hashed upstream. It does **not** match the
+  committed bytes: the tool injects a `metadata:` block after it hashes. Treat it
+  as provenance only.
+- `committedHash` — the `sha256` of the committed `SKILL.md`. This one is
+  enforced.
+
+```sh
+bash .agents/skills/vendor/verify.sh            # check every entry
+bash .agents/skills/vendor/verify.sh --write    # re-record after a refresh
+```
+
+The script fails on a modified file, a missing file, and a skill that no lock
+entry covers. The `skills-ci` workflow runs it on every PR that touches this
+directory. So a local edit to a vendored skill can no longer pass as upstream
+code.
+
+To refresh a vendored skill, replace its `SKILL.md` from upstream and update its
+entry in `skills-lock.json`. Then run `verify.sh --write` and commit the result.
 
 ## Security
 
 A skill can tell a model to run anything. Review a skill in the PR as carefully
-as you review code, and never paste one in from an unknown source.
+as you review code. Never paste one in from an unknown source.

@@ -16,8 +16,8 @@ makit drives a coding agent on your desktop from your phone.
 
 ## Commands
 
-Toolchain: Node ≥22.13, pnpm ≥11 (`npm install` is blocked by a guard),
-Flutter ≥3.38 (repo runs 3.44.9), plus `rustup` and CocoaPods for app builds.
+Toolchain: Node ≥22.13 and pnpm ≥11 (`npm install` is blocked by a guard).
+Flutter ≥3.38, and the repo runs 3.44.9. App builds also need `rustup` and CocoaPods.
 
 ```sh
 # server
@@ -75,9 +75,10 @@ adds contract-first parsing, DI seams, YAGNI, and observability.
 
 ## Conventions
 
-- Commits use Conventional Commits with a scope: `fix(app): …`, `feat(server): …`,
-  `docs: …`. Name the user-visible outcome. Add the spec slug when a spec exists,
-  as `(SPEC-cli-as-client)`.
+- Commits use Conventional Commits: `fix(app): …`, `feat(server): …`. Add a scope
+  when the change belongs to one side. Repo-wide changes may omit it: `docs: …`.
+  Name the user-visible outcome. Add the spec slug when a spec exists, as
+  `(SPEC-cli-as-client)`.
 - Specs carry a clock, not a counter. Create one with `scripts/new-spec.sh "a
   short title"`, and refer to it by slug. Never hand-write the timestamp, and
   never claim a spec number — numbers clashed six times across parallel
@@ -100,7 +101,7 @@ adds contract-first parsing, DI seams, YAGNI, and observability.
 ## Skills
 
 Procedures live in [`.agents/skills/`](./.agents/skills/). Load one before you
-repeat a known workflow: verify a feature end to end, capture real app
-screenshots, add a session event kind, add a forge provider, or record an ACP
-fixture. Add a skill when you solve something the hard way, and follow
+repeat a known workflow. There is a skill to verify a feature end to end, and to
+capture real app screenshots. Others add a session event kind or a forge
+provider. Add a skill when you solve something the hard way, and follow
 [`.agents/skills/README.md`](./.agents/skills/README.md).
