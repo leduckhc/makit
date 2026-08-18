@@ -25,6 +25,7 @@ import { startWsServer } from "../../src/server.js";
 import { loadOrCreateCert } from "../../src/pairing/cert.js";
 import { DeviceRegistry } from "../../src/pairing/registry.js";
 import { StubAdapter } from "../../src/adapters/stub.js";
+import { EPHEMERAL_PORT_FLOOR } from "../../src/ports/health.js";
 import type { Exec } from "../../src/metrics/proc_table.js";
 
 interface Client {
@@ -64,6 +65,41 @@ async function waitFor(
     await new Promise((r) => setTimeout(r, 10));
   }
   throw new Error("timeout waiting for a frame");
+}
+
+/**
+ * Bind `server` on loopback on a port the TEST chooses, below
+ * {@link EPHEMERAL_PORT_FLOOR}, and return it.
+ *
+ * `listen(0)` cannot be used here. health.ts deliberately does not probe an
+ * OS-assigned port, because an unsolicited `GET /` broke this repo's own
+ * `flutter test` listeners. No verdict means no `openUrl`, so the forward path
+ * under test would never become eligible. Candidates are tried in turn, so a
+ * busy port cannot make this test flaky.
+ */
+async function listenBelowEphemeralFloor(server: Server): Promise<number> {
+  const base = 21_000 + (process.pid % 500);
+  for (let port = base; port < base + 50; port++) {
+    const bound = await new Promise<boolean>((resolve, reject) => {
+      const onError = (err: NodeJS.ErrnoException) => {
+        server.removeListener("listening", onListening);
+        if (err.code === "EADDRINUSE") resolve(false);
+        else reject(err);
+      };
+      const onListening = () => {
+        server.removeListener("error", onError);
+        resolve(true);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(port, "127.0.0.1");
+    });
+    if (bound) {
+      assert.ok(port < EPHEMERAL_PORT_FLOOR, "a chosen port, so the probe reaches it");
+      return port;
+    }
+  }
+  throw new Error("no free port below the ephemeral floor");
 }
 
 /** GET over the pinned-but-unverified TLS listener (a stand-in for the phone). */
@@ -119,8 +155,7 @@ test("a real loopback dev server is forwarded over the WSS listener itself", asy
       res.writeHead(200, { "content-type": "text/html" });
       res.end(`<h1>your dev server</h1><p>${req.url}</p>`);
     });
-    await new Promise<void>((r) => dev!.listen(0, "127.0.0.1", r));
-    const devPort = (dev.address() as AddressInfo).port;
+    const devPort = await listenBelowEphemeralFloor(dev);
 
     // A scripted scan that reports the REAL listener (pid + port), attributed to
     // the project by cwd — so eligibility (D4) sees a real, HTTP-answering,

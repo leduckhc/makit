@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   PortHealthProbe,
+  EPHEMERAL_PORT_FLOOR,
   NO_HTTP_PROBE_PORTS,
   PROBE_TIMEOUT_MS,
   PROBE_TTL_MS,
@@ -168,6 +169,66 @@ test("a deny-listed port (e.g. 5432 postgres) is NEVER probed", async () => {
   assert.ok(NO_HTTP_PROBE_PORTS.includes(5432));
   await probe.refresh([ownedPort({ port: 5432 })]);
   assert.equal(connected, false);
+});
+
+// An OS-assigned (ephemeral) port is never probed. The probe broke this repo's
+// own `flutter test`: flutter_tools binds one port per test file and treats the
+// FIRST HTTP request on it as the WebSocket handshake, so the probe's `GET /`
+// made the test file fail to load with "Invalid WebSocket upgrade request".
+test("an ephemeral-range port is NEVER probed (the OS chose it, so nobody opens it)", async () => {
+  const clock = fakeClock();
+  let connected = false;
+  const probe = new PortHealthProbe({
+    connect: () => {
+      connected = true;
+      // Settle at once, so a regression fails this assertion instead of hanging.
+      const sock = new FakeSocket();
+      setImmediate(() => sock.emit("close"));
+      return sock;
+    },
+    ...clock,
+  });
+  // 58312 is a real flutter_tools test-listener port observed on macOS; the
+  // measured range for this repo's own app suite was 61373-62036.
+  await probe.refresh([ownedPort({ port: 58312 })]);
+  assert.equal(connected, false, "an ephemeral port must not receive a GET /");
+  assert.equal(probe.verdict("127.0.0.1", 58312), undefined, "and it gets no verdict");
+});
+
+test("the ephemeral floor is exact: 32767 is probed, 32768 is not", async () => {
+  const clock = fakeClock();
+  const probed: number[] = [];
+  const sockets: FakeSocket[] = [];
+  const probe = new PortHealthProbe({
+    connect: (_host, port) => {
+      probed.push(port);
+      const sock = new FakeSocket();
+      sockets.push(sock);
+      return sock;
+    },
+    ...clock,
+  });
+  // The lower of the two OS floors (Linux 32768, macOS 49152), so the rule
+  // holds on both CI runners.
+  assert.equal(EPHEMERAL_PORT_FLOOR, 32768);
+  const p = probe.refresh([
+    ownedPort({ key: "1:127.0.0.1:32767", port: 32767 }),
+    ownedPort({ key: "1:127.0.0.1:32768", port: 32768 }),
+  ]);
+  await flush();
+  for (const sock of sockets) sock.emit("close"); // settle every probe that started
+  await p;
+  assert.deepEqual(probed, [32767]);
+});
+test("a chosen high port below the floor still gets its verdict (e.g. 8080, 7777)", async () => {
+  const clock = fakeClock();
+  const sock = new FakeSocket();
+  const probe = new PortHealthProbe({ connect: () => sock, ...clock });
+  const p = probe.refresh([ownedPort({ port: 7777 })]);
+  await flush();
+  sock.emit("data", "HTTP/1.1 200 OK\r\n");
+  await p;
+  assert.equal(probe.verdict("127.0.0.1", 7777)?.kind, "ok");
 });
 
 test("a concrete non-loopback address (no loopback form) is NEVER probed", async () => {

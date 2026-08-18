@@ -1,11 +1,12 @@
 /**
  * health.ts — the deliberately narrow HTTP probe (spec D3).
  *
- * Only ports attributed to a worktree are probed, minus a database deny-list,
- * and only on the LOOPBACK form of the address. Pointing `GET /` at every
- * listener on the machine would poke X11, VNC, SMTP, LDAP and TLS-only services
- * and render a healthy HTTPS server as broken. One `GET / HTTP/1.1` +
- * `Connection: close`, read only far enough to parse the status line.
+ * Only ports attributed to a worktree are probed, minus a database deny-list
+ * and the OS ephemeral range, and only on the LOOPBACK form of the address.
+ * Pointing `GET /` at every listener on the machine would poke X11, VNC, SMTP,
+ * LDAP and TLS-only services and render a healthy HTTPS server as broken. One
+ * `GET / HTTP/1.1` + `Connection: close`, read only far enough to parse the
+ * status line.
  *
  * Everything with a wall-clock or a socket is injected (`connect`, `now`,
  * `setTimer`, `clearTimer`) so tests never open a real socket. `refresh` NEVER
@@ -40,6 +41,29 @@ const HTTP_ERROR_STATUS = 400;
  * protocol detection (spec D3).
  */
 export const NO_HTTP_PROBE_PORTS: readonly number[] = [22, 5432, 3306, 6379, 27017, 11211];
+
+/**
+ * The lowest port an OS hands out automatically (`listen(0)`).
+ *
+ * Linux starts its range at 32768 (`net.ipv4.ip_local_port_range`) and macOS at
+ * 49152 (`net.inet.ip.portrange.first`). The lower of the two is used, so the
+ * rule holds on every machine and on both CI runners. A port at or above this
+ * was assigned by the kernel, not chosen by a person: the number changes on
+ * every restart, so no one opens it, bookmarks it, or forwards it to a phone.
+ *
+ * Probing them also did harm, which is what D3 exists to prevent. `flutter test`
+ * binds one listener per test file and treats the FIRST HTTP request on it as
+ * the WebSocket handshake (`flutter_tester_device.dart`, `remoteChannel`). This
+ * probe's `GET /` arrived first, so the upgrade failed and the test file died
+ * with "Invalid WebSocket upgrade request". Measured on this repo's own app
+ * suite: the owning `dartvm` process listened on ports 61373-62036.
+ *
+ * Cost: a server deliberately started on a port above the floor gets no verdict,
+ * and therefore no `openUrl`. Such a choice already races the kernel for the
+ * same number, and the common dev-server ports (3000, 5173, 8000, 8080) are all
+ * far below it.
+ */
+export const EPHEMERAL_PORT_FLOOR = 32768;
 
 /** The minimal socket surface the probe drives; the real one wraps `net.Socket`. */
 export interface ProbeSocket {
@@ -104,6 +128,7 @@ export class PortHealthProbe {
     const due = ports.filter((p) => {
       if (p.worktreePath === undefined) return false; // unowned → not probed (D3)
       if (NO_HTTP_PROBE_PORTS.includes(p.port)) return false; // deny-listed
+      if (p.port >= EPHEMERAL_PORT_FLOOR) return false; // OS-assigned, so not a served address
       if (loopbackForm(p.address) === null) return false; // no loopback form
       const cached = this.cache.get(`${p.address}:${p.port}`);
       return cached === undefined || now - cached.probedAt >= PROBE_TTL_MS;
