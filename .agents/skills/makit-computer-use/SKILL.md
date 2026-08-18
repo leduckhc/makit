@@ -29,6 +29,9 @@ image blocks from MCP tool results into the media store via the shared
 ## Enable it
 
 ```sh
+# 0. is it already there?
+cua-driver --version && cua-driver doctor    # want `ok`, not `degraded`
+
 # 1. driver (review the script first: it fetches a GitHub tarball with NO checksum check)
 /bin/bash -c "$(curl -fsSL https://cua.ai/driver/install.sh)"
 cua-driver telemetry disable
@@ -72,6 +75,13 @@ codex -c mcp_servers.cua_driver.command="$(which cua-driver)" \
 
 # live pi smoke (must run from the repo root — see traps)
 cd <repo> && MAKIT_COMPUTER_USE=1 pi -p "Call computer_health_report and report its first line."
+```
+
+Then check the driver's own health before you blame makit:
+
+```sh
+cua-driver doctor                # `ok`, not `degraded`
+cua-driver permissions status    # Accessibility + Screen Recording both ✅
 ```
 
 Without grants, `get_desktop_state` returns `isError` with

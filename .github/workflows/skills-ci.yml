@@ -1,0 +1,26 @@
+name: Skills Integrity
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.agents/skills/**'
+      - 'skills-lock.json'
+      - '.github/workflows/skills-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.agents/skills/**'
+      - 'skills-lock.json'
+      - '.github/workflows/skills-ci.yml'
+
+jobs:
+  verify-vendored-skills:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Verify vendored skills match skills-lock.json
+        run: bash .agents/skills/vendor/verify.sh

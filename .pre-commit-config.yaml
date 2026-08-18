@@ -40,7 +40,7 @@ repos:
           Fail if staged Dart files are not formatted.
           Fix: run `dart format <file>` and re-stage.
         language: system
-        entry: dart format --set-exit-if-changed
+        entry: dart format --output=none --set-exit-if-changed
         files: ^app/.*\.dart$
         types: [file]
 
