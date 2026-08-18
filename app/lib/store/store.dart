@@ -210,6 +210,23 @@ class StoreState {
   );
 }
 
+/// How many raw events a session keeps.
+///
+/// The rendered rows live in [StoreState.transcripts] and are never dropped, so
+/// this window only serves the seq bookkeeping around it (the cursor, the
+/// optimistic bubble, a replay). One live session has 31,554 events; holding
+/// them per session, for the life of the process, was a second copy of a history
+/// the fold already had.
+const int kRawEventWindow = 400;
+
+/// Trim [list] to the trailing [kRawEventWindow] events (drop-oldest).
+///
+/// Returns the same list when it fits, so the common case allocates nothing.
+List<SessionEvent> _boundedWindow(List<SessionEvent> list) =>
+    list.length <= kRawEventWindow
+    ? list
+    : list.sublist(list.length - kRawEventWindow);
+
 /// Max metrics samples retained (30 min at 1 Hz). Drop-oldest beyond this.
 const int _metricsCap = 1800;
 
@@ -312,7 +329,7 @@ StoreState reduceEvent(
   final events = Map<String, List<SessionEvent>>.from(state.events);
   final list = List<SessionEvent>.from(events[ev.sessionId] ?? const []);
   list.add(ev);
-  events[ev.sessionId] = list;
+  events[ev.sessionId] = _boundedWindow(list);
 
   // Extend the folded transcript with this one event. [reduceEvents] passes
   // `foldTranscript: false` and folds a whole batch once instead, so a burst of
@@ -367,12 +384,15 @@ StoreState reduceEvents(StoreState state, List<SessionEvent> batch) {
   // Which events actually landed in the log, per session, in order. Read from
   // the state rather than from the event kind: [reduceEvent] alone decides what
   // reaches the log, and a second copy of that rule here would drift from it.
+  //
+  // The test is identity of the last element, not a length: the raw window is
+  // bounded (see [kRawEventWindow]), so a full window appends without growing.
   final folded = <String, List<SessionEvent>>{};
   for (final ev in batch) {
-    final before = next.events[ev.sessionId]?.length ?? 0;
     next = reduceEvent(next, ev, foldTranscript: false);
-    final after = next.events[ev.sessionId]?.length ?? 0;
-    if (after > before) (folded[ev.sessionId] ??= <SessionEvent>[]).add(ev);
+    if (identical(next.events[ev.sessionId]?.lastOrNull, ev)) {
+      (folded[ev.sessionId] ??= <SessionEvent>[]).add(ev);
+    }
   }
   if (folded.isEmpty) return next;
 

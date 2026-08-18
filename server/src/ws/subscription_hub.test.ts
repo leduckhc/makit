@@ -82,7 +82,11 @@ const hubWithLog = () =>
   new SubscriptionHub({
     manager: {
       getSession: (id: string) =>
-        ({ events: [{ seq: 1, sessionId: id, ts: 1, kind: "agent.message", payload: { text: "secret" } }] }) as never,
+        ({
+          eventsSince: () => [
+            { seq: 1, sessionId: id, ts: 1, kind: "agent.message", payload: { text: "secret" } },
+          ],
+        }) as never,
     },
     parentOf: (id: string) => (id === "child" ? "root" : undefined),
   });

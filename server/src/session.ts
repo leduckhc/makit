@@ -49,6 +49,15 @@ interface QueuedMessage {
 }
 
 /**
+ * How many recent events a session keeps in memory when a store holds the rest.
+ *
+ * 500 covers a mid-turn subscribe (the deltas of one turn leave memory at its
+ * close, see stream_digest.ts) while bounding what an opened transcript costs.
+ * Anything older is read from the store on demand ({@link Session.eventsSince}).
+ */
+export const MEMORY_EVENT_CAP = 500;
+
+/**
  * Statuses in which the agent is working (or blocked on the user) and therefore
  * cannot take a fresh turn (SPEC-mid-turn-steering-and-queue). `error`/`exited` are deliberately absent:
  * a dead session must not silently swallow messages into a queue that will
@@ -229,12 +238,33 @@ export class Session extends EventEmitter {
   private readonly store?: EventStore;
 
   /**
-   * The in-memory event cache. For a lazily-rehydrated session the first
-   * access loads the persisted history (once) before returning.
+   * The in-memory event cache: the recent tail, not the whole history.
+   *
+   * For a lazily-rehydrated session the first access loads that tail (once)
+   * before returning. Callers that need older events must use
+   * {@link eventsSince}, which falls back to the store.
    */
   get events(): SessionEvent[] {
     this.ensureHydrated();
     return this._events;
+  }
+
+  /**
+   * Events with `seq > fromSeq`, ascending — from memory when the cache reaches
+   * back that far, else from the store.
+   *
+   * The replay path (`sub`) asks for the whole log on a first subscribe, and one
+   * session here has 31,554 events. Serving that from a cache meant holding every
+   * transcript the user ever opened for the life of the process; serving it from
+   * the store costs one query on a path that already sends the same rows over a
+   * socket.
+   */
+  eventsSince(fromSeq: number): SessionEvent[] {
+    this.ensureHydrated();
+    const oldest = this._events[0]?.seq;
+    const complete = !this.truncated || oldest === undefined || fromSeq >= oldest - 1;
+    if (complete) return this._events.filter((e) => e.seq > fromSeq);
+    return this.store ? this.store.read(this.id, fromSeq) : this._events.filter((e) => e.seq > fromSeq);
   }
 
   constructor(init: SessionInit) {
@@ -275,6 +305,28 @@ export class Session extends EventEmitter {
     for (const e of events) this._events.push(e);
     const last = events.at(-1);
     if (last) this.lastActivityAt = Math.max(this.lastActivityAt, last.ts);
+    // A tail read starts above seq 1, so the cache no longer reaches the log's
+    // start and `eventsSince` must go to the store for anything older.
+    if (this.store && (this._events[0]?.seq ?? 1) > 1) this.truncated = true;
+  }
+
+  /**
+   * True when the cache no longer holds the session's oldest event, so the store
+   * is the only complete history. False for a session with no store, where the
+   * cache IS the history and must never be trimmed.
+   */
+  private truncated = false;
+
+  /**
+   * Drop the oldest events once the cache grows past twice the cap, so a long
+   * turn costs one trim instead of one per event. Only with a store: without one
+   * the cache is the history.
+   */
+  private trimCache(): void {
+    if (!this.store) return;
+    if (this._events.length <= MEMORY_EVENT_CAP * 2) return;
+    this._events.splice(0, this._events.length - MEMORY_EVENT_CAP);
+    this.truncated = true;
   }
 
   /** Run the pending lazy loader (if any) exactly once. History must precede
@@ -302,6 +354,7 @@ export class Session extends EventEmitter {
     this.ensureHydrated();
     const event = this.form(e);
     this._events.push(event);
+    this.trimCache();
 
     // Snapshot the DTO-visible fields BEFORE mutating so we can emit
     // `metaChanged` only on an actual change (and never pre-assign status

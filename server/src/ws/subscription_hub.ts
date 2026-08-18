@@ -19,9 +19,15 @@ import { log } from "../log.js";
 import type { WsClient } from "./client.js";
 import { canReadSession } from "./read_access.js";
 
-/** The slice of the session manager the hub depends on. */
+/**
+ * The slice of the session manager the hub depends on.
+ *
+ * `eventsSince` rather than an `events` array: a session caches only its recent
+ * tail (see `Session.eventsSince`), so a first subscribe reads the older history
+ * from the store instead of forcing every transcript to live in memory.
+ */
 export interface SubscriptionManager {
-  getSession(id: string): { events: SessionEvent[] } | undefined;
+  getSession(id: string): { eventsSince(fromSeq: number): SessionEvent[] } | undefined;
 }
 
 export interface SubscriptionHubDeps {
@@ -75,9 +81,9 @@ export class SubscriptionHub {
     }
     client.subscribed.add(sid);
     const fromSeq = typeof env.fromSeq === "number" ? env.fromSeq : 0;
-    const replay = fromSeq > 0 ? session.events.filter((e) => e.seq > fromSeq) : session.events;
+    const replay = session.eventsSince(fromSeq);
     log.info(
-      `[makit] sub: client subscribed to session ${sid.slice(0, 8)} (replay ${replay.length}/${session.events.length} events from seq ${fromSeq})`,
+      `[makit] sub: client subscribed to session ${sid.slice(0, 8)} (replay ${replay.length} events from seq ${fromSeq})`,
     );
     for (const e of replay) this.sendEvent(client, e);
     client.send({ t: "ack", id: env.id });

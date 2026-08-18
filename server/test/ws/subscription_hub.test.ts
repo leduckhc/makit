@@ -42,7 +42,14 @@ function subEnv(sessionId?: string, fromSeq?: number): Envelope {
 function fakeManager(sessions: Record<string, SessionEvent[]>) {
   return {
     getSession: (id: string) =>
-      id in sessions ? { events: sessions[id] } : undefined,
+      id in sessions
+        ? {
+            // The real session serves the tail from memory and the rest from the
+            // store; the hub only cares that it gets events above the cursor.
+            eventsSince: (fromSeq: number) =>
+              sessions[id].filter((e) => e.seq > fromSeq),
+          }
+        : undefined,
   };
 }
 
