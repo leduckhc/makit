@@ -1,5 +1,5 @@
 /**
- * Daemon service (SPEC-01, phase 4).
+ * Daemon service (SPEC-daemon-control-plane, phase 4).
  *
  * User-controlled background lifecycle for the makit server:
  *   - `start`   — spawn `serve` detached, redirect output to the log, record PID.
@@ -13,7 +13,7 @@
  * ## Log file policy
  *
  * `~/.makit/makit.log` is **truncated on every `start`** (opened with `"w"`). Log
- * rotation is intentionally out of scope for v1 (SPEC-01 open question): a fresh
+ * rotation is intentionally out of scope for v1 (SPEC-daemon-control-plane open question): a fresh
  * run starts with a clean log, and operators who want history can copy it aside
  * before starting. Revisit if log volume becomes a problem.
  *

@@ -1,4 +1,4 @@
-/// Pure timing-label rules shared by the transcript widgets (SPEC-47).
+/// Pure timing-label rules shared by the transcript widgets (SPEC-session-timings).
 ///
 /// Kept out of the widgets so the thresholds (D2, D6) and the freeze/live
 /// decision (D6a, D19) are unit-testable without pumping a widget or a clock.
@@ -27,7 +27,7 @@ bool showsFinishedDuration(int ms) => ms >= kToolDurationFloor;
 bool escalates(int ms) => ms >= kLiveEscalationMs;
 
 /// The elapsed a tool row should display, and whether it is a **live** ticking
-/// counter (SPEC-47 D6/D6a/D19).
+/// counter (SPEC-session-timings D6/D6a/D19).
 ///
 /// * A finished call ([ToolCallItem.endedTs] set) uses its own end.
 /// * A no-end call whose enclosing turn closed freezes at that `idle`

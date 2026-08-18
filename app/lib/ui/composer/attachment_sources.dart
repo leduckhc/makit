@@ -1,4 +1,4 @@
-/// Sources of attachment bytes (SPEC-33): the system clipboard and the file /
+/// Sources of attachment bytes (SPEC-user-attachments): the system clipboard and the file /
 /// photo pickers.
 ///
 /// Isolated behind plain functions so the composer and its tests never touch a

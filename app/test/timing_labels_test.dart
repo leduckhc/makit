@@ -13,7 +13,7 @@ ToolCallItem _tool({int ts = 1000, int? endedTs}) => ToolCallItem(
 );
 
 void main() {
-  group('toolDurationState (SPEC-47 D6a/D19)', () {
+  group('toolDurationState (SPEC-session-timings D6a/D19)', () {
     test('a finished call uses its own end timestamp', () {
       final s = toolDurationState(
         item: _tool(ts: 1000, endedTs: 4000),

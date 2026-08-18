@@ -1,4 +1,4 @@
-// T5 — SPEC-34: the Message navigator settings leaf.
+// T5 — SPEC-message-navigator: the Message navigator settings leaf.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

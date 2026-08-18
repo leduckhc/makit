@@ -1,8 +1,8 @@
 /**
- * makit — SPEC-46 D9: publication grants for the static doc route.
+ * makit — SPEC-doc-preview D9: publication grants for the static doc route.
  *
  * A grant is the capability to fetch one published document over `/docs/<grantId>/…`.
- * Same shape discipline as SPEC-44's forward grant: in-memory only (never
+ * Same shape discipline as SPEC-ports-forward's forward grant: in-memory only (never
  * survives a restart), keyed by an unguessable 32-byte CSPRNG id, hard-capped by
  * a 30-minute TTL, reaped when idle, revocable, and enumerable in one place so
  * the app can say "3 docs are shared".
@@ -39,7 +39,7 @@ export const MAX_LIVE_GRANTS = 64;
 interface DocGrant extends DocGrantDTO {
   createdAt: number;
   lastSeenAt: number;
-  /** Minting device (SPEC-44 owner model). Never projected onto the wire DTO. */
+  /** Minting device (SPEC-ports-forward owner model). Never projected onto the wire DTO. */
   ownerDeviceId?: string;
 }
 
@@ -49,7 +49,7 @@ export interface MintInput {
   reach: "tailnet" | "lan";
   /**
    * The device that minted the grant, so `revoke`/`listOwnedBy` can scope by
-   * owner (SPEC-44's forward-grant model). Undefined only under `--no-auth`
+   * owner (SPEC-ports-forward's forward-grant model). Undefined only under `--no-auth`
    * loopback, where there is a single anonymous owner.
    */
   ownerDeviceId?: string;

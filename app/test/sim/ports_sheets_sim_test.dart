@@ -1,4 +1,4 @@
-// Audit harness for the two SPEC-41 mobile port surfaces — sheet 1 (the
+// Audit harness for the two SPEC-open-ports mobile port surfaces — sheet 1 (the
 // worktree's list) and sheet 2 (one port's detail) — rendered against
 // `mockups/open-ports.html` §2b at iPhone 393pt.
 //

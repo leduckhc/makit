@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Films the pending-queue tour (SPEC-35/36) on the **macOS desktop** surface.
+# Films the pending-queue tour (SPEC-mid-turn-steering-and-queue/36) on the **macOS desktop** surface.
 #
 # Counterpart to tool/record-queue-tour.sh, which films the iOS simulator with
 # `simctl io recordVideo`. There is no such backdoor for a real Mac window, and

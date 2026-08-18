@@ -1,5 +1,5 @@
 /**
- * `send.message` attachment validation (SPEC-33 T3).
+ * `send.message` attachment validation (SPEC-user-attachments T3).
  *
  * Drives the **real** session command registrar through the real
  * {@link CommandRouter} with a minimal fake manager, mirroring
@@ -73,7 +73,7 @@ function harness() {
       getSession: (sid: string) => (sid === "s1" ? session : undefined),
       ensureLive: async () => {},
       // send.message routes through ...ForInput so an idle-auto-closed session is
-      // reopened before the turn (SPEC-29 option D).
+      // reopened before the turn (SPEC-session-lifecycle-resume-list-delete option D).
       ensureLiveForInput: async () => {},
     } as unknown as CommandDeps["manager"],
     gateway: {} as CommandDeps["gateway"],
@@ -226,7 +226,7 @@ test("a pending session promoted by an image-only turn gets a usable label", asy
       getSession: () => session,
       ensureLive: async () => {},
       // send.message routes through ...ForInput so an idle-auto-closed session is
-      // reopened before the turn (SPEC-29 option D).
+      // reopened before the turn (SPEC-session-lifecycle-resume-list-delete option D).
       ensureLiveForInput: async () => {},
       promotePendingSession: async (_s: unknown, label: string) => {
         labels.push(label);

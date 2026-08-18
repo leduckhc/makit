@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Per-repo Settings e2e on the real macOS app (SPEC-48 T6.2).
+# Per-repo Settings e2e on the real macOS app (SPEC-per-repo-settings T6.2).
 #
 # Sibling of e2e-desktop.sh, and deliberately much smaller: that harness boots a
 # real daemon control socket because it is testing the control plane. This one

@@ -1,5 +1,5 @@
 /**
- * SPEC-46 U3 — `makit answer`: fill a session's pending `input` elicitation
+ * SPEC-cli-as-client U3 — `makit answer`: fill a session's pending `input` elicitation
  * with text from the terminal, the sibling of `makit approve`.
  *
  * Same client-only flow (`sub` → replayed `srv.request` → `srv.response`) and

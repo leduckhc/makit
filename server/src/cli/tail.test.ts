@@ -1,5 +1,5 @@
 /**
- * T14 (SPEC-46) — `makit tail`: replay a session's events and (with `-f`) keep
+ * T14 (SPEC-cli-as-client) — `makit tail`: replay a session's events and (with `-f`) keep
  * streaming.
  *
  * Two contracts are pinned: `--since SEQ` replays from that cursor via

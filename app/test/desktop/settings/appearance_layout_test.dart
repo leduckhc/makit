@@ -39,7 +39,7 @@ void main() {
   testWidgets('the auto-split threshold row writes the preference', (
     tester,
   ) async {
-    // SPEC-30 decision 9: the control sets a placement policy. It is a plain
+    // SPEC-tab-groups decision 9: the control sets a placement policy. It is a plain
     // segmented control because the value is small and bounded.
     final controller = await _pump(tester);
 
@@ -78,7 +78,7 @@ void main() {
     final controller = await _pump(tester);
     expect(controller.isModified(sidebarStartCollapsedPreference), isFalse);
 
-    // Addressed by its row: Layout has more than one switch since SPEC-51.
+    // Addressed by its row: Layout has more than one switch since SPEC-preview-groups.
     await tester.tap(_switchIn('Start with sidebar collapsed'));
     await tester.pump();
 
@@ -89,7 +89,7 @@ void main() {
   testWidgets('the preview-groups switch is off by default and writes', (
     tester,
   ) async {
-    // SPEC-51 decision 9: opt-in, because the mode trades a browsed group's
+    // SPEC-preview-groups decision 9: opt-in, because the mode trades a browsed group's
     // arrangement for a rail that stays short.
     final controller = await _pump(tester);
 

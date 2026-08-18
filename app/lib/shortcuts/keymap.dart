@@ -38,7 +38,7 @@ class Keymap {
       ShortcutAction.previousSession: primary(LogicalKeyboardKey.bracketLeft),
       ShortcutAction.openSettings: primary(LogicalKeyboardKey.comma),
       ShortcutAction.openPorts: primary(LogicalKeyboardKey.keyP, shift: true),
-      // SPEC-49 D8: shaped like openPorts above. `keyC` with the primary
+      // SPEC-notice-layer D8: shaped like openPorts above. `keyC` with the primary
       // modifier alone belongs to the platform's copy; +shift is free.
       ShortcutAction.copyNewestNotice: primary(
         LogicalKeyboardKey.keyC,
@@ -61,7 +61,7 @@ class Keymap {
         shift: true,
       ),
     };
-    // SPEC-30 decision 16: ⌘1…⌘9 (⎃1…⎃9 off macOS) switch to the 1st–9th
+    // SPEC-tab-groups decision 16: ⌘1…⌘9 (⎃1…⎃9 off macOS) switch to the 1st–9th
     // group. The tenth group onward gets no binding on purpose. Added through
     // the same table so `conflictFor` sees them like any other action.
     const digits = <LogicalKeyboardKey>[

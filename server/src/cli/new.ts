@@ -1,5 +1,5 @@
 /**
- * `makit new` — start a session from the terminal (SPEC-46 T12).
+ * `makit new` — start a session from the terminal (SPEC-cli-as-client T12).
  *
  * Composes three commands that already exist (D4): `worktree.create`, then
  * `session.spawn`, then — when a message was given — `send.message`, which is

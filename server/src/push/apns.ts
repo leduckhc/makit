@@ -5,7 +5,7 @@
  *   - `apnsDisposition` — a PURE classifier mapping APNs HTTP feedback to a
  *     {@link PushResult}. Unit-tested (see `wake_coordinator.test.ts`, A7).
  *   - `ApnsPushSender` — the REAL HTTP/2 + ES256-JWT adapter. This is
- *     platform/network I/O (see SPEC-07 W2) and is NOT unit-tested here; it is
+ *     platform/network I/O (see SPEC-background-wake-notifications W2) and is NOT unit-tested here; it is
  *     exercised only by the on-device checklist. It is genuine (not stubbed):
  *     `enabled === true` and `wake()` signs a provider JWT and POSTs to Apple.
  */
@@ -52,7 +52,7 @@ const APNS_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * Real APNs sender. NOT unit-tested (network + crypto I/O) — verified by the
- * SPEC-07 on-device checklist. `enabled === true`, so `WakeCoordinator` treats
+ * SPEC-background-wake-notifications on-device checklist. `enabled === true`, so `WakeCoordinator` treats
  * a successful `devicesToWake` as a real dispatch and keeps requests pending.
  */
 export class ApnsPushSender implements PushSender {

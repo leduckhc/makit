@@ -7,7 +7,7 @@
 /// It is a *separate* instance rather than a filter over the log because the log
 /// is level-gated developer noise (`minLevel` drops `debug` in release) while
 /// activity is a curated user feed where nothing may be dropped by a verbosity
-/// setting (SPEC-48 D1).
+/// setting (SPEC-status-and-activity D1).
 ///
 /// Pure Dart: no Flutter import, no `dart:io`. The provider layer wires the
 /// process-wide `appLog` in; tests pass their own.
@@ -41,7 +41,7 @@ class StatusPosted extends StatusChange {
 
   /// "For the record only": no toast, and it does not count as unread. Used for
   /// facts the UI is already showing (a session's own status dot) whose *history*
-  /// is the valuable part (SPEC-48 D7).
+  /// is the valuable part (SPEC-status-and-activity D7).
   final bool silent;
 }
 
@@ -69,7 +69,7 @@ class StatusCenter {
 
   /// How close two identical events must be to become one row with a count.
   /// Material shows snackbars strictly serially, so three failed deletes used to
-  /// mean twelve unskippable seconds of notices (SPEC-48 D4).
+  /// mean twelve unskippable seconds of notices (SPEC-status-and-activity D4).
   final Duration coalesceWindow;
 
   final MakitLog? _log;
@@ -267,7 +267,7 @@ class StatusCenter {
 
   Future<void> dispose() => _controller.close();
 
-  /// Every event is also one log line (SPEC-48 D2), so user-visible outcomes ride
+  /// Every event is also one log line (SPEC-status-and-activity D2), so user-visible outcomes ride
   /// along in diagnostics uploads. The reverse never happens.
   ///
   /// One exception, and it is the reason this guard exists: events from the

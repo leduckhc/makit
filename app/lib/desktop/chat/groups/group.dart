@@ -1,9 +1,9 @@
-/// SPEC-30 — the **group** model: a named view over the session list, plus the
+/// SPEC-tab-groups — the **group** model: a named view over the session list, plus the
 /// split/tab tree that view is arranged in.
 ///
 /// A group is never a *place*: it cannot tell an agent where to run. It only
 /// answers "what is on the canvas?", and it answers that in one of two ways —
-/// derived from a worktree, or curated by hand. Everything else in SPEC-30
+/// derived from a worktree, or curated by hand. Everything else in SPEC-tab-groups
 /// follows from that distinction, so it is modelled as a single sealed-ish
 /// value type with a [kind] rather than two classes: callers switch on [kind]
 /// and the persistence format stays one shape.
@@ -24,7 +24,7 @@ enum GroupKind {
   board,
 }
 
-/// How a group places a newly shown session (SPEC-30 decision 9).
+/// How a group places a newly shown session (SPEC-tab-groups decision 9).
 ///
 /// Deliberately *not* a rendering mode: the tree is always whatever the user
 /// last arranged, and nothing re-arranges it automatically. This only decides
@@ -160,7 +160,7 @@ class Group {
   /// preference (decision 9).
   final LayoutMode? layoutOverride;
 
-  /// This group's own split/tab tree — the SPEC-28 workspace, one per group.
+  /// This group's own split/tab tree — the SPEC-desktop-workspace-tabs workspace, one per group.
   final WorkspaceState tree;
 
   /// Whether this group's scope is exactly `(projectId, worktreePath)`. Always

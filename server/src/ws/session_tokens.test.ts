@@ -1,5 +1,5 @@
 /**
- * SessionTokenStore tests (SPEC-46 T3 / contract C2).
+ * SessionTokenStore tests (SPEC-cli-as-client T3 / contract C2).
  *
  * The per-session agent credential is in-memory ON PURPOSE: it must never be
  * written to `~/.makit/devices.json` (which persists on every mutation), or a

@@ -510,7 +510,7 @@ test("a mid-pagination failure marks the count unmeasured, not partial", async (
   // Page 1 finds 2 unresolved threads and says there are more; page 2 is
   // throttled. Reporting "2" would present a partial tally as fact — the pill
   // would show a confident wrong number, which is the null-vs-zero hazard
-  // SPEC-32 §6.5 exists to prevent.
+  // SPEC-github-gateway-and-budget §6.5 exists to prevent.
   let threadPages = 0;
   const { gateway } = makeGateway((args) => {
     if (kindOf(args) === "rate_limit") return ok(rateLimitJson(5_000, 5_000));
@@ -744,7 +744,7 @@ test("the exempt rate_limit read is counted separately from quota spend", async 
   assert.equal(execs.filter((e) => e.cmd === "git").length, 1, "git was consulted");
 });
 
-// ── SPEC-38: a mutation must not be undone by a lookup already in flight ─────
+// ── SPEC-pr-actions-next-step-bar: a mutation must not be undone by a lookup already in flight ─────
 
 test("mutatePr invalidates the branch's cached lookup", async () => {
   const { gateway, calls } = makeGateway((args) =>

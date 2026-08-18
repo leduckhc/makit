@@ -1,4 +1,4 @@
-// Frame recorder for the SPEC-41/42 ports popover, for the PR demo.
+// Frame recorder for the SPEC-open-ports/42 ports popover, for the PR demo.
 //
 // The data is REAL: `server/tool/capture-ports-snapshot.ts` runs the production
 // `PortsService` (real `lsof`/`ps`, real TCP health probe, real `git worktree

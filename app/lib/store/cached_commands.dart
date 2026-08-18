@@ -1,4 +1,4 @@
-/// Cached slash-command palettes (SPEC-45 D3–D5).
+/// Cached slash-command palettes (SPEC-starter-pane-parity D3–D5).
 ///
 /// The "Choose a harness" starter pane has no session, and agent commands only
 /// ever arrive on a live session's `session.commands` (ACP delivers them as an

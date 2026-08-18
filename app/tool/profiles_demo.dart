@@ -1,4 +1,4 @@
-// A standalone harness for design-reviewing the SPEC-50 profile surfaces on a
+// A standalone harness for design-reviewing the SPEC-profiles profile surfaces on a
 // real macOS window, with no server, no daemon and no filesystem writes.
 //
 //   rm -rf .dart_tool/flutter_build build/macos/Build/Products/Profile

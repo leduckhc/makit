@@ -8,27 +8,27 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'notification_request.dart';
 import '../pairing/readiness.dart';
 
-/// SharedPreferences key for the SPEC-07 pending-action replay queue.
+/// SharedPreferences key for the SPEC-background-wake-notifications pending-action replay queue.
 const kPendingActionsKey = 'makit_pending_actions';
 
 /// SharedPreferences flag: have we ever shown the OS notification prompt?
 /// The platform permission query can't distinguish "not yet asked" from
 /// "denied", so we track it ourselves to drive the onboarding notifications
-/// gate (SPEC-09).
+/// gate (SPEC-onboarding-and-tray-polish).
 const kNotifAskedKey = 'makit_notif_asked';
 
-/// Upper bound on the SPEC-07 pending-action replay queue. Prevents unbounded
+/// Upper bound on the SPEC-background-wake-notifications pending-action replay queue. Prevents unbounded
 /// growth in SharedPreferences when actions are never drained.
 const kMaxPendingActions = 50;
 
-/// SPEC-07 seam: fired when the user taps an actionable-notification button
+/// SPEC-background-wake-notifications seam: fired when the user taps an actionable-notification button
 /// while the app process is NOT alive. This runs in a separate
 /// `@pragma('vm:entry-point')` isolate with no socket/Riverpod, so Slice 1
-/// cannot respond here — it only persists the pending action for SPEC-07 to
+/// cannot respond here — it only persists the pending action for SPEC-background-wake-notifications to
 /// drain (via `responseForAction` + `respondTo`) on next launch/reconnect.
 @pragma('vm:entry-point')
 void notificationBackgroundHandler(NotificationResponse resp) {
-  // SPEC-07: enqueue {requestId, actionId, input} for replay. Kept dependency-
+  // SPEC-background-wake-notifications: enqueue {requestId, actionId, input} for replay. Kept dependency-
   // light and best-effort; the live-isolate path (foreground actions) is what
   // Slice 1 relies on.
   final actionId = resp.actionId;
@@ -126,7 +126,7 @@ class NotificationService {
 
   /// Initialise the plugin. Safe to call once at boot.
   ///
-  /// SPEC-09: does NOT request permission up front. The onboarding wizard owns
+  /// SPEC-onboarding-and-tray-polish: does NOT request permission up front. The onboarding wizard owns
   /// the prompt (via [requestPermission]) so it's asked with context, and
   /// [permissionStatus] can report `notDetermined` before then.
   Future<void> init() async {

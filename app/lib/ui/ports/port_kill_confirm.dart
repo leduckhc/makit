@@ -1,4 +1,4 @@
-/// The kill confirm + its outcome reporting (SPEC-43 D8), shared by the desktop
+/// The kill confirm + its outcome reporting (SPEC-ports-kill D8), shared by the desktop
 /// popover and the mobile detail sheet so the two cannot drift.
 ///
 /// D8 in one place: the dialog **names the victim** — command, pid, port and the
@@ -89,7 +89,7 @@ Future<PortKillOutcome?> confirmAndKillPort(
   return outcome;
 }
 
-/// Bulk-kill every orphan (SPEC-43 D5): N independent, individually re-verified
+/// Bulk-kill every orphan (SPEC-ports-kill D5): N independent, individually re-verified
 /// kills behind ONE confirm that names the count and the ports.
 ///
 /// The confirm names the endpoints for the same reason a single kill names its

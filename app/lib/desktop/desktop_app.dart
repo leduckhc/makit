@@ -1,4 +1,4 @@
-/// macOS desktop control app entry point (SPEC-03, Phase 4).
+/// macOS desktop control app entry point (SPEC-desktop-control-app, Phase 4).
 ///
 /// Wires the tested building blocks into a launchable app:
 /// - a [ReconnectingControlClient] over `~/.makit/control.sock`,
@@ -92,7 +92,7 @@ Future<void> runDesktopApp() async {
   // own MAKIT_HOME, port, prefs namespace and window label so two windows never
   // collide. Identity is persisted in ~/.makit/profiles.json rather than derived
   // from this executable's path, so moving or rebuilding a worktree re-binds to
-  // the same profile instead of orphaning it (SPEC-50 D3).
+  // the same profile instead of orphaning it (SPEC-profiles D3).
   final resolvedHome = Platform.environment['HOME'] ?? '';
   final registry = ProfileRegistry.load(makitRoot: '$resolvedHome/.makit');
   final resolution = await registry.resolveFor(
@@ -100,7 +100,7 @@ Future<void> runDesktopApp() async {
     home: resolvedHome,
   );
   // Honour the profile the user last switched to, but only for the installed
-  // app: a dev build always opens its own profile (SPEC-50 D10).
+  // app: a dev build always opens its own profile (SPEC-profiles D10).
   final profile = registry.preferredFor(resolution.profile);
   // Only write when the set actually changed: launching must not rewrite the
   // registry (and bump its mtime) on every start.
@@ -119,7 +119,7 @@ Future<void> runDesktopApp() async {
   );
   final preferencesController = PreferencesController.load(prefs);
   final recentModelsController = RecentModelsController.load(prefs);
-  // SPEC-45: the starter pane's slash palette, remembered across restarts —
+  // SPEC-starter-pane-parity: the starter pane's slash palette, remembered across restarts —
   // otherwise every relaunch shows it empty until a session has run.
   final cachedCommandsController = CachedCommandsController.load(prefs);
   // The tray must read the runtime through a holder, not close over one
@@ -133,7 +133,7 @@ Future<void> runDesktopApp() async {
     onStop: () => host.runtime.controller.stop(),
     onOpenDashboard: _showWindow,
     onOpenQr: _showWindow,
-    // SPEC-42 D15: the menubar's one ports action. The desktop shell is not a
+    // SPEC-ports-global-view D15: the menubar's one ports action. The desktop shell is not a
     // router app, so this pushes on its own Navigator — the same helper the
     // ⌘⇧P shortcut and the worktree menu use, guard included.
     onOpenPorts: () async {
@@ -215,7 +215,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
     // frame stream before the WS connects and starts pushing snapshots
     // (mirrors the mobile bootstrap in `main.dart`).
     ref.read(storeControllerProvider);
-    // SPEC-42 D15: mirror each ports snapshot the app already receives into the
+    // SPEC-ports-global-view D15: mirror each ports snapshot the app already receives into the
     // menubar. A LISTENER, not a watch: the tray must never be the reason the
     // host runs `lsof`, so an idle window with no ports surface open simply
     // leaves the submenu showing the last snapshot it saw.
@@ -293,7 +293,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
   }
 
   /// Shows the two-pane Settings window in-window (no route push) so it opens
-  /// instantly and the chat state underneath is preserved (SPEC-13 #5).
+  /// instantly and the chat state underneath is preserved (SPEC-desktop-settings-rework #5).
   void _openSettings() {
     ref.read(settingsOpenProvider.notifier).state = true;
   }
@@ -304,14 +304,14 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
     // from another client, or a restored layout pointing at dead sessions)
     // BEFORE auto-select, so it sees the pruned workspace.
     ref.watch(desktopSessionPruneProvider);
-    // SPEC-10: auto-select the most recent session when none is picked.
+    // SPEC-desktop-chat-app: auto-select the most recent session when none is picked.
     ref.watch(desktopAutoSelectSessionProvider);
     // Read reactively here (not inside `builder`, which builds in a descendant
     // context) so changing the pref rebuilds and re-wires the reminder delay.
     final reminderDelay = Duration(
       minutes: ref.preference(notificationsReminderDelayPreference),
     );
-    // UI text scale (SPEC-13 Appearance → Text). Applied via a MediaQuery
+    // UI text scale (SPEC-desktop-settings-rework Appearance → Text). Applied via a MediaQuery
     // wrapper in `builder` so it scales the whole app, dialogs included.
     final textScaler = TextScaler.linear(ref.preference(textScalePreference));
     return MaterialApp(
@@ -324,7 +324,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp>
       themeMode: ref.preference(themeModePreference),
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        // SPEC-48: the same toast layer as mobile. Tapping one opens Activity in
+        // SPEC-status-and-activity: the same toast layer as mobile. Tapping one opens Activity in
         // its dialog; the sidebar bell is the other way in.
         child: StatusToastLayer(
           topInset: kToastInsetDesktop,
@@ -373,7 +373,7 @@ const String makitInstallCommand =
 ///
 /// The tray and the poll loop are created before the widget tree exists and must
 /// survive a profile switch, so they read the runtime through this rather than
-/// closing over one instance (SPEC-50 D10).
+/// closing over one instance (SPEC-profiles D10).
 class _RuntimeHolder {
   late ProfileRuntime runtime;
   TrayController? tray;
@@ -450,7 +450,7 @@ class _ProfileHostState extends State<_ProfileHost> {
   bool _switching = false;
 
   /// Switches to [target], verifying it is reachable BEFORE tearing anything
-  /// down (SPEC-50 D10 step 2).
+  /// down (SPEC-profiles D10 step 2).
   ///
   /// Returns `null` on success, or a human-readable reason on failure — in which
   /// case nothing has changed and the caller reports it. The order is the whole
@@ -578,7 +578,7 @@ class _ProfileHostState extends State<_ProfileHost> {
         cachedCommandsControllerProvider.overrideWith(
           (ref) => widget.cachedCommandsController,
         ),
-        // SPEC-34: hand the stored rail on/off + options to the shared
+        // SPEC-message-navigator: hand the stored rail on/off + options to the shared
         // transcript providers (shared `ui/` cannot read `desktop/` prefs).
         messageNavigatorStyleProvider.overrideWith(
           (ref) => ref.watch(desktopNavigatorStyleProvider),

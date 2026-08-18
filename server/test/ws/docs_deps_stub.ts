@@ -1,5 +1,5 @@
 /**
- * Shared stubs for the docs-domain `CommandDeps` members (SPEC-46).
+ * Shared stubs for the docs-domain `CommandDeps` members (SPEC-doc-preview).
  *
  * The sibling of `ports_deps_stub.ts`, for the same reason and after the same
  * near-miss: three `CommandRouter` harnesses (`agents_catalog`, `pr_commands`,

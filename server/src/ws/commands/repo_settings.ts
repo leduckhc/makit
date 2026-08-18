@@ -1,10 +1,10 @@
 /**
- * Per-repo settings commands (SPEC-48).
+ * Per-repo settings commands (SPEC-per-repo-settings).
  *
  * `repo.settings.set` is the only write, and it is **gated on a loopback
  * connection**. That is not a UI convention — it is checked here, on the server,
  * against `WsClient.isLocal`, which `server.ts` derives from the socket's real
- * remote address. The precedent is SPEC-37 decision 6, where the same flag already
+ * remote address. The precedent is SPEC-performance-metrics-dashboard decision 6, where the same flag already
  * refuses a non-loopback client's reported pid: *"a non-loopback client must
  * connect normally but may not ask us to sample an arbitrary pid."*
  *

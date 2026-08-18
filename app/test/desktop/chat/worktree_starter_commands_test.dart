@@ -1,4 +1,4 @@
-/// SPEC-45 D3/D4 — the starter pane's slash palette. There is no session yet,
+/// SPEC-starter-pane-parity D3/D4 — the starter pane's slash palette. There is no session yet,
 /// so agent commands can only come from what a live session in this project
 /// already advertised (`CachedCommandsController`).
 library;
@@ -127,8 +127,8 @@ void main() {
     // `/model`, `/cancel`, `/compact`… are intercepted app-side by
     // `handleClientCommand`, which requires a sessionId — so this pane cannot
     // run them, and its send path does not even try. Offering them would spawn a
-    // session whose first message is the literal text "/model" (SPEC-45 D8, the
-    // same reasoning SPEC-38 applied to queued messages).
+    // session whose first message is the literal text "/model" (SPEC-starter-pane-parity D8, the
+    // same reasoning SPEC-pending-queue-edit-reorder applied to queued messages).
     final cache = await _pump(tester);
     await cache.record(agent: 'zed', projectId: 'p1', commands: [_skill]);
     await tester.pumpAndSettle();

@@ -1,4 +1,4 @@
-/// SPEC-45 D3–D5 — the per-(agent, project) slash-command cache: what a live
+/// SPEC-starter-pane-parity D3–D5 — the per-(agent, project) slash-command cache: what a live
 /// session advertised, remembered so the pre-session starter pane can offer the
 /// same palette.
 library;

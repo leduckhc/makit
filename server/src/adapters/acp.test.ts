@@ -830,7 +830,7 @@ test("acp start preflight honors spec.env.PATH — not just the parent process P
   }
 });
 
-// ---- SPEC-26: ACP session config options ----------------------------------
+// ---- SPEC-acp-config-options-unified-composer: ACP session config options ----------------------------------
 
 /** Build an adapter paired with an agent whose newSession returns `res`. */
 function pairWithNewSession(
@@ -1105,7 +1105,7 @@ test("modes-only agent routes a configOption id:mode to set_session_mode (no set
   assert.equal((events.find((e) => e.kind === "session.meta")!.payload as any).configOptions[0].currentValue, "ask");
 });
 
-// ---------- capability probe (SPEC-27) -------------------------------------
+// ---------- capability probe (SPEC-new-session-config-at-spawn) -------------------------------------
 
 /**
  * Build a probe-facing fake agent: newSession returns `res`; initialize
@@ -1182,7 +1182,7 @@ test("probeAcpConfigOptions returns [] for an option-less harness and skips dele
   assert.equal(deleteCalls.length, 0);
 });
 
-test("listAcpSessions returns normalized sessions when the agent advertises list (SPEC-29)", async () => {
+test("listAcpSessions returns normalized sessions when the agent advertises list (SPEC-session-lifecycle-resume-list-delete)", async () => {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "makit-acp-list-")));
   try {
     const { transport } = pair((_conn) => ({
@@ -1242,7 +1242,7 @@ test("listAcpSessions returns [] when the agent does not advertise list", async 
   }
 });
 
-test("deriveAcpCapabilities reads loadSession + sessionCapabilities (SPEC-29)", () => {
+test("deriveAcpCapabilities reads loadSession + sessionCapabilities (SPEC-session-lifecycle-resume-list-delete)", () => {
   assert.deepEqual(
     deriveAcpCapabilities({ agentCapabilities: { loadSession: true, sessionCapabilities: { list: {}, delete: {} } } }),
     { resume: false, load: true, list: true, delete: true, fork: false, archive: false, close: false },
@@ -1251,7 +1251,7 @@ test("deriveAcpCapabilities reads loadSession + sessionCapabilities (SPEC-29)", 
     deriveAcpCapabilities({ agentCapabilities: { sessionCapabilities: { resume: {}, fork: {} } } }),
     { resume: true, load: false, list: false, delete: false, fork: true, archive: false, close: false },
   );
-  // `close` is its own capability (SPEC-29 close/reopen) — `{}` means supported.
+  // `close` is its own capability (SPEC-session-lifecycle-resume-list-delete close/reopen) — `{}` means supported.
   assert.deepEqual(
     deriveAcpCapabilities({ agentCapabilities: { sessionCapabilities: { close: {} } } }),
     { resume: false, load: false, list: false, delete: false, fork: false, archive: false, close: true },
@@ -1336,7 +1336,7 @@ test("close() propagates a failing session/close for the manager to absorb", asy
   await assert.rejects(() => adapter.close());
 });
 
-test("start({resumeAgentSessionId}) loads and drops the replayed history (silent mode, SPEC-29)", async () => {
+test("start({resumeAgentSessionId}) loads and drops the replayed history (silent mode, SPEC-session-lifecycle-resume-list-delete)", async () => {
   let loadArgs: any;
   const { transport } = pair((conn) => ({
     async initialize(_p: InitializeRequest) {
@@ -1373,7 +1373,7 @@ test("start({resumeAgentSessionId}) loads and drops the replayed history (silent
 });
 
 test("ingests a tool-result image and rewrites a local markdown image path", async () => {
-  // Real MediaStore in a temp dir — this exercises the whole SPEC-22 server
+  // Real MediaStore in a temp dir — this exercises the whole SPEC-assistant-display-media server
   // path: base64 tool output → blob, and `![](abs path)` → makit-media URI.
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "makit-acp-media-")));
   const png = Buffer.from(
@@ -1483,7 +1483,7 @@ test("a genuine tool approval is not hijacked by a rawInput.method field", async
   assert.equal(outcome, "ok");
 });
 
-test("acp cannot steer: ACP has no mid-turn injection primitive (SPEC-35 T1)", async () => {
+test("acp cannot steer: ACP has no mid-turn injection primitive (SPEC-mid-turn-steering-and-queue T1)", async () => {
   const { adapter, events } = pairWithNewSession({ sessionId: "acp-sess-1" });
   await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
   const before = events.length;
@@ -1497,7 +1497,7 @@ test("acp cannot steer: ACP has no mid-turn injection primitive (SPEC-35 T1)", a
 //
 // pi runs behind the `pi-acp` bridge, whose argv is fixed (`--mode rpc
 // --no-themes` [+ --session]) — it forwards neither `--model` nor `-e`. So a
-// requested model can only be delivered over ACP, via the SPEC-26 config-option
+// requested model can only be delivered over ACP, via the SPEC-acp-config-options-unified-composer config-option
 // surface. Before this, `SpawnOpts.model` was silently dropped for pi: the real
 // e2e loop believed it had swapped in the local fake model while actually
 // billing the user's configured one.

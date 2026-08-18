@@ -1,4 +1,4 @@
-// SPEC-52 A1 + A2 — the pure half of session identity: the per-agent vocabulary
+// SPEC-session-identity A1 + A2 — the pure half of session identity: the per-agent vocabulary
 // table and the clipboard payload.
 //
 // These are unit tests on pure functions, deliberately, for the same reason

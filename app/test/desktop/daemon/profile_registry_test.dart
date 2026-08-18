@@ -1,5 +1,5 @@
-// Unit tests for [ServerProfile] and [ProfileRegistry] (SPEC-50 P1).
-// Co-located with the code under test (per SPEC-03 desktop layout).
+// Unit tests for [ServerProfile] and [ProfileRegistry] (SPEC-profiles P1).
+// Co-located with the code under test (per SPEC-desktop-control-app desktop layout).
 // ignore_for_file: depend_on_referenced_packages
 import 'dart:convert';
 import 'dart:io';
@@ -81,20 +81,23 @@ void main() {
       expect(_dev.isProtected, isFalse);
     });
 
-    test('the effective prefs key matches the pre-SPEC-50 layout exactly', () {
-      // D11's no-migration claim, asserted rather than argued in prose:
-      // shared_preferences composes '$_prefix$key', so with the default
-      // 'flutter.' prefix our key must reproduce the old
-      // setPrefix('flutter.<id>.') + 'desktop_server_port'.
-      expect(
-        'flutter.${_dev.prefsKeyPrefix}desktop_server_port',
-        'flutter.a1b2c3d4.desktop_server_port',
-      );
-      expect(
-        'flutter.${_legacy.prefsKeyPrefix}desktop_server_port',
-        'flutter.desktop_server_port',
-      );
-    });
+    test(
+      'the effective prefs key matches the pre-SPEC-profiles layout exactly',
+      () {
+        // D11's no-migration claim, asserted rather than argued in prose:
+        // shared_preferences composes '$_prefix$key', so with the default
+        // 'flutter.' prefix our key must reproduce the old
+        // setPrefix('flutter.<id>.') + 'desktop_server_port'.
+        expect(
+          'flutter.${_dev.prefsKeyPrefix}desktop_server_port',
+          'flutter.a1b2c3d4.desktop_server_port',
+        );
+        expect(
+          'flutter.${_legacy.prefsKeyPrefix}desktop_server_port',
+          'flutter.desktop_server_port',
+        );
+      },
+    );
 
     test('every profile has a titled window, including the legacy one', () {
       expect(_legacy.windowTitle, 'Makit — Makit');
@@ -384,7 +387,7 @@ void main() {
       expect(reg.profiles.single.id, 'x');
     });
 
-    // SPEC-50 D1 runs several instances at once, each with its own in-memory
+    // SPEC-profiles D1 runs several instances at once, each with its own in-memory
     // list. A plain whole-file write loses whatever another window added: a
     // `user` profile has no `origin`, so resolveFor could never re-bind it and
     // its home/pairings/prefs would be orphaned -- the exact failure this class
@@ -449,7 +452,7 @@ void main() {
     test('an unmodified profile does not revert another window\'s rename', () {
       // Window A renames X and saves; window B (loaded before) saves an
       // unrelated change. B must not write its stale copy of X back over A's
-      // rename (SPEC-50 D1 lost-update).
+      // rename (SPEC-profiles D1 lost-update).
       final fs = _MemoryFs();
       final a = ProfileRegistry(
         makitRoot: kRoot,

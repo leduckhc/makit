@@ -86,7 +86,7 @@ test("thread/name/updated surfaces a title; error surfaces session.error", () =>
   assert.equal((events.find((e) => e.kind === "session.error")!.payload as any).message, "boom");
 });
 
-// ---------- MCP tool-result media (SPEC-22 parity with the ACP path) --------
+// ---------- MCP tool-result media (SPEC-assistant-display-media parity with the ACP path) --------
 
 /** A `cua-driver`-shaped screenshot result: text summary + an image block. */
 function captureResult(callId: string, data: string) {
@@ -195,7 +195,7 @@ test("two same-length images that diverge late are both announced", () => {
   );
 });
 
-// ---- SPEC-37: context usage -------------------------------------------------
+// ---- SPEC-context-usage: context usage -------------------------------------------------
 
 /**
  * Payload shape + numbers taken from a real `codex app-server` spike (two turns

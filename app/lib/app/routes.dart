@@ -21,15 +21,15 @@ const kRouteSettings = '$kRouteRepos/settings';
 const kRouteClosed = '$kRouteRepos/closed';
 const kRouteDiagnostics = '$kRouteRepos/diagnostics';
 
-/// The Activity feed (SPEC-48) — every outcome the app has reported, with the
+/// The Activity feed (SPEC-status-and-activity) — every outcome the app has reported, with the
 /// error text still attached.
 const kRouteActivity = '$kRouteRepos/activity';
 
-/// The global Ports screen (SPEC-42 P2a) — "everything, all repos". Accepts an
+/// The global Ports screen (SPEC-ports-global-view P2a) — "everything, all repos". Accepts an
 /// optional `?repo=<id>` that pre-selects the *This repo* filter.
 const kRoutePorts = '$kRouteRepos/ports';
 
-/// The global Docs screen (SPEC-46 P1) — the repo's mockups and specs, grouped
+/// The global Docs screen (SPEC-doc-preview P1) — the repo's mockups and specs, grouped
 /// repo → worktree.
 const kRouteDocs = '$kRouteRepos/docs';
 

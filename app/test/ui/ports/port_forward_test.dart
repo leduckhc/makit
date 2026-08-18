@@ -1,4 +1,4 @@
-// SPEC-44 P4b — the system-browser hand-off.
+// SPEC-ports-forward P4b — the system-browser hand-off.
 //
 // The properties worth pinning: the confirm TELLS the user what they are getting
 // (a link that is itself a credential, and a certificate warning), nothing is

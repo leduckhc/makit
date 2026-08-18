@@ -1,4 +1,4 @@
-/// `Forward & open` (SPEC-44 P4b) — hand a loopback dev server to the phone's
+/// `Forward & open` (SPEC-ports-forward P4b) — hand a loopback dev server to the phone's
 /// own browser.
 ///
 /// **The one thing only makit can do**: a `127.0.0.1` dev server is invisible from
@@ -7,7 +7,7 @@
 /// has, without binding anything new on the host.
 ///
 /// The consumer is the **system browser**, not an in-app WebView. That is a
-/// deliberate revision of SPEC-44 D2, and the reasons are worth keeping written
+/// deliberate revision of SPEC-ports-forward D2, and the reasons are worth keeping written
 /// down:
 ///
 ///  * An in-app WebView would need a loopback HTTP proxy running *inside the app*

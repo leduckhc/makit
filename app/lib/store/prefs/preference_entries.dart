@@ -162,7 +162,7 @@ const PreferenceEntry<String> prPullPromptPreference = PreferenceEntry(
 
 /// Whether the GitHub API budget popover's "Burn history" detail is expanded.
 /// Backs the popover's in-place expander so the user's choice survives opens
-/// and restarts (SPEC-32 §7.2). Internal bookkeeping — a remembered UI state,
+/// and restarts (SPEC-github-gateway-and-budget §7.2). Internal bookkeeping — a remembered UI state,
 /// not a user-facing setting.
 const PreferenceEntry<bool> budgetHistoryExpandedPreference = PreferenceEntry(
   id: 'chat.budgetHistoryExpanded',
@@ -173,7 +173,7 @@ const PreferenceEntry<bool> budgetHistoryExpandedPreference = PreferenceEntry(
 );
 
 /// Whether the metrics popover's "History" detail is expanded. Same role as
-/// [budgetHistoryExpandedPreference] for the sibling footer popover (SPEC-37
+/// [budgetHistoryExpandedPreference] for the sibling footer popover (SPEC-context-usage
 /// Tier 1): a remembered UI state, not a user-facing setting.
 const PreferenceEntry<bool> metricsHistoryExpandedPreference = PreferenceEntry(
   id: 'chat.metricsHistoryExpanded',
@@ -184,7 +184,7 @@ const PreferenceEntry<bool> metricsHistoryExpandedPreference = PreferenceEntry(
 );
 
 /// How many agents a group opens side by side before it starts placing new ones
-/// as tabs (SPEC-30 decision 9). A **placement policy**, not a rendering mode:
+/// as tabs (SPEC-tab-groups decision 9). A **placement policy**, not a rendering mode:
 /// changing it never re-arranges a group the user already arranged — it only
 /// decides where the *next* session lands in groups with no manual override.
 const PreferenceEntry<int> autoSplitThresholdPreference = PreferenceEntry(
@@ -194,7 +194,7 @@ const PreferenceEntry<int> autoSplitThresholdPreference = PreferenceEntry(
   decode: _decodeInt,
 );
 
-/// SPEC-51 — whether clicking a worktree in the sidebar opens it as a **preview**
+/// SPEC-preview-groups — whether clicking a worktree in the sidebar opens it as a **preview**
 /// (disposable) group: at most one exists, and the next worktree click replaces
 /// it instead of appending a tab. Promotion is explicit only — double-click the
 /// branch, or "Keep this view" on the tab (decision 4).
@@ -210,7 +210,7 @@ const PreferenceEntry<bool> previewGroupsPreference = PreferenceEntry(
   decode: _decodeBool,
 );
 
-/// SPEC-34 — whether the **desktop** transcript renders the message rail. Mobile
+/// SPEC-message-navigator — whether the **desktop** transcript renders the message rail. Mobile
 /// does not read this (it reaches its messages through a sheet instead; see
 /// `messageNavigatorStyleProvider`), so this is a desktop-only preference.
 const PreferenceEntry<MessageNavigatorStyle> messageNavigatorStylePreference =
@@ -221,7 +221,7 @@ const PreferenceEntry<MessageNavigatorStyle> messageNavigatorStylePreference =
       decode: _decodeNavigatorStyle,
     );
 
-/// Where a session's pending mid-turn messages render (SPEC-38). Read by BOTH
+/// Where a session's pending mid-turn messages render (SPEC-pending-queue-edit-reorder). Read by BOTH
 /// surfaces, unlike the navigator style: a phone is exactly where a queue
 /// matters, so this is not a desktop-only preference.
 ///

@@ -344,7 +344,7 @@ test("pid is set to the child's pid for a real trivial spawn", () => {
 
 test("pid is undefined when the spawn faults (no child pid)", () => {
   // A faulted spawn leaves child.pid === undefined; propagate that honestly
-  // rather than coercing to 0 (SPEC-37 decision 11: an absent pid is omitted,
+  // rather than coercing to 0 (SPEC-performance-metrics-dashboard decision 11: an absent pid is omitted,
   // not zeroed).
   const { spawn } = fakeSpawn(); // fake child never sets .pid
   const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });

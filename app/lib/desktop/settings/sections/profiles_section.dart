@@ -1,4 +1,4 @@
-/// The Profiles settings section (SPEC-50 D7/D8/D9, mockup cards 4 & 5).
+/// The Profiles settings section (SPEC-profiles D7/D8/D9, mockup cards 4 & 5).
 ///
 /// A list of every server profile with its live status, an inline detail view
 /// per profile, and a "Stale — source folder is gone" group that only appears
@@ -709,7 +709,7 @@ String _tildeHome(String path) {
 
 /// Switches away from [victim] and then deletes it.
 ///
-/// `ProfileDeleter` refuses the active profile (SPEC-50 D8) — a profile cannot be
+/// `ProfileDeleter` refuses the active profile (SPEC-profiles D8) — a profile cannot be
 /// deleted from under the window using it — so this picks another profile, hands
 /// the window over, and lets the host delete the old one from the *new* runtime,
 /// where it is no longer active. Both steps are confirmed: the switch sheet

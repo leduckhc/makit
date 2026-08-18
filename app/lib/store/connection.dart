@@ -123,10 +123,10 @@ class MakitConnState {
   bool get hasMultipleServers => servers.length > 1;
 
   /// True once this device has sent `push.register` on the current connection
-  /// (SPEC-07). Resets on reconnect; used by Settings to show wake status.
+  /// (SPEC-background-wake-notifications). Resets on reconnect; used by Settings to show wake status.
   final bool pushRegistered;
 
-  /// SPEC-46 D8 rev 2: whether this client shares a machine with the server,
+  /// SPEC-doc-preview D8 rev 2: whether this client shares a machine with the server,
   /// **as stated by the server** in `hello.ack`.
   ///
   /// Never inferred from [PairedServer.host]: mDNS rediscovery rewrites that
@@ -184,7 +184,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
        _rediscoverStall = rediscoverStall ?? const Duration(seconds: 2),
        _pushRegistrar = pushRegistrar ?? const NoopPushRegistrar(),
        super(MakitConnState()) {
-    // SPEC-07: the APNs token can arrive AFTER we connect. Subscribe so a late
+    // SPEC-background-wake-notifications: the APNs token can arrive AFTER we connect. Subscribe so a late
     // token still triggers a `push.register` on the live socket.
     _pushRegistrar.onToken = registerPushToken;
     _boot();
@@ -194,7 +194,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   final Transport Function() _transportFactory;
   final BrowseLan _browseLan;
 
-  /// SPEC-07: native push-token provider. Default Noop → no token → the app
+  /// SPEC-background-wake-notifications: native push-token provider. Default Noop → no token → the app
   /// never sends `push.register` and the server stays on the Slice-1 fallback.
   final PushRegistrar _pushRegistrar;
 
@@ -409,7 +409,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   /// Authenticated `hello` body. Credentials only — [_attachReal] adds the pid.
   Map<String, dynamic> _authHelloBody(String bearer) => {'bearer': bearer};
 
-  /// Our OS `pid`, so the server can measure the app surface (SPEC-37 decision
+  /// Our OS `pid`, so the server can measure the app surface (SPEC-performance-metrics-dashboard decision
   /// 6: the app has no self-CPU API, so the server samples the pid we report and
   /// trusts it only on a loopback socket).
   ///
@@ -544,7 +544,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
         useFake: false,
         clearError: s == WsState.connected,
       );
-      // SPEC-07: (re)register the content-free wake push token on every
+      // SPEC-background-wake-notifications: (re)register the content-free wake push token on every
       // successful (re)connect. Reset the per-connection guard first so a
       // fresh socket always re-registers; no-op when no token is available.
       if (s == WsState.connected) {
@@ -608,7 +608,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     // Open the connection but DON'T let WsClient send its own auto-hello —
     // it would carry no pair token. Instead we call _open directly via
     // `connect` and rely on it sending hello with the body we configure.
-    // Still send the desktop pid so the server can measure the app surface (SPEC-37).
+    // Still send the desktop pid so the server can measure the app surface (SPEC-performance-metrics-dashboard).
     final body = {'pair': info.token, 'label': label, ..._pidHelloBody()};
     await ws.connect(
       info.wssUrl,
@@ -698,12 +698,12 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     await _connectPaired(server);
   }
 
-  /// SPEC-07: the push token most recently sent on the CURRENT connection.
+  /// SPEC-background-wake-notifications: the push token most recently sent on the CURRENT connection.
   /// Reset on every (re)connect so a fresh socket re-registers, but guards
   /// against re-sending the same token within one connection (idempotent).
   String? _registeredToken;
 
-  /// SPEC-07: called when a native push token becomes available (possibly
+  /// SPEC-background-wake-notifications: called when a native push token becomes available (possibly
   /// after the socket connected). Sends `push.register` immediately if we're
   /// connected; otherwise the next successful connect picks it up via
   /// [_registerPush]. Idempotent per connection.
@@ -712,7 +712,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     if (state.wsState == WsState.connected) _sendPushRegister(token);
   }
 
-  /// SPEC-07: send the `push.register` cmd once a native push token is
+  /// SPEC-background-wake-notifications: send the `push.register` cmd once a native push token is
   /// available. Best-effort; a missing token (Noop registrar, permission
   /// declined) simply skips registration.
   Future<void> _registerPush() async {
@@ -785,7 +785,7 @@ final secureStorageProvider = Provider<SecureStore>(
   (_) => defaultSecureStore(),
 );
 
-/// SPEC-07: the native push-token provider injected into the controller.
+/// SPEC-background-wake-notifications: the native push-token provider injected into the controller.
 /// Defaults to [NoopPushRegistrar] (safe for tests + platforms without a
 /// native provider). The real mobile app overrides this with a
 /// [ChannelPushRegistrar] in `main.dart`.

@@ -1,4 +1,4 @@
-/// The confirm sheet for switching the window to another profile (SPEC-50 D10).
+/// The confirm sheet for switching the window to another profile (SPEC-profiles D10).
 ///
 /// Its shape is deliberate: the **"keeps running"** half is what makes the button
 /// usable. Switching sounds like it might stop your work, and the honest answer

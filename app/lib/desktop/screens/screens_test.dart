@@ -1,10 +1,10 @@
-/// Widget tests for the SPEC-03 desktop control screens.
+/// Widget tests for the SPEC-desktop-control-app desktop control screens.
 ///
 /// Every test drives a screen through a [FakeControlClient] injected via a
 /// `ProviderScope` override, covering the data, empty, and error states.
 library;
 
-// This test lives beside the screens (per SPEC-03 Stream C layout), so it
+// This test lives beside the screens (per SPEC-desktop-control-app Stream C layout), so it
 // imports the flutter_test dev-dependency from a lib/ path.
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter/material.dart';

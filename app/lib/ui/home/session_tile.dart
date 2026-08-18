@@ -14,7 +14,7 @@ import '../../status/status_providers.dart';
 import 'repo_chips.dart';
 import '../../app/routes.dart';
 
-/// A session inside a repo card, as an inset block (SPEC-19, direction C).
+/// A session inside a repo card, as an inset block (SPEC-decomposition-and-dedup, direction C).
 ///
 /// The block sits on a raised surface so a session reads as living *in* its
 /// worktree rather than as a sibling of it — the old flat list left the two
@@ -190,7 +190,7 @@ class SessionTile extends ConsumerWidget {
       s == SessionStatus.awaitingApproval ||
       s == SessionStatus.error;
 
-  /// SPEC-46 D10: a session with lineage was handed off from another session,
+  /// SPEC-cli-as-client D10: a session with lineage was handed off from another session,
   /// so the row explains itself rather than appearing as a mystery title. The
   /// caption renders whenever [Session.parentId] is set and never depends on
   /// resolving the parent — which may be closed or simply not cached — and

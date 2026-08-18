@@ -170,7 +170,7 @@ export async function runServe(opts: ServeArgs) {
     manager.listProjects().map((p) => ({ id: p.id, path: p.path })),
   );
 
-  // SPEC-07: choose the content-free wake sender. Absent/invalid push.json →
+  // SPEC-background-wake-notifications: choose the content-free wake sender. Absent/invalid push.json →
   // NoopPushSender (graceful degradation: wakes are no-ops, Slice-1 fallback).
   // The WakeCoordinator + onUndeliverable wiring lives inside server.ts, which
   // owns `connectedDeviceIds`; index.ts only picks the sender and forwards it.
@@ -213,7 +213,7 @@ export async function runServe(opts: ServeArgs) {
       const { sessionId, ...rest } = body;
       return askDeviceValidated(rest as Record<string, unknown>, sessionId);
     },
-    // SPEC-37: pi reports no usage over ACP, so the `makit-pi-usage` extension
+    // SPEC-context-usage: pi reports no usage over ACP, so the `makit-pi-usage` extension
     // posts it here. An unknown sessionId is dropped silently: the bridge is loopback
     // and a stale extension outliving its session is expected, not an error.
     onUsage: (sessionId, usage) => manager.getSession(sessionId)?.recordUsage(usage),
@@ -256,7 +256,7 @@ export async function runServe(opts: ServeArgs) {
   const mdns = new MdnsAd();
   mdns.start({ port: opts.port, fingerprint: cert.fingerprint });
 
-  // --- control plane (SPEC-01): let `makit status|stop|qr|devices|…` drive this
+  // --- control plane (SPEC-daemon-control-plane): let `makit status|stop|qr|devices|…` drive this
   // running server without a restart. Served by BOTH foreground `serve` and the
   // detached `makit start` process. ---
   ensureMakitHome(); // 0700 state dir before the control socket binds (perms race)

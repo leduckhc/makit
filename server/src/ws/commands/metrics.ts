@@ -1,5 +1,5 @@
 /**
- * Metrics-domain `cmd` handler (SPEC-37): `metrics.watch {on}`.
+ * Metrics-domain `cmd` handler (SPEC-performance-metrics-dashboard): `metrics.watch {on}`.
  *
  * Mirrors `github.refresh`/`github.pause` rather than overloading the
  * session-scoped `sub` flag (spec decision 7). Setting the flag changes the

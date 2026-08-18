@@ -1,4 +1,4 @@
-// Live, real-filesystem tests for [FileSystemAdapter] permissions (SPEC-50).
+// Live, real-filesystem tests for [FileSystemAdapter] permissions (SPEC-profiles).
 //
 // The server guarantees MAKIT_HOME is 0700 and its files 0600
 // (server/src/daemon/paths.ts) because that directory holds an APNs auth key and

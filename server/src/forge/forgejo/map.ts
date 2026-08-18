@@ -24,7 +24,7 @@
  *
  * The `head` filter takes a BARE branch name. GitHub's `owner:branch` form
  * returns an empty list here, which the gateway would map to `none` and erase the
- * pill -- exactly the null-versus-zero defect SPEC-32 §6.5 exists to prevent.
+ * pill -- exactly the null-versus-zero defect SPEC-github-gateway-and-budget §6.5 exists to prevent.
  */
 
 import type { PrCheckBucket, PrCheckDTO } from "../../protocol.js";

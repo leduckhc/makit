@@ -1,0 +1,246 @@
+# SPEC-session-identity — Plan (rev 2, dual review applied)
+
+> Renumbered 51 → 52: *Preview groups* took 51 and *Profiles* took 50 on `main` first. See the
+> spec header.
+
+Every task states its **RED TEST** (written first, must fail for the stated reason), its **VERIFY**
+command, and its **MUTATION** (the production edit that must make that test fail — a test with no
+stated mutation is unproven, and rev 1 had five of them).
+
+Order is forced by three rules: shared vocabulary and pure functions land before their consumers;
+the whole UI is built and pixel-signed-off **before** the wire contract is frozen; and the contract
+commit is made by the controller alone so the two Phase-C agents cannot both edit it.
+
+**Baselines to preserve** (measured in review, not assumed): `tsc -p . --noEmit` clean ·
+`pnpm test` **1313 pass / 0 fail** · `flutter analyze --fatal-infos --no-pub` "No issues found".
+
+Flutter on this machine is `/Users/le/Work/Vibe/flutter/bin/flutter` (**not** `~/flutter` — that is
+the Linux CI VM path in AGENTS.md).
+
+---
+
+## Phase A — UI first, no wire (app only)
+
+The UI depends on an app-level value type, **not** on `SessionDTO`. That is what lets A1–A7 finish
+before the contract exists, and it is the right dependency direction: the widget must not know the
+wire's field names. Review confirmed no Phase-A task secretly needs the contract and nothing in A is
+invalidated by B.
+
+### A0 — correct the mockup first ✅ done
+
+Rev 1 left this ownerless while A7 pixel-compares against it. Applied: full 36-char ids in every
+resume row (D15), absolute paths everywhere (D4), codex's transcript row marked P2 (D16), and an
+`✎ Amended in planning` note recording all three. Re-verified in a browser: grids aligned, no broken
+glyph refs, no horizontal overflow, both uuid rows one line.
+
+### A1 — `SessionIdentity` value type + per-agent vocabulary table (D10, D15, D20)
+
+`app/lib/ui/session/session_identity.dart` (new). Immutable. A **lookup table** keyed by agent id —
+not a `switch` (D10) — supplies the label and resume verb; the default branch is the OCP escape
+hatch.
+
+- **RED TEST** `app/test/session_identity_test.dart`
+  - pi → `agentLabel == 'pi session'`, `resumeCommand == 'pi --session <full uuid>'`
+  - codex → `agentLabel == 'Thread'`, `resumeCommand == 'codex resume <full uuid>'`
+  - `'stub'` → `agentLabel == 'Agent session'`, `resumeCommand == null`
+  - **D15 guard:** asserts the resume string contains the entire 36-char id
+    (`019fa9f4-443d-7d86-8f4c-d9c4988ddf4f`) **and** that it is not the 8-char-prefix form. This
+    test is the standing record of a real collision — `pi --session 019fa9f4` silently resolves to
+    one of two real sessions and offers to fork it.
+  - `agentSessionId == null` → `resumeCommand == null` for every agent.
+- **VERIFY** `flutter test --no-pub test/session_identity_test.dart`
+- **MUTATION** truncate the id to 8 chars → the D15 assertion fails.
+
+### A2 — `sessionIdentityText()` (D14, D4, D9)
+
+Pure: `SessionIdentity` → clipboard payload.
+
+- **RED TEST** same file
+  - four measured values → four `label: value` lines; **two labels share a column** (padding is
+    asserted, not implied — rev 1 left this unprovable); no trailing newline.
+  - absolute path verbatim (D4): a `/Users/…` path appears unabbreviated and no `~` appears anywhere
+    in the output.
+  - `transcriptPath == null` → three lines, no blank line, no `transcript:` label (D9).
+  - unknown agent → no `resume:` line.
+  - no markdown, no fences.
+- **VERIFY** same
+- **MUTATION** (a) drop the padding → the shared-column assertion fails; (b) append `'\n'` → the
+  trailing-newline assertion fails; (c) emit `'-'` for a null value → the omission test fails.
+
+### A3 — `SessionIdentityDetails` body (D5, D8, D9, D18)
+
+Host-agnostic `Column` shaped like `ContextUsageDetails`: uppercase section cap, stacked label /
+mono value rows, one `Copy all` action row, pi-id footnote.
+
+- **RED TEST** `app/test/session_identity_widget_test.dart`
+  - one row per measured value, **in the locked order** — asserted by comparing the rows' painted
+    `dy` positions, not merely by presence (rev 1's "in order" was unprovable).
+  - null `transcriptPath` → no transcript row (D9).
+  - **exactly one** copy affordance in the subtree (`findsOneWidget`) — D5, and this is the test
+    that stops per-row buttons coming back.
+  - tapping `Copy all` puts exactly `sessionIdentityText(identity)` on the clipboard (intercept
+    `SystemChannels.platform`) and emits one `status.info`.
+  - **clipboard failure:** when the platform channel throws, **no** "copied" toast is emitted
+    (`ENGINEERING.md` — never report success on a waited path).
+  - **read-only (D8):** no `TextField`, and nothing whose tooltip/label matches
+    `/rename|delete|close|kill|resume session/i`.
+  - **a11y (D18):** the `Copy all` row's semantics label names the payload and its line count; each
+    value row exposes label + value as one semantics node.
+  - value rows use `kMonoFontFamily`.
+- **VERIFY** `flutter test --no-pub test/session_identity_widget_test.dart`
+- **MUTATION** (a) add a second copy button → single-affordance fails; (b) reverse the row order →
+  the `dy` ordering fails; (c) drop the semantics label → the D18 test fails; (d) toast
+  unconditionally → the clipboard-failure test fails.
+
+### A4 — `showSessionIdentity()` host split (D11, D19)
+
+Mobile → `showModalBottomSheet(showDragHandle: true)` + `SafeArea` + `SingleChildScrollView`;
+desktop → `MenuAnchor` popover, width `min(kIdentityPanelWidth, window.width - 2*margin)`, height
+capped to the window. Copied from `context_usage.dart:228-290`, including the `primary: false`
+reason. The body **watches** the identity provider (D19).
+
+- **RED TEST** same file
+  - mobile renders inside a `BottomSheet`; desktop inside a `MenuAnchor` subtree.
+  - at a 320×360 window the painted panel is **≤ window − 2·margin** in both axes (the SPEC-context-usage
+    off-screen bug, re-asserted).
+  - **D19:** with the panel open and the identity initially id-less, pushing an identity **with** an
+    id rebuilds the panel and the id row appears — without reopening.
+  - **draft/pending:** an identity with no agent id renders the "not started yet" line and **no**
+    resume row (rev 1 only eyeballed this in the harness).
+- **VERIFY** same
+- **MUTATION** (a) hard-code the width to 340 → narrow-window fails; (b) swap `ref.watch` for
+  `ref.read` → the D19 test fails.
+
+### A5 — QA harness `app/tool/session_identity_demo.dart`
+
+Modelled on `tool/tool_row_demo.dart`. Seeded identities (pi with path, pi without, codex, unknown
+agent, draft), light/dark toggle, width toggle (320 / 375 / full), and a **top-bar stamp** printing
+`session identity · <brightness> · <width>pt` so a stale macOS bundle is detectable. Not in `lib/`,
+not in the suite. Kept despite the YAGNI pass because D5's justification is a *measured* claim
+(dropping the copy column took both uuid rows from 2 lines to 1) and a widget test cannot verify row
+pitch on the real platform.
+
+- **VERIFY** `flutter analyze --fatal-infos --no-pub` clean; harness runs on macOS.
+
+### A6 — Pixel sign-off on the real macOS app (hard gate)
+
+Per `makit-transcript-row-qa-harness`:
+1. `rm -rf .dart_tool/flutter_build build/macos/Build/Products/Debug`, rebuild, and confirm the
+   top-bar stamp matches the intended state — proof the bundle is not stale.
+2. `ps -eo pid,command | grep 'feat-get-session-id/app/build/macos.*MacOS/Makit'` →
+   `cua-driver call list_windows '{}'` → this pid's window with height > 400.
+3. `cua-driver call get_window_state '{"pid":P,"window_id":W}'` — geometry from the AX tree, not
+   from pixels (AX space = Flutter logical px here; confirm by checking a row's `frame.w` against
+   the selected pane width).
+4. **Measured assertions:** both uuid rows are **one line**; row pitch uniform; `Copy all` row
+   ≥ 38 px; nothing clipped at 320 pt; light and dark both captured (toggle by element token,
+   fetched immediately before each click since tokens are re-issued per snapshot).
+5. Compare each against `mockups/session-identity.html` at the same widths.
+- **GATE** any mismatch is fixed and re-measured before Phase B starts.
+
+---
+
+## Phase B — freeze the contract (controller only, one commit)
+
+### B1 — `SessionDTO` fields + app model + guard tests (D1)
+
+- `server/src/protocol.ts`: `agentSessionId?: string`, `transcriptPath?: string`, documented as
+  optional-for-old-servers with the `createdAt` precedent named.
+- `app/lib/store/models.dart`: two **nullable** fields + `fromJson`, normalising `''` → `null` so
+  D9 holds even against a sloppy server.
+- **RED TEST (app)** `Session.fromJson` with the fields → populated; without → both null; with `''`
+  → both null.
+- **MUTATION** remove the `''` normalisation → the empty-string test fails.
+- **Dropped from rev 1:** the server-side "a DTO built without them is `undefined`" test. Review
+  correctly called it vacuous — optional TS fields are absent by default with zero production code,
+  and `JSON.stringify` drops `undefined`. The real bite lives in C1b.
+- **VERIFY** `cd server && node_modules/.bin/tsc -p . --noEmit && pnpm test` ·
+  `cd app && flutter test --no-pub test/models_test.dart`
+- Commit alone; the message names the frozen field spelling.
+
+---
+
+## Phase C — implement, in parallel, on disjoint trees
+
+### C1 — server (allow `server/src/**`, `server/test/**`; deny `app/**`, `docs/**`, `mockups/**`)
+
+- **C1a** new `server/src/transcript-path.ts` — the **agent-agnostic** dispatcher (steps (a) and (c)
+  of D3 are not pi-specific; only (b) is), delegating to `pi-sessions.ts` for the pi case so P2's
+  codex resolver is additive rather than a move.
+  - **RED TEST** `transcript-path.test.ts` with a temp `MAKIT_PI_AGENT_DIR`:
+    exact-suffix match wins; **a same-8-char-prefix different-uuid file is not matched** (D15
+    asserted server-side too); missing dir / unreadable dir / non-pi agent → `undefined`;
+    `resumeSessionPath` takes precedence over a derivable path; never throws on a malformed file
+    (the module boundary rule).
+  - **MUTATION** relax the match to `includes(id.slice(0,8))` → the collision test fails.
+- **C1b** wire it into the DTO projection **in `SessionManager`** (D3), `cwd = session.worktreePath
+  ?? project.dto.path`, memoized per session id including misses.
+  - **RED TEST** manager tests: **(i) a worktree-bound session resolves its path from the *worktree*
+    slug, not the project slug** — the exact bug review found, and untestable from a temp-dir suffix
+    test alone; (ii) `transcriptPath` appears in the projected DTO (rev 1 asserted only
+    `agentSessionId` here — the whole path-into-DTO wiring was unproven); (iii) a draft projects
+    neither field; (iv) a closed/cold session still projects the id (SPEC-session-lifecycle-resume-list-delete persistence); (v) two
+    projections of the same session do **one** directory read (memoization).
+  - **MUTATION** (a) use `project.dto.path` unconditionally → the worktree test fails; (b) hard-code
+    `transcriptPath: undefined` → assertion (ii) fails; (c) drop the memo → assertion (v) fails.
+- **VERIFY** `node_modules/.bin/tsc -p . --noEmit && pnpm test` (≥ 1313 pass / 0 fail)
+- **TRAPS** `pi-sessions.ts` must never throw on a bad file. `git.ts`'s `run()` never rejects —
+  check `code`. Do not add a fixture to `server/test/fixtures/events.json` (one entry per *session*
+  kind).
+
+### C2 — app wiring (allow `app/lib/**`, `app/test/**`; deny `server/**`, `app/tool/**`, `docs/**`)
+
+- **C2a** `sessionIdentityProvider(sessionId)` — maps the store's session to `SessionIdentity`.
+  - **RED TEST** (rev 1 had **none** for this task): store with both fields → populated identity;
+    store with neither → an identity whose id/path are null and which does not throw; unknown
+    session id → null-fields, no throw.
+  - **MUTATION** return `null` instead of a null-fields identity → the no-throw tests fail.
+- **C2b** `/session` client command (D7), registered next to `/name`.
+  - **RED TEST** `handleClientCommand('/session')` returns **true** — i.e. is intercepted and never
+    sent, which is the entire bug report encoded as one assertion; `'/session id'` copies exactly
+    the bare id; **bare `/session` does *not* copy** (rev 1 left the two branches collapsible);
+    `'/sessions'` returns false.
+  - **MUTATION** make the matcher prefix-based → the `/sessions` test fails.
+- **C2c** two panel doors + the tab menu's **Copy session id** (D13, D6).
+  - **RED TEST** each menu contains its item; selecting *Session details* opens the panel; selecting
+    *Copy session id* copies the bare id and does **not** open a panel.
+  - **MUTATION** point *Copy session id* at `sessionIdentityText` → the bare-id assertion fails.
+- **Dropped from rev 1:** the `SessionIdentitySection` in `ContextUsageDetails` (D12, cut to P2) and
+  its test. Review showed that test could never fail: appending a section to
+  `ContextUsageDetails` (the body) cannot affect `ContextUsageButton`'s `SizedBox.shrink` (the
+  button), so it asserted an unrelated invariant.
+- **VERIFY** `flutter analyze --fatal-infos --no-pub && flutter test --no-pub`
+- **TRAPS** one `flutter test` at a time; judge the suite by non-`loading` failures; a Dart `Map`
+  literal is never `==` (assert scalars); Riverpod asserts on changing the *number* of overrides
+  between `pumpWidget` calls — build the scope once and swap its child.
+
+---
+
+## Phase D — two-pass review, then loop
+
+1. **Pass 1**, three reviews in parallel on the diff: code correctness (told to *run* the commands
+   and to name any vacuous test), spec adherence (each locked decision D1–D21, plus a proposed
+   mutation per test), and line-level review.
+2. Triage every finding against the code myself; confirm before dispatching. One fix agent per tree,
+   each requiring a red test first and a stated mutation.
+3. **Pass 2**, scoped to "check the fixes, not the feature": FIXED / PARTIAL / NOT FIXED / REGRESSED
+   per finding. Remainder fixed by me if small.
+4. Live proof the tests cannot give: a throwaway probe against the real running server and the real
+   `pi` binary — a real session's `agentSessionId` resolved to a real path, and `pi --session <that
+   full id>` accepted. Deleted; findings recorded in the spec's Verification section.
+5. Fill the Deviations log; flip Status to Implemented with a results table.
+
+---
+
+## Deviations log
+
+| # | Departure from the spec/mockup | Why | Status |
+| --- | --- | --- | --- |
+| 1 | Mockup showed `pi --session 019ff121` (8-char prefix); implementation uses the **full** id. | UUIDv7's first 48 bits are a ms timestamp, so 8 chars leave ~65 s of ambiguity. Real collisions on this machine (`019fa9f4-443d…` + `019fa9f4-d3c8…` in one dir). Review went further: `pi --session 019fa9f4` does **not** error — it silently picks one and offers to fork it. | Spec D15; mockup corrected in A0. |
+| 2 | Dropped the `~/` display abbreviation. | The path belongs to the *server host*; the app cannot know that host's home dir. Faking it needs a `/Users/<x>/` heuristic (wrong on Linux hosts) or `homeDir` on the wire for cosmetics. | Spec D4; mockup corrected in A0. |
+| 3 | Transcript-path resolution moved from `Session.toDTO` to `SessionManager`, keyed on `worktreePath ?? project.dto.path`, memoized. | `Session` has no project path (`session.ts:146`), and pi's slug follows the **worktree** cwd — verified on disk. Rev 1's placement could not compile *and* would have missed every worktree-bound session. Memoization added because per-snapshot `readdir` was unaffordable. | Spec D3, rev 2. |
+| 4 | `resolveTranscriptPath` lives in a new `transcript-path.ts`, not in `pi-sessions.ts`. | Two of its three branches are agent-agnostic; P2's codex resolver becomes additive instead of forcing a move out of a pi-named module. | Plan C1a, rev 2. |
+| 5 | D12 (identity section inside the usage panel) **cut** from P1 to P2. | The ring is absent in four states including the likeliest moment of need, so that door is missing exactly when wanted; it also added an import edge and mixed two row styles in one panel. | Spec D12, rev 2. |
+| 6 | Three panel doors → **two**; the desktop tab menu keeps only *Copy session id*. | A tab-menu *Session details…* duplicates the pane-header kebab one pixel away on the same platform. | Spec D13, rev 2. |
+| 7 | Added D18 (a11y), D19 (watch not snapshot), D20 (i18n), D21 (path disclosure). | Review found a11y absent where SPEC-session-timings had locked it; a panel opened before the id is assigned would have shown stale rows. | Spec rev 2. |
+| 8 | D11's desktop host is a **centred, window-clamped panel**, not the specified `MenuAnchor` popover. | The mechanism cannot transfer: `ContextUsageButton` is a persistent composer control, so a `MenuAnchor` stays anchored to it, whereas both of this panel's desktop doors are transient menu items — by the time one is chosen the menu is dismissed and there is nothing left to anchor to. Found by review of the shipped code, not by a test, because the desktop host had **no test at all** (every case passed `desktop: false`) — which is how the code and its own doc comment drifted apart. | Spec D11 amended; two desktop tests added, both mutation-proven (alignment → topLeft, and dropping the clamp). |

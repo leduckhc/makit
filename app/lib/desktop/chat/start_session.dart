@@ -11,7 +11,7 @@ import 'selected_session.dart';
 /// start a session exactly the same way.
 ///
 /// [takeAttachments] supplies the staged images for that first message and is
-/// called **after** the spawn succeeds (SPEC-45 D6). It takes-and-clears, so
+/// called **after** the spawn succeeds (SPEC-starter-pane-parity D6). It takes-and-clears, so
 /// invoking it late is what keeps a refused spawn from eating an upload the user
 /// would otherwise have to redo.
 Future<String> startSessionInWorktree(

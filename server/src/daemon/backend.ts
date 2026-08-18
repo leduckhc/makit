@@ -1,5 +1,5 @@
 /**
- * Server control backend (SPEC-01, phase 6).
+ * Server control backend (SPEC-daemon-control-plane, phase 6).
  *
  * Adapts the running server's existing collaborators to the {@link ControlBackend}
  * the control server dispatches to. This is the "reuse, don't rebuild" seam:
@@ -145,7 +145,7 @@ export function createServerBackend(deps: ServerBackendDeps): ControlBackend {
  * Reads the whole log into memory. This is acceptable for v1: `makit.log` is
  * truncated on every `start` (see service.ts) so it stays bounded to a single
  * run, and there is no consumer streaming gigabyte logs. Revisit with a bounded
- * tail-read if log rotation lands (SPEC-01 open question).
+ * tail-read if log rotation lands (SPEC-daemon-control-plane open question).
  */
 function emitBacklog(path: string, lines: number, emit: (line: string) => void): number {
   if (!existsSync(path)) return 0;

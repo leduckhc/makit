@@ -1,4 +1,4 @@
-/// SPEC-30 — the seam every group-aware widget and reconciler reads.
+/// SPEC-tab-groups — the seam every group-aware widget and reconciler reads.
 ///
 /// Membership is **resolved here, never stored** for a worktree group: it is a
 /// query over the live session list. Keeping that in one provider is what makes
@@ -176,7 +176,7 @@ final autoSplitThresholdProvider = Provider<int>((ref) {
       .get(autoSplitThresholdPreference);
 });
 
-/// SPEC-51 — whether a sidebar worktree click opens a **preview** group. A
+/// SPEC-preview-groups — whether a sidebar worktree click opens a **preview** group. A
 /// provider (not the `WidgetRef` extension) because the navigation helpers read
 /// it through a `WidgetRef` *and* it belongs next to the other placement policy
 /// this layer reads.
@@ -217,7 +217,7 @@ SessionLocation locationOf(Session session) => SessionLocation(
   worktreePath: session.worktreePath,
 );
 
-/// The group that already contains [sessionId], resolved in SPEC-30 decision
+/// The group that already contains [sessionId], resolved in SPEC-tab-groups decision
 /// 15's order: (a) the active group when it is already a member — no switch,
 /// (b) its own worktree group when open, (c) any open board holding it,
 /// (d) null, meaning the caller should mint its worktree group.

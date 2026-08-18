@@ -1,4 +1,4 @@
-/// Control-plane client for the makit desktop app (SPEC-03).
+/// Control-plane client for the makit desktop app (SPEC-desktop-control-app).
 ///
 /// A thin request/response client over the daemon's unix-domain control socket
 /// (`~/.makit/control.sock`). It speaks the frozen NDJSON protocol from

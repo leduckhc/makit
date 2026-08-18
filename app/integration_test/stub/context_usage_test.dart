@@ -4,7 +4,7 @@ import 'package:makit/ui/composer/context_usage.dart';
 
 import '../e2e_helpers.dart';
 
-/// SPEC-37 — full-stack proof that context usage reaches the UI: the real server
+/// SPEC-context-usage — full-stack proof that context usage reaches the UI: the real server
 /// emits `session.usage` on the same path the codex/ACP adapters use, it crosses
 /// a real WSS connection, the ring appears in the composer footer, and tapping it
 /// opens the details panel.

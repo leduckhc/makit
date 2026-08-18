@@ -1,6 +1,6 @@
 /**
  * `makit ask <id> MSG [--timeout S] [--json]` — ask a session something and print
- * the answer (SPEC-46 U2).
+ * the answer (SPEC-cli-as-client U2).
  *
  * Cross-harness delegation: an agent asks another agent and gets a *string*, not a
  * transcript. `--wait` from the grammar is implicit — the verb exists for it, and

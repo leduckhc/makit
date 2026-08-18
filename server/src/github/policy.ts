@@ -1,5 +1,5 @@
 /**
- * Degradation ladder for GitHub reads (SPEC-32 §6.3). Pure decision function:
+ * Degradation ladder for GitHub reads (SPEC-github-gateway-and-budget §6.3). Pure decision function:
  * given the current budget health it returns the concrete knobs the gateway and
  * poller run with, and decides whether a single request may proceed.
  *

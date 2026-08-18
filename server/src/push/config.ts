@@ -1,5 +1,5 @@
 /**
- * Push provider config loader (SPEC-07 W1).
+ * Push provider config loader (SPEC-background-wake-notifications W1).
  *
  * Reads `~/.makit/push.json`. When absent/invalid, `loadApnsConfig` returns
  * `null` and the caller falls back to {@link NoopPushSender} (graceful
@@ -54,7 +54,7 @@ export function loadApnsConfig(): ApnsConfig | null {
 
 /**
  * Build the wake sender from a (possibly-null) config, degrading to
- * {@link NoopPushSender} on ANY failure (SPEC-07 §5 graceful degradation).
+ * {@link NoopPushSender} on ANY failure (SPEC-background-wake-notifications §5 graceful degradation).
  *
  * `ApnsPushSender`'s constructor parses the `.p8` via `createPrivateKey`, which
  * throws on a corrupt/non-EC key. Left unguarded that would crash server boot;

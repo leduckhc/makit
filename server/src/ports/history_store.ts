@@ -1,5 +1,5 @@
 /**
- * history_store — pure persistence for the port-history feature (SPEC-42 D11).
+ * history_store — pure persistence for the port-history feature (SPEC-ports-global-view D11).
  *
  * A single small JSON file (`$MAKIT_HOME/port-history.json` by default,
  * overridable via MAKIT_PORT_HISTORY_FILE) shaped `{ "entries": […] }`, mirroring

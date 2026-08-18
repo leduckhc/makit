@@ -1,5 +1,5 @@
 /**
- * `makit rm <id> [--kill]` — end a session from the terminal (SPEC-46 T14).
+ * `makit rm <id> [--kill]` — end a session from the terminal (SPEC-cli-as-client T14).
  *
  * The default is deliberately the **recoverable** one: `rm` closes (a soft
  * hide — the session stays resumable and `makit ls --closed` still shows it),

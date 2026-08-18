@@ -89,7 +89,7 @@ async function main() {
     process.exit(2);
   }
 
-  // --- SPEC-02 thin-client subcommands: drive the running daemon via the
+  // --- SPEC-cli-client-subcommands thin-client subcommands: drive the running daemon via the
   // control socket. requireDaemon() handles "not running" uniformly. ---
   if (cmd === "qr" || cmd === "pair") {
     const { runQr } = await import("./cli/qr.js");
@@ -105,7 +105,7 @@ async function main() {
     return;
   }
 
-  // `ls` lists sessions over WSS — the app's own `sessions.snapshot` (SPEC-46
+  // `ls` lists sessions over WSS — the app's own `sessions.snapshot` (SPEC-cli-as-client
   // D1), so the terminal cannot drift from the phone. `sessions` is the
   // deprecated control-socket spelling, kept for one release.
   if (cmd === "ls" || cmd === "sessions") {
@@ -116,7 +116,7 @@ async function main() {
   }
 
   // `new` starts a session from the terminal: a worktree, a draft session, and
-  // (with -m) the first message that promotes it (SPEC-46 D4/D15).
+  // (with -m) the first message that promotes it (SPEC-doc-preview D4/D15).
   if (cmd === "new") {
     const { runNew } = await import("./cli/new.js");
     await runNew(process.argv.slice(3));
@@ -137,7 +137,7 @@ async function main() {
   }
 
   // `wait` blocks until a session's turn ends, and says how in its exit code
-  // (SPEC-46 D8). `run` is `new` + `wait` + print, the shape automation wants.
+  // (SPEC-cli-as-client D8). `run` is `new` + `wait` + print, the shape automation wants.
   if (cmd === "wait") {
     const { runWait } = await import("./cli/wait.js");
     await runWait(process.argv.slice(3));
@@ -151,14 +151,14 @@ async function main() {
 
   // `handoff` is `new`'s sibling for an agent that is out of context: it
   // inherits the parent's tree and carries a manifest as the first message
-  // (SPEC-46 D5/D15/D16). Identity comes from the environment, not argv.
+  // (SPEC-cli-as-client D5/D15/D16). Identity comes from the environment, not argv.
   if (cmd === "handoff") {
     const { runHandoff } = await import("./cli/handoff.js");
     await runHandoff(process.argv.slice(3));
     return;
   }
 
-  // `fork` is `handoff`'s high-fidelity sibling (SPEC-46 U4/D6): an
+  // `fork` is `handoff`'s high-fidelity sibling (SPEC-cli-as-client U4/D6): an
   // adapter-native branch of the SAME conversation (codex thread/fork), gated
   // on the harness's fork capability and refused in a sentence where
   // unsupported. Inherits the source's tree (D15 inverse) unless --worktree.
@@ -168,7 +168,7 @@ async function main() {
     return;
   }
 
-  // `send` posts a message to a session (SPEC-46 T14) — a thin client of
+  // `send` posts a message to a session (SPEC-cli-as-client T14) — a thin client of
   // `send.message`.
   if (cmd === "send") {
     const { runSend } = await import("./cli/send.js");
@@ -203,7 +203,7 @@ async function main() {
   }
 
   // `approve`/`answer` unblock a session's pending prompt from the terminal
-  // (SPEC-46 U3): subscribe, receive the replayed `srv.request`, and answer it.
+  // (SPEC-cli-as-client U3): subscribe, receive the replayed `srv.request`, and answer it.
   // The only authorization is the server-side D13 check — none is duplicated here.
   if (cmd === "approve") {
     const { runApprove } = await import("./cli/approve.js");
@@ -216,7 +216,7 @@ async function main() {
     return;
   }
 
-  // --- background service lifecycle (SPEC-01) — thin clients of the control
+  // --- background service lifecycle (SPEC-daemon-control-plane) — thin clients of the control
   // socket / process management. These do not need cert/manager. ---
   if (LIFECYCLE.has(cmd!) && cmd !== "service") {
     const daemon = makeDaemon();

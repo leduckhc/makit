@@ -1,5 +1,5 @@
 /**
- * Adapter attachment delivery (SPEC-33 T5) — the file hand-off, on both
+ * Adapter attachment delivery (SPEC-user-attachments T5) — the file hand-off, on both
  * transports.
  *
  * v1 delivers an attachment by copying it into the session's worktree and naming

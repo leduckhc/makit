@@ -1,7 +1,7 @@
 /// The persisted set of server profiles, and the identity rules around it.
 ///
 /// Backed by a single small JSON file, `<makitRoot>/profiles.json`, which is the
-/// **source of truth for identity** (SPEC-50 D3). Before this existed a
+/// **source of truth for identity** (SPEC-profiles D3). Before this existed a
 /// profile's id was `fnv1a(repoRoot)` recomputed on every launch, so moving or
 /// renaming a worktree minted a *new* profile and silently orphaned the old
 /// one's `MAKIT_HOME`, pairings, projects and prefs. Measured on the author's
@@ -66,7 +66,7 @@ class ProfileRegistry {
 
   /// Ids this instance deleted, so a concurrent-write merge cannot resurrect
   /// them from a stale on-disk copy. Persisted as `deletedIds` tombstones so
-  /// *other* instances honour the deletion too (SPEC-50 D1).
+  /// *other* instances honour the deletion too (SPEC-profiles D1).
   final Set<String> _deleted = {};
 
   /// Ids this instance actually mutated (rename/setPort/setOrigin/create), so
@@ -176,7 +176,7 @@ class ProfileRegistry {
           // Drop a duplicate id rather than letting two entries fight over one
           // home: first-seen wins, matching server-side mergeProjects.
           if (parsed.any((e) => e.id == p.id)) continue;
-          // At most one legacy profile may exist (SPEC-50 D2): it owns the
+          // At most one legacy profile may exist (SPEC-profiles D2): it owns the
           // unprefixed prefs keys and the unsuffixed secure-store file. A
           // hand-edited file with two would silently clobber each other's
           // settings and credentials, so extra legacy entries are dropped.
@@ -196,7 +196,7 @@ class ProfileRegistry {
   /// Writes the registry atomically, merging in anything another instance added
   /// since this one loaded.
   ///
-  /// Several app instances run at once by design (SPEC-50 D1), and each holds its
+  /// Several app instances run at once by design (SPEC-profiles D1), and each holds its
   /// own in-memory list. A plain whole-file write would therefore *lose* a
   /// profile another window created: window A adds `Personal` and saves; window
   /// B, loaded earlier, saves anything at all and clobbers the file. A `user`
@@ -263,7 +263,7 @@ class ProfileRegistry {
           if (!diskProfiles.any((p) => p.id == entry.key)) entry.value,
       ];
       // Break any port collision the merge produced: two instances can each
-      // allocate the same free port before either writes (SPEC-50 D1), so the
+      // allocate the same free port before either writes (SPEC-profiles D1), so the
       // reconcile happens here, under the lock, on the merged set.
       _profiles
         ..clear()
@@ -331,7 +331,7 @@ class ProfileRegistry {
   /// Resolves the profile this executable should run against, creating one when
   /// the registry has never seen it.
   ///
-  /// Bootstrap rules (SPEC-50 D3):
+  /// Bootstrap rules (SPEC-profiles D3):
   /// - Not a dev-build path → the [ProfileStorage.legacy] profile, created with
   ///   the shipped `~/.makit` + port 7777 defaults if absent.
   /// - A dev-build path → the profile whose [ServerProfile.origin] matches this
@@ -481,7 +481,7 @@ class ProfileRegistry {
     return byId(last) ?? bootstrap;
   }
 
-  /// The `dev` profiles whose origin folder no longer exists (SPEC-50 D9).
+  /// The `dev` profiles whose origin folder no longer exists (SPEC-profiles D9).
   ///
   /// `user` profiles are never stale: they have no origin and were created
   /// deliberately. [dirExists] is injected so tests need no real directories.
@@ -591,7 +591,7 @@ class FileSystemAdapter {
   /// on [path].
   ///
   /// Serialises the registry's read-merge-write across the several app instances
-  /// that run at once (SPEC-50 D1). Without it, two instances can each read the
+  /// that run at once (SPEC-profiles D1). Without it, two instances can each read the
   /// same `profiles.json`, merge in only their own new profile, and have the
   /// second atomic rename silently drop the first's — orphaning a `user`
   /// profile's home, pairings and prefs, since it has no `origin` to re-bind by.
@@ -652,7 +652,7 @@ class FileSystemAdapter {
   /// secrets readable by every local user.
   ///
   /// The temp name carries the pid: several app instances may save concurrently
-  /// (SPEC-50 D1), and a shared `foo.tmp` would race — the loser's `renameSync`
+  /// (SPEC-profiles D1), and a shared `foo.tmp` would race — the loser's `renameSync`
   /// throwing a `FileSystemException` out of `save()`.
   void writeAtomic(String path, String contents) {
     final target = File(path);

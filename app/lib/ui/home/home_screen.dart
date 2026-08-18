@@ -140,7 +140,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(width: kSpace6),
                     // The bell itself does not fit: four glass circles plus the
-                    // connection chip already fill a 320 pt bar (SPEC-48), and a
+                    // connection chip already fill a 320 pt bar (SPEC-status-and-activity), and a
                     // phone has no screen to spend on permanent chrome. Activity
                     // lives one tap deeper, in Settings — so the unread signal
                     // rides the door that leads there.

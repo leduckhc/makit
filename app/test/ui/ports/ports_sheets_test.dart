@@ -263,7 +263,7 @@ void main() {
     });
   });
 
-  // SPEC-41 §"Tooltips: every terse token owns a sentence": one string per
+  // SPEC-open-ports §"Tooltips: every terse token owns a sentence": one string per
   // token, proven CONSUMED by the mobile surfaces — a long-press bubble and a
   // `Semantics.label` — not merely that the vocabulary function returns a
   // string.
@@ -455,7 +455,7 @@ void main() {
     expect(find.byKey(const ValueKey('ports-list-row-5173')), findsNothing);
   });
 
-  // SPEC-42 P2a T7 — sheet 1 offers a jump to the global Ports screen.
+  // SPEC-ports-global-view P2a T7 — sheet 1 offers a jump to the global Ports screen.
   group('sheet 1 — Open the Ports screen', () {
     testWidgets('the button invokes onOpenPortsScreen', (tester) async {
       var opened = 0;
@@ -538,7 +538,7 @@ void main() {
     });
   });
 
-  // ── SPEC-43 P3a: the destructive control (D8, mockup §2b) ────────────────
+  // ── SPEC-ports-kill P3a: the destructive control (D8, mockup §2b) ────────────────
   group('kill affordance', () {
     testWidgets('sheet 1 (the list) still has no kill control', (tester) async {
       await tester.pumpWidget(
@@ -622,7 +622,7 @@ void main() {
     });
   });
 
-  // ── SPEC-44 P4a: the per-port watch toggle (D7/D8) ───────────────────────
+  // ── SPEC-ports-forward P4a: the per-port watch toggle (D7/D8) ───────────────────────
   group('watch toggle', () {
     testWidgets('reflects the port state and reports the flip', (tester) async {
       final flips = <bool>[];
@@ -763,7 +763,7 @@ void main() {
     });
   });
 
-  // ── SPEC-44 P4b: hand the port to the system browser ─────────────────────
+  // ── SPEC-ports-forward P4b: hand the port to the system browser ─────────────────────
   group('forward action', () {
     testWidgets('"Open in browser" REPLACES Open — this loopback is not ours', (
       tester,

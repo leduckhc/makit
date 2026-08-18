@@ -29,13 +29,13 @@ const double _kAccentBar = 3;
 const double _kSubIndent = 21;
 
 /// One worktree (branch) inside a repo card, listing the sessions running in it
-/// (SPEC-19).
+/// (SPEC-decomposition-and-dedup).
 ///
 /// The leading accent bar encodes state ([worktreeAccent]) so a long list can be
 /// scanned by colour alone: orange means a session is blocked on you, red that
 /// one failed, green that an agent is working. Every worktree is listed — one
 /// with no session still shows its branch, diff and PR, matching the desktop
-/// sidebar (SPEC-11), because a branch carrying work is the thing you most want
+/// sidebar (SPEC-repo-centric-home), because a branch carrying work is the thing you most want
 /// to start a session *on*.
 class WorktreeRow extends ConsumerStatefulWidget {
   const WorktreeRow({
@@ -56,11 +56,11 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
   bool _expanded = true;
 
   // Hold the ref-counted ports watch while any worktree row is mounted, so the
-  // server scans `lsof` only while the home screen is up (SPEC-41 §Delivery).
+  // server scans `lsof` only while the home screen is up (SPEC-open-ports §Delivery).
   // The ref-count collapses N rows to a single `ports.watch {on:true}`.
   late final PortsWatch _portsWatch = ref.read(portsWatchProvider);
 
-  // Same for the doc index (SPEC-46 D11). This is not optional polish: the
+  // Same for the doc index (SPEC-doc-preview D11). This is not optional polish: the
   // phone reaches the Docs screen from this row's glyph, and that glyph hides
   // when the worktree owns no docs — so without a watch held here no snapshot
   // ever arrives, the glyph never appears, and the Docs screen is unreachable
@@ -202,7 +202,7 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
                         onPressed: () => setState(() => _expanded = !_expanded),
                       ),
                     // Ports signal, inserted BETWEEN the caret and `+` so the
-                    // order is `branch · fold · ports · +` (SPEC-41 §1). `+`
+                    // order is `branch · fold · ports · +` (SPEC-open-ports §1). `+`
                     // stays the last child so its column stays aligned down the
                     // card; the glyph renders nothing when no ports listen.
                     _WorktreePortsGlyph(worktree: worktree),
@@ -336,7 +336,7 @@ class _Caret extends StatelessWidget {
   }
 }
 
-/// The worktree row's ports glyph (SPEC-41 §1), phone form. Sits in the
+/// The worktree row's ports glyph (SPEC-open-ports §1), phone form. Sits in the
 /// trailing control column of the branch line and opens the ports list sheet on
 /// tap. Renders nothing when the worktree is serving nothing, so a quiet branch
 /// adds no weight and `+` stays flush right regardless.
@@ -372,7 +372,7 @@ class _WorktreePortsGlyph extends ConsumerWidget {
   }
 }
 
-/// The worktree row's docs glyph (SPEC-46), phone form. Sits beside the ports
+/// The worktree row's docs glyph (SPEC-doc-preview), phone form. Sits beside the ports
 /// plug and opens the global Docs screen on tap. Renders nothing when the
 /// worktree owns no docs, so a quiet branch adds no weight (and the 320 pt row
 /// stays within budget) — the same discipline as [_WorktreePortsGlyph].

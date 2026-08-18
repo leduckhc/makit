@@ -1,5 +1,5 @@
 /**
- * T8 (SPEC-46) — `cli/connect.ts`: the credential and liveness order (D2/C4).
+ * T8 (SPEC-cli-as-client) — `cli/connect.ts`: the credential and liveness order (D2/C4).
  *
  * Every session verb reaches makit through here, so this is where the two exit
  * codes automation depends on are pinned: `3` when the daemon is down, `4` when
@@ -17,7 +17,7 @@ import { cliCredentialPath } from "./client.js";
 import { createControlServer, type ControlBackend } from "../daemon/control-server.js";
 import { controlSocketPath } from "../daemon/paths.js";
 import { startStubWss } from "../../test/support/stub_wss.js";
-import { captureCli } from "../../test/support/cli_home.js";
+import { captureCli, hideAmbientCliToken } from "../../test/support/cli_home.js";
 
 function stubBackend(): ControlBackend {
   const unused = () => {
@@ -41,6 +41,7 @@ async function withHome(
   opts: { control?: boolean; bearer?: string } = {},
 ): Promise<void> {
   const prev = process.env.MAKIT_HOME;
+  const restoreToken = hideAmbientCliToken();
   const home = mkdtempSync(join(tmpdir(), "makit-attach-home-"));
   process.env.MAKIT_HOME = home;
   const control = opts.control
@@ -56,6 +57,7 @@ async function withHome(
     await control?.close();
     if (prev === undefined) delete process.env.MAKIT_HOME;
     else process.env.MAKIT_HOME = prev;
+    restoreToken();
     rmSync(home, { recursive: true, force: true });
   }
 }
@@ -119,7 +121,7 @@ test("a revoked CLI credential exits 4", async () => {
   }
 });
 
-test("no daemon exits 3 with SPEC-02's message", async () => {
+test("no daemon exits 3 with SPEC-cli-client-subcommands's message", async () => {
   await withHome(async () => {
     const res = await capture(1);
     assert.equal(res.code, 3);

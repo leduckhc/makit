@@ -3,7 +3,7 @@
 library;
 
 // Re-export the chat item tree + event folding so existing importers of
-// `models.dart` keep resolving them after the SPEC-19 split.
+// `models.dart` keep resolving them after the SPEC-decomposition-and-dedup split.
 export 'chat_items.dart';
 
 /// An agent the host can spawn, surfaced by `agents.list` for the picker.
@@ -25,13 +25,13 @@ class AgentDescriptor {
   final bool available;
 
   /// Hash of the harness's resolved binary + catalog-affecting config inputs
-  /// (SPEC-27). Empty when the server didn't advertise one. Used to detect a
+  /// (SPEC-new-session-config-at-spawn). Empty when the server didn't advertise one. Used to detect a
   /// stale cached capability catalog.
   final String fingerprint;
 
   /// The harness's cached capability catalog — the `configOptions` snapshot
-  /// from the server's throwaway probe (SPEC-27), rendered pre-session by the
-  /// SPEC-26 generic renderer. Empty when the harness advertises no options
+  /// from the server's throwaway probe (SPEC-new-session-config-at-spawn), rendered pre-session by the
+  /// SPEC-acp-config-options-unified-composer generic renderer. Empty when the harness advertises no options
   /// (default-only) or the field is absent.
   final List<SessionConfigOption> configOptions;
 
@@ -61,7 +61,7 @@ class AgentDescriptor {
   }
 }
 
-/// A single pre-spawn config pick carried on `session.spawn` (SPEC-27): the
+/// A single pre-spawn config pick carried on `session.spawn` (SPEC-new-session-config-at-spawn): the
 /// [id] of a harness [SessionConfigOption] and the chosen [value] (a [String]
 /// for a select option, a [bool] for a boolean). The server maps [id] to the
 /// transport-specific apply-at-launch param (ACP `session/set_config_option`
@@ -172,7 +172,7 @@ class SessionMeta {
 
   /// Generic, category-tagged config selectors (ACP `configOptions`), ordered
   /// by agent priority. Empty when the agent emits only the legacy
-  /// `model`/`thinking`/`modes` fields (back-compat). See SPEC-26.
+  /// `model`/`thinking`/`modes` fields (back-compat). See SPEC-acp-config-options-unified-composer.
   final List<SessionConfigOption> configOptions;
 
   static SessionMeta fromJson(Map<String, dynamic> j) {
@@ -262,7 +262,7 @@ List<ConfigOptionValue> _parseOptionValues(Object? raw) =>
 /// A generic, category-tagged session config selector advertised by the agent
 /// (ACP `configOptions`). Supersedes the legacy `model`/`thinking`/`modes`
 /// fields on [SessionMeta]. Ordered by agent priority; the composer renders
-/// each option by [category]. See SPEC-26.
+/// each option by [category]. See SPEC-acp-config-options-unified-composer.
 class SessionConfigOption {
   const SessionConfigOption({
     required this.id,
@@ -453,7 +453,7 @@ class PullRequest {
 
   /// True when this PR was not re-fetched successfully (a throttled/failed
   /// lookup); the last-known state is retained and the pill is shown dimmed
-  /// (SPEC-32 G2). Defaults false on any server that predates the field.
+  /// (SPEC-github-gateway-and-budget G2). Defaults false on any server that predates the field.
   final bool stale;
 
   /// True when `unresolvedComments` was shed to save quota, so its value is not
@@ -518,7 +518,7 @@ class OpenPr {
   );
 }
 
-/// Context-window + cost snapshot for one session (SPEC-37), pushed via the
+/// Context-window + cost snapshot for one session (SPEC-context-usage), pushed via the
 /// `session.usage` event.
 ///
 /// Every reading is nullable because the three sources report different subsets:
@@ -582,7 +582,7 @@ class SessionUsage {
   );
 }
 
-/// Cumulative per-category token counts for a session (SPEC-37) — what the
+/// Cumulative per-category token counts for a session (SPEC-context-usage) — what the
 /// session has *billed*, as opposed to what currently occupies the context.
 /// Only codex reports these; every field is null for the other agents.
 class SessionUsageTotals {
@@ -638,7 +638,7 @@ class UsageCost {
 }
 
 /// Health of the GitHub API budget, driven server-side by time-to-empty rather
-/// than percentage remaining (SPEC-32 §6.1). `unknown` means never measured
+/// than percentage remaining (SPEC-github-gateway-and-budget §6.1). `unknown` means never measured
 /// (distinct from a real, measured value) and drives a dimmed icon.
 enum BudgetLevel { healthy, warm, critical, paused, unknown }
 
@@ -712,7 +712,7 @@ class BudgetHistorySlot {
   }
 }
 
-/// Gateway spend counters (SPEC-32 §6.4). Present only once the gateway has
+/// Gateway spend counters (SPEC-github-gateway-and-budget §6.4). Present only once the gateway has
 /// run at least one measurement; a `null` [GithubBudget.stats] means unmeasured.
 class BudgetStats {
   const BudgetStats({required this.execs, required this.cacheHits});
@@ -727,7 +727,7 @@ class BudgetStats {
 }
 
 /// The GitHub API budget snapshot pushed via the `github.budget` frame
-/// (SPEC-32 §6.6), surfaced by the desktop sidebar footer icon + popover.
+/// (SPEC-github-gateway-and-budget §6.6), surfaced by the desktop sidebar footer icon + popover.
 ///
 /// Tolerant by construction: any of the three buckets may be `null`
 /// (unmeasured), [msUntilEmpty]/[retryAfterMs] are meaningfully nullable
@@ -1335,7 +1335,7 @@ ApprovalPolicy parsePolicy(String s) => switch (s) {
   _ => ApprovalPolicy.askOnRisky,
 };
 
-/// Multiplexer pane locator for a session running in a pane (SPEC-05).
+/// Multiplexer pane locator for a session running in a pane (SPEC-session-in-pane-spawning).
 class PaneInfo {
   const PaneInfo({required this.mux, required this.paneId});
   final String mux;
@@ -1391,14 +1391,14 @@ class Session {
   final ApprovalPolicy policy;
   final int lastActivityAt;
 
-  /// When this session was created, in epoch ms (SPEC-47 D12), or null when the
+  /// When this session was created, in epoch ms (SPEC-session-timings D12), or null when the
   /// server did not report one (an older server, or a session that predates the
   /// field). **Nullable rather than `0`-as-unknown** like [lastActivityAt]: an
   /// absent age is not rendered rather than fabricated as "56 years".
   final int? createdAt;
   final String lastPreview;
 
-  /// Set when this session runs in a multiplexer pane (SPEC-05).
+  /// Set when this session runs in a multiplexer pane (SPEC-session-in-pane-spawning).
   final PaneInfo? pane;
 
   /// Draft session: worktree + agent are deferred until the first real message.
@@ -1414,35 +1414,35 @@ class Session {
   final String? worktreePath;
 
   /// True when a (possibly cold) session can be brought back to a live agent
-  /// after a server restart (SPEC-29). Drives auto-attach on subscribe.
+  /// after a server restart (SPEC-session-lifecycle-resume-list-delete). Drives auto-attach on subscribe.
   final bool resumable;
 
-  /// Closed (SPEC-29): hidden from the active list. Present for surfaces that
+  /// Closed (SPEC-session-lifecycle-resume-list-delete): hidden from the active list. Present for surfaces that
   /// explicitly list closed sessions; the active snapshot omits these.
   final bool closed;
 
-  /// Orphaned (SPEC-29): a closed session whose worktree was removed. Only
+  /// Orphaned (SPEC-session-lifecycle-resume-list-delete): a closed session whose worktree was removed. Only
   /// set on the `session.listClosed` result; drives the "worktree removed"
   /// chip in the closed view. Restoring an orphaned session runs it at the
   /// repo root (no recreate-worktree path).
   final bool orphaned;
 
-  /// SPEC-46 lineage (D10): the session this one was handed off / spawned from,
+  /// SPEC-cli-as-client lineage (D10): the session this one was handed off / spawned from,
   /// so the app can caption "handed off from …". Null for a session with no
-  /// parent (every session created before SPEC-46, and every app-spawned one).
+  /// parent (every session created before SPEC-cli-as-client, and every app-spawned one).
   final String? parentId;
 
-  /// SPEC-46 (D10): why the handoff happened, as written by the outgoing agent.
+  /// SPEC-cli-as-client (D10): why the handoff happened, as written by the outgoing agent.
   final String? handoffReason;
 
-  /// SPEC-46 (D10): which client created this session ("app"/"cli"/"agent").
-  /// Null on pre-SPEC-46 rows; a plain string so an unknown value never throws.
+  /// SPEC-cli-as-client (D10): which client created this session ("app"/"cli"/"agent").
+  /// Null on pre-SPEC-cli-as-client rows; a plain string so an unknown value never throws.
   final String? origin;
 
   /// The underlying agent's own session id — pi's ACP `sessionId` (which is pi's
   /// OWN session uuid, reused by `pi-acp`) or codex's `threadId`. Null for a
   /// draft, for a back end with no native session concept, and for any server
-  /// older than SPEC-52 (D1).
+  /// older than SPEC-session-identity (D1).
   final String? agentSessionId;
 
   /// Absolute path to the transcript on the SERVER's host, resolved server-side
@@ -1452,7 +1452,7 @@ class Session {
   final String? transcriptPath;
 
   /// Messages submitted while the agent was busy that could not be steered into
-  /// the running turn (SPEC-35), oldest first. They are delivered one per idle
+  /// the running turn (SPEC-mid-turn-steering-and-queue), oldest first. They are delivered one per idle
   /// transition and can be cancelled until then.
   final List<QueuedMessage> queued;
 
@@ -1586,13 +1586,13 @@ class WrapUpReport {
   }
 }
 
-/// One message waiting for the agent to go idle (SPEC-35). [attachmentCount] is
+/// One message waiting for the agent to go idle (SPEC-mid-turn-steering-and-queue). [attachmentCount] is
 /// a count, not descriptors: the chip only needs to say "and an image", and the
 /// bytes are already safe in the server's media store.
-/// Where (and how) a pending mid-turn message is shown (SPEC-38).
+/// Where (and how) a pending mid-turn message is shown (SPEC-pending-queue-edit-reorder).
 ///
 /// Originally three; `inline` (in the transcript trailer) was removed because
-/// it required touching SPEC-21's anchoring and added no value over pinned.
+/// it required touching SPEC-chat-scroll-anchoring's anchoring and added no value over pinned.
 enum PendingQueuePlacement {
   /// Hollow ghost bubbles directly above the composer — always visible.
   pinned,

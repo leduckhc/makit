@@ -6,7 +6,7 @@ import 'package:makit/store/store.dart';
 import 'package:makit/ui/composer/context_usage.dart';
 
 /// The context-usage panel must open usably from a ring sitting at the right
-/// edge of a NARROW pane (SPEC-37 follow-up).
+/// edge of a NARROW pane (SPEC-context-usage follow-up).
 ///
 /// Two independent failures were measured before this existed, both with the
 /// ring hard against the right edge:

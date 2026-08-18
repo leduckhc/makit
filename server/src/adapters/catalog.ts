@@ -26,11 +26,11 @@ export interface AgentDescriptor {
    * harness's catalog-affecting config inputs (pi: models.json + auth marker;
    * codex: config.toml + auth marker). A change here means the cached
    * {@link configOptions} may be stale and the harness must be re-probed
-   * (SPEC-27). Cheap + deterministic — no `--version` subprocess.
+   * (SPEC-new-session-config-at-spawn). Cheap + deterministic — no `--version` subprocess.
    */
   fingerprint: string;
   /**
-   * Cached configOptions snapshot from the throwaway probe (SPEC-27). Served
+   * Cached configOptions snapshot from the throwaway probe (SPEC-new-session-config-at-spawn). Served
    * from the capability cache on {@link agents.list}; absent until the harness
    * has been probed (or when it advertises no options).
    */
@@ -89,7 +89,7 @@ export function onPath(cmd: string, env: NodeJS.ProcessEnv = process.env): boole
   return resolveBinPath(cmd, env) !== undefined;
 }
 
-// ---------- fingerprint (SPEC-27) ------------------------------------------
+// ---------- fingerprint (SPEC-new-session-config-at-spawn) ------------------------------------------
 
 /**
  * Stat-based identity for a file (binary or config): `size:mtime`, or a stable
@@ -133,7 +133,7 @@ function codexAuthFile(): string {
  * Per-agent fingerprint: a short hash of the resolved binary identity plus the
  * harness's catalog-affecting config inputs. Not a bare binary checksum —
  * editing `models.json` / `config.toml` or logging a provider in/out changes
- * the catalog without touching the binary (SPEC-27 decision 5).
+ * the catalog without touching the binary (SPEC-new-session-config-at-spawn decision 5).
  *
  * - pi (acp): the `pi-acp` + `pi` binaries, `~/.pi/agent/models.json`, and the
  *   `~/.pi/agent/auth.json` provider-auth marker.

@@ -4,9 +4,9 @@
 /// its own daemon, database, media, pairings and projects), its own port, and
 /// its own slice of app preferences. Several may run at once — a `Work` profile
 /// and a feature worktree's dev profile coexist on different ports without
-/// seeing each other. See `docs/specs/2026-08-10-SPEC-50-profiles.md`.
+/// seeing each other. See `docs/specs/20260810-005000-SPEC-profiles.md`.
 ///
-/// Identity is **persisted, not derived** (SPEC-50 D3). `ProfileRegistry` mints
+/// Identity is **persisted, not derived** (SPEC-profiles D3). `ProfileRegistry` mints
 /// [id] once into `~/.makit/profiles.json`; path-hashing survives only as the
 /// bootstrap for a dev build the registry has never seen. Deriving the id from
 /// the filesystem path — as this class used to — silently orphaned a profile's
@@ -35,7 +35,7 @@ enum ProfileKind {
 ///
 /// This is a **compatibility** fact, frozen at creation — deliberately separate
 /// from [ServerProfile.name], which is a UI fact the user may change at will
-/// (SPEC-50 D2). Fusing the two into one `isDefault` boolean was what made the
+/// (SPEC-profiles D2). Fusing the two into one `isDefault` boolean was what made the
 /// installed profile un-renameable.
 enum ProfileStorage {
   /// The shipped layout: unprefixed preference keys (so the effective
@@ -132,7 +132,7 @@ class ServerProfile {
   /// It reproduces what `ProfileRegistry.resolveFor` mints for the same path —
   /// same id, home and *guessed* port — but persists nothing and does **not**
   /// probe the port, so two bootstrap profiles can collide. Production resolves
-  /// through the registry, which persists identity and probes (SPEC-50 D3/D4).
+  /// through the registry, which persists identity and probes (SPEC-profiles D3/D4).
   static ServerProfile bootstrap({String? executablePath, String? home}) {
     final exe = executablePath ?? _resolvedExecutable();
     final resolvedHome = home ?? _homeDir();
@@ -173,7 +173,7 @@ class ServerProfile {
   final String home;
 
   /// The port this profile's daemon binds. Allocated once by probing and
-  /// persisted (SPEC-50 D4) — never recomputed from a hash.
+  /// persisted (SPEC-profiles D4) — never recomputed from a hash.
   final int port;
 
   /// Which on-disk key layout this profile uses. Frozen at creation.
@@ -183,7 +183,7 @@ class ServerProfile {
   ///
   /// Two jobs, both cheap: re-bind a moved or rebuilt dev build to its existing
   /// profile instead of forking a new one, and detect staleness with a plain
-  /// `existsSync` (SPEC-50 D3/D9) — no hashing, no guessing.
+  /// `existsSync` (SPEC-profiles D3/D9) — no hashing, no guessing.
   final String? origin;
 
   /// Where this profile's daemon exposes its control socket.
@@ -196,7 +196,7 @@ class ServerProfile {
 
   /// The prefix this profile's **own** preference keys carry.
   ///
-  /// This is the mechanism in use (SPEC-50 D11): `ProfileRuntime.create` wraps
+  /// This is the mechanism in use (SPEC-profiles D11): `ProfileRuntime.create` wraps
   /// the shared `SharedPreferences` in a `ProfileScopedPrefs` with this prefix.
   /// Deliberately *not* `SharedPreferences.setPrefix`, which throws once
   /// `getInstance()` has run and so makes in-place switching impossible. Because

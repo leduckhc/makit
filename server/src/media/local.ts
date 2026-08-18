@@ -1,5 +1,5 @@
 /**
- * Local-file media ingestion (SPEC-22 phase 1b) — the *other* way an agent
+ * Local-file media ingestion (SPEC-assistant-display-media phase 1b) — the *other* way an agent
  * shows you something.
  *
  * A wire capture of a real pi-acp turn ("copy this png, then display it")
@@ -9,7 +9,7 @@
  * the markdown rewritten to a `makit-media:<mediaId>` URI the app can fetch
  * from the `/media` route.
  *
- * SPEC-22 deferred file references to a later phase over symlink/TOCTOU risk.
+ * SPEC-assistant-display-media deferred file references to a later phase over symlink/TOCTOU risk.
  * Copying the bytes into the content-addressed store **at ingestion time**
  * removes that risk: what the phone later fetches is an immutable snapshot
  * keyed by its own hash, not a path re-read at serve time. What remains is a

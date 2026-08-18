@@ -1,5 +1,5 @@
 /**
- * `parseAttachments` (SPEC-33 §3.3) — the boundary between the wire's
+ * `parseAttachments` (SPEC-user-attachments §3.3) — the boundary between the wire's
  * `attachments` array and descriptors an adapter can actually deliver.
  *
  * Its result is a discriminated union rather than a value-or-marker: "nothing

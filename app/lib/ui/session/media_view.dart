@@ -1,4 +1,4 @@
-/// Rendering assistant display media (SPEC-22) — the images and GIFs an agent
+/// Rendering assistant display media (SPEC-assistant-display-media) — the images and GIFs an agent
 /// produced (a screenshot tool, a `read` of a PNG, a file it referenced in
 /// prose). This is the thing a terminal-based agent client structurally cannot
 /// do, so it renders inline in the transcript rather than as a link.
@@ -132,7 +132,7 @@ class _MediaImage extends StatelessWidget {
     // Known residual cost: an extreme aspect ratio (a 1280x26313 full-page
     // capture) is still ~114MB at row width, because bounding its height too
     // would decode a ~13px-wide strip and smear it across the row. Fixing that
-    // properly needs the server-side thumbnail SPEC-22 sketches
+    // properly needs the server-side thumbnail SPEC-assistant-display-media sketches
     // (`thumbMediaId`), which is out of scope here.
     final full = MakitMediaImage(item.mediaId, fetch);
     return LayoutBuilder(
@@ -283,7 +283,7 @@ class _FullscreenMedia extends StatelessWidget {
   }
 }
 
-/// A thumbnail for an image the **user** attached (SPEC-33).
+/// A thumbnail for an image the **user** attached (SPEC-user-attachments).
 ///
 /// Deliberately a small fixed square rather than the agent's width-filling
 /// [AgentMediaView]: a sent screenshot is a receipt ("this is what I sent"), not

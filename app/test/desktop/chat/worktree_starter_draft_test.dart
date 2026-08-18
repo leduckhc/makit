@@ -1,4 +1,4 @@
-/// SPEC-45 — what the starter pane holds on to across the tab switch that
+/// SPEC-starter-pane-parity — what the starter pane holds on to across the tab switch that
 /// recreates it: the typed message (D1) and the staged attachments (D6).
 ///
 /// The starter used to own a bare `TextEditingController`, so `split_view.dart`

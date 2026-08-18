@@ -1,7 +1,7 @@
-/// Hand-painted metrics charts (SPEC-37 decision 8).
+/// Hand-painted metrics charts (SPEC-performance-metrics-dashboard decision 8).
 ///
 /// Three shapes do not justify a chart dependency, and `fl_chart` would bring
-/// animation controllers we would immediately have to fight — SPEC-32's
+/// animation controllers we would immediately have to fight — SPEC-github-gateway-and-budget's
 /// sparkline set the precedent.
 ///
 /// Every painter here places points on the **time** axis (`ts`), never on the

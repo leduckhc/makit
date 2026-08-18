@@ -394,7 +394,7 @@ void main() {
     });
   });
 
-  group('SPEC-30 Lane 6 — the tab-strip + is group-aware (decision 13)', () {
+  group('SPEC-tab-groups Lane 6 — the tab-strip + is group-aware (decision 13)', () {
     Group wtGroup(String path, {String? sessionId, String label = 'feat/x'}) {
       final tabId = nextNodeId(SplitNodeKind.tab);
       final splitId = nextNodeId(SplitNodeKind.split);

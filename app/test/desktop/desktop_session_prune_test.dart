@@ -198,7 +198,7 @@ void main() {
     expect(_tabSessions(container.read(workspaceControllerProvider)), [null]);
   });
 
-  group('SPEC-30 lane 3', () {
+  group('SPEC-tab-groups lane 3', () {
     // A prune container with an explicit groups state and a live repos list, so
     // decisions 5/6/7 can be driven end to end.
     ProviderContainer groupsContainer(

@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D2: the one way a document path enters the serving layer.
+ * makit — SPEC-doc-preview D2: the one way a document path enters the serving layer.
  *
  * `resolveDocPath` is the security boundary of the Docs feature. Both
  * `docs.read` (WSS) and the static doc route call it, so they cannot disagree
@@ -10,7 +10,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 
-/** Extensions a document may have (SPEC-46 D2). */
+/** Extensions a document may have (SPEC-doc-preview D2). */
 const ALLOWED_EXT = new Map<string, DocKind>([
   [".md", "md"],
   [".markdown", "md"],
@@ -32,7 +32,7 @@ export const EXCLUDED_DIRS: ReadonlySet<string> = new Set([
   ".dart_tool",
 ]);
 
-/** Hard ceiling on a single document (SPEC-46 D2). */
+/** Hard ceiling on a single document (SPEC-doc-preview D2). */
 export const MAX_DOC_BYTES = 5 * 1024 * 1024;
 
 export type DocKind = "md" | "html";

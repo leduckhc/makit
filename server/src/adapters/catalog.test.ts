@@ -117,7 +117,7 @@ test("resolveBinPath / onPath honor an explicit env.PATH override", () => {
   assert.equal(onPath("makit-resolve-test", { PATH: "/usr/bin:/bin" }), false);
 });
 
-// ---------- fingerprint (SPEC-27) ------------------------------------------
+// ---------- fingerprint (SPEC-new-session-config-at-spawn) ------------------------------------------
 
 /** Create a fake config file with given contents and return its path. */
 function fakeFile(name: string, contents = "{}"): string {

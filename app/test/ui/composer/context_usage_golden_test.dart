@@ -1,4 +1,4 @@
-// Golden "screenshots" of the SPEC-37 context-usage ring + details panel. Run:
+// Golden "screenshots" of the SPEC-context-usage context-usage ring + details panel. Run:
 //   flutter test --update-goldens test/ui/composer/context_usage_golden_test.dart
 // to (re)generate the PNGs under goldens/.
 //
@@ -13,7 +13,7 @@ import 'package:makit/app/theme.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/ui/composer/context_usage.dart';
 
-/// Real captures from the verified runs (see SPEC-37 → "Verified against the
+/// Real captures from the verified runs (see SPEC-context-usage → "Verified against the
 /// real binaries"), so the goldens show numbers the app actually receives.
 const _codex = SessionUsage(
   contextTokens: 19440,
@@ -103,7 +103,7 @@ void main() {
     await tester.pumpWidget(_scene(_ringLadder()));
     await expectLater(
       find.byType(Row).first,
-      matchesGoldenFile('goldens/spec37_ring_ladder.png'),
+      matchesGoldenFile('goldens/context_usage_ring_ladder.png'),
     );
   });
 
@@ -137,7 +137,7 @@ void main() {
       );
       await expectLater(
         find.byType(ContextUsageDetails),
-        matchesGoldenFile('goldens/spec37_panel_$name.png'),
+        matchesGoldenFile('goldens/context_usage_panel_$name.png'),
       );
     }, skip: skipOffMac);
   }

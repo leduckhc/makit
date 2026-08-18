@@ -42,7 +42,7 @@ class SessionScreen extends ConsumerStatefulWidget {
 
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   final _scroll = ScrollController();
-  // SPEC-34: the render-layer handle jumps are resolved through, plus the jumper
+  // SPEC-message-navigator: the render-layer handle jumps are resolved through, plus the jumper
   // the session-actions sheet drives. `itemCount`/`hasTrailer` are read at call
   // time, so a trailing "working…" row appearing mid-session cannot skew them.
   final _jumpTarget = TranscriptJumpTarget();
@@ -187,7 +187,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               // Expanded composer is ~160px; use 200 for comfortable clearance.
               // Deliberately CONSTANT: this is the reversed list's leading pad,
               // so changing it mid-session shifts the content the user is
-              // reading (SPEC-21 anchoring). The queue is bounded instead — see
+              // reading (SPEC-chat-scroll-anchoring anchoring). The queue is bounded instead — see
               // `PendingQueue`'s max height — so it cannot grow without limit
               // over the transcript.
               padding: EdgeInsets.only(
@@ -208,7 +208,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 // priority — Pi stays running while asking), else the
                 // "working…" indicator while running.
                 if (hasTrailer && i == 0) {
-                  // Inlined (main removed `TranscriptTrailerRow`): with SPEC-39's
+                  // Inlined (main removed `TranscriptTrailerRow`): with SPEC-queue-tray-and-promote's
                   // deletion of the in-transcript queue the trailer is just the
                   // ask card or the working indicator again.
                   return trailer == TranscriptTrailer.ask
@@ -231,7 +231,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               },
             ),
           ),
-          // SPEC-34: the message navigator, over the transcript and under the
+          // SPEC-message-navigator: the message navigator, over the transcript and under the
           // floating bars. Renders nothing when the surface's style is `off`.
           MessageNavigatorOverlay(
             sessionId: widget.sessionId,
@@ -323,7 +323,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                   ],
                                 ),
                           ),
-                          // Subtitle line (SPEC-23): the pane label and/or the
+                          // Subtitle line (SPEC-pr-status-and-actions): the pane label and/or the
                           // PR chip. Both are optional, so the line collapses
                           // to nothing on a headless, PR-less session.
                           Row(
@@ -407,7 +407,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                     // glass box and ate the room the field and transcript need.
                     // As a sibling it also stays visible while an inline ask
                     // disables the composer, which is why it was put inside in
-                    // the first place (SPEC-35/38).
+                    // the first place (SPEC-mid-turn-steering-and-queue/38).
                     PendingQueueSlot(sessionId: widget.sessionId),
                     GlassSurface(
                       borderRadius: 28,
@@ -430,7 +430,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               // gets a fresh field seeded from *that* session's
                               // draft, instead of carrying the old text over.
                               key: ValueKey('composer-${widget.sessionId}'),
-                              // SPEC-33: the whole attachment capability, wired
+                              // SPEC-user-attachments: the whole attachment capability, wired
                               // identically on both surfaces.
                               attachments: composerAttachments(
                                 context,
@@ -439,14 +439,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               ),
                               glass: true,
                               controller: _composerController,
-                              // SPEC-38: pending messages, when the user's
+                              // SPEC-pending-queue-edit-reorder: pending messages, when the user's
                               // placement preference is `pinned`.
                               enabled: pendingAsk == null,
                               commands: ref.watch(
                                 commandsProvider(widget.sessionId),
                               ),
                               // Persist the draft per session so a half-typed
-                              // message survives a route pop (SPEC-27).
+                              // message survives a route pop (SPEC-new-session-config-at-spawn).
                               initialText: ref.read(
                                 composerDraftsProvider,
                               )[widget.sessionId],
@@ -479,11 +479,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                   ),
                                 ],
                               ],
-                              // SPEC-37: shown for every agent — it reads
+                              // SPEC-context-usage: shown for every agent — it reads
                               // usage, not config — so it sits outside the
                               // configOptions branch.
                               //
-                              // SPEC-40: trailing, not an action. As an action
+                              // SPEC-composer-footer-space: trailing, not an action. As an action
                               // its equal-share `Flexible` reserved half the
                               // row for a 36pt control and starved the pill.
                               footerTrailing: ContextUsageButton(
@@ -580,7 +580,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 icon: PhosphorIconsLight.pencilSimple,
                 label: 'Rename session',
               ),
-              // SPEC-34: mobile's route back to your own prompts. Grouped with
+              // SPEC-message-navigator: mobile's route back to your own prompts. Grouped with
               // Rename, not with Model/Thinking, because it is not capability
               // gated — it reads the transcript the client already holds, so it
               // works on every agent. Sitting above the rule also keeps that
@@ -591,7 +591,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 icon: PhosphorIconsLight.listMagnifyingGlass,
                 label: 'My messages',
               ),
-              // SPEC-52 D13: the identity panel's mobile door. Grouped with
+              // SPEC-session-identity D13: the identity panel's mobile door. Grouped with
               // Rename / My messages because it too reads state the client
               // already holds (the makit id at minimum) and is not capability
               // gated — it works on every agent.
@@ -696,7 +696,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       );
       if (handled) return;
     }
-    // SPEC-33: take + clear in one step so a second tap cannot resend the same
+    // SPEC-user-attachments: take + clear in one step so a second tap cannot resend the same
     // images.
     final sending = takeAttachmentsForSend(ref, widget.sessionId);
     // Optimistic UI: show the message immediately so it doesn't look hung.

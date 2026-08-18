@@ -45,7 +45,7 @@ class GithubBudgetFrame extends Decoded {
   final GithubBudget budget;
 }
 
-/// A decoded `metrics.sample` frame (SPEC-37). [history] is the backfill sent
+/// A decoded `metrics.sample` frame (SPEC-performance-metrics-dashboard). [history] is the backfill sent
 /// on the first frame after a watch begins; null on subsequent live frames.
 class MetricsSampleFrame extends Decoded {
   const MetricsSampleFrame(this.sample, this.history);
@@ -53,14 +53,14 @@ class MetricsSampleFrame extends Decoded {
   final List<MetricsSample>? history;
 }
 
-/// A decoded `ports.snapshot` frame (SPEC-41). A host-wide broadcast, like
+/// A decoded `ports.snapshot` frame (SPEC-open-ports). A host-wide broadcast, like
 /// `metrics.sample` — never a session event.
 class PortsSnapshotFrame extends Decoded {
   const PortsSnapshotFrame(this.snapshot);
   final PortsSnapshot snapshot;
 }
 
-/// A decoded `docs.snapshot` frame (SPEC-46 D11). A host-wide broadcast, like
+/// A decoded `docs.snapshot` frame (SPEC-doc-preview D11). A host-wide broadcast, like
 /// `ports.snapshot` — never a session event.
 class DocsSnapshotFrame extends Decoded {
   const DocsSnapshotFrame(this.snapshot);
@@ -274,7 +274,7 @@ class WireCodec {
               ? j['handoffReason'] as String
               : null,
           origin: j['origin'] is String ? j['origin'] as String : null,
-          // SPEC-52 D1/D9: normalise `''` to null at the edge. A blank string is
+          // SPEC-session-identity D1/D9: normalise `''` to null at the edge. A blank string is
           // what a sloppy server sends for "no value", and it would render a copy
           // affordance that copies nothing — the placeholder D9 forbids. Doing it
           // here means nothing above this line has to think about it.
@@ -292,7 +292,7 @@ class WireCodec {
   static String? _nonEmpty(Object? v) =>
       (v is String && v.isNotEmpty) ? v : null;
 
-  /// Decode a session's `queued` array (SPEC-35). Absent/malformed entries yield
+  /// Decode a session's `queued` array (SPEC-mid-turn-steering-and-queue). Absent/malformed entries yield
   /// an empty queue rather than failing the whole snapshot: a session list is
   /// too important to drop over a pending-message chip.
   static List<QueuedMessage> decodeQueued(Object? raw) {

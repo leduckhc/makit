@@ -6,7 +6,7 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/docs.dart';
 import 'package:makit/ui/home/worktree_row.dart';
 
-/// SPEC-46 P1 — the mobile entry point must not be a dead end.
+/// SPEC-doc-preview P1 — the mobile entry point must not be a dead end.
 ///
 /// The Docs screen is reached on the phone from the worktree row's docs glyph,
 /// and that glyph renders nothing when the worktree owns no docs. So if nothing
@@ -17,7 +17,7 @@ import 'package:makit/ui/home/worktree_row.dart';
 /// This is invisible to every other widget test in the suite, because they
 /// inject `docsProvider` directly instead of letting it arrive over the wire.
 /// The row therefore has to hold the watch itself, exactly as it already holds
-/// `ports.watch` for the ports plug (SPEC-41 §Delivery).
+/// `ports.watch` for the ports plug (SPEC-open-ports §Delivery).
 void main() {
   testWidgets('mounting worktree rows collapses to one docs.watch', (
     tester,

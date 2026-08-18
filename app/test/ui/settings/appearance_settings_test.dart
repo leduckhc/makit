@@ -1,4 +1,4 @@
-// Mobile Appearance settings (SPEC-13 on the phone): theme mode and text scale,
+// Mobile Appearance settings (SPEC-desktop-settings-rework on the phone): theme mode and text scale,
 // persisted through the shared preferences layer and applied to the app root.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

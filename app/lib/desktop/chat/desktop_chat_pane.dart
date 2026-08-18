@@ -36,7 +36,7 @@ import 'worktree_starter.dart';
 
 // Re-export the pane-header + harness widgets so existing importers of
 // `desktop_chat_pane.dart` (e.g. pane_tree_view, widget tests) keep resolving
-// them after the SPEC-19 split.
+// them after the SPEC-decomposition-and-dedup split.
 export 'panes/pane_header.dart'
     show PaneHeader, SessionActionsMenu, UnfoldStrip, sessionPaneTitle;
 
@@ -96,7 +96,7 @@ class DesktopChatPane extends ConsumerStatefulWidget {
 
 class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   final _scroll = ScrollController();
-  // SPEC-34: the render-layer handle the message navigator jumps through.
+  // SPEC-message-navigator: the render-layer handle the message navigator jumps through.
   final _jumpTarget = TranscriptJumpTarget();
   String? _subscribed;
   int _lastSeq = 0;
@@ -176,7 +176,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       if (handled) return;
     }
     final store = ref.read(storeControllerProvider.notifier);
-    // SPEC-33: take + clear in one step so a second tap cannot resend the same
+    // SPEC-user-attachments: take + clear in one step so a second tap cannot resend the same
     // images.
     final sending = takeAttachmentsForSend(ref, sessionId);
     store.appendOptimisticMessage(sessionId, text, attachments: sending);
@@ -203,7 +203,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       // A pane that knows its worktree starts a session in place: harness +
       // model/reasoning pills + composer. Without one there is nothing to start
       // in, so it falls back to the placeholder that opens the dialog (which
-      // picks the worktree). Either way no pane is a dead end (SPEC-27).
+      // picks the worktree). Either way no pane is a dead end (SPEC-new-session-config-at-spawn).
       final worktree = widget.worktree;
       return Column(
         children: [
@@ -351,7 +351,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                         );
                       },
                     ),
-                    // SPEC-34: the message navigator, over the transcript.
+                    // SPEC-message-navigator: the message navigator, over the transcript.
                     // Renders nothing when the chosen style is `off`.
                     MessageNavigatorOverlay(
                       sessionId: sessionId,
@@ -385,7 +385,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   // queued message inflated the composer's own box and ate the
                   // room the field and transcript need. As a sibling it also stays
                   // visible while an inline ask disables the composer, which is
-                  // why it lived inside in the first place (SPEC-35/38).
+                  // why it lived inside in the first place (SPEC-mid-turn-steering-and-queue/38).
                   PendingQueueSlot(sessionId: sessionId),
                   if (pendingAsk != null && pendingAsk.freeText)
                     // Free-text answer mode: a dedicated empty answer controller
@@ -411,7 +411,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                       // the composer's top edge above a hairline — a caption on
                       // the box most of its actions type into.
                       header: prBar,
-                      // SPEC-33: the whole attachment capability, wired
+                      // SPEC-user-attachments: the whole attachment capability, wired
                       // identically on both surfaces. Nothing paired → nowhere to
                       // upload, so the clip stays inert with a reason and paste is
                       // left to the field's text handling.
@@ -446,10 +446,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                           ComposerModeSelector(sessionId: sessionId),
                         ],
                       ],
-                      // SPEC-37: shown for every agent — it reads usage, not
+                      // SPEC-context-usage: shown for every agent — it reads usage, not
                       // config — so it sits outside the configOptions branch.
                       //
-                      // SPEC-40: trailing, not an action. As an action its
+                      // SPEC-composer-footer-space: trailing, not an action. As an action its
                       // equal-share `Flexible` reserved half the row for a 36pt
                       // control and starved the pill.
                       footerTrailing: ContextUsageButton(
@@ -506,7 +506,7 @@ class _EmptyTranscript extends StatelessWidget {
   }
 }
 
-/// The placeholder for a sessionless pane with NO worktree (SPEC-30): a short
+/// The placeholder for a sessionless pane with NO worktree (SPEC-tab-groups): a short
 /// prompt plus a "New worktree" button that opens the New-worktree dialog, where
 /// the worktree is created. A pane that already has a worktree starts in place
 /// via [WorktreeStarter] instead, so no empty pane is a dead end.
@@ -519,7 +519,7 @@ class EmptyPaneStarter extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     // On a board, starting a session is only half of what you want here: the
     // other half is pulling in an agent that is already running somewhere
-    // (SPEC-30 decision 14). The tab-strip `+` covers a board that has panes;
+    // (SPEC-tab-groups decision 14). The tab-strip `+` covers a board that has panes;
     // an empty one has no strip worth aiming at, so the offer belongs here.
     // A worktree group never shows this widget (it gets [WorktreeStarter]), and
     // its membership is derived anyway — there would be no list to add to.

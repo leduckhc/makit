@@ -1,5 +1,5 @@
 /**
- * SPEC-35 — the two queue-touching commands: `queue.cancel` drops ONE pending
+ * SPEC-mid-turn-steering-and-queue — the two queue-touching commands: `queue.cancel` drops ONE pending
  * mid-turn message, and `cancel` (stop) drops the whole queue, because a
  * follow-up must never fire into a turn the user just aborted.
  */
@@ -104,7 +104,7 @@ test("cancel (stop) interrupts the turn AND empties the queue", async () => {
   assert.equal(h.session.queuedMessages.length, 0, "stop means stop");
 });
 
-// ---- SPEC-38 ---------------------------------------------------------------
+// ---- SPEC-pending-queue-edit-reorder ---------------------------------------------------------------
 
 test("queue.update replaces the pending text and acks", async () => {
   const h = harness();
@@ -166,7 +166,7 @@ test("queue.reorder needs an array of ids", async () => {
   assert.ok(h.sent.some((f) => f.t === "err"));
 });
 
-// ---- SPEC-39: queue.promote (the tray's ⤒) --------------------------------
+// ---- SPEC-queue-tray-and-promote: queue.promote (the tray's ⤒) --------------------------------
 
 test("queue.promote interrupts the turn and leaves the rest of the queue", async () => {
   const h = harness();

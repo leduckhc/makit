@@ -1,6 +1,6 @@
 /// A terse port token (a health verdict or a reach) that carries its full
 /// sentence to all three consumers the vocabulary promises can never drift
-/// (SPEC-41 §"Tooltips"): the visible pill, a **long-press bubble** on touch,
+/// (SPEC-open-ports §"Tooltips"): the visible pill, a **long-press bubble** on touch,
 /// and the **`Semantics.label`** a screen reader speaks.
 ///
 /// It is also the one place a [PortTone] becomes colour, so a `404` is the same

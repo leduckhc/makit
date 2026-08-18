@@ -39,7 +39,7 @@ export const WAKE_ALERT_TITLE = "makit";
 export const WAKE_ALERT_BODY = "An agent needs you";
 
 /**
- * The port-down alert (SPEC-44 D8).
+ * The port-down alert (SPEC-ports-forward D8).
  *
  * It carries the PORT NUMBER and nothing else — no branch, no command, no
  * session, no path. That is a deliberate line: the privacy invariant of this file

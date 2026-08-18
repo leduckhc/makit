@@ -127,7 +127,7 @@ void main() {
     expect(find.text('expired'), findsNothing);
   });
 
-  // SPEC-46 D9/D15 security: the user taps publish, dismisses the sheet, then
+  // SPEC-doc-preview D9/D15 security: the user taps publish, dismisses the sheet, then
   // the docs.publish reply lands. The grant is live on the server with nothing
   // in the UI referencing it — a document stays shared the user believes they
   // cancelled. A grant arriving after dismissal must be revoked.

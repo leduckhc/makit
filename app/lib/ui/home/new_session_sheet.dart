@@ -6,13 +6,13 @@ import '../../store/models.dart';
 import '../widgets/sheet_header.dart';
 import 'repo_chips.dart' show AgentAvatar;
 
-/// Which worktree a new session lands on (SPEC-27, decision 2): an
+/// Which worktree a new session lands on (SPEC-new-session-config-at-spawn, decision 2): an
 /// already-checked-out worktree, a fresh fork off a base branch, or a fork on
 /// an open PR's head branch. Shared by the mobile sheet and the desktop dialog.
 enum WorktreeSource { existing, newBranch, fromPr }
 
 /// Choice returned by [NewSessionSheet]: the harness, the worktree source and
-/// its selection, and the pre-spawn config picks (SPEC-27). The caller
+/// its selection, and the pre-spawn config picks (SPEC-new-session-config-at-spawn). The caller
 /// (`repo_card`) maps [source] to the matching `spawnSession` arguments.
 class NewSessionChoice {
   const NewSessionChoice({
@@ -41,11 +41,11 @@ class NewSessionChoice {
   final int? prNumber;
 
   /// Pre-spawn config picks for the chosen harness, forwarded through
-  /// `spawnSession` and applied at launch (SPEC-27). Empty for default-only.
+  /// `spawnSession` and applied at launch (SPEC-new-session-config-at-spawn). Empty for default-only.
   final List<ConfigOptionPick> configOptions;
 }
 
-/// Bottom sheet to configure a new session on mobile (SPEC-27): a worktree
+/// Bottom sheet to configure a new session on mobile (SPEC-new-session-config-at-spawn): a worktree
 /// source toggle (Existing / New branch / From PR), a horizontally scrollable
 /// row of harness cards, and tappable config rows rendering the selected
 /// harness's cached [AgentDescriptor.configOptions]. Unlike desktop the
@@ -500,7 +500,7 @@ class _HarnessCard extends StatelessWidget {
   }
 }
 
-/// One tappable config-option row (SPEC-27 mobile): the option [name] plus its
+/// One tappable config-option row (SPEC-new-session-config-at-spawn mobile): the option [name] plus its
 /// current value. Boolean options render a [Switch]; select options open a
 /// picker of the option's values/groups. Reports the new pick via [onChanged].
 class ConfigRow extends StatelessWidget {

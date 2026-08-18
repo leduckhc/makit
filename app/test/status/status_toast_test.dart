@@ -148,7 +148,7 @@ void main() {
     expect(copied.single, contains('SocketException: refused'));
   });
 
-  // SPEC-49 D1: this used to assert the opposite — that an event with no
+  // SPEC-notice-layer D1: this used to assert the opposite — that an event with no
   // `detail` had no copy affordance at all. That gate was the sharpest instance
   // of "it is impossible to copy": the head line is still the thing a person
   // wants to paste.
@@ -189,7 +189,7 @@ void main() {
     await t.tap(find.text('Rename failed'));
     await t.pump();
     // In place: the card says so itself rather than posting a notice about the
-    // notice (SPEC-49 D6).
+    // notice (SPEC-notice-layer D6).
     expect(find.text('Copied'), findsOneWidget);
     expect(center.events, hasLength(before));
     await t.pump(const Duration(milliseconds: 1300));
@@ -212,7 +212,7 @@ void main() {
     expect(copied, isEmpty);
   });
 
-  // SPEC-49 D7: this used to tap the body. Copy is the action that cannot be
+  // SPEC-notice-layer D7: this used to tap the body. Copy is the action that cannot be
   // performed any other way, so it took the body; opening keeps an explicit
   // control.
   testWidgets('the open control hands the event to onOpen without copying', (
@@ -261,7 +261,7 @@ void main() {
     expect(find.byType(StatusToastCard), findsNothing);
   });
 
-  // ── SPEC-49 D2: reachable without a pointer ──────────────────────────────
+  // ── SPEC-notice-layer D2: reachable without a pointer ──────────────────────────────
 
   testWidgets('the card takes keyboard focus and Enter copies it', (t) async {
     final copied = watchClipboard(t);
@@ -308,14 +308,14 @@ void main() {
         ),
         reason:
             'the copy action must be reachable by assistive tech, not only '
-            'by pointer (SPEC-49 D2)',
+            'by pointer (SPEC-notice-layer D2)',
       );
     } finally {
       handle.dispose();
     }
   });
 
-  // ── SPEC-49 D4: attention pauses the dwell ───────────────────────────────
+  // ── SPEC-notice-layer D4: attention pauses the dwell ───────────────────────────────
 
   testWidgets('hovering holds the notice past its dwell', (t) async {
     await pumpLayer(t);
@@ -395,7 +395,7 @@ void main() {
     expect(find.text('URL copied'), findsOneWidget);
   });
 
-  // ── SPEC-49 D5: contact shows the whole payload ──────────────────────────
+  // ── SPEC-notice-layer D5: contact shows the whole payload ──────────────────────────
 
   testWidgets('hovering unfolds the whole detail, selectably', (t) async {
     await pumpLayer(t);
@@ -423,7 +423,7 @@ void main() {
     expect(find.textContaining('errno = 17'), findsNothing);
   });
 
-  // ── SPEC-49 D4/D7: one gesture, one meaning ──────────────────────────────
+  // ── SPEC-notice-layer D4/D7: one gesture, one meaning ──────────────────────────────
 
   testWidgets('a touch tap copies without unfolding or pausing', (t) async {
     final copied = watchClipboard(t);

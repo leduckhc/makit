@@ -1,4 +1,4 @@
-/// SPEC-45 D4 — the store records what a live session advertises into the
+/// SPEC-starter-pane-parity D4 — the store records what a live session advertises into the
 /// per-(agent, project) command cache, so the sessionless starter pane can
 /// offer that palette. Recorded on the `session.commands` event itself, never
 /// diffed out of the state, so a streamed turn does not pay for it.

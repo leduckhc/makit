@@ -72,7 +72,7 @@ test("parseDockerPs skips udp publishes and survives malformed rows", () => {
   assert.deepEqual(
     [...map.keys()],
     [5432],
-    "UDP is out of scope (SPEC-41) and one odd row must not blind the read",
+    "UDP is out of scope (SPEC-open-ports) and one odd row must not blind the read",
   );
 });
 

@@ -2,7 +2,7 @@
  * RepoService: builds the repo-centric home-screen snapshot (git/gh
  * enrichment) for a set of projects.
  *
- * Extracted from {@link SessionManager} (SPEC-19, localizing SPEC-17 P3). The
+ * Extracted from {@link SessionManager} (SPEC-decomposition-and-dedup, localizing SPEC-server-hotpath-and-state P3). The
  * git/branch/worktree reads and the `gh` open-PR lookup fan out concurrently,
  * but bounded (#66): a large install (many repos × worktrees) must not spawn
  * hundreds of git/gh child processes at once (FD/process-limit exhaustion, gh
@@ -347,7 +347,7 @@ export async function listRepos(
   lastKnown: LastKnownPr,
   settingsFor?: RepoSettingsLookup,
 ): Promise<RepoDTO[]> {
-  // Bounded fan-out across projects (SPEC-17 P3 × #66 concurrency cap).
+  // Bounded fan-out across projects (SPEC-server-hotpath-and-state P3 × #66 concurrency cap).
   // Read the persisted targets ONCE per snapshot rather than per worktree: it is
   // a single small JSON file, and re-reading it inside the fan-out would turn
   // one read into N.
@@ -410,11 +410,11 @@ async function repoSnapshot(
   // counts too: its worktree is resolved before the spawn, so it renders under
   // that worktree's row rather than in a separate UI bucket.
   //
-  // Closed sessions (SPEC-29) are NOT counted. The caller hands us
+  // Closed sessions (SPEC-session-lifecycle-resume-list-delete) are NOT counted. The caller hands us
   // `allSessions()`, which keeps them for fan-out and lookup, but they are hidden
   // from `listSessions()` and therefore from every client-side session list — so
   // their ids resolved to nothing in the consumers that map this field to session
-  // rows, and SPEC-38's wrap-up brief counted them as work left behind.
+  // rows, and SPEC-pr-actions-next-step-bar's wrap-up brief counted them as work left behind.
   const sessionsByPath = new Map<string, string[]>();
   for (const s of sessions) {
     if (s.projectId !== dto.id || s.closed) continue;

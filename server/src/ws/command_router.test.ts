@@ -1,5 +1,5 @@
 /**
- * CommandRouter capability enforcement (SPEC-46 T4 / contract C1).
+ * CommandRouter capability enforcement (SPEC-cli-as-client T4 / contract C1).
  *
  * The capability check is at the router, BEFORE handler lookup: an agent-scoped
  * token refused a command must never enter the handler (proven with a spy), or

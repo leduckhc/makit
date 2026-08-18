@@ -30,13 +30,13 @@ Sanity check:
 ```sh
 flutter --version          # expect 3.47.0
 pnpm --version
-rustup --version           # SPEC-33: required, see "Rust + CocoaPods" below
+rustup --version           # SPEC-user-attachments: required, see "Rust + CocoaPods" below
 pod --version
 xcrun simctl list devices booted
 flutter devices            # lists simulators, macOS, and wireless iPhones
 ```
 
-### Rust + CocoaPods (both required since SPEC-33)
+### Rust + CocoaPods (both required since SPEC-user-attachments)
 
 The app depends on `super_clipboard` (clipboard **image** reads — Flutter's own
 `Clipboard` is text-only), which is implemented in Rust via
@@ -66,7 +66,7 @@ phases, and the `Flutter-*.xcconfig` files `#include?` the generated Pods
 xcconfig. `flutter build`/`flutter run` invoke `pod install` automatically; CI
 runners need CocoaPods installed. Flutter currently warns that non-SPM plugins
 "will become an error in a future version" — if that lands before the plugin
-adopts SPM, we replace it (see SPEC-33 §4.3).
+adopts SPM, we replace it (see SPEC-user-attachments §4.3).
 
 ---
 
@@ -182,7 +182,7 @@ A repo's **provider setting** short-circuits all of this: `Forgejo`, `Gitea` or
 `GitHub` picks the gateway with no probe at all, and `None` reaches no forge. That is
 the recourse for an instance the probe cannot classify -- one that answers 401 to an
 anonymous request, or sits behind a proxy that hides the version endpoints. See
-`docs/specs/2026-08-10-SPEC-48-per-repo-settings.md`.
+`docs/specs/20260810-004800-SPEC-per-repo-settings.md`.
 
 No `gh`-style login is involved; the provider talks REST with a token.
 
@@ -435,10 +435,10 @@ Same cert as before ⇒ no re-trust prompt. Then start a server
 
 ## 5. Notifications & background wake
 
-Actionable lock-screen approvals (SPEC-08) and content-free APNs wake (SPEC-07)
+Actionable lock-screen approvals (SPEC-actionable-notifications) and content-free APNs wake (SPEC-background-wake-notifications)
 are implemented. Full on-device checklists and troubleshooting:
 
-- [docs/NOTIFICATIONS.md](NOTIFICATIONS.md) — SPEC-08/07 validation steps
+- [docs/NOTIFICATIONS.md](NOTIFICATIONS.md) — SPEC-actionable-notifications/07 validation steps
 - [docs/PUSH.md](PUSH.md) — `~/.makit/push.json` APNs setup on the server
 
 In the iOS app: **Settings → Notifications** shows permission and background-wake

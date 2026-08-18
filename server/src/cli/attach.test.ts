@@ -1,5 +1,5 @@
 /**
- * T8 (SPEC-46) — the credential defect `attach` used to have, locked shut.
+ * T8 (SPEC-cli-as-client) — the credential defect `attach` used to have, locked shut.
  *
  * `readBearer()` read `~/.makit/devices.json` and took `arr[0].bearer` — the
  * *phone's* credential (spec §2). So revoking the phone killed the CLI, revoking

@@ -78,7 +78,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       final status = ref.status;
       final session = ref.read(sessionsProvider).byId(sessionId);
       if (session == null) return;
-      // SPEC-30 decision 18: the new agent runs in THIS pane's worktree, so no
+      // SPEC-tab-groups decision 18: the new agent runs in THIS pane's worktree, so no
       // dialog is needed. A session with no worktree on disk yet cannot answer
       // "where does it run?" — spawning bare would silently land the agent in
       // the repo's primary checkout, so refuse and say why.
@@ -277,7 +277,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       // Intercepting it here answers at 100% of a turn. This handler returning
       // (via `handleClientCommand` matching) is the fix for that bug.
       //
-      // Resolved before any await (SPEC-48 D3, enforced by
+      // Resolved before any await (SPEC-status-and-activity D3, enforced by
       // `test/status/status_lifetime_test.dart`): `ref` dies with its widget.
       final status = ref.status;
       // `/session id` copies ONLY the bare agent session id (D6). The panel's

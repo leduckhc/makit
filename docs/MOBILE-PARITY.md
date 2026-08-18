@@ -11,11 +11,11 @@ that look like mobile gaps are already at parity by construction:
 
 | Assumed behind | Reality |
 |---|---|
-| Transcript, scroll anchoring (SPEC-21) | Shared. Both surfaces wire `findChildIndexCallback` — `ui/session/session_screen.dart`, `desktop/chat/desktop_chat_pane.dart` |
-| Expandable tool rows + durable fold (SPEC-24) | Shared `expandedTranscriptRowsProvider` |
-| Inline `ask_user` cards (SPEC-25) | Shared `ui/session/ask_card.dart` |
-| Media / GIF (SPEC-22), diffs | Shared `ui/session/media_view.dart`, `diff_view.dart` |
-| Model picker + per-model flyout (SPEC-31) | Shared. Mobile = `showModelPickerSheet`, desktop = `MenuAnchor` |
+| Transcript, scroll anchoring (SPEC-chat-scroll-anchoring) | Shared. Both surfaces wire `findChildIndexCallback` — `ui/session/session_screen.dart`, `desktop/chat/desktop_chat_pane.dart` |
+| Expandable tool rows + durable fold (SPEC-inline-expandable-tool-rows) | Shared `expandedTranscriptRowsProvider` |
+| Inline `ask_user` cards (SPEC-ask-user-inline-in-chat) | Shared `ui/session/ask_card.dart` |
+| Media / GIF (SPEC-assistant-display-media), diffs | Shared `ui/session/media_view.dart`, `diff_view.dart` |
+| Model picker + per-model flyout (SPEC-model-picker-menu-per-model-config) | Shared. Mobile = `showModelPickerSheet`, desktop = `MenuAnchor` |
 
 The real lag is the **chrome around** the shared widgets, and it is UI-only —
 the store and wire protocol already support every item below.
@@ -25,7 +25,7 @@ the store and wire protocol already support every item below.
 `desktop/chat/pr_bar.dart`, `desktop/chat/composer_draft.dart`,
 `desktop/chat/closed_sidebar_view.dart`, exited/resumable session gating,
 `desktop/settings/**` (12 sections), `desktop/chat/github_budget_button.dart`,
-`keymap_scope`, `tray/`, `open_in_ide`, split/tab/groups (SPEC-28/30).
+`keymap_scope`, `tray/`, `open_in_ide`, split/tab/groups (SPEC-desktop-workspace-tabs/30).
 
 Desktop-only *by nature*: tray, open-in-IDE, split panes, tab groups.
 
@@ -33,18 +33,18 @@ Desktop-only *by nature*: tray, open-in-IDE, split panes, tab groups.
 
 Ranked by how often a phone user hits the gap, not by size.
 
-1. **Push wake on force-quit (SPEC-07)** — M. Registration exists, no
+1. **Push wake on force-quit (SPEC-background-wake-notifications)** — M. Registration exists, no
    killed-app handler, so notifications are silent after a force-quit. Highest
    impact (a remote control that cannot notify fails its core job) but needs a
    physical device + Xcode to verify.
-2. **PR bar (SPEC-23)** — ✅ *done (visibility only)*. The session screen's
+2. **PR bar (SPEC-pr-status-and-actions)** — ✅ *done (visibility only)*. The session screen's
    subtitle line now carries a `SessionPrChip` (`#42` + CI verdict) that opens a
    shared PR sheet (`ui/widgets/pr_sheet.dart`: state, draft, conflicts,
    unresolved threads, per-check list, open-on-GitHub); the home screen's
    `PrPill` opens the same sheet. Desktop's PR *actions* stay desktop-only — they
    resolve canned prompts through the preferences/prompt-template layer, which
    mobile does not carry.
-3. **Composer draft persistence (SPEC-27)** — ✅ *done*. `composer_draft.dart`
+3. **Composer draft persistence (SPEC-new-session-config-at-spawn)** — ✅ *done*. `composer_draft.dart`
    moved from `desktop/chat/` to `ui/composer/` (pure move) and the mobile
    composer now seeds from / writes to it, so a draft survives a route pop. The
    composer is also keyed by session id — it previously carried one session's
@@ -55,7 +55,7 @@ Ranked by how often a phone user hits the gap, not by size.
 5. **Device / server management** — L. No mobile analogue of desktop's
    `devices_screen`, `status_screen`, `sessions_screen`, `session_log_screen`.
 
-Low value on a phone: GitHub budget indicator (SPEC-32) — an icon at most.
+Low value on a phone: GitHub budget indicator (SPEC-github-gateway-and-budget) — an icon at most.
 
 ## Repo list vs. the desktop sidebar
 
@@ -104,7 +104,7 @@ Still open:
   preferences, and most are desktop-only (sidebar width, preferred IDE,
   auto-split threshold). Mobile now covers the two that matter (theme, text
   scale); the PR-prompt overrides are readable but have no mobile editor yet.
-- **SPEC-07 push wake on force-quit** — highest impact, device-gated.
+- **SPEC-background-wake-notifications push wake on force-quit** — highest impact, device-gated.
 - **Device / server management** — no mobile analogue of `devices_screen`,
   `status_screen`, `session_log_screen`.
 
@@ -115,9 +115,9 @@ pull-to-refresh.
 
 ## Done on this branch
 
-- `fix(app): hide dead sessions on the mobile home (SPEC-29)` — exited sessions
+- `fix(app): hide dead sessions on the mobile home (SPEC-session-lifecycle-resume-list-delete)` — exited sessions
   are dropped unless resumable, matching the desktop sidebar.
-- `feat(app): closed-sessions screen on mobile (SPEC-29)` — `/closed`,
+- `feat(app): closed-sessions screen on mobile (SPEC-session-lifecycle-resume-list-delete)` — `/closed`,
   grouped by repo, reopen + empty/error/retry states.
 
 ## Open decision — worktree visibility
@@ -130,7 +130,7 @@ b07ec196). But:
 
 - `ui/home/repo_card.dart` says empty non-primary worktrees should be hidden
   *behind* the primary + active ones — collapsed, not erased.
-- SPEC-11 says home should show "the active worktrees (feature branches) and how
+- SPEC-repo-centric-home says home should show "the active worktrees (feature branches) and how
   big each change is".
 - Desktop shows them, collapsed at 5 behind a "Show N more" toggle
   (`desktop/chat/desktop_sidebar.dart`).

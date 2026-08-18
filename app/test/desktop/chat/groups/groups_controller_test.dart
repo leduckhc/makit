@@ -1,4 +1,4 @@
-// SPEC-30 Lane 2 — GroupsController: the collection of groups, which one is
+// SPEC-tab-groups Lane 2 — GroupsController: the collection of groups, which one is
 // active, the recently-closed boards, and the single persisted payload.
 //
 // Pure state container: it takes data (a session's location, the set of live
@@ -91,7 +91,7 @@ void main() {
     });
   });
 
-  group('preview groups (SPEC-51)', () {
+  group('preview groups (SPEC-preview-groups)', () {
     test('a fresh state has no preview group', () {
       expect(_with([_wt('g1', 'feat/x')]).state.previewGroupId, isNull);
       expect(GroupsState.fresh().previewGroupId, isNull);
@@ -594,7 +594,7 @@ void main() {
     });
 
     test(
-      'the preview pointer survives a reload (SPEC-51 decision 10)',
+      'the preview pointer survives a reload (SPEC-preview-groups decision 10)',
       () async {
         final prefs = await SharedPreferences.getInstance();
         final c = GroupsController.load(ProfileScopedPrefs.unscoped(prefs));
@@ -754,7 +754,7 @@ void main() {
     });
   });
 
-  group('migration from the SPEC-28 single workspace', () {
+  group('migration from the SPEC-desktop-workspace-tabs single workspace', () {
     test(
       'the old blob becomes Board 1, empty tabs preserved verbatim',
       () async {

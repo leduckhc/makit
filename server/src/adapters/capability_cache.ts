@@ -1,5 +1,5 @@
 /**
- * Capability cache (SPEC-27) — a small JSON store, under the makit data dir,
+ * Capability cache (SPEC-new-session-config-at-spawn) — a small JSON store, under the makit data dir,
  * keyed `agentId → { fingerprint, configOptions? }`. It lets `agents.list`
  * serve each harness's cached `configOptions` catalog with NO live session:
  * on a fingerprint miss/change it re-probes that harness ONCE (via the
@@ -78,7 +78,7 @@ export class CapabilityCache {
   /**
    * Serve a descriptor's `configOptions` from cache, re-probing once on a
    * fingerprint miss/change. An UNAVAILABLE harness is returned untouched — it
-   * is never probed (SPEC-27: only probe available agents). A warm cache hit
+   * is never probed (SPEC-new-session-config-at-spawn: only probe available agents). A warm cache hit
    * (matching fingerprint) spawns nothing.
    */
   async serve(descriptor: AgentDescriptor): Promise<AgentDescriptor> {

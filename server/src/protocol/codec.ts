@@ -90,7 +90,7 @@ function isEventKind(value: unknown): value is EventKind {
 
 /**
  * Host-wide broadcast kinds that must never be decoded as a session event
- * (SPEC-37 decision 5 / SPEC-32): the session log is append-only and replayed in
+ * (SPEC-performance-metrics-dashboard decision 5 / SPEC-github-gateway-and-budget): the session log is append-only and replayed in
  * full on resume. This is the runtime half of the {@link SessionEventKind} type.
  *
  * Derived from an exhaustive `Record<Exclude<EventKind, SessionEventKind>, true>`

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-/// A "reset to default" icon button for a settings row (SPEC-19 shared widget).
+/// A "reset to default" icon button for a settings row (SPEC-decomposition-and-dedup shared widget).
 ///
 /// When [visible] is false it collapses to a fixed-width [SizedBox] so the row
 /// beside it stays vertically aligned with rows whose value is unchanged. This

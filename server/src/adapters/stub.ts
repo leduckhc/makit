@@ -39,7 +39,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   readonly agent = "stub";
 
   /** Resume-capable so keyless e2e can exercise the server-restart resume path
-   *  (SPEC-29): the manager persists {@link agentSessionId} and re-attaches by it. */
+   *  (SPEC-session-lifecycle-resume-list-delete): the manager persists {@link agentSessionId} and re-attaches by it. */
   readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false, close: true };
   agentSessionId?: string;
 
@@ -91,11 +91,11 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   closed = false;
 
 
-  /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
+  /** Turns taken so far — drives the deterministic usage ramp (SPEC-context-usage). */
   private turnCount = 0;
 
   /**
-   * SPEC-46 (T15): the same turns/gates state machine the real subprocess
+   * SPEC-cli-as-client (T15): the same turns/gates state machine the real subprocess
    * adapters use, so a parked stub turn is indistinguishable on the wire from a
    * parked codex or pi turn. Hand-rolling it here is what the tracker exists to
    * prevent: the coarse `status` channel only carries `"idle" | "running"`, so
@@ -144,7 +144,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async send(input: UserInput): Promise<void> {
-    // SPEC-33: the stub takes the SAME delivery path as the real adapters
+    // SPEC-user-attachments: the stub takes the SAME delivery path as the real adapters
     // (materialise into the worktree, name the file in the prompt, echo
     // descriptors). Without this the keyless e2e loop would "pass" while
     // exercising nothing, and the dev/demo loop would silently drop images.
@@ -153,7 +153,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     );
     if (!turn) return;
     this.emitEvent({ ts: Date.now(), kind: "user.message", payload: turn.echo });
-    // SPEC-37: usage must ramp on the SAME path the real adapters take, or the
+    // SPEC-context-usage: usage must ramp on the SAME path the real adapters take, or the
     // keyless e2e loop would render an indicator that no code ever fed. Shaped
     // like codex's report: context tracks the latest request, totals accumulate.
     this.emitUsage();
@@ -180,7 +180,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       return;
     }
 
-    // SPEC-46 (T15) — the two states `makit wait` must be able to observe, and
+    // SPEC-cli-as-client (T15) — the two states `makit wait` must be able to observe, and
     // the one it must NOT confuse with a status. Placed before SLOW/STREAM so a
     // prompt naming a gate is never swallowed by another trigger.
     //
@@ -242,7 +242,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     }
 
     // "SLOW [ms]" → a turn that OUTLIVES a keystroke: running now, reply after
-    // `ms` (default 12s), then idle. The queue (SPEC-35/36) only exists while the
+    // `ms` (default 12s), then idle. The queue (SPEC-mid-turn-steering-and-queue/36) only exists while the
     // agent is busy, so without this the keyless loop — and the demo — has no
     // window in which a message can be queued, edited or reordered at all.
     if (prompt.includes("SLOW")) {
@@ -294,7 +294,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     // could not produce, so the risk branches, durations, exit codes, command
     // summaries and every expanded-body shape (file content, shell output,
     // diff, facts-only) had to be taken on trust. Scripted with real delays so
-    // the live counter and the finished-duration gate (SPEC-47) both fire.
+    // the live counter and the finished-duration gate (SPEC-session-timings) both fire.
     if (input.text.includes("TOOLS")) {
       this.toolScript = this.runToolScript();
       return;
@@ -347,7 +347,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     this.abortToolScript();
     const run = ++this.toolRun;
     const live = () => this.toolRun === run;
-    // The two long calls exist so the duration token clears SPEC-47's 2 s floor
+    // The two long calls exist so the duration token clears SPEC-session-timings's 2 s floor
     // in the live loop. A unit test only cares about the event shape, so the
     // scale is overridable rather than the script being duplicated.
     const scale = Number(process.env.MAKIT_STUB_TOOL_SCALE ?? "1") || 1;
@@ -482,7 +482,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     this.emit("status", "idle");
   }
 
-  /** No mid-turn injection (SPEC-35): the session layer queues instead. */
+  /** No mid-turn injection (SPEC-mid-turn-steering-and-queue): the session layer queues instead. */
   async steer(_input: UserInput): Promise<boolean> {
     return false;
   }
@@ -514,13 +514,13 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   /**
-   * Release a parked gate (SPEC-46 T15) without emitting the intermediate
+   * Release a parked gate (SPEC-cli-as-client T15) without emitting the intermediate
    * "running" that `leaveApproval` would otherwise produce: drop the TURN first
    * so the tracker has nothing to resume to, then the gate. A cancel that left
    * the gate counted would wedge the session for good — `settleIdle` could never
    * fire again, so every later turn would look stuck.
    *
-   * The settle is `leaveApproval`'s own job as of SPEC-29: it now settles to
+   * The settle is `leaveApproval`'s own job as of SPEC-session-lifecycle-resume-list-delete: it now settles to
    * `idle` when the last gate closes and no turn remains (it used to only resume
    * `running`, which pinned a session whose turn ended before its gate). So this
    * must NOT settle again — doing so emitted `idle` twice for one cancel.
@@ -562,7 +562,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   /**
-   * Deterministic `session.usage` ramp (SPEC-37): a fixed per-turn context cost
+   * Deterministic `session.usage` ramp (SPEC-context-usage): a fixed per-turn context cost
    * on top of a fixed baseline (the real baseline being system prompt + tool
    * definitions), against a plausible window. Totals and cost accumulate.
    */
@@ -593,7 +593,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     });
   }
 
-  /** SPEC-26: a tiny deterministic config catalog so keyless e2e runs can
+  /** SPEC-acp-config-options-unified-composer: a tiny deterministic config catalog so keyless e2e runs can
    *  exercise the unified `configOptions` render + set round-trip. */
   private configOptions: Array<SessionConfigOption> = [
     // Mixed boolean + string currentValue types require explicit array type annotation

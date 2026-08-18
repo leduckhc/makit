@@ -68,7 +68,7 @@ App
 
 ---
 
-### Ports: what a branch is serving (SPEC-41)
+### Ports: what a branch is serving (SPEC-open-ports)
 
 A worktree that has something listening on TCP shows a single **plug glyph** on
 its row — never the port numbers. The row's job is *whether*, not *which*: the
@@ -98,7 +98,7 @@ Nothing is scanned unless somebody is looking: the scan is watch-gated, so no
 read-only — **Open** and **Copy URL**, both hidden when nothing answered HTTP
 and there is therefore no honest URL to offer.
 
-**Everything, all repos (SPEC-42).** Beside Home and Archived sits a **Ports**
+**Everything, all repos (SPEC-ports-global-view).** Beside Home and Archived sits a **Ports**
 screen (`⌘⇧P`, or the worktree menu's `Ports…`, which pre-selects *This repo*),
 grouping every listener repo ▸ worktree ▸ port, with system listeners folded
 away because they are noise, not work. Its filters are the two questions worth
@@ -115,7 +115,7 @@ feeds a `Ports (n)` menubar submenu with an `Open Ports…` item; the menubar
 reads the cache and never arms the scanner, so a count only appears once some
 surface has actually looked.
 
-**Killing one (SPEC-43).** This is the first thing makit signals that it did not
+**Killing one (SPEC-ports-kill).** This is the first thing makit signals that it did not
 spawn, so the whole design is about proving the process it kills is the one you
 saw. The row you confirmed carries its own identity — address, port, pid **and**
 start time — and the server ignores its cache, rescans, and re-matches all four
@@ -137,7 +137,7 @@ signals, outcome) and never into a session's transcript. `Kill all orphans (n)`
 in the orphans section is the same discipline N times over, behind one confirm
 that names the ports, with an honest per-port result.
 
-**Watching one (SPEC-44 P4a).** Port notifications are **opt-in per port**, from a
+**Watching one (SPEC-ports-forward P4a).** Port notifications are **opt-in per port**, from a
 `Watch this port` switch in the detail sheet — an always-on version would fire
 every time a build restarts a dev server, and would be muted within a day. A
 watch is remembered by `(worktree, port)`, not by pid, so it survives exactly the
@@ -151,7 +151,7 @@ lock screen is the kind of content makit's push payloads deliberately cannot
 contain. Only an owned port can be watched — an unowned listener has no stable
 identity to watch by.
 
-**Forwarding one to your phone (SPEC-44 P4b).** A loopback-only dev server is
+**Forwarding one to your phone (SPEC-ports-forward P4b).** A loopback-only dev server is
 invisible from your phone, and makit already holds a cert-pinned,
 device-authenticated channel to the machine it runs on — so it can carry that port
 over the connection it already has, without opening anything new on the host. On a
@@ -182,7 +182,7 @@ leaves the security work where it can be reviewed — on the server.
 
 ---
 
-### Desktop canvas: groups (SPEC-30)
+### Desktop canvas: groups (SPEC-tab-groups)
 
 The desktop window is a **sidebar** (the world) beside a **canvas** (one view
 onto part of it). The sidebar — repos ▸ worktrees ▸ agents — never changes when
@@ -214,7 +214,7 @@ single sentence decides the rest of the behaviour:
 - **Layout is yours.** The `Agents side by side` setting is a *placement policy*
   — it decides whether the next agent opens as a pane or a tab, and never
   re-arranges panes you positioned.
-- **Preview tabs, if you want them** (SPEC-51, off by default). Turn on
+- **Preview tabs, if you want them** (SPEC-preview-groups, off by default). Turn on
   `Preview tabs for worktrees` and clicking a branch reuses **one** disposable
   tab, shown in *italic*, instead of adding one per branch you look at —
   browsing twenty worktrees costs one tab. Keeping it is explicit: click the
@@ -245,7 +245,7 @@ new-session sheet.
   currently viewing this session.
 - Long-press a message → copy, quote-reply, retry-from-here.
 
-**Finding your own messages (SPEC-34).** A long session is ~90% agent output, so
+**Finding your own messages (SPEC-message-navigator).** A long session is ~90% agent output, so
 re-reading your own prompts must not mean scrolling blind. Each surface has one
 affordance:
 
@@ -273,7 +273,7 @@ takes a `topInset` and pads once for all styles.
 > **Do not place navigator markers proportionally to scroll position.** The
 > transcript is a reversed lazy list, so rows that have not been laid out have no
 > scroll offset, and deriving one means measuring the whole history — the lurch
-> SPEC-21 removed. Markers are placed by message **order**; jumping is resolved by
+> SPEC-chat-scroll-anchoring removed. Markers are placed by message **order**; jumping is resolved by
 > `SliverGeometry.scrollOffsetCorrection` *inside* layout, never from a post-frame
 > callback (that paints the wrong frame first — a visible blink). This is the one
 > constraint to re-read before touching any of it.
@@ -331,7 +331,7 @@ Approval prompts include: tool name, target (file/command), short preview, and
 Delivery: APNs / FCM via server → relay → device. Per-session and per-type
 mute controls.
 
-### Activity — the record behind the notice (SPEC-48)
+### Activity — the record behind the notice (SPEC-status-and-activity)
 
 An OS notification vanishes, and a `SnackBar` vanished faster: four seconds, no
 selection, one line of room for an error the user then could not quote. Both are
@@ -350,7 +350,7 @@ tap from the clipboard (per row, or copy-all as one chronological block, the sam
 shape `Diagnostics` uses). Repeats inside 8 s coalesce into `… ×3` rather than
 queueing three unskippable notices.
 
-**Taking the notice with you (SPEC-49).** The whole toast is the copy target —
+**Taking the notice with you (SPEC-notice-layer).** The whole toast is the copy target —
 not a 13 px glyph, and no longer only for events that carry a detail: a bare
 `Paired!` still has a head line worth pasting. Point at it (or focus it with the
 keyboard) and two things happen: the dwell **stops**, because a clock that

@@ -1,7 +1,7 @@
 /// Everything that belongs to ONE profile, behind one disposable object.
 ///
 /// Exists so a second one can be built at runtime: switching profiles inside a
-/// running window (SPEC-50 D10) means standing up a whole parallel set of
+/// running window (SPEC-profiles D10) means standing up a whole parallel set of
 /// per-profile objects — control client, daemon controller, scoped preference
 /// controllers, lifecycle and deleter — and tearing the old set down. Leaving
 /// that list inline in `runDesktopApp` made it impossible to have two.
@@ -30,7 +30,7 @@ import 'server_profile.dart';
 
 /// Confirms [target] is reachable, and only then calls [handOver].
 ///
-/// The order is the entire safety property of a profile switch (SPEC-50 D10):
+/// The order is the entire safety property of a profile switch (SPEC-profiles D10):
 /// the target is started and confirmed *answering* while the current profile is
 /// still live, so a target that cannot come up leaves the window exactly as it
 /// was. [handOver] performs the irreversible part — build the new runtime, swap
@@ -95,7 +95,7 @@ class ProfileRuntime {
       dispose: (c) => (c as MakitControlClient).dispose(),
     );
 
-    // Namespace only SERVER-BOUND preferences per profile (SPEC-50 D11): server
+    // Namespace only SERVER-BOUND preferences per profile (SPEC-profiles D11): server
     // config, groups, and the pane layouts groups persist. Appearance,
     // shortcuts, recent models and cached commands are user-level and stay
     // SHARED — the old blanket `SharedPreferences.setPrefix` is why a worktree

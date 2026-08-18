@@ -1,4 +1,4 @@
-// SPEC-52 — session identity: the underlying agent session id, its transcript
+// SPEC-session-identity — session identity: the underlying agent session id, its transcript
 // path, and the one-button copy that gets them somewhere useful.
 //
 // The problem this exists for: pi's own `/session` is an AGENT command, so in
@@ -225,7 +225,7 @@ const IconData kSessionIdentityCopyIcon = PhosphorIconsLight.copy;
 /// that says so, rather than a row with an empty value (D9).
 const String kSessionIdentityNoAgentLine = 'Agent not started yet';
 
-/// Panel width on desktop, matching `kUsagePanelWidth`'s role in SPEC-37.
+/// Panel width on desktop, matching `kUsagePanelWidth`'s role in SPEC-context-usage.
 const double kIdentityPanelWidth = 340;
 
 /// Margin kept clear of the window edge when clamping the desktop popover.
@@ -402,7 +402,7 @@ class _CopyAllRow extends ConsumerWidget {
   }
 
   Future<void> _copy(WidgetRef ref, String payload, int lines) async {
-    // `ref.status` is resolved BEFORE the await (SPEC-48 D3, enforced by
+    // `ref.status` is resolved BEFORE the await (SPEC-status-and-activity D3, enforced by
     // `test/status/status_lifetime_test.dart`): a `StatusCenter` never expires,
     // but `ref` dies with its widget — and this panel is a sheet that can be
     // dismissed mid-flight, which is exactly when there is bad news to deliver.
@@ -444,7 +444,7 @@ class _CopyAllRow extends ConsumerWidget {
 /// on screen to anchor to, and anchoring to where a vanished item used to be is
 /// arbitrary placement dressed up as precision.
 ///
-/// What was kept from SPEC-37 is the part that matters and is testable: the
+/// What was kept from SPEC-context-usage is the part that matters and is testable: the
 /// window-clamped width and the `SingleChildScrollView`, so a panel opened from a
 /// narrow split pane cannot hang off-screen. Both properties are pinned by tests
 /// in `test/session_identity_widget_test.dart` ("desktop opens a centred,
@@ -502,7 +502,7 @@ Future<void> showSessionIdentity({
             side: BorderSide(color: cs.outlineVariant),
           ),
           clipBehavior: Clip.antiAlias,
-          // Sized to the WINDOW, not to a constant: SPEC-37 learned that a fixed
+          // Sized to the WINDOW, not to a constant: SPEC-context-usage learned that a fixed
           // panel opened from a narrow split pane hangs off-screen.
           //
           // Floored at zero because `window - 2 * margin` goes NEGATIVE below

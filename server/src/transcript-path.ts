@@ -1,7 +1,7 @@
 /**
  * transcript-path — resolve a session's on-disk transcript path.
  *
- * Agent-agnostic dispatcher (SPEC-52 D3). It lives OUTSIDE `pi-sessions.ts` on
+ * Agent-agnostic dispatcher (SPEC-session-identity D3). It lives OUTSIDE `pi-sessions.ts` on
  * purpose: two of its three branches are not pi-specific, so P2's codex resolver
  * (`~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<threadId>.jsonl`) becomes an
  * additive branch here rather than forcing a move out of a pi-named module.
@@ -30,7 +30,7 @@ export interface TranscriptQuery {
 const PI_AGENT = "pi";
 
 /**
- * Resolve the transcript path, or `undefined` (SPEC-52 D3). Order:
+ * Resolve the transcript path, or `undefined` (SPEC-session-identity D3). Order:
  *   (a) `resumeSessionPath` verbatim — authoritative for disk-attached sessions;
  *   (b) else, for pi ONLY, the entry in `piSessionsDir(cwd)` whose basename ends
  *       `_<agentSessionId>.jsonl` — an EXACT suffix, never a prefix, because pi

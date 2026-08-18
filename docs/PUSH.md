@@ -1,6 +1,6 @@
 # Push notifications setup (APNs)
 
-Background wake (SPEC-07) lets Makit reach your phone when the app is
+Background wake (SPEC-background-wake-notifications) lets Makit reach your phone when the app is
 force-quit or long-suspended. The server sends a **content-free** alert via
 Apple Push Notification service (APNs). Real session data is never in the push
 payload — the app reconnects over your Tailscale tailnet and pulls approvals
@@ -108,7 +108,7 @@ server stores the token in `~/.makit/devices.json`.
 
 ## 5. Test the wake loop
 
-Follow the SPEC-07 checklist in [NOTIFICATIONS.md](NOTIFICATIONS.md#on-device-checklist--spec-07-background-wake).
+Follow the SPEC-background-wake-notifications checklist in [NOTIFICATIONS.md](NOTIFICATIONS.md#on-device-checklist--spec-07-background-wake).
 
 Quick smoke test:
 

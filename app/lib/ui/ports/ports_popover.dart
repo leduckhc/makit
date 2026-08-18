@@ -1,4 +1,4 @@
-/// SPEC-41 desktop popover — hover previews, click pins.
+/// SPEC-open-ports desktop popover — hover previews, click pins.
 ///
 /// House pattern is [GithubBudgetButton]: an [OverlayPortal] anchored to the
 /// glyph, an outside-tap barrier and an `Esc` [CallbackShortcuts] binding. On
@@ -496,7 +496,7 @@ class _PortRow extends ConsumerWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final hasUrl = port.openUrl != null;
-    // SPEC-43 D8: `Kill` is offered for a port whose identity can be verified
+    // SPEC-ports-kill D8: `Kill` is offered for a port whose identity can be verified
     // (D1) — including one that never answered HTTP, which is exactly the
     // wedged-dev-server case the feature targets.
     final killable = portIsKillable(port);
@@ -642,7 +642,7 @@ class _ActionButton extends StatelessWidget {
   final bool primary;
 
   /// Destructive: an error-tinted wash, so the one button that signals a process
-  /// never reads like Open or Copy (SPEC-43 D8).
+  /// never reads like Open or Copy (SPEC-ports-kill D8).
   final bool danger;
 
   @override

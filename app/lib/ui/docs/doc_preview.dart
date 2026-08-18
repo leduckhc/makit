@@ -1,4 +1,4 @@
-/// SPEC-46 D12 — the doc preview **widget** (never a route), so it renders
+/// SPEC-doc-preview D12 — the doc preview **widget** (never a route), so it renders
 /// identically inside a bottom sheet (P1), a modal from a chat card (P2), and a
 /// split pane (P3). Build it as a route and P3 rewrites P1.
 ///

@@ -57,7 +57,7 @@ Future<void> main() async {
   }
   appLog.info('boot', 'makit starting (protocol v$protocolVersion)');
 
-  // macOS is the server-side *control* app (SPEC-03), a different app from the
+  // macOS is the server-side *control* app (SPEC-desktop-control-app), a different app from the
   // mobile client — it must never show the pairing/chat flow. Branch to its own
   // root before any mobile-only bootstrap runs.
   if (Platform.isMacOS) {
@@ -66,7 +66,7 @@ Future<void> main() async {
   }
 
   await seedTestPairingIfRequested();
-  // SPEC-31: load the persisted recent-model list before wiring the store so
+  // SPEC-model-picker-menu-per-model-config: load the persisted recent-model list before wiring the store so
   // the model picker's Recent section survives restarts on mobile too.
   final prefs = await SharedPreferences.getInstance();
   final recentModelsController = RecentModelsController.load(prefs);
@@ -78,7 +78,7 @@ Future<void> main() async {
   // listeners. Eagerly create the controller so it's subscribed before the
   // WS connects and starts pushing projects/sessions snapshots.
   //
-  // SPEC-07: inject a channel-backed push registrar so the APNs token the iOS
+  // SPEC-background-wake-notifications: inject a channel-backed push registrar so the APNs token the iOS
   // `AppDelegate` forwards over `makit/push` reaches the controller, which then
   // sends `push.register`. Tests keep the default NoopPushRegistrar.
   final container = ProviderContainer(
@@ -126,7 +126,7 @@ Future<void> main() async {
   };
   container.read(notificationControllerProvider);
 
-  // SPEC-07: on every `wsState → connected` transition, drain the force-quit
+  // SPEC-background-wake-notifications: on every `wsState → connected` transition, drain the force-quit
   // pending-action queue (taps captured by the background isolate while the
   // app was dead) through the same responseForAction + respondTo path. Mirrors
   // store.dart's re-subscribe-on-reconnect listener. Idempotent via respondTo.
@@ -138,7 +138,7 @@ Future<void> main() async {
     }
   }, fireImmediately: false);
 
-  // SPEC-28 (decision 10): iPadOS reaches the workspace shell by *size class*,
+  // SPEC-desktop-workspace-tabs (decision 10): iPadOS reaches the workspace shell by *size class*,
   // not just Platform — a full-screen (regular×regular) iPad routes to the
   // workspace, while iPhone / compact split-view iPads stay on the mobile
   // router. macOS never reaches here (it returned early via runDesktopApp
@@ -182,7 +182,7 @@ bool _prefersWorkspaceShellNow() {
   );
 }
 
-/// SPEC-07: drain the persisted force-quit pending-action queue through
+/// SPEC-background-wake-notifications: drain the persisted force-quit pending-action queue through
 /// `respondTo` (idempotent). Best-effort — a failure never blocks startup.
 Future<void> _drainPendingActions(ProviderContainer container) async {
   try {
@@ -255,7 +255,7 @@ class _MakitAppState extends ConsumerState<MakitApp>
       routerConfig: router,
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: textScaler),
-        // SPEC-48: status toasts live above the Navigator so any screen can be
+        // SPEC-status-and-activity: status toasts live above the Navigator so any screen can be
         // told something, and a tap lands in Activity (or the event's session).
         child: StatusToastLayer(
           onOpen: _openFromToast,
@@ -278,7 +278,7 @@ void _openFromToast(StatusEvent? event) {
   context.go(sid == null ? kRouteActivity : routeForSession(sid));
 }
 
-/// SPEC-28 (decision 10): the iPad workspace app. A minimal [MaterialApp]
+/// SPEC-desktop-workspace-tabs (decision 10): the iPad workspace app. A minimal [MaterialApp]
 /// hosting the desktop [DesktopChatShell] (sidebar + `WorkspaceView`) over the
 /// mobile bootstrap's store/connection, with the global keyboard shortcuts
 /// installed. It deliberately omits the macOS-only Settings window (the

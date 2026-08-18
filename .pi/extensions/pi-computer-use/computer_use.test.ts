@@ -80,7 +80,7 @@ test("calls after dispose fail as an error result, not a hang or a throw", async
   assert.match((res.content[0] as any).text, /not running/);
 });
 
-// ---------- opt-in gate (shared contract with SPEC-36's codex path) ---------
+// ---------- opt-in gate (shared contract with SPEC-computer-use's codex path) ---------
 
 test("the extension is inert unless MAKIT_COMPUTER_USE=1", () => {
   assert.equal(resolveComputerUse({}).enabled, false);

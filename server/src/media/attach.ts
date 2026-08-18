@@ -1,5 +1,5 @@
 /**
- * Attachment materialiser (SPEC-33 T4) — writes an uploaded image into the
+ * Attachment materialiser (SPEC-user-attachments T4) — writes an uploaded image into the
  * session's own worktree so **any** agent can open it, and builds the prompt
  * suffix that names it.
  *

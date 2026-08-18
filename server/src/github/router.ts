@@ -1,5 +1,5 @@
 /**
- * Cost-aware REST/GraphQL path selection (SPEC-32 §6.2).
+ * Cost-aware REST/GraphQL path selection (SPEC-github-gateway-and-budget §6.2).
  *
  * GitHub gives us two independent hourly budgets — `core` (REST) and `graphql`
  * (points) — that drain separately. Our hot path (`gh pr list --json`) is

@@ -1,9 +1,9 @@
 /**
  * Media route — `GET`/`HEAD /media/<sha256>` and `POST /media` over the same
- * HTTPS listener(s) that carry the WS (SPEC-22 for serving, SPEC-33 for upload).
+ * HTTPS listener(s) that carry the WS (SPEC-assistant-display-media for serving, SPEC-user-attachments for upload).
  *
  * Auth is the **paired-device bearer in an `Authorization` header**, verified
- * against the same {@link DeviceRegistry} the WS handshake uses. SPEC-22
+ * against the same {@link DeviceRegistry} the WS handshake uses. SPEC-assistant-display-media
  * originally proposed HMAC capability tokens in the query string plus a mint
  * RPC; that only exists to serve loaders that can't set headers. makit's app
  * fetches media through its own pinned `HttpClient`, so it *can* send a header
@@ -71,7 +71,7 @@ export function attachMediaRoute(server: Server, deps: MediaRouteDeps): void {
 }
 
 /**
- * `POST /media` — store one blob, return its descriptor (SPEC-33 §3.1).
+ * `POST /media` — store one blob, return its descriptor (SPEC-user-attachments §3.1).
  *
  * Ordering is the whole point of this function: **authenticate, then check the
  * declared size and mime, and only then read a byte of body.** An

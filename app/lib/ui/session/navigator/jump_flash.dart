@@ -1,5 +1,5 @@
 /// The landing highlight: a brief outline on the row a jump just landed on
-/// (SPEC-34).
+/// (SPEC-message-navigator).
 ///
 /// Not decoration. It does two jobs no other feedback covers: it confirms the
 /// jump *did* something when the target was already on screen (otherwise

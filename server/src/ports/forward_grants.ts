@@ -1,5 +1,5 @@
 /**
- * forward_grants — who may proxy which loopback port, for how long (SPEC-44 D3).
+ * forward_grants — who may proxy which loopback port, for how long (SPEC-ports-forward D3).
  *
  * A grant is **in-memory only**, keyed by an unguessable id, bound to ONE device
  * and ONE port, and dies three ways: an explicit `stop`, a hard TTL, or an idle

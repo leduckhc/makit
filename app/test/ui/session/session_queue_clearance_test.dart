@@ -1,7 +1,7 @@
 // On the phone the composer is a floating overlay, so the pending queue floats
 // over the transcript. The transcript's bottom padding cannot grow to compensate
 // — it is the reversed list's LEADING pad, and changing it mid-session shifts
-// what the user is reading (SPEC-21 anchoring; the anchor tests catch it at
+// what the user is reading (SPEC-chat-scroll-anchoring anchoring; the anchor tests catch it at
 // 36px). So the queue is BOUNDED instead: at most a third of the viewport,
 // scrolling internally past that.
 import 'package:flutter/material.dart';

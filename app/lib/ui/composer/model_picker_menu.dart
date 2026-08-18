@@ -50,7 +50,7 @@ Future<void> showModelPickerSheet(
   );
 }
 
-/// SPEC-31 — the host-agnostic model picker menu content. Empty query shows the
+/// SPEC-model-picker-menu-per-model-config — the host-agnostic model picker menu content. Empty query shows the
 /// **Recent** models (intersected with the catalog, active model always shown
 /// and marked); typing filters the **full** catalog (selection only). Only the
 /// **active** model's row is expandable — tapping it reveals the vertical config
@@ -358,7 +358,7 @@ class _ModelPickerMenuState extends State<ModelPickerMenu> {
   }
 }
 
-/// SPEC-31 — the narrow vertical config column for the active model: one
+/// SPEC-model-picker-menu-per-model-config — the narrow vertical config column for the active model: one
 /// segment per model-scoped option ([partitionConfigOptions]'s `modelScoped`),
 /// in agent order. A `select` stacks its values vertically with the current one
 /// marked; a `thought_level` header carries the [ThinkingSignal] glyph; a

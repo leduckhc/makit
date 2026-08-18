@@ -5,7 +5,7 @@ void main() {
   group('onboardingStep', () {
     // Gate 1: pairing. Until we have creds, always the pair step regardless of
     // notification state. (Reachability is informational within the pair step
-    // per SPEC-09 resolved decision 1, not a separate gate.)
+    // per SPEC-onboarding-and-tray-polish resolved decision 1, not a separate gate.)
     group('not paired → pair', () {
       for (final perm in NotificationPermission.values) {
         for (final skipped in [true, false]) {

@@ -1,6 +1,6 @@
 /// The desktop window's in-window overlay flags, and the invariant between them.
 ///
-/// Settings (SPEC-13) and the metrics dashboard (SPEC-37 decision 9) are both
+/// Settings (SPEC-desktop-settings-rework) and the metrics dashboard (SPEC-performance-metrics-dashboard decision 9) are both
 /// `DesktopWindowBody` children occupying the same z-space, so at most one may
 /// be open. Both flags live here, together, for two reasons:
 ///
@@ -24,7 +24,7 @@ import 'package:flutter_riverpod/legacy.dart';
 
 /// Whether the in-window Settings surface is showing. Kept as a provider (not a
 /// route) so opening is instant and preserves the underlying chat state
-/// (SPEC-13 requirement #5).
+/// (SPEC-desktop-settings-rework requirement #5).
 final settingsOpenProvider = StateProvider<bool>((_) => false);
 
 /// Whether the Tier 2 metrics dashboard overlay is showing.

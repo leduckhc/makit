@@ -1,4 +1,4 @@
-// SPEC-29: sidebar Active⇄Closed toggle + grouped closed view.
+// SPEC-session-lifecycle-resume-list-delete: sidebar Active⇄Closed toggle + grouped closed view.
 import 'dart:async';
 
 import 'package:flutter/gestures.dart';

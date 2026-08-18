@@ -1,4 +1,4 @@
-/// The pending-message queue (SPEC-38) — messages you sent while the agent was
+/// The pending-message queue (SPEC-pending-queue-edit-reorder) — messages you sent while the agent was
 /// busy that could not be steered into the running turn.
 ///
 /// Each one renders as a **ghost bubble**: dashed, right-aligned, in the
@@ -48,7 +48,7 @@ class PendingQueue extends StatelessWidget {
   /// Drop one message.
   final ValueChanged<String> onCancel;
 
-  /// Interrupt the running turn so one message is delivered next (SPEC-39).
+  /// Interrupt the running turn so one message is delivered next (SPEC-queue-tray-and-promote).
   final ValueChanged<String> onPromote;
 
   @override
@@ -66,7 +66,7 @@ class PendingQueue extends StatelessWidget {
       // the transcript: unbounded, it would cover the conversation one bubble at
       // a time. Growing the transcript's bottom padding instead is not an option
       // — that is the reversed list's LEADING pad, and changing it mid-session
-      // shifts what the user is reading (SPEC-21 anchoring; measured 36px in the
+      // shifts what the user is reading (SPEC-chat-scroll-anchoring anchoring; measured 36px in the
       // anchor tests when I tried). So the queue takes at most a third of the
       // viewport and scrolls internally. NOT `reverse: true`: the children are
       // oldest-first, so a reversed viewport opens at the BOTTOM — the last
@@ -152,7 +152,7 @@ class PendingBubble extends StatefulWidget {
   /// Drop this message.
   final VoidCallback onCancel;
 
-  /// Send this one now: the server interrupts the running turn (SPEC-39).
+  /// Send this one now: the server interrupts the running turn (SPEC-queue-tray-and-promote).
   final VoidCallback onPromote;
 
   /// Move by `-1` (sooner) or `+1` (later).
@@ -252,7 +252,7 @@ class _PendingBubbleState extends State<PendingBubble> {
                     _ctrl!.text,
                     widget.commands,
                     // Agent commands only — client commands run NOW, and this
-                    // message runs later (SPEC-38).
+                    // message runs later (SPEC-pending-queue-edit-reorder).
                     includeBuiltins: false,
                   ),
                   selectedIndex: 0,
@@ -390,12 +390,12 @@ class _PendingBubbleState extends State<PendingBubble> {
 ///
 /// All four are the same 26px box so the group reads as a group. **Known
 /// tradeoff:** that is under the 44px platform minimum for a touch target. A
-/// ghost bubble has to read as the message it will become (SPEC-38), and 44px
+/// ghost bubble has to read as the message it will become (SPEC-pending-queue-edit-reorder), and 44px
 /// boxes made it more than twice the height of the sent bubble. The text itself
 /// is a full-height target for the primary action (edit), and every action here
 /// is reversible.
 ///
-/// Buttons, not a drag handle, for reordering (SPEC-38 decision 6): both
+/// Buttons, not a drag handle, for reordering (SPEC-pending-queue-edit-reorder decision 6): both
 /// placements sit inside or beside a scrollable, where a drag fights the
 /// scroller on a phone.
 class _BubbleAction extends StatelessWidget {

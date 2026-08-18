@@ -4,7 +4,7 @@ import 'package:makit/store/store.dart';
 import 'package:makit/transport/codec.dart';
 import 'package:makit/transport/protocol.dart';
 
-/// SPEC-37 — context usage: the model, the reducer, and the one rule that
+/// SPEC-context-usage — context usage: the model, the reducer, and the one rule that
 /// matters throughout: **absent is not zero**. A field the agent never reported
 /// must stay null so the UI can render "unknown" rather than a 0%/full bar.
 

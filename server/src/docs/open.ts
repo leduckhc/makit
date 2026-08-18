@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D8 rev 2: open a document on the machine that holds it.
+ * makit — SPEC-doc-preview D8 rev 2: open a document on the machine that holds it.
  *
  * When the viewer is already on the server's host there is nothing to serve: the
  * OS opener hands the file to the real browser with perfect fidelity, no HTTP, no

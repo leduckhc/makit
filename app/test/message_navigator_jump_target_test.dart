@@ -1,4 +1,4 @@
-// T3 — SPEC-34: jump-target support inside the anchored sliver.
+// T3 — SPEC-message-navigator: jump-target support inside the anchored sliver.
 //
 // The point of these tests is the *frame count*: a post-frame correction loop
 // would need a second pump and would paint a wrong frame in between (the blink

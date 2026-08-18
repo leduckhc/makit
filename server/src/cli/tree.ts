@@ -1,5 +1,5 @@
 /**
- * `makit tree` — who spawned whom, and why (SPEC-46 U1, D10).
+ * `makit tree` — who spawned whom, and why (SPEC-cli-as-client U1, D10).
  *
  * A pure projection of `sessions.snapshot`: lineage is protocol data, so this
  * needs no command of its own. Rendering is kept free of I/O like `render.ts`,

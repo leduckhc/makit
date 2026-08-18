@@ -1,5 +1,5 @@
 /// Mobile's way back to your own messages: a sheet listing them, reached from
-/// the session-actions menu (SPEC-34).
+/// the session-actions menu (SPEC-message-navigator).
 ///
 /// Mobile takes this route rather than one of the five transcript-overlay styles
 /// because none of them suits a thumb: they are pointer designs, and a phone has

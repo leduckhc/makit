@@ -1,8 +1,8 @@
 /**
  * `makit send <id> -m MSG [--attach FILE]...` — post a message to a session
- * (SPEC-46 T14). A thin client of `send.message` (D1).
+ * (SPEC-cli-as-client T14). A thin client of `send.message` (D1).
  *
- * `--attach` (SPEC-33) uploads each file to `POST /media` and references the
+ * `--attach` (SPEC-user-attachments) uploads each file to `POST /media` and references the
  * returned `mediaId` on the turn. Every failure on that path — an unstorable
  * type, an unreadable file, a refused upload — **fails the whole send**. Sending
  * the text alone would turn "why is this misaligned?" into a question about an

@@ -1,4 +1,4 @@
-/// SPEC-37 Tier 2 — the full performance dashboard.
+/// SPEC-performance-metrics-dashboard Tier 2 — the full performance dashboard.
 ///
 /// An in-window overlay (decision 9), opened from the Tier 1 popover's
 /// `Open dashboard →`. Two properties distinguish it from Settings:

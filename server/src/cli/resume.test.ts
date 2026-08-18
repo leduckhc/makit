@@ -1,5 +1,5 @@
 /**
- * T14 (SPEC-46) — `makit resume`: bring a cold, resumable session back to a
+ * T14 (SPEC-cli-as-client) — `makit resume`: bring a cold, resumable session back to a
  * live agent (`session.attach`).
  */
 import { test } from "node:test";

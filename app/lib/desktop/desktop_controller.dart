@@ -1,4 +1,4 @@
-/// Desktop dashboard/tray state machine for the macOS control app (SPEC-03).
+/// Desktop dashboard/tray state machine for the macOS control app (SPEC-desktop-control-app).
 ///
 /// Owns the polled [DaemonSummary] (running/stopped + device & session counts)
 /// and the start/stop/restart actions, delegating the socket to a

@@ -1,4 +1,4 @@
-/// SPEC-37 Tier 1 — the desktop sidebar footer's resource-use indicator.
+/// SPEC-performance-metrics-dashboard Tier 1 — the desktop sidebar footer's resource-use indicator.
 ///
 /// A single pulse [IconButton] that answers *"what is makit costing me right
 /// now?"* in one click, and opens the dashboard in two. Structural clone of
@@ -14,7 +14,7 @@
 /// * A failed process-table read renders **"measurement unavailable"**, never
 ///   zeros and never an empty machine (decision 13). Zeros read as "idle" and a
 ///   missing row reads as "exited"; both are lies, and the second is exactly how
-///   SPEC-32's PR pills used to vanish under rate limits.
+///   SPEC-github-gateway-and-budget's PR pills used to vanish under rate limits.
 library;
 
 import 'dart:math' as math;

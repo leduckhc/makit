@@ -10,7 +10,7 @@ import '../../store/prefs/preferences_providers.dart';
 /// (fully hidden) and resized within [kSidebarMinWidth]–[kSidebarMaxWidth].
 /// Both providers seed from and write through to the desktop preferences store
 /// ([sidebarWidthPreference] / [sidebarStartCollapsedPreference]) so a resized
-/// or folded sidebar survives restarts (SPEC-13 Appearance → Layout).
+/// or folded sidebar survives restarts (SPEC-desktop-settings-rework Appearance → Layout).
 
 /// Smallest width the sidebar can be dragged to.
 const double kSidebarMinWidth = 250;

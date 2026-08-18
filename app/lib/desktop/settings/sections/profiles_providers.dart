@@ -1,4 +1,4 @@
-/// Riverpod wiring for the Profiles settings section (SPEC-50 D7/D8/D9).
+/// Riverpod wiring for the Profiles settings section (SPEC-profiles D7/D8/D9).
 ///
 /// These three providers are the section's only dependencies. Each throws
 /// [UnimplementedError] by default — following the `serverConfigProvider` /
@@ -24,7 +24,7 @@ final profilesControllerProvider = Provider<ProfilesController>(
   (ref) => throw UnimplementedError('overridden in runDesktopApp / tests'),
 );
 
-/// Starts and stops the daemon of an arbitrary profile (SPEC-50 D7).
+/// Starts and stops the daemon of an arbitrary profile (SPEC-profiles D7).
 final profileLifecycleProvider = Provider<ProfileLifecycle>(
   (ref) => throw UnimplementedError('overridden in runDesktopApp / tests'),
 );
@@ -35,7 +35,7 @@ final profileDeleterProvider = Provider<ProfileDeleter>(
 );
 
 /// Switches the window to another profile, verifying the target is reachable
-/// before anything is torn down (SPEC-50 D10).
+/// before anything is torn down (SPEC-profiles D10).
 ///
 /// The outcome of a profile switch: [switchFailure] is a reason the switch
 /// itself failed (nothing changed), and [deleteFailure] is a reason an

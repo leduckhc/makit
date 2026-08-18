@@ -1,4 +1,4 @@
-// SPEC-42 P2a T3 — the global Ports screen widget.
+// SPEC-ports-global-view P2a T3 — the global Ports screen widget.
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -62,7 +62,7 @@ final _repos = ReposState([
   ),
 ]);
 
-/// The kill outcome lands on the Activity record (SPEC-48), not in a snackbar, so
+/// The kill outcome lands on the Activity record (SPEC-status-and-activity), not in a snackbar, so
 /// tests that assert the outcome read it from here.
 late StatusCenter statusCenter;
 
@@ -197,7 +197,7 @@ void main() {
     testWidgets('the app bar states how many are listening and how stale', (
       tester,
     ) async {
-      // SPEC-41 §3's doctrine is that a cached verdict must publish its age. On
+      // SPEC-open-ports §3's doctrine is that a cached verdict must publish its age. On
       // this screen there is no tooltip to carry it, so the app bar does.
       final now = DateTime.now().millisecondsSinceEpoch;
       await _pump(
@@ -213,7 +213,7 @@ void main() {
     });
   });
 
-  group('orphans (SPEC-42 D10)', () {
+  group('orphans (SPEC-ports-global-view D10)', () {
     testWidgets('orphan renders its own group with "was <branch>, removed"', (
       tester,
     ) async {
@@ -425,7 +425,7 @@ void main() {
     });
   });
 
-  group('collision banner (SPEC-42 D12)', () {
+  group('collision banner (SPEC-ports-global-view D12)', () {
     testWidgets('names the other branch and offers NO suggested port', (
       tester,
     ) async {
@@ -443,7 +443,7 @@ void main() {
       );
       expect(find.byKey(kPortsCollisionBanner), findsOneWidget);
       expect(find.textContaining('chore/deps'), findsWidgets);
-      // D12: no suggested free port — PORT=5183 is SPEC-43's, not ours.
+      // D12: no suggested free port — PORT=5183 is SPEC-ports-kill's, not ours.
       expect(find.textContaining('PORT='), findsNothing);
       expect(find.textContaining('5183'), findsNothing);
       expect(find.textContaining('free'), findsNothing);

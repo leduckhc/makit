@@ -1,4 +1,4 @@
-/// How the desktop shell opens the global Ports screen (SPEC-42 P2a, corrected).
+/// How the desktop shell opens the global Ports screen (SPEC-ports-global-view P2a, corrected).
 ///
 /// The desktop window is a plain `MaterialApp(home: …)`; only the mobile app
 /// uses `MaterialApp.router` + `routerProvider`. So every desktop affordance

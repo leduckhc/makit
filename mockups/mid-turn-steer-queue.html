@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>makit — mid-turn messages: steer vs queue (SPEC-35 UX candidates)</title>
+<title>makit — mid-turn messages: steer vs queue (SPEC-mid-turn-steering-and-queue UX candidates)</title>
 <style>
   :root{
     /* App M3 neutral palette (dark) — matches lib/app/theme.dart */
@@ -205,7 +205,7 @@
 
 <h1>Mid-turn messages — steer vs queue</h1>
 <p class="sub">
-  SPEC-35 UX candidates. The problem: you type while the agent is working, and what happens next is
+  SPEC-mid-turn-steering-and-queue UX candidates. The problem: you type while the agent is working, and what happens next is
   decided by the <em>transport</em>, not by you. On codex the message is <b>steered</b> into the running
   turn (immediate, irreversible). On an ACP agent it is <b>queued</b> until idle (cancellable). Same
   keystroke, two consequences.
@@ -455,14 +455,14 @@
       </ul>
       <h3>Risks</h3>
       <ul>
-        <li class="con"><b>Touches the transcript.</b> A synthetic tail row interacts with SPEC-21
-          anchoring, SPEC-34's index-keyed markers, and the trailer row (ask card / spinner).</li>
+        <li class="con"><b>Touches the transcript.</b> A synthetic tail row interacts with SPEC-chat-scroll-anchoring
+          anchoring, SPEC-message-navigator's index-keyed markers, and the trailer row (ask card / spinner).</li>
         <li class="con">Scrolled up, you cannot see your own pending message at all — the chip is always
           in view, this is not.</li>
       </ul>
       <div class="cost">
         <b>Cost:</b> app-only but <b>risky</b>: a fake item in the folded list, or a second trailer. That
-        is exactly the class of change SPEC-21/34 warn about. Chips stay cheaper and safer.
+        is exactly the class of change SPEC-chat-scroll-anchoring/34 warn about. Chips stay cheaper and safer.
       </div>
     </div>
   </div>
@@ -525,7 +525,7 @@
 <!-- ══════════════════════════════════════════════════════════════════ G -->
 <section class="variant" id="G">
   <header>
-    <h2>G · Ghost queue, editable + reorderable <span class="tag">shipped design (SPEC-38)</span></h2>
+    <h2>G · Ghost queue, editable + reorderable <span class="tag">shipped design (SPEC-pending-queue-edit-reorder)</span></h2>
     <p>
       E's visual language (dashed ghost bubbles in the conversation's own column, right-aligned like your
       real messages) with shipped mechanics: <b>tap to edit</b>, <b>↑↓ arrow controls to reorder</b>
@@ -539,7 +539,7 @@
       The palette renders as a sibling widget above the editor, not via Overlay/LayerLink.
     </p>
     <p>
-      Two placements shipped: <b>inside the transcript</b> (scrolling away with it, via SPEC-21's
+      Two placements shipped: <b>inside the transcript</b> (scrolling away with it, via SPEC-chat-scroll-anchoring's
       trailer row) or <b>pinned above the composer</b> (always visible; the default). Toggle below —
       the content is identical, the engineering is not.
     </p>
@@ -592,7 +592,7 @@
         <li class="pro">Spatially honest: the queue is the future of the conversation.</li>
         <li class="con">Scroll up and your pending messages are gone from view (try it).</li>
         <li class="con">Rows inside the reversed lazy list: edit opens a keyboard inside a scrollable
-          viewport, and drag competes with the scroll gesture. SPEC-21 anchoring + SPEC-34 index markers
+          viewport, and drag competes with the scroll gesture. SPEC-chat-scroll-anchoring anchoring + SPEC-message-navigator index markers
           both assume every row is a folded event — a ghost is not one.</li>
       </ul>
       <h3>Pinned above composer</h3>
@@ -626,7 +626,7 @@
       overlay anchored to the field being edited. Pinned above the composer: a plain
       <code>Overlay</code> entry. Inside the transcript: <code>LayerLink</code> +
       <code>CompositedTransformFollower</code> on a row of a reversed lazy list that can scroll or recycle
-      underneath the open palette, on top of the anchoring concerns SPEC-21/34 already carry.</li>
+      underneath the open palette, on top of the anchoring concerns SPEC-chat-scroll-anchoring/34 already carry.</li>
     <li><b>Unchanged either way:</b> the shipped steered-bubble caption, and the rule that a queued
       message enters the event log only when it is actually delivered.</li>
   </ol>

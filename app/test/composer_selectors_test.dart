@@ -199,7 +199,7 @@ void main() {
     },
   );
 
-  // ─── SPEC-40: the model pill's label ───────────────────────────────────────
+  // ─── SPEC-composer-footer-space: the model pill's label ───────────────────────────────────────
 
   group('shortModelLabel', () {
     test('drops the provider prefix pi-acp prepends', () {

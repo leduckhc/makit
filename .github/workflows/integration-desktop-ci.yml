@@ -1,6 +1,6 @@
 name: Desktop Control E2E (stub adapter)
 
-# Full-stack control-plane e2e for the macOS desktop control app (SPEC-03):
+# Full-stack control-plane e2e for the macOS desktop control app (SPEC-desktop-control-app):
 # the real desktop app ↔ a real daemon control socket backed by the StubAdapter
 # (server/test/e2e-control-server.ts). No LLM, no `pi`, no WS — the control
 # socket (status/devices/sessions/pair/logs) is the whole surface under test.

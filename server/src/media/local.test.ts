@@ -1,6 +1,6 @@
 /**
  * Local-file media ingestion tests — the `![](…/shot.png)` case captured from a
- * real pi-acp turn (probe 2 of SPEC-22's wire survey), where the agent copied a
+ * real pi-acp turn (probe 2 of SPEC-assistant-display-media's wire survey), where the agent copied a
  * file and then referenced it by absolute path in its prose.
  */
 

@@ -1,6 +1,6 @@
 /**
  * Image blocks reachable from a tool result, shared by the ACP and codex
- * app-server mappers (SPEC-22).
+ * app-server mappers (SPEC-assistant-display-media).
  *
  * Both harnesses hand back MCP tool results, and an MCP result may carry image
  * bytes (a `read` of a PNG, a `cua-driver` screenshot) alongside its text. The

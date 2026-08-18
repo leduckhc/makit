@@ -5,7 +5,7 @@ import 'package:makit/ui/ports/ports_glyph.dart';
 
 import '../e2e_helpers.dart';
 
-/// SPEC-41 — full-stack proof that a listening port reaches the UI: the real
+/// SPEC-open-ports — full-stack proof that a listening port reaches the UI: the real
 /// e2e server runs a deterministic port scan (`makeDeterministicPortsExec`
 /// attributes `:5173` to the project's primary worktree), the app holds the
 /// ref-counted `ports.watch` while the home screen is mounted, the

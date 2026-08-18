@@ -1,4 +1,4 @@
-/// Inline `askUserQuestion` card (SPEC-25) — rendered as a trailing transcript
+/// Inline `askUserQuestion` card (SPEC-ask-user-inline-in-chat) — rendered as a trailing transcript
 /// row instead of the modal `AskWizard`. Single/multi-select, a multi-question
 /// stepper, and a "type a different answer" affordance that hands off to the
 /// composer (single-question only). Submits the canonical `{indices, answers}`
@@ -358,7 +358,7 @@ class _AskOption extends StatelessWidget {
   }
 }
 
-/// Quiet resolved state for an answered `askUserQuestion` (SPEC-25 decision #1):
+/// Quiet resolved state for an answered `askUserQuestion` (SPEC-ask-user-inline-in-chat decision #1):
 /// a neutral-bordered card with the chosen option highlighted and the rest
 /// dimmed — the answered form matching the old `_AskUserQuestionRenderer`, shown
 /// inline as history while the agent's turn continues below. Rendered for the

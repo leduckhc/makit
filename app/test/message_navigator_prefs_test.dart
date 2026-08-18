@@ -1,4 +1,4 @@
-// T1 — SPEC-34: the navigator style enum, its shared provider, and the
+// T1 — SPEC-message-navigator: the navigator style enum, its shared provider, and the
 // preference entries backing the desktop rail switch.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -106,7 +106,7 @@ void main() {
     });
 
     // The bug the settings mockup exposed: turning the rail off must not clear
-    // its options (SPEC-34 §schema, 3).
+    // its options (SPEC-message-navigator §schema, 3).
     test('options survive a round trip through off', () async {
       final controller = PreferencesController.ephemeral();
       await controller.set(railTickSpacingPreference, 14);

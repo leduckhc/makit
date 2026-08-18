@@ -1,5 +1,5 @@
 /**
- * T16 (SPEC-46) — `makit wait`: the exit code IS the automation contract (D8).
+ * T16 (SPEC-cli-as-client) — `makit wait`: the exit code IS the automation contract (D8).
  *
  * The subtlety, and the reason this is edge-triggered: `send.message` **acks
  * before promotion** (`ws/commands/session.ts:128`), so a composed

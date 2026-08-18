@@ -1,4 +1,4 @@
-/// SPEC-41 mobile sheet 1 — the port list for one worktree. 56 pt tap rows with
+/// SPEC-open-ports mobile sheet 1 — the port list for one worktree. 56 pt tap rows with
 /// a chevron and NO buttons: nothing destructive or actionable is reachable
 /// from a flick (spec §2b). Tapping a row pushes the per-port detail sheet.
 library;
@@ -58,7 +58,7 @@ Future<void> showWorktreePortsSheet(
               branchLabel: branch,
               sessionLabel: sessionLabel(port.sessionId),
             ),
-            // Jump to the global Ports screen (SPEC-42 P2a). Pop the sheet
+            // Jump to the global Ports screen (SPEC-ports-global-view P2a). Pop the sheet
             // first so backing out of the screen doesn't land on it.
             onOpenPortsScreen: () {
               Navigator.of(sheetCtx).pop();
@@ -86,7 +86,7 @@ class WorktreePortsSheetBody extends StatelessWidget {
   final List<PortInfo> ports;
   final void Function(PortInfo port) onOpenPort;
 
-  /// Opens the global Ports screen (SPEC-42 P2a). When null the button is
+  /// Opens the global Ports screen (SPEC-ports-global-view P2a). When null the button is
   /// hidden — the pure body carries no navigation of its own.
   final VoidCallback? onOpenPortsScreen;
 

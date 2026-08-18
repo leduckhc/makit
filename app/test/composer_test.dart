@@ -313,9 +313,9 @@ void main() {
     });
   });
 
-  // ─── SPEC-40: the footer distributes space by need ─────────────────────────
+  // ─── SPEC-composer-footer-space: the footer distributes space by need ─────────────────────────
 
-  group('SPEC-40 — footerTrailing does not reserve flex', () {
+  group('SPEC-composer-footer-space — footerTrailing does not reserve flex', () {
     /// A stand-in footer action that records the `maxWidth` the footer granted
     /// it. The granted CONSTRAINT is the thing under test — not a rendered
     /// width, which for a shrink-wrapping pill would report its natural size
@@ -476,7 +476,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Inside the rounded box, not a sibling above it — that placement is the
-      // whole point (SPEC-38 mockup §5, "inside the composer").
+      // whole point (SPEC-pending-queue-edit-reorder mockup §5, "inside the composer").
       expect(
         find.descendant(
           of: find.byWidgetPredicate(

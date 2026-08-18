@@ -1,5 +1,5 @@
 /**
- * Checking out a pull request when the forge is NOT GitHub (SPEC-48 P2).
+ * Checking out a pull request when the forge is NOT GitHub (SPEC-per-repo-settings P2).
  *
  * The gap this closes: "New worktree from PR" listed Forgejo PRs correctly — the
  * picker routes through the forge gateway — and then ran `gh pr checkout` to create

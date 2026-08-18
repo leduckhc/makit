@@ -1,5 +1,5 @@
 /**
- * SPEC-44 P4b — the forward proxy, driven against a REAL loopback
+ * SPEC-ports-forward P4b — the forward proxy, driven against a REAL loopback
  * `http.Server` standing in for the dev server (the `media/route.test.ts`
  * pattern). Nothing here is mocked at the socket level, so the tests exercise
  * genuine streaming, real header handling and real connection failures.

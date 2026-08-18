@@ -29,7 +29,7 @@ import '../../ui/widgets/pr_signals.dart';
 /// model / reasoning pills, and type the first message — sending spawns the
 /// session in that worktree. The pills read the harness's cached catalog
 /// ([AgentDescriptor.configOptions]) because there is no live session to read
-/// them off yet; the picks ride the spawn and apply at launch (SPEC-27).
+/// them off yet; the picks ride the spawn and apply at launch (SPEC-new-session-config-at-spawn).
 class WorktreeStarter extends ConsumerStatefulWidget {
   /// Creates the starter for [worktree].
   const WorktreeStarter({super.key, required this.worktree});
@@ -47,7 +47,7 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
   /// [_draftKey], because this widget does not outlive a tab switch.
   final TextEditingController _composer = TextEditingController();
 
-  /// This starter's slot in the app-wide draft store (SPEC-45 D1) and in
+  /// This starter's slot in the app-wide draft store (SPEC-starter-pane-parity D1) and in
   /// [starterPicksProvider] (D2). The draft store's own doc reserves this key
   /// space for "a session that hasn't started yet"; keyed by worktree path, not
   /// tab id, so both survive the tab being closed and reopened.
@@ -73,7 +73,7 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
 
   /// The harness that will launch: the picked one, else the first available.
   ///
-  /// A stored pick now outlives the widget (SPEC-45 D2), so it is re-validated
+  /// A stored pick now outlives the widget (SPEC-starter-pane-parity D2), so it is re-validated
   /// against the catalog: honoured while the harness is still offered and
   /// available, dropped once the catalog says otherwise (uninstalled, or gone
   /// unavailable since the pick). An **empty** catalog means "not loaded yet",
@@ -131,11 +131,11 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
     return _effectiveAgentId(agents) ?? '';
   }
 
-  /// Builds the model picker menu for the draft (SPEC-31). Backed by the local
+  /// Builds the model picker menu for the draft (SPEC-model-picker-menu-per-model-config). Backed by the local
   /// pending [_picks] (fallback to each option's `currentValue`) — there is no
   /// live session, so a model select updates the draft only: it never records
   /// recents (a live-session gesture) or dispatches an action (the picks ride
-  /// the spawn and apply at launch, SPEC-27). Surfaces the user's existing
+  /// the spawn and apply at launch, SPEC-new-session-config-at-spawn). Surfaces the user's existing
   /// Recent models read-only.
   Widget _buildDraftModelPicker(BuildContext context) {
     final partition = partitionConfigOptions(_currentOptions);
@@ -158,7 +158,7 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
           values: values,
           agent: _currentAgent,
           onSelectModel: (value) {
-            // SPEC-31 (decision a): keep the sheet open. The store write rebuilds
+            // SPEC-model-picker-menu-per-model-config (decision a): keep the sheet open. The store write rebuilds
             // the footer chips; setSheetState rebuilds the sheet with the new
             // active value derived from the picks (revealing its flyout).
             ref
@@ -203,7 +203,7 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
         branch: widget.worktree.branch,
         picks: _picks,
         // Taken after the spawn lands, so a refused spawn leaves the chips (and
-        // their finished uploads) in place — SPEC-45 D6.
+        // their finished uploads) in place — SPEC-starter-pane-parity D6.
         takeAttachments: () => takeAttachmentsFrom(staged, _draftKey),
       );
       // The pending session is now a real one, so its harness/model picks are
@@ -238,7 +238,7 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
     final agents = agentsAsync.value ?? const <AgentDescriptor>[];
     // Watched so a harness or model pick repaints the cards and the footer: the
     // picks live in the store now, not in this State, so `setState` no longer
-    // sees them change (SPEC-45 D2).
+    // sees them change (SPEC-starter-pane-parity D2).
     ref.watch(starterPicksProvider);
     final selectedId = _effectiveAgentId(agents);
     AgentDescriptor? selected;
@@ -324,12 +324,12 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
                 onSend: _start,
                 running: _spawning,
                 alwaysExpanded: true,
-                // SPEC-45: an image can be attached to the message that *starts*
+                // SPEC-starter-pane-parity: an image can be attached to the message that *starts*
                 // the session — `POST /media` is content-addressed and needs no
                 // session, and the server materialises the file into the cwd this
                 // spawn already resolved.
                 attachments: draftAttachments(context, ref, _draftKey),
-                // SPEC-45: agent commands only ever arrive on a live session, so
+                // SPEC-starter-pane-parity: agent commands only ever arrive on a live session, so
                 // the palette offers what a session of this harness in this
                 // project last advertised. Possibly stale, and unmarked: a skill
                 // list changes far less often than a session starts.

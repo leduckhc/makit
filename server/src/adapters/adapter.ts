@@ -15,7 +15,7 @@ export type AdapterEvent = Omit<SessionEvent, "seq" | "sessionId">;
  * Thrown by {@link AgentAdapter.forkSession} when the back end cannot fork
  * because the thread has no persisted rollout yet — codex answers a
  * `thread/fork` on a thread that has never completed a turn with
- * `-32600 no rollout found for thread id <id>` (SPEC-46 U4). A distinct type so
+ * `-32600 no rollout found for thread id <id>` (SPEC-cli-as-client U4). A distinct type so
  * `session.fork` can refuse this in plain words ("… has not run a turn yet")
  * instead of relaying the raw JSON-RPC string, and so a *real* transport bug
  * still surfaces as an unexpected error rather than a graceful refusal.
@@ -30,7 +30,7 @@ export class ForkPreconditionError extends Error {
 /**
  * Transport-neutral summary of ONE prior agent session/thread, produced by a
  * transport's native listing (ACP `session/list`, codex `thread/list`) and
- * normalized here so the manager can merge results across agents (SPEC-29).
+ * normalized here so the manager can merge results across agents (SPEC-session-lifecycle-resume-list-delete).
  */
 export interface AgentSessionInfo {
   /** Native session/thread id (ACP sessionId, codex threadId). */
@@ -79,7 +79,7 @@ export interface SpawnOpts {
   resumeSessionPath?: string;
   /**
    * Resume/load an existing agent session by its NATIVE id (ACP `sessionId`,
-   * codex `threadId`) after a server restart (SPEC-29). When set, `start()`
+   * codex `threadId`) after a server restart (SPEC-session-lifecycle-resume-list-delete). When set, `start()`
    * resumes that session instead of creating a fresh one — preferring a
    * no-replay resume (ACP `session/resume`, codex `thread/resume`) and falling
    * back to a silent replay-load (ACP `session/load`) or, if the agent can do
@@ -94,7 +94,7 @@ export interface SpawnOpts {
    * the model after start (see test/fake-model/billing-guard.ts).
    *
    * Delivered per back end, NOT as a CLI flag: codex passes it on
-   * `turn/start.model`; the ACP path applies it over the SPEC-26 config-option
+   * `turn/start.model`; the ACP path applies it over the SPEC-acp-config-options-unified-composer config-option
    * surface (`pi-acp`'s argv is fixed, so `--model` never reaches pi). An agent
    * that does not offer the model stays on its default and logs a warning.
    */
@@ -104,7 +104,7 @@ export interface SpawnOpts {
 export interface UserInput {
   text: string;
   /**
-   * Images the user attached (SPEC-33). Already resolved against the media
+   * Images the user attached (SPEC-user-attachments). Already resolved against the media
    * store by the `send.message` handler, so every entry has verified bytes on
    * disk. Absent when the turn is text-only; adapters that ignore the field
    * degrade to today's behaviour.
@@ -113,7 +113,7 @@ export interface UserInput {
 }
 
 /**
- * A back end's session-lifecycle capabilities (SPEC-29), negotiated per adapter
+ * A back end's session-lifecycle capabilities (SPEC-session-lifecycle-resume-list-delete), negotiated per adapter
  * (ACP: from the `initialize` response; codex: static for the supported
  * app-server). Every field defaults to `false` so an adapter that reports
  * nothing degrades to today's history-only behaviour.
@@ -156,7 +156,7 @@ export const NO_SESSION_CAPABILITIES: Readonly<SessionCapabilities> = Object.fre
 export interface AgentAdapter extends EventEmitter {
   readonly agent: string;
   /**
-   * The back end's session-lifecycle capabilities (SPEC-29). For ACP this is
+   * The back end's session-lifecycle capabilities (SPEC-session-lifecycle-resume-list-delete). For ACP this is
    * only authoritative AFTER `start()` (it is read from the `initialize`
    * response); codex reports it statically. Defaults to all-false.
    */
@@ -171,7 +171,7 @@ export interface AgentAdapter extends EventEmitter {
   send(input: UserInput): Promise<void>;
   /**
    * Inject `input` into the turn that is ALREADY running — "steering"
-   * (SPEC-35). Resolves `true` when the agent accepted it (and echoed the
+   * (SPEC-mid-turn-steering-and-queue). Resolves `true` when the agent accepted it (and echoed the
    * `user.message` itself, as `send` does), `false` when this back end cannot
    * steer right now, in which case the caller queues the message until idle.
    *
@@ -185,7 +185,7 @@ export interface AgentAdapter extends EventEmitter {
    * `session/fork` when it lands). Gated on {@link SessionCapabilities.fork};
    * an adapter that advertises `fork: false` omits it. Resolves the forked
    * thread's native id, which the caller adopts through the resume path so the
-   * child continues the conversation rather than starting fresh (SPEC-46 U4).
+   * child continues the conversation rather than starting fresh (SPEC-cli-as-client U4).
    * Rejects with {@link ForkPreconditionError} when the back end has no rollout
    * to fork yet.
    */

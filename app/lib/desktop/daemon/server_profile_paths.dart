@@ -45,12 +45,12 @@ int fnv1a(String s) {
 }
 
 /// The 8-hex-char id a dev build *starts* from. Only a first guess: the registry
-/// resolves collisions, and once minted the id is persisted forever (SPEC-50 D3).
+/// resolves collisions, and once minted the id is persisted forever (SPEC-profiles D3).
 String devIdGuess(String repoRoot) =>
     fnv1a(repoRoot).toRadixString(16).padLeft(8, '0');
 
 /// The port a dev build *starts* probing from. Only a first guess: 100 slots for
 /// an unbounded number of worktrees means collisions are expected, so the
-/// registry probes upward from here and persists the result (SPEC-50 D4).
+/// registry probes upward from here and persists the result (SPEC-profiles D4).
 int devPortGuess(String repoRoot) =>
     kDevPortRangeStart + (fnv1a(repoRoot) % kDevPortRangeLength);

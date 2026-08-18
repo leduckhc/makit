@@ -52,7 +52,7 @@ void main() {
     });
 
     test('history with no attachments key folds exactly as before', () {
-      // Every event recorded before SPEC-33 lacks the field; a resumed session
+      // Every event recorded before SPEC-user-attachments lacks the field; a resumed session
       // must not crash or render an empty strip.
       final item =
           foldEvents([

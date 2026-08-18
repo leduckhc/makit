@@ -1,5 +1,5 @@
 /**
- * Attachment materialiser tests (SPEC-33 T4).
+ * Attachment materialiser tests (SPEC-user-attachments T4).
  *
  * The interesting cases are all adversarial or environmental: a client-supplied
  * filename is the only untrusted string that reaches the filesystem here, and

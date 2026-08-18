@@ -38,7 +38,7 @@ void main() {
     },
   );
 
-  group('the chosen logo hue (SPEC-48 D14\u2032)', () {
+  group('the chosen logo hue (SPEC-per-repo-settings D14\u2032)', () {
     test(
       'a stored hue reaches the view, so the choice is not dropped in mapping',
       () {

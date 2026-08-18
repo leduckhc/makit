@@ -20,7 +20,7 @@ import 'settings_nav_pane.dart';
 /// Whether the in-window Settings surface is showing. Flipped by the sidebar's
 /// Settings button; consumed by [DesktopWindowBody]. Kept as a provider (not a
 /// route) so opening is instant and preserves the underlying chat state
-/// (SPEC-13 requirement #5).
+/// (SPEC-desktop-settings-rework requirement #5).
 
 /// Stacks the desktop [child] (the chat shell) with the [SettingsWindow] as an
 /// in-window overlay when [settingsOpenProvider] is set — no page transition,
@@ -34,7 +34,7 @@ class DesktopWindowBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Single-overlay invariant (SPEC-37 decision 9): Settings and the metrics
+    // Single-overlay invariant (SPEC-performance-metrics-dashboard decision 9): Settings and the metrics
     // dashboard share this z-space, so opening either closes the other. Enforced
     // here, in the one widget that hosts both, instead of at every call site that
     // opens one of them. Each listener reacts only to a transition *to* true, so
@@ -63,7 +63,7 @@ class DesktopWindowBody extends ConsumerWidget {
                   ref.read(settingsOpenProvider.notifier).state = false,
             ),
           ),
-        // SPEC-37 Tier 2. Deliberately NOT wrapped in ExcludeFocus/
+        // SPEC-performance-metrics-dashboard Tier 2. Deliberately NOT wrapped in ExcludeFocus/
         // ExcludeSemantics like Settings above: the whole point of the dashboard
         // is watching cost *while* you drive a session, so the chat underneath
         // must stay interactive and reachable by assistive tech.
@@ -97,7 +97,7 @@ class SettingsWindow extends ConsumerStatefulWidget {
 }
 
 class _SettingsWindowState extends ConsumerState<SettingsWindow> {
-  /// Fixed nav-pane width (SPEC-13 assumption #2: list + leading icons ~260px).
+  /// Fixed nav-pane width (SPEC-desktop-settings-rework assumption #2: list + leading icons ~260px).
   static const double _navWidth = 260;
 
   late String _selectedId;
@@ -148,7 +148,7 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
 
   @override
   Widget build(BuildContext context) {
-    // A function of the live repo list: one section per pinned repo (SPEC-48 D1).
+    // A function of the live repo list: one section per pinned repo (SPEC-per-repo-settings D1).
     final sections = sectionsFor(ref.watch(reposProvider).repos);
     // Falls back rather than throwing when the selected repo disappears — removed
     // while its section was open, or a stored id whose repo is gone.

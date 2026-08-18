@@ -115,7 +115,7 @@ void main() {
       );
 
       // Idempotent: a re-run is a no-op because the queue was cleared. (The
-      // real respondTo also guards via `_respondedRequests` — SPEC-08 step 4.)
+      // real respondTo also guards via `_respondedRequests` — SPEC-actionable-notifications step 4.)
       final callsBefore = calls.length;
       await drainer.drain();
       expect(calls.length, callsBefore);

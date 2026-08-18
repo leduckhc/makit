@@ -1,4 +1,4 @@
-/// Typed data model for the makit control-plane protocol (SPEC-01 / SPEC-03).
+/// Typed data model for the makit control-plane protocol (SPEC-daemon-control-plane / SPEC-desktop-control-app).
 ///
 /// A Dart port of the frozen NDJSON contract in
 /// `server/src/daemon/protocol.ts`. The desktop app speaks this protocol over
@@ -359,7 +359,7 @@ class ControlSession {
   /// A short preview of the latest output.
   final String lastPreview;
 
-  /// Set when this session runs in a multiplexer pane (SPEC-05).
+  /// Set when this session runs in a multiplexer pane (SPEC-session-in-pane-spawning).
   final PaneInfo? pane;
 
   /// Parses [json] into a [ControlSession], or `null` on a bad shape.

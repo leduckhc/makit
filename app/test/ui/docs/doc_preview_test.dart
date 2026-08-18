@@ -8,7 +8,7 @@ DocInfo _doc({DocKind kind = DocKind.md, String relPath = 'docs/x.md'}) =>
     DocInfo(
       key: '/repo:$relPath',
       relPath: relPath,
-      title: 'SPEC-44 — Ports P4',
+      title: 'SPEC-ports-forward — Ports P4',
       kind: kind,
       bytes: 10,
       modifiedAt: 0,
@@ -16,7 +16,7 @@ DocInfo _doc({DocKind kind = DocKind.md, String relPath = 'docs/x.md'}) =>
     );
 
 const _md = '''
-# SPEC-44 — Ports P4
+# SPEC-ports-forward — Ports P4
 
 **Status:** Draft (P1) · **Priority:** P3 · **Branch:** `feat/open-ports`
 
@@ -28,7 +28,7 @@ Proxy over the existing HTTPS listener.
 /// A doc whose H1 differs from [DocInfo.title], so the body heading can be
 /// found without also matching the toolbar's copy of the title.
 const _mdOrdered = '''
-# SPEC-44 — Ports P4: forward a loopback port
+# SPEC-ports-forward — Ports P4: forward a loopback port
 
 **Status:** Draft (P1) · **Priority:** P3 · **Branch:** `feat/open-ports`
 
@@ -66,9 +66,9 @@ void main() {
     });
 
     test('a relative .md / .html path is an internal doc link', () {
-      final t = resolveDocLink('../specs/SPEC-41.md');
+      final t = resolveDocLink('../specs/SPEC-open-ports.md');
       expect(t.kind, DocLinkKind.internal);
-      expect(t.value, '../specs/SPEC-41.md');
+      expect(t.value, '../specs/SPEC-open-ports.md');
       expect(resolveDocLink('mockups/x.html').kind, DocLinkKind.internal);
     });
 

@@ -32,7 +32,7 @@ void main() {
     expect(cfg.cliPath, '/opt/makit/makit');
   });
 
-  group('bind-mode migration (pre-SPEC-50 desktop_server_bind_mode)', () {
+  group('bind-mode migration (pre-SPEC-profiles desktop_server_bind_mode)', () {
     Future<ServerConfig> migrate(Map<String, Object> values) async {
       SharedPreferences.setMockInitialValues(values);
       final prefs = await SharedPreferences.getInstance();
@@ -120,7 +120,7 @@ void main() {
 
     // Layer precedence, top to bottom, with ALL THREE present at once. A user
     // who upgrades twice keeps every generation of key on disk, so the newest
-    // must win outright -- otherwise a stale pre-SPEC-50 bind mode would quietly
+    // must win outright -- otherwise a stale pre-SPEC-profiles bind mode would quietly
     // re-open a server the user had since restricted to this Mac.
     test('the newest schema wins when every generation is present', () async {
       final cfg = await migrate({

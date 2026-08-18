@@ -1,4 +1,4 @@
-// Live, real-filesystem tests for [ProfileDeleter] (SPEC-50 D8).
+// Live, real-filesystem tests for [ProfileDeleter] (SPEC-profiles D8).
 //
 // The unit tests inject a fake filesystem, which is right for covering branches
 // but cannot prove the thing that actually matters: that a recursive delete

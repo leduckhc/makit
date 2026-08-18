@@ -66,7 +66,7 @@ export class SqliteEventStore implements EventStore {
     if (!cols.some((c) => c.name === "worktree_path")) {
       this.db.exec("ALTER TABLE sessions ADD COLUMN worktree_path TEXT");
     }
-    // SPEC-29 close/reopen: the flag was called `archived` before sessions grew a
+    // SPEC-session-lifecycle-resume-list-delete close/reopen: the flag was called `archived` before sessions grew a
     // real close (release the agent, keep the session). RENAME rather than add,
     // so sessions a user had already closed stay closed across the upgrade —
     // adding a fresh column would silently return every one of them to the
@@ -76,8 +76,8 @@ export class SqliteEventStore implements EventStore {
     } else if (!cols.some((c) => c.name === "closed")) {
       this.db.exec("ALTER TABLE sessions ADD COLUMN closed INTEGER NOT NULL DEFAULT 0");
     }
-    // SPEC-46 lineage (D10): nullable, back-filled to NULL on existing rows so a
-    // session written before SPEC-46 rehydrates with all three undefined.
+    // SPEC-cli-as-client lineage (D10): nullable, back-filled to NULL on existing rows so a
+    // session written before SPEC-cli-as-client rehydrates with all three undefined.
     if (!cols.some((c) => c.name === "parent_id")) {
       this.db.exec("ALTER TABLE sessions ADD COLUMN parent_id TEXT");
     }
@@ -114,7 +114,7 @@ export class SqliteEventStore implements EventStore {
   }
 
   /**
-   * SPEC-46 D5: the last `limit` events, bounded by `LIMIT` in the query and
+   * SPEC-cli-as-client D5: the last `limit` events, bounded by `LIMIT` in the query and
    * reversed in memory. `read().slice(-limit)` would return the same rows while
    * loading the entire log to do it — which is the cost D5 exists to remove, on
    * exactly the long sessions worth carrying context out of.

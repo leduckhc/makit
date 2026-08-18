@@ -1,5 +1,5 @@
 // Unit tests for the menubar tray controller. This file lives beside the code
-// under test (per SPEC-03 Stream B layout), so it necessarily imports the
+// under test (per SPEC-desktop-control-app Stream B layout), so it necessarily imports the
 // flutter_test dev-dependency from a lib/ path.
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter_test/flutter_test.dart';

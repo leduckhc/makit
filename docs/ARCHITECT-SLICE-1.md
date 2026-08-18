@@ -270,4 +270,4 @@ Test: send two `srv.response` with same ID, verify only one resolves.
 
 - [ ] How to handle concurrent approvals (queue or parallel)? → Start: serialize
 - [ ] Notification persistence across app restart? → Start: ephemeral
-- [ ] Lock-screen actions? → Phase 2 (SPEC-07, not Slice 1)
+- [ ] Lock-screen actions? → Phase 2 (SPEC-background-wake-notifications, not Slice 1)

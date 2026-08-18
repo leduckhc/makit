@@ -1,4 +1,4 @@
-// macOS e2e for attachment paste (SPEC-33). Runs on the REAL macOS engine
+// macOS e2e for attachment paste (SPEC-user-attachments). Runs on the REAL macOS engine
 // against the REAL system pasteboard, which is the one part of this feature no
 // widget test can cover: `super_clipboard`'s native read path (and the fact that
 // Flutter's own text-only `Clipboard` cannot do this at all).
@@ -34,7 +34,7 @@ Session _session() => Session(
   lastPreview: '',
   lastActivityAt: 0,
   // Explicit worktree ensures predictable test materialization, but is not
-  // required — sessions with null worktreePath use the agent's cwd (SPEC-33 §7).
+  // required — sessions with null worktreePath use the agent's cwd (SPEC-user-attachments §7).
   worktreePath: '/tmp/makit-e2e-worktree',
 );
 

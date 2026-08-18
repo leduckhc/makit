@@ -1,5 +1,5 @@
 /**
- * T14 (SPEC-46) — `makit rm`: end a session from the terminal.
+ * T14 (SPEC-cli-as-client) — `makit rm`: end a session from the terminal.
  *
  * The one decision here is the default: `rm` **closes** (a soft, recoverable
  * hide — the session stays resumable and `--closed` still lists it), and only

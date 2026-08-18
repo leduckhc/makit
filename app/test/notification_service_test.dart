@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('pending-action queue (SPEC-07 replay)', () {
+  group('pending-action queue (SPEC-background-wake-notifications replay)', () {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
     test('appends the action to the persisted queue', () async {

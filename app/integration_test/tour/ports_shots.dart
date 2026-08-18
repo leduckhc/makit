@@ -1,4 +1,4 @@
-// Screenshot pass for the ports feature (SPEC-42 P2c → SPEC-44): enters demo
+// Screenshot pass for the ports feature (SPEC-ports-global-view P2c → SPEC-ports-forward): enters demo
 // mode, then walks the surfaces the recent work added, holding still at each one
 // so `simctl io screenshot` can capture it. Run via `tool/shoot-ports.sh`.
 //
@@ -69,7 +69,7 @@ void main() {
       await hold(tester, const Duration(milliseconds: 600));
     }
 
-    // ── 4. the browser hand-off confirm (SPEC-44 P4b) ──────────────────────
+    // ── 4. the browser hand-off confirm (SPEC-ports-forward P4b) ──────────────────────
     final forward = find.text(portForwardLabel);
     if (forward.evaluate().isEmpty) {
       debugPrint(
@@ -108,7 +108,7 @@ void main() {
 
       // The docker-published port lives in the system group, which is folded by
       // default ("noise, not work"). Unfold it: the row must name the CONTAINER
-      // rather than `com.docker.backend`, and still read `exposed` (SPEC-42 D13).
+      // rather than `com.docker.backend`, and still read `exposed` (SPEC-ports-global-view D13).
       await tester.tap(find.text('OTHER / SYSTEM'), warnIfMissed: false);
       await waitFor(tester, find.text('chat-ui-db-1'));
       await shot(tester, '07b-docker-row');

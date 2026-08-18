@@ -1,5 +1,5 @@
 /// AskUserQuestion wizard dialog + option tile. Extracted from
-/// `srv_request_handler.dart` (SPEC-19). Pure move — no behaviour change.
+/// `srv_request_handler.dart` (SPEC-decomposition-and-dedup). Pure move — no behaviour change.
 library;
 
 import 'package:flutter/material.dart';

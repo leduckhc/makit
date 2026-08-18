@@ -1,5 +1,5 @@
 /**
- * U1 (SPEC-46 P2) — `makit tree`: the spawn tree as a projection of D10's
+ * U1 (SPEC-cli-as-client P2) — `makit tree`: the spawn tree as a projection of D10's
  * lineage.
  *
  * P1 made sessions appear by themselves: an agent that runs out of context hands

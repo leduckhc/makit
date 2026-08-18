@@ -6,7 +6,7 @@
  * failure worth investigating; `none` means *do not talk to any forge for this
  * repository*, which is an instruction and settled. Collapsing them would make
  * a deliberate choice read as a defect in the UI, and would leave the user with
- * no way to silence PR chatter on a mirror or a vendored copy (SPEC-48 rev 3.2).
+ * no way to silence PR chatter on a mirror or a vendored copy (SPEC-per-repo-settings rev 3.2).
  *
  * The observable difference is `prForBranch`:
  *
@@ -14,7 +14,7 @@
  *   none        → `none`     — there is nothing to look for, by instruction
  *
  * `unknown` would be wrong here: it makes the app hold a stale PR pill and keep
- * retrying (SPEC-32 §6.5), which is the chatter the user just asked to stop.
+ * retrying (SPEC-github-gateway-and-budget §6.5), which is the chatter the user just asked to stop.
  *
  * Makes no requests, spawns no processes, and reads no remote.
  */

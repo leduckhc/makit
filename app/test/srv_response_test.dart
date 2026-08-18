@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/notifications/notification_request.dart';
 
-/// SPEC-18 T4: lock the canonical `srv.response` body shapes emitted by the
+/// SPEC-boundary-hardening T4: lock the canonical `srv.response` body shapes emitted by the
 /// shared [SrvResponse] builder, and prove the notification-action path
 /// ([responseForAction]) builds byte-identical shapes — so the dialog and
 /// notification answer paths can never drift.

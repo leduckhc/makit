@@ -1,5 +1,5 @@
 /// Live `askUserQuestion` elicitations, surfaced **inline** in the transcript
-/// (SPEC-25) instead of the modal `AskWizard`.
+/// (SPEC-ask-user-inline-in-chat) instead of the modal `AskWizard`.
 ///
 /// This is passive per-session state: [SrvRequestHandler] remains the single
 /// `srv.request` socket subscriber and pushes a [PendingAsk] here via [add];

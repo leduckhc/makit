@@ -1,5 +1,5 @@
 /**
- * SPEC-46 U3 — `makit approve`: answer a session's pending `confirmAction` from
+ * SPEC-cli-as-client U3 — `makit approve`: answer a session's pending `confirmAction` from
  * the terminal, so a session an agent started (nobody on a screen) can be
  * unblocked from the devbox shell that started it.
  *

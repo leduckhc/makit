@@ -453,7 +453,7 @@
 <div class="note gap" style="max-width:940px">
   <strong>⚠ One deliberate divergence from the thinking row: do NOT copy the .65 alpha onto the payload.</strong>
   <code>onSurfaceVariant&nbsp;@&nbsp;.65</code> resolves to <code>#6F6F6F</code> on <code>#171717</code> — about
-  <b>2.9:1</b>, below WCAG AA, which SPEC-47 D9b already records as a known wart on the thinking preview. A thinking
+  <b>2.9:1</b>, below WCAG AA, which SPEC-session-timings D9b already records as a known wart on the thinking preview. A thinking
   preview may whisper; a command name is the row's only content. Both verb and payload stay at full
   <code>onSurfaceVariant</code> (<code>#9E9E9E</code>, <b>4.6:1</b>) and differ by <b>weight</b> only — which is exactly
   the “more weight on the Run” you asked for.
@@ -672,7 +672,7 @@
 <div class="note decide" style="margin-top:18px">
   <strong>Not touched.</strong> The wire protocol (no new events, no <code>risk</code> change server-side — the
   classification stays, the UI simply stops tinting on it), the expanded body of every renderer, the duration slot and
-  its <code>kToolDurationFloor</code>/width-reservation behaviour (SPEC-47 D6b), <code>compactPath</code> /
+  its <code>kToolDurationFloor</code>/width-reservation behaviour (SPEC-session-timings D6b), <code>compactPath</code> /
   <code>compactPathsIn</code> (still used by read/write/edit rows), and <code>compactCommand</code> — kept, because it
   is what the §4A tooltip should show.
 </div>
@@ -695,7 +695,7 @@
       which is the content. One step — Medium against the payload's Regular — still gives a scannable verb column.
       Now a named token (<code>kToolVerbWeight</code>) so it cannot drift back.</li>
     <li><b>An unfolded thinking row breaks the line after its duration.</b> Folded, <code>Thought for 4s</code> leads
-      the one-liner (SPEC-47 D7) and the preview trails it. Unfolded, the reasoning is a paragraph: keeping it on the
+      the one-liner (SPEC-session-timings D7) and the preview trails it. Unfolded, the reasoning is a paragraph: keeping it on the
       label's line indented every wrapped line around a word that belongs only to the first, so the label now takes its
       own line and the text starts beneath it, flush left and at full column width.
       <code>chat_transcript.dart</code>, folded layout untouched.</li>

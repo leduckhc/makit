@@ -1,5 +1,5 @@
 /**
- * forward_eligibility — may this port be forwarded to a phone? (SPEC-44 D4/D6)
+ * forward_eligibility — may this port be forwarded to a phone? (SPEC-ports-forward D4/D6)
  *
  * Pure and separate from the grant store for the same reason `kill.ts` is
  * separate from the signal: this is the security decision, and it should be
@@ -81,7 +81,7 @@ export function classifyForward({
   if (NO_HTTP_PROBE_PORTS.includes(port)) return { ok: false, refusal: "protected_service" };
   if (match.reach !== "loopback") return { ok: false, refusal: "not_loopback" };
   // `openUrl` is present only when something actually answered HTTP under the
-  // SPEC-41 probe, which makes it the exact "is this proxyable" signal.
+  // SPEC-open-ports probe, which makes it the exact "is this proxyable" signal.
   if (match.openUrl === undefined) return { ok: false, refusal: "no_http" };
   return { ok: true, port: match };
 }

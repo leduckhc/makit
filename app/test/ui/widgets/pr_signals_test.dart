@@ -479,7 +479,7 @@ void main() {
     test('it needs no confirm — it only writes to the composer', () {
       expect(prRemedyLabel(const MagicRemedy()), 'Fix');
       // Deliberately the same verb as `fixPr` below: both fix, and the sentence
-      // beside the button says how much. See SPEC-38 §8 D12.
+      // beside the button says how much. See SPEC-pr-actions-next-step-bar §8 D12.
       expect(prRemedyLabel(const PromptRemedy(PrPromptAction.fixPr)), 'Fix');
       expect(
         prRemedyLabel(const PromptRemedy(PrPromptAction.resolveComments)),
@@ -1080,7 +1080,7 @@ void main() {
 
     test('a shed pending rollup is still in flight', () {
       // The count comes from the check list, but the *verdict* comes from the
-      // rollup — and SPEC-32 can shed the list while keeping the rollup. Deriving
+      // rollup — and SPEC-github-gateway-and-budget can shed the list while keeping the rollup. Deriving
       // "in flight" from the list alone made a running build look like an
       // all-clear, and offered an irreversible merge on top of it.
       final s = _status(

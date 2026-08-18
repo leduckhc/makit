@@ -1,4 +1,4 @@
-/// Composer attachment state (SPEC-33) — the images staged for the next
+/// Composer attachment state (SPEC-user-attachments) — the images staged for the next
 /// message, and their upload lifecycle.
 ///
 /// Held app-wide and keyed by session (deliberately **not** `autoDispose`, like

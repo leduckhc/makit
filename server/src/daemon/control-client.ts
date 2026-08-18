@@ -1,7 +1,7 @@
 /**
- * Control client (SPEC-01, phase 3).
+ * Control client (SPEC-daemon-control-plane, phase 3).
  *
- * A tiny reusable client for the makit control socket. **Exported for SPEC-02**:
+ * A tiny reusable client for the makit control socket. **Exported for SPEC-cli-client-subcommands**:
  * the CLI subcommands (`makit qr`, `makit devices`, …) connect once and issue
  * requests against a running daemon.
  *
@@ -10,7 +10,7 @@
  *   const res = await client.request("status");
  *   client.close();
  *
- * ## Contract note for non-Node clients (SPEC-03 desktop app / Dart)
+ * ## Contract note for non-Node clients (SPEC-desktop-control-app desktop app / Dart)
  *
  * The protocol is transport-agnostic NDJSON, not tied to this class. To talk to
  * the daemon from any language: open the unix socket, write
@@ -37,7 +37,7 @@ export interface ControlClient {
    * consume the multi-frame `logs.tail --follow` stream (which emits many
    * `{ id, ok, data:{ line } }` frames for one request id). The CLI `makit logs
    * -f` therefore reads the log file directly rather than through this client.
-   * A streaming client API is deferred to SPEC-02, when a real consumer needs
+   * A streaming client API is deferred to SPEC-cli-client-subcommands, when a real consumer needs
    * it (YAGNI — no consumer exists yet).
    */
   request<T = unknown>(

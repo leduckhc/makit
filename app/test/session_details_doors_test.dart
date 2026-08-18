@@ -1,4 +1,4 @@
-// SPEC-52 C2c — the two panel DOORS (D13) and the tab menu's Copy session id
+// SPEC-session-identity C2c — the two panel DOORS (D13) and the tab menu's Copy session id
 // (D6). The desktop tab menu deliberately does NOT get a *Session details* item
 // — a third door onto the same sheet, one pixel from the pane kebab on the same
 // platform, was cut on review; Copy session id is a different job.

@@ -1,4 +1,4 @@
-/// SPEC-46 Card 2 — the doc row, shared by the screen, the sheet and the
+/// SPEC-doc-preview Card 2 — the doc row, shared by the screen, the sheet and the
 /// popover (one row, many surfaces — the mockup's rule 2).
 ///
 /// Layout: a leading kind glyph (html warm / md cool), the **extracted** title

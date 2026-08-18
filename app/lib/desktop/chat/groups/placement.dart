@@ -1,4 +1,4 @@
-/// SPEC-30 Lane 3 — placement policy (decision 9) and membership reconciliation.
+/// SPEC-tab-groups Lane 3 — placement policy (decision 9) and membership reconciliation.
 ///
 /// Two pure operations over the split/tab tree, kept free of the widget layer
 /// so their tests stay fast and deterministic:

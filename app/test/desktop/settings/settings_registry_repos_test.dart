@@ -1,4 +1,4 @@
-// The settings taxonomy becomes a function of the repo list (SPEC-48 D1/D21).
+// The settings taxonomy becomes a function of the repo list (SPEC-per-repo-settings D1/D21).
 // Before this it was a static `final List`, so a per-repo section was impossible.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/settings/registry/settings_registry.dart';
@@ -75,7 +75,7 @@ void main() {
     );
   });
 
-  group('the sidebar tells the repos apart (SPEC-48 D15)', () {
+  group('the sidebar tells the repos apart (SPEC-per-repo-settings D15)', () {
     test(
       'a repo section leads with its own mark, not a folder every repo shares',
       () {

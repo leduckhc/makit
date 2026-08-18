@@ -18,7 +18,7 @@ import 'worktree_row.dart';
 import '../../app/routes.dart';
 
 /// A repo card on the home screen: header, stat strip, its worktree rows,
-/// drafts, and a "new session" footer (SPEC-19, moved from home_screen).
+/// drafts, and a "new session" footer (SPEC-decomposition-and-dedup, moved from home_screen).
 ///
 /// Tapping the header collapses everything below it, and past [_maxCollapsed]
 /// worktrees the tail hides behind a "Show N more" toggle — both mirroring the

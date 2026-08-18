@@ -1,6 +1,6 @@
 /**
- * SPEC-46 U4 — `makit fork <id>`: the adapter-native fork the plan completes
- * from SPEC-29's PENDING item.
+ * SPEC-cli-as-client U4 — `makit fork <id>`: the adapter-native fork the plan completes
+ * from SPEC-session-lifecycle-resume-list-delete's PENDING item.
  *
  * A fork is NOT a handoff (D6): no manifest, no first message — the source is
  * named on the argv and the server branches the identical conversation. What
@@ -23,6 +23,7 @@ import { cliCredentialPath } from "./client.js";
 import { createControlServer, type ControlBackend } from "../daemon/control-server.js";
 import { controlSocketPath } from "../daemon/paths.js";
 import { startStubWss } from "../../test/support/stub_wss.js";
+import { hideAmbientCliToken } from "../../test/support/cli_home.js";
 
 const SOURCE = {
   id: "src-sid",
@@ -80,6 +81,7 @@ async function run(
 
   const home = mkdtempSync(join(tmpdir(), "makit-fork-home-"));
   const prevHome = process.env.MAKIT_HOME;
+  const restoreToken = hideAmbientCliToken();
   process.env.MAKIT_HOME = home;
   mkdirSync(home, { recursive: true });
   writeFileSync(cliCredentialPath(), JSON.stringify({ deviceId: "cli-1", label: "cli@h", bearer: "CACHED" }));
@@ -112,6 +114,7 @@ async function run(
     await control.close();
     if (prevHome === undefined) delete process.env.MAKIT_HOME;
     else process.env.MAKIT_HOME = prevHome;
+    restoreToken();
     rmSync(home, { recursive: true, force: true });
     await stub.close();
   }

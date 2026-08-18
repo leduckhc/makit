@@ -1,4 +1,4 @@
-/// SPEC-07 Slice 2 — draining the force-quit pending-action queue.
+/// SPEC-background-wake-notifications Slice 2 — draining the force-quit pending-action queue.
 ///
 /// When the user taps an actionable notification while the app process is dead,
 /// Slice-1's `notificationBackgroundHandler` isolate persists
@@ -7,7 +7,7 @@
 /// the live-isolate path uses (`parseNotificationPayload` + `responseForAction`)
 /// and replay each response via the injected `respond` (the `respondTo`
 /// tear-off), then clear the queue. Idempotency is guaranteed downstream by
-/// `respondTo`'s `_respondedRequests` guard (SPEC-08 step 4).
+/// `respondTo`'s `_respondedRequests` guard (SPEC-actionable-notifications step 4).
 library;
 
 import 'dart:convert';

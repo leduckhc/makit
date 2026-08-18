@@ -95,7 +95,7 @@ void main() {
     });
   });
 
-  group('orphan/collision tolerance (SPEC-42 D10/D12)', () {
+  group('orphan/collision tolerance (SPEC-ports-global-view D10/D12)', () {
     test('a well-formed orphan parses all three fields', () {
       final p = PortInfo.fromJson(
         _portJson(
@@ -352,7 +352,7 @@ void main() {
     });
   });
 
-  group('SPEC-43 killPort', () {
+  group('SPEC-ports-kill killPort', () {
     const target = PortKillTarget(
       address: '127.0.0.1',
       port: 5173,
@@ -460,7 +460,7 @@ void main() {
     );
   });
 
-  group('SPEC-44 watched ports', () {
+  group('SPEC-ports-forward watched ports', () {
     test('watched decodes, and defaults to false when absent', () {
       expect(PortInfo.fromJson(_portJson())!.watched, isFalse);
       expect(
@@ -506,7 +506,7 @@ void main() {
     });
   });
 
-  group('SPEC-43 killOrphans (store)', () {
+  group('SPEC-ports-kill killOrphans (store)', () {
     test(
       'sends a payload-free command and decodes one outcome per endpoint',
       () async {
@@ -569,7 +569,7 @@ void main() {
     );
   });
 
-  group('SPEC-44 forwarding (store)', () {
+  group('SPEC-ports-forward forwarding (store)', () {
     test(
       'ForwardGrant decodes what the client must have, and nothing less',
       () {

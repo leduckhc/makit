@@ -1,4 +1,4 @@
-// SPEC-43 P3a D8 — the confirm is the mitigation, so it gets its own tests.
+// SPEC-ports-kill P3a D8 — the confirm is the mitigation, so it gets its own tests.
 //
 // The properties that matter: the dialog NAMES the victim (not "Are you sure?"),
 // dismissing it sends nothing at all, confirming sends exactly the tuple that was

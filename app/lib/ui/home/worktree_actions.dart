@@ -29,7 +29,7 @@ bool canRetargetWorktree(Worktree w) => !w.isPrimary && w.branch != null;
 /// that would take the repo with it.
 bool canDeleteWorktree(Worktree w) => !w.isPrimary;
 
-/// Worktree actions for the mobile home (SPEC-11 parity with the sidebar's row
+/// Worktree actions for the mobile home (SPEC-repo-centric-home parity with the sidebar's row
 /// menu). Opened by long-pressing the row: a tap already folds the row, and a
 /// second always-visible overflow button would crowd a line that already carries
 /// the branch, star, diff chip and PR pill.

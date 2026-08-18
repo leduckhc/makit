@@ -1,4 +1,4 @@
-/// The ports vocabulary (SPEC-41 §3): one string per terse token, so the three
+/// The ports vocabulary (SPEC-open-ports §3): one string per terse token, so the three
 /// consumers — the desktop [Tooltip], the mobile long-press bubble, and the
 /// `Semantics.label` a screen reader speaks — cannot drift apart.
 ///
@@ -13,11 +13,11 @@ import '../../store/ports.dart';
 /// already says what it does").
 enum PortAction { open, copyUrl }
 
-/// The label of the forward action (SPEC-44 P4b). "Open in browser" and not
+/// The label of the forward action (SPEC-ports-forward P4b). "Open in browser" and not
 /// "Forward": what the user wants is the page, and the tunnel is the mechanism.
 const String portForwardLabel = 'Open in browser';
 
-/// The label of the destructive control (SPEC-43 D8), one string so the desktop
+/// The label of the destructive control (SPEC-ports-kill D8), one string so the desktop
 /// button and the mobile row cannot drift.
 const String portKillLabel = 'Kill';
 
@@ -193,7 +193,7 @@ String portReachPill(PortReach reach) => switch (reach) {
 };
 
 /// The one word that ships with the orphan tint, so colour is never the only
-/// signal (SPEC-41's accessibility rule, spec §9).
+/// signal (SPEC-open-ports's accessibility rule, spec §9).
 const String portOrphanWord = 'orphan';
 
 /// The one word that ships with the collision tint (spec §9 legend: "clash").
@@ -259,7 +259,7 @@ String portOrphanTooltip(PortOrphan orphan, {required int nowMs}) {
 }
 
 /// The collision line (D12): names the other branch and stops there — NO
-/// suggested free port (that is SPEC-43/P3). `also wanted by <branch>`.
+/// suggested free port (that is SPEC-ports-kill/P3). `also wanted by <branch>`.
 String portCollisionLabel(PortCollision collision, {required int port}) {
   final branch = collision.withBranch;
   return (branch != null && branch.isNotEmpty)

@@ -1,5 +1,5 @@
 /**
- * PR status poller (SPEC-23) — the server-side answer to "PR status never
+ * PR status poller (SPEC-pr-status-and-actions) — the server-side answer to "PR status never
  * updates on its own". GitHub has no client push/stream API (see
  * docs/research/2026-07-13-github-gitlab-live-updates.md §2), so the only
  * near-term way to surface remote changes (CI finishing, a review landing, a
@@ -58,7 +58,7 @@ export interface PrWatcherOptions {
   slowMs?: number;
   /**
    * Dynamic poll interval (ms), re-read before each tick. When supplied it
-   * OVERRIDES the fast/slow cadence — SPEC-32 drives it from the budget policy
+   * OVERRIDES the fast/slow cadence — SPEC-github-gateway-and-budget drives it from the budget policy
    * (`decide(gateway.budget()).pollIntervalMs`) so the degradation ladder
    * actually takes effect. A non-finite value (e.g. `Infinity`, the paused
    * rung) STOPS polling rather than busy-looping; it re-arms on the next
@@ -83,7 +83,7 @@ export interface PrWatcher {
    * timer, and nothing else would re-arm it: {@link sync} only runs on a
    * repos-snapshot broadcast. Called when the budget level changes so a
    * recovered quota resumes polling promptly instead of waiting for an
-   * unrelated event (SPEC-32).
+   * unrelated event (SPEC-github-gateway-and-budget).
    */
   poke(): void;
   /** Run one poll cycle now; resolves to whether a change was broadcast. */

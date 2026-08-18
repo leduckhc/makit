@@ -1,5 +1,5 @@
 /**
- * SPEC-31 — codex fixture-replay integration test.
+ * SPEC-model-picker-menu-per-model-config — codex fixture-replay integration test.
  *
  * Drives the real {@link CodexAppServerAdapter} from a **recorded** live
  * `codex app-server` session (`test/fixtures/codex-fast-session.jsonl`, captured
@@ -102,7 +102,7 @@ test("codex fixture replay: real per-model efforts + Fast tier from recorded mod
   // Real catalog: the default model is gpt-5.6-sol.
   assert.equal(byId.model.currentValue, "gpt-5.6-sol");
   // Per-model reasoning efforts from the real model/list (NOT the old hardcoded
-  // minimal/low/medium/high) — proves the SPEC-31 codex fix end-to-end.
+  // minimal/low/medium/high) — proves the SPEC-model-picker-menu-per-model-config codex fix end-to-end.
   assert.deepEqual(
     byId.thought_level.options.map((o: any) => o.value),
     ["low", "medium", "high", "xhigh", "max", "ultra"],

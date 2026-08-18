@@ -118,7 +118,7 @@ export interface ServerOpts {
   /** If true, accept loopback connections without auth. */
   trustLocalhost?: boolean;
   /**
-   * Content-free wake sender (SPEC-07). Defaults to {@link NoopPushSender}
+   * Content-free wake sender (SPEC-background-wake-notifications). Defaults to {@link NoopPushSender}
    * (wakes are no-ops → Slice-1 fallback). `index.ts` supplies an
    * `ApnsPushSender` when `~/.makit/push.json` is configured.
    */
@@ -132,13 +132,13 @@ export interface ServerOpts {
    */
   onListenError?: (err: NodeJS.ErrnoException, where: string) => void;
   /**
-   * Idle auto-close window in ms (SPEC-29 option D). Production reads
+   * Idle auto-close window in ms (SPEC-session-lifecycle-resume-list-delete option D). Production reads
    * `MAKIT_IDLE_CLOSE_MIN` via `resolveIdleCloseMs()`; tests pass `0` to keep the
    * reaper disarmed, so no interval outlives the test.
    */
   idleCloseMs?: number;
   /**
-   * SPEC-37 metrics collector seams, injected only by tests so a sample can be
+   * SPEC-performance-metrics-dashboard metrics collector seams, injected only by tests so a sample can be
    * driven deterministically without spawning `ps` or waiting on real timers.
    * Production leaves this undefined and uses `ps` via `git.run`, `setInterval`,
    * `process.cpuUsage()` and a live {@link createSelfProbe}.
@@ -156,7 +156,7 @@ export interface ServerOpts {
     enabled?: boolean;
   };
   /**
-   * SPEC-41 port-scanner seam, injected only by the e2e harness / tests so they
+   * SPEC-open-ports port-scanner seam, injected only by the e2e harness / tests so they
    * can publish a deterministic worktree-owned snapshot without a real
    * `lsof`/`ps`, and drive the cadence with a fake timer. Production leaves this
    * undefined and scans the live machine on a real `setInterval`.
@@ -167,12 +167,12 @@ export interface ServerOpts {
     setTimer?: (fn: () => void, ms: number) => unknown;
     clearTimer?: (handle: unknown) => void;
     /**
-     * SPEC-43: how a kill delivers its signal. Injected ONLY by tests — an e2e
+     * SPEC-ports-kill: how a kill delivers its signal. Injected ONLY by tests — an e2e
      * test drives a scripted scan whose pids are fictional, and `process.kill`
      * on a fictional pid can hit a real, unrelated process.
      */
     signal?: (pid: number, sig: NodeJS.Signals) => void;
-    /** SPEC-43: the SIGTERM grace wait, so a test does not spend 2 s. */
+    /** SPEC-ports-kill: the SIGTERM grace wait, so a test does not spend 2 s. */
     sleep?: (ms: number) => Promise<void>;
   };
 }
@@ -244,7 +244,7 @@ export function startWsServer(opts: ServerOpts) {
   forwardUpgrade(https);
   if (localHttps) forwardUpgrade(localHttps);
 
-  // Assistant display media (SPEC-22): `GET/HEAD /media/<sha256>`, bearer in an
+  // Assistant display media (SPEC-assistant-display-media): `GET/HEAD /media/<sha256>`, bearer in an
   // Authorization header. Installed on BOTH listeners — the phone fetches over
   // the external one, the `flutter run -d macos` dev loop over loopback — and
   // `request` does not interfere with the `noServer` upgrade forwarding above.
@@ -274,7 +274,7 @@ export function startWsServer(opts: ServerOpts) {
   // git-only phase runs first and never depends on the network.
   let lastGitOnlyRepos: RepoDTO[] | undefined;
 
-  // The single GitHub gateway (SPEC-32). Owned by the manager (so its
+  // The single GitHub gateway (SPEC-github-gateway-and-budget). Owned by the manager (so its
   // listRepos/enrichPrs/listOpenPrs share the one cache + quota accounting);
   // server.ts drives its budget broadcast, manual refresh/pause, and the poll
   // cadence. Refreshed ONCE at startup — construction does not self-refresh (it
@@ -343,7 +343,7 @@ export function startWsServer(opts: ServerOpts) {
   https.on("close", () => worktreeWatcher.close());
 
   // Poll open PRs (CI checks, state, mergeability) and re-broadcast when a
-  // tracked PR actually changes (SPEC-23). GitHub has no client push API, so
+  // tracked PR actually changes (SPEC-pr-status-and-actions). GitHub has no client push API, so
   // this server-side poller is what keeps PR status fresh in the UI without a
   // manual refresh. Its tracked set is refreshed from each enriched snapshot
   // (see broadcastReposSnapshot); closed with the listeners.
@@ -353,7 +353,7 @@ export function startWsServer(opts: ServerOpts) {
     // flaky/throttled lookup (`unknown` → keep status).
     fetchPr: (repoPath, branch) => fetchOpenPr(gateway, repoPath, branch),
     onChange: () => void broadcastReposSnapshot(),
-    // Drive the cadence from the degradation ladder (SPEC-32 §6.3) instead of a
+    // Drive the cadence from the degradation ladder (SPEC-github-gateway-and-budget §6.3) instead of a
     // hardcoded 5s. The old `fastMs=slowMs=5_000` was the root cause of the
     // quota burn (≥2N calls every 5s); feeding the policy's pollIntervalMs lets
     // the 5s→30s→120s→paused ladder actually take effect. `Infinity` (paused)
@@ -366,7 +366,7 @@ export function startWsServer(opts: ServerOpts) {
   // never per tick — the footer is idle most of the time. The change also pokes
   // the PR poller: the paused rung arms no timer, and `sync()` only runs on a
   // repos-snapshot broadcast, so without this a recovered quota could leave PR
-  // polling dead until some unrelated event happened to fire (SPEC-32).
+  // polling dead until some unrelated event happened to fire (SPEC-github-gateway-and-budget).
   //
   // Registered AFTER prWatcher exists: the callback captures it, and registering
   // earlier would leave a temporal-dead-zone hazard if a budget change ever
@@ -377,15 +377,15 @@ export function startWsServer(opts: ServerOpts) {
   });
 
   // Device ids with a live authenticated WS connection — feeds the control
-  // plane's `devices.list` "connected" flag (SPEC-01) AND the wake decision
-  // (SPEC-07: never wake a device that already has a live socket).
+  // plane's `devices.list` "connected" flag (SPEC-daemon-control-plane) AND the wake decision
+  // (SPEC-background-wake-notifications: never wake a device that already has a live socket).
   const connectedDeviceIds = (): Set<string> => {
     const ids = new Set<string>();
     for (const c of clients.values()) if (c.authed && c.deviceId) ids.add(c.deviceId);
     return ids;
   };
 
-  // -------- SPEC-37 metrics collector -------------------------------------
+  // -------- SPEC-performance-metrics-dashboard metrics collector -------------------------------------
   //
   // A single host-wide collector. `agents`/`appPid`/`storage` are closures over
   // the manager + client set (the collector never imports either), and each
@@ -502,7 +502,7 @@ export function startWsServer(opts: ServerOpts) {
   if (metricsBackgroundOn) metricsCollector.start();
   https.on("close", () => metricsCollector.stop());
 
-  // -------- SPEC-29 idle auto-close ----------------------------------------
+  // -------- SPEC-session-lifecycle-resume-list-delete idle auto-close ----------------------------------------
   // Reclaims the agent process of any session that has gone quiet. Disabled when
   // `MAKIT_IDLE_CLOSE_MIN=0`. Stopped with the server so an in-process restart
   // (tests) leaves no stray interval behind.
@@ -514,7 +514,7 @@ export function startWsServer(opts: ServerOpts) {
   idleReaper.start();
   https.on("close", () => idleReaper.stop());
 
-  // -------- SPEC-41 ports scanner -----------------------------------------
+  // -------- SPEC-open-ports ports scanner -----------------------------------------
   // A watch-gated `lsof`/`ps` scan (nothing runs while no client watches). Like
   // the metrics collector it takes closures for its data sources so `ports/`
   // imports neither the manager nor the session type. The tailnet address is
@@ -556,7 +556,7 @@ export function startWsServer(opts: ServerOpts) {
     kind: "ports.snapshot",
     snapshot,
   });
-  // SPEC-44 D7: the watch list lives in one JSON file and is held in memory so
+  // SPEC-ports-forward D7: the watch list lives in one JSON file and is held in memory so
   // every scan can read it without touching the disk. Load never throws, so a
   // corrupt file costs the watches, never the startup.
   let watchedPorts: WatchedPort[] = loadWatchedPorts(watchedPortsFile());
@@ -565,8 +565,8 @@ export function startWsServer(opts: ServerOpts) {
     saveWatchedPorts(watchedPortsFile(), watchedPorts);
   };
   /**
-   * SPEC-44 D8: one push per outage, to every paired token-bearing device — the
-   * SAME sender SPEC-07/08 already uses, never a second notification path. The
+   * SPEC-ports-forward D8: one push per outage, to every paired token-bearing device — the
+   * SAME sender SPEC-background-wake-notifications/08 already uses, never a second notification path. The
    * payload carries the port number only (see `buildPortDownPayload`).
    */
   const notifyPortDown = ({ port }: WatchedPort): void => {
@@ -598,7 +598,7 @@ export function startWsServer(opts: ServerOpts) {
     probe: portsProbe,
     listWorktreePaths,
     listWorktreeBranches,
-    // Port history: the real JSON-file store (SPEC-42 D11), injected so the
+    // Port history: the real JSON-file store (SPEC-ports-global-view D11), injected so the
     // service depends only on the two function handles. Both never throw.
     loadHistory: () => loadHistory(historyFile()),
     saveHistory: (history) => saveHistory(historyFile(), history, Date.now()),
@@ -622,7 +622,7 @@ export function startWsServer(opts: ServerOpts) {
   });
   https.on("close", () => portsService.stop());
 
-  // SPEC-44 P4b: the forward grants + the proxy route. The route runs on the
+  // SPEC-ports-forward P4b: the forward grants + the proxy route. The route runs on the
   // listener(s) that already carry the WS (no new host port is bound), and is
   // installed on both so the loopback/dev path works too — exactly like
   // `attachMediaRoute`.
@@ -726,7 +726,7 @@ export function startWsServer(opts: ServerOpts) {
     // handed work off to) without opening the rest of the machine.
     parentOf: (id) => manager.getSession(id)?.parentId,
   });
-  // SPEC-07: the WakeCoordinator is built HERE (not in index.ts) because
+  // SPEC-background-wake-notifications: the WakeCoordinator is built HERE (not in index.ts) because
   // `connectedDeviceIds` is a server.ts closure. When `askDevice` finds no live
   // subscribed socket, `onUndeliverable` wakes every paired token-bearing
   // device with no live socket and returns the keep-pending gate.
@@ -738,11 +738,11 @@ export function startWsServer(opts: ServerOpts) {
   });
   const rpc = new ReverseRpc({
     clients: () => clients.values(),
-    // SPEC-46 D13a: climb the lineage when a spawned session has no watcher of
+    // SPEC-cli-as-client D13a: climb the lineage when a spawned session has no watcher of
     // its own. `parentId` is persisted on the session (D10); a missing/archived
     // ancestor returns undefined and ends the walk.
     parentOf: (sessionId) => manager.getSession(sessionId)?.parentId,
-    // SPEC-46 D14: caption a stranded prompt from the session's own metadata
+    // SPEC-cli-as-client D14: caption a stranded prompt from the session's own metadata
     // (title, agent, D10 handoff origin), so a client reached at rung 3 sees
     // what it is approving. Undefined for an unknown/archived session.
     sessionCaption: (sessionId) => {
@@ -825,7 +825,7 @@ export function startWsServer(opts: ServerOpts) {
 
     ws.on("message", (raw) => {
       const text = raw.toString();
-      wire.addIn(text.length); // SPEC-37: count inbound WS bytes at the transport.
+      wire.addIn(text.length); // SPEC-performance-metrics-dashboard: count inbound WS bytes at the transport.
       const env = decodeFrame(text);
       if (!env) {
         state.send({ t: "err", id: "", code: WireErrorCode.BadRequest, message: "malformed frame" });
@@ -840,21 +840,21 @@ export function startWsServer(opts: ServerOpts) {
       // alive — nothing is watching it any more.
       budgetWatch.remove(state);
       hub.unregister(state);
-      // SPEC-37 leak guard: a panel closed by killing the window never sends
+      // SPEC-context-usage leak guard: a panel closed by killing the window never sends
       // `metrics.watch {on:false}`. Clear the flag and re-arm the cadence, or the
       // collector samples at 1 Hz forever — in a feature whose point is proving
       // makit is cheap (spec decision 7).
       state.watchingMetrics = false;
       recomputeMetricsWatchers();
-      // SPEC-41: same leak guard for the port scanner — a window killed with the
+      // SPEC-open-ports: same leak guard for the port scanner — a window killed with the
       // ports popover open never sends `ports.watch {on:false}`.
       state.watchingPorts = false;
       recomputePortsWatchers();
-      // SPEC-44 D3: revoke this device's forward grants. A `browser:true` grant
+      // SPEC-ports-forward D3: revoke this device's forward grants. A `browser:true` grant
       // resolves on its id alone, so without this the URL would keep working for
       // up to its TTL after the device that asked for it went away — and the
       // device is the only thing that could have told us to stop.
-      // SPEC-44 D3: revoke this device's forward grants. A `browser:true` grant
+      // SPEC-ports-forward D3: revoke this device's forward grants. A `browser:true` grant
       // resolves on its id alone, so without this the URL would keep working for
       // up to its TTL after the device that asked for it went away — and the
       // device is the only thing that could have told us to stop.
@@ -903,7 +903,7 @@ export function startWsServer(opts: ServerOpts) {
         return;
       case "sub":
         hub.handleSub(state, env);
-        // SPEC-07 A6: a freshly-(re)subscribed client may be the woken device;
+        // SPEC-background-wake-notifications A6: a freshly-(re)subscribed client may be the woken device;
         // replay any pending srv.request it hasn't seen (de-duped per client).
         rpc.replayPendingTo(state);
         // A session the client had open before a server restart comes back cold
@@ -951,14 +951,14 @@ export function startWsServer(opts: ServerOpts) {
     });
     // Re-broadcast the sessions snapshot ONLY when a DTO-visible field
     // (title/status/preview/pending) changes — NOT per streaming delta
-    // (SPEC-17 P2). `metaChanged` subsumes the old `titleChanged` trigger.
+    // (SPEC-server-hotpath-and-state P2). `metaChanged` subsumes the old `titleChanged` trigger.
     // The broadcast is additionally coalesced (leading + trailing, 150ms) via
     // throttleTrailing (#66): a burst of meta changes re-encodes the full
     // sessions list for every client at most once per window.
     let wasRunning = session.status === "running";
     session.on("metaChanged", () => {
       throttledSessionsSnapshot();
-      // A turn ending also re-derives the repo snapshot (SPEC-38): the worktree's
+      // A turn ending also re-derives the repo snapshot (SPEC-pr-actions-next-step-bar): the worktree's
       // `uncommittedFiles`/`aheadCount` are what the composer's next-step bar
       // asserts, and every other trigger — connect, spawn, kill, pull-to-refresh,
       // the worktree watcher — misses an agent committing mid-turn. The bar kept
@@ -975,7 +975,7 @@ export function startWsServer(opts: ServerOpts) {
   }
 
   /**
-   * SPEC-46 D17: the snapshot is a **read path**, and it is pushed the instant a
+   * SPEC-cli-as-client D17: the snapshot is a **read path**, and it is pushed the instant a
    * socket authenticates — so an unfiltered one handed an agent token every
    * session's id, title, preview, worktree and lineage before it sent a single
    * command. A session-scoped principal sees only what `canReadSession` allows
@@ -1063,7 +1063,7 @@ export function startWsServer(opts: ServerOpts) {
     }
   }
 
-  // SPEC-07 A6: replay lives ONLY here (on auth) and in the `sub` handler —
+  // SPEC-background-wake-notifications A6: replay lives ONLY here (on auth) and in the `sub` handler —
   // never in `sendSnapshots`, which `broadcastSnapshots` fires on every session
   // event and would otherwise re-fire replay constantly. A force-quit-then-woken
   // app has an empty subscription set, so replay-on-`sub` alone is insufficient;
@@ -1110,7 +1110,7 @@ export function startWsServer(opts: ServerOpts) {
       send(frame: OutgoingFrame) {
         if (ws.readyState !== ws.OPEN) return;
         const raw = encodeFrame({ v: PROTOCOL_VERSION, ...frame } as Envelope);
-        wire.addOut(raw.length); // SPEC-37: count outbound WS bytes at the transport.
+        wire.addOut(raw.length); // SPEC-performance-metrics-dashboard: count outbound WS bytes at the transport.
         wire.frame();
         ws.send(raw);
       },
@@ -1122,8 +1122,8 @@ export function startWsServer(opts: ServerOpts) {
 }
 
 /**
- * Build the real command router (SPEC-19 OCP registry). Module-level and
- * exported so the capability-map completeness test (SPEC-46 C1) can build the
+ * Build the real command router (SPEC-decomposition-and-dedup OCP registry). Module-level and
+ * exported so the capability-map completeness test (SPEC-cli-as-client C1) can build the
  * SAME router the server runs — not a toy with two handlers. `deps` is used
  * only at dispatch, so the test may pass a stub; registration is what matters.
  */
@@ -1147,7 +1147,7 @@ export function buildCommandRouter(
   // (not dev-gated) — field crash reports from iOS are a production need.
   registerDiagnosticsCommands(r);
 
-  // SPEC-07: register the device's content-free wake push token.
+  // SPEC-background-wake-notifications: register the device's content-free wake push token.
   registerPushCommands(r, registry);
 
   // B9b: dev-only debug commands, registered only when MAKIT_DEV is set.

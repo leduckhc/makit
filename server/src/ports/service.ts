@@ -103,32 +103,32 @@ export interface PortsServiceDeps {
   /** Memoised realpath resolver; defaults to a fresh one per service. */
   resolveReal?: (path: string) => string;
   /**
-   * TTL-cached `docker ps` reader (SPEC-42 D13). Defaults to one built over
+   * TTL-cached `docker ps` reader (SPEC-ports-global-view D13). Defaults to one built over
    * {@link exec} and {@link now}, so the cache lives exactly as long as the
    * service; tests may inject their own.
    */
   readDocker?: DockerReader;
   /**
-   * SPEC-43: this process's pid, refused (with its ancestors) by the kill
+   * SPEC-ports-kill: this process's pid, refused (with its ancestors) by the kill
    * whitelist. Injected so a test can make the scripted scan's pid "ours".
    */
   serverPid?: number;
   /**
-   * SPEC-43: how a signal is delivered. Defaults to `process.kill`; injected so
+   * SPEC-ports-kill: how a signal is delivered. Defaults to `process.kill`; injected so
    * no test can ever signal a real process. May throw (`ESRCH`/`EPERM`) exactly
    * like `process.kill` does.
    */
   signal?: (pid: number, sig: NodeJS.Signals) => void;
-  /** SPEC-43: the SIGTERM grace wait. Injected so tests do not spend 2 s. */
+  /** SPEC-ports-kill: the SIGTERM grace wait. Injected so tests do not spend 2 s. */
   sleep?: (ms: number) => Promise<void>;
   /**
-   * SPEC-44 D7: the current watch list, read per scan so a toggle takes effect on
+   * SPEC-ports-forward D7: the current watch list, read per scan so a toggle takes effect on
    * the very next snapshot. Injected (like {@link loadHistory}) so the service
    * depends on two function handles, not on a JSON file.
    */
   watchedPorts?: () => WatchedPort[];
   /**
-   * SPEC-44 D8: a watched endpoint has been continuously down for the grace
+   * SPEC-ports-forward D8: a watched endpoint has been continuously down for the grace
    * window. Called at most once per outage; `server.ts` turns it into one push.
    */
   onPortDown?: (port: WatchedPort) => void;
@@ -155,7 +155,7 @@ export class PortsService {
   private readonly serverPid: number;
   private readonly signal: (pid: number, sig: NodeJS.Signals) => void;
   private readonly sleep: (ms: number) => Promise<void>;
-  /** SPEC-44 D8: outage tracking, driven by the scan cadence (no timers of its own). */
+  /** SPEC-ports-forward D8: outage tracking, driven by the scan cadence (no timers of its own). */
   private readonly downDetector: PortDownDetector;
 
   private watchers = 0;
@@ -241,7 +241,7 @@ export class PortsService {
   }
 
   /**
-   * Terminate the listener the user confirmed (SPEC-43 D1/D2).
+   * Terminate the listener the user confirmed (SPEC-ports-kill D1/D2).
    *
    * The sequence IS the safety property: fresh scan → whitelist → SIGTERM →
    * grace → **fresh scan + whitelist again** → at most one SIGKILL → fresh scan
@@ -306,7 +306,7 @@ export class PortsService {
   }
 
   /**
-   * Kill every listener the current scan classifies as an orphan (SPEC-43 D5).
+   * Kill every listener the current scan classifies as an orphan (SPEC-ports-kill D5).
    *
    * N independent, individually re-verified kills — **not** an atomic batch. You
    * cannot roll back a signal, so the only honest contract is one result per
@@ -531,7 +531,7 @@ export class PortsService {
       // only ever apply to a listener the previous passes left unowned.
       const withDocker = await this.overlayDocker(annotated);
 
-      // SPEC-44: mark what the user asked to be told about. The annotation lives
+      // SPEC-ports-forward: mark what the user asked to be told about. The annotation lives
       // here because BOTH the cadence path and the on-demand paths (kill,
       // forward) publish/judge these ports.
       const watched = this.deps.watchedPorts?.() ?? [];

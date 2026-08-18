@@ -298,7 +298,7 @@
 </head>
 <body>
 
-<h1>Tab groups — option B <span style="font-size:12px;color:var(--muted);font-weight:400">· revised to match SPEC-30 after review</span></h1>
+<h1>Tab groups — option B <span style="font-size:12px;color:var(--muted);font-weight:400">· revised to match SPEC-tab-groups after review</span></h1>
 <p class="sub">
   One canvas. A <b>group</b> owns what's in it. <span style="color:var(--primary)">Worktree groups</span> populate
   themselves (every agent on that branch, nothing else). <span style="color:var(--violet)">Boards</span> are
@@ -706,7 +706,7 @@ function starter(grp){
 }
 
 /* The PR row above a composer: status pill + "most actionable next step" split
-   button, mirroring the live pane (SPEC-23). Shown in the starter too (nit 4). */
+   button, mirroring the live pane (SPEC-pr-status-and-actions). Shown in the starter too (nit 4). */
 function prBar(grp){
   const clean = grp.scope === 'chore/deps';
   return `<div class="prbar" style="padding:0 10px">

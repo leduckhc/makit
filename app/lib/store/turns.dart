@@ -1,4 +1,4 @@
-/// Turn-span derivation for session timings (SPEC-47 D18/D10/D10a/D10b).
+/// Turn-span derivation for session timings (SPEC-session-timings D18/D10/D10a/D10b).
 ///
 /// A **separate pure pass** over the session event stream, deliberately NOT
 /// threaded through `foldEvents` (D18): a turn is an interval between two status
@@ -10,7 +10,7 @@ library;
 import 'chat_items.dart';
 import '../transport/protocol.dart';
 
-/// The session-effort rollup shown in the usage popover (SPEC-47 D11): totals
+/// The session-effort rollup shown in the usage popover (SPEC-session-timings D11): totals
 /// derived from the completed [TurnSpan]s of a session whose full history this
 /// client holds (D16 gates the render, not this arithmetic).
 class TurnRollup {
@@ -32,7 +32,7 @@ class TurnRollup {
   final int? medianWallMs;
 }
 
-/// Roll [spans] up into the four session facts (SPEC-47 D11).
+/// Roll [spans] up into the four session facts (SPEC-session-timings D11).
 TurnRollup turnRollup(List<TurnSpan> spans) {
   if (spans.isEmpty) {
     return const TurnRollup(turnCount: 0, agentMs: 0, medianWallMs: null);
@@ -57,7 +57,7 @@ TurnRollup turnRollup(List<TurnSpan> spans) {
 
 /// A completed turn: the interval from its opener to the `idle` that closed it,
 /// with the gate time subtracted out and enough content facts to render a
-/// receipt (SPEC-47 D9) and the session rollup (D11).
+/// receipt (SPEC-session-timings D9) and the session rollup (D11).
 ///
 /// Only turns that close honestly are represented — an unclosed turn, a
 /// backwards span (D10b) and a turn that produced neither a tool call nor an
@@ -99,7 +99,7 @@ class TurnSpan {
   int get wallMs => closeTs - openTs;
 
   /// Wall clock minus the time the turn was blocked on the user — the actual
-  /// agent effort (SPEC-47 D11 `Agent time`).
+  /// agent effort (SPEC-session-timings D11 `Agent time`).
   int get agentMs => wallMs - gatedMs;
 }
 
@@ -116,7 +116,7 @@ class _OpenTurn {
   int? gateEnteredTs;
 }
 
-/// Fold a seq-ordered [events] stream into completed [TurnSpan]s (SPEC-47 D10).
+/// Fold a seq-ordered [events] stream into completed [TurnSpan]s (SPEC-session-timings D10).
 ///
 /// A turn opens at a `user.message` with `steered != true`, or — absent one — at
 /// the first `session.status: running`. It closes at the first `idle` after it,
@@ -132,7 +132,7 @@ List<TurnSpan> deriveTurns(Iterable<SessionEvent> events) {
     switch (e.kind) {
       case EventKind.userMessage:
         // A non-steered user message opens a turn — but only when none is open,
-        // so a steered mid-turn injection (SPEC-35) never splits the turn.
+        // so a steered mid-turn injection (SPEC-mid-turn-steering-and-queue) never splits the turn.
         if (open == null && e.payload['steered'] != true) {
           open = _OpenTurn(openTs: e.ts, openSeq: e.seq);
         }
@@ -184,7 +184,7 @@ List<TurnSpan> deriveTurns(Iterable<SessionEvent> events) {
 }
 
 /// The opener timestamp of the currently-**open** (unclosed) turn, or null when
-/// no turn is open (SPEC-47 D8). Drives the working indicator's live counter;
+/// no turn is open (SPEC-session-timings D8). Drives the working indicator's live counter;
 /// the same opener rules as [deriveTurns] apply.
 int? openTurnStartMs(Iterable<SessionEvent> events) {
   int? openTs;
@@ -227,7 +227,7 @@ TurnSpan? _finish(_OpenTurn open, SessionEvent idle) {
   );
 }
 
-/// Project a receipt row (SPEC-47 D9) after the last item of each turn in
+/// Project a receipt row (SPEC-session-timings D9) after the last item of each turn in
 /// [spans].
 ///
 /// Kept here rather than inside `foldEvents` for the reason D18 gives: the fold

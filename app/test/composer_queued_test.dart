@@ -1,4 +1,4 @@
-/// The queue on the wire: `sessions.snapshot` → `Session.queued` (SPEC-35).
+/// The queue on the wire: `sessions.snapshot` → `Session.queued` (SPEC-mid-turn-steering-and-queue).
 ///
 /// The composer-side widget tests that used to live here are gone with the
 /// `Composer.pendingQueue` parameter: the queue is now a SIBLING above the

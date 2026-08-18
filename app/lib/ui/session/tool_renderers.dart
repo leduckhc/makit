@@ -32,7 +32,7 @@ import 'tool_result_text.dart';
 import 'tool_summary.dart';
 
 // Re-export the pure result-text helpers so existing importers of
-// `tool_renderers.dart` keep resolving them after the SPEC-19 split.
+// `tool_renderers.dart` keep resolving them after the SPEC-decomposition-and-dedup split.
 export 'tool_result_text.dart' show extractToolResultText, valueString;
 
 // Canonical monospace stack lives in `app/theme.dart`; re-exported here so the

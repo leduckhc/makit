@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D9/D10: the static doc route, `GET`/`HEAD /docs/<grantId>/<relPath>`.
+ * makit — SPEC-doc-preview D9/D10: the static doc route, `GET`/`HEAD /docs/<grantId>/<relPath>`.
  *
  * Installed on the separate plain-HTTP doc listener (D10), never the pinned
  * WSS listener. There is NO bearer: a URL that must open in Safari cannot carry

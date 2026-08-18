@@ -6,7 +6,7 @@ import '../notifications/notification_observer.dart';
 import '../store/connection.dart';
 import 'readiness.dart';
 
-/// SPEC-09 Slice 1 — onboarding UI state that isn't part of the connection:
+/// SPEC-onboarding-and-tray-polish Slice 1 — onboarding UI state that isn't part of the connection:
 /// the queried notification permission and whether the user skipped that gate.
 @immutable
 class OnboardingState {

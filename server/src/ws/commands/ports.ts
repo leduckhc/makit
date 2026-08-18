@@ -1,12 +1,12 @@
 /**
  * Ports-domain `cmd` handlers — all six of them:
  *
- *  * `ports.watch {on}`                        SPEC-41: hold/release the scan
- *  * `ports.kill {address,port,pid,startedAt}` SPEC-43: terminate one listener
- *  * `ports.killOrphans`                       SPEC-43 P3b: every orphan
- *  * `ports.watchPort {worktreePath,port,on}`  SPEC-44 P4a: alert me if it stops
- *  * `ports.forward {worktreePath,port,browser?}` SPEC-44 P4b: mint a grant
- *  * `ports.forward.stop {grantId}`            SPEC-44 P4b: revoke one
+ *  * `ports.watch {on}`                        SPEC-open-ports: hold/release the scan
+ *  * `ports.kill {address,port,pid,startedAt}` SPEC-ports-kill: terminate one listener
+ *  * `ports.killOrphans`                       SPEC-ports-kill P3b: every orphan
+ *  * `ports.watchPort {worktreePath,port,on}`  SPEC-ports-forward P4a: alert me if it stops
+ *  * `ports.forward {worktreePath,port,browser?}` SPEC-ports-forward P4b: mint a grant
+ *  * `ports.forward.stop {grantId}`            SPEC-ports-forward P4b: revoke one
  *
  * `ports.watch` mirrors `metrics.watch` exactly. Setting the flag changes the
  * port scanner's watcher count (a 4 s `lsof`/`ps` scan while any client watches,
@@ -20,7 +20,7 @@
  * `ports.kill` is the first place makit signals a process it did not spawn, so
  * this file's only job is to be a strict gate: it validates the four tuple
  * fields and hands them, unchanged, to the service that re-verifies them
- * (SPEC-43 D1). Nothing is coerced or defaulted — a defaulted `startedAt` would
+ * (SPEC-ports-kill D1). Nothing is coerced or defaulted — a defaulted `startedAt` would
  * silently disable the identity check the whole spec rests on.
  */
 

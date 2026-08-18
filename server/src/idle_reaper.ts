@@ -1,6 +1,6 @@
 /**
  * IdleReaper — closes sessions nobody is working with, so their agent processes
- * stop costing memory (SPEC-29 option D).
+ * stop costing memory (SPEC-session-lifecycle-resume-list-delete option D).
  *
  * makit runs ONE agent process per session (60–450 MB each) and, before this,
  * nothing ever took an idle one down: agents accumulated for days. Measured on a

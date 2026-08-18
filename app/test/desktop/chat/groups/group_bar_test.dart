@@ -1,4 +1,4 @@
-// SPEC-30 Lane 5 — the group bar and membership bar widgets.
+// SPEC-tab-groups Lane 5 — the group bar and membership bar widgets.
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

@@ -239,10 +239,10 @@ test("lazy hydrateFrom is retained when the loader throws, and retried on next a
   assert.equal(calls, 2, "loader retried exactly once after the failure");
 });
 
-// ---- SPEC-35: mid-turn messages (steer vs queue) --------------------------
+// ---- SPEC-mid-turn-steering-and-queue: mid-turn messages (steer vs queue) --------------------------
 
 /**
- * A fake adapter with the SPEC-35 surface: records what it was sent, and lets a
+ * A fake adapter with the SPEC-mid-turn-steering-and-queue surface: records what it was sent, and lets a
  * test decide whether steering is available (codex) or not (ACP/stub).
  */
 function turnAdapter(opts: { steer?: boolean } = {}) {
@@ -266,7 +266,7 @@ function turnAdapter(opts: { steer?: boolean } = {}) {
 
 const settle = () => new Promise((r) => setTimeout(r, 5));
 
-test("SPEC-35: a mid-turn message is steered when the adapter can steer", async () => {
+test("SPEC-mid-turn-steering-and-queue: a mid-turn message is steered when the adapter can steer", async () => {
   const f = turnAdapter({ steer: true });
   const session = new Session({ projectId: "p", agent: "codex", adapter: f.adapter });
 
@@ -278,7 +278,7 @@ test("SPEC-35: a mid-turn message is steered when the adapter can steer", async 
   assert.equal(session.queuedMessages.length, 0, "a steered message is never queued");
 });
 
-test("SPEC-35: a mid-turn message is queued when the adapter cannot steer", async () => {
+test("SPEC-mid-turn-steering-and-queue: a mid-turn message is queued when the adapter cannot steer", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
   const metas: number[] = [];
@@ -298,7 +298,7 @@ test("SPEC-35: a mid-turn message is queued when the adapter cannot steer", asyn
   );
 });
 
-test("SPEC-35: the queue flushes one message per idle, FIFO", async () => {
+test("SPEC-mid-turn-steering-and-queue: the queue flushes one message per idle, FIFO", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
 
@@ -321,7 +321,7 @@ test("SPEC-35: the queue flushes one message per idle, FIFO", async () => {
   assert.equal(session.queuedMessages.length, 0);
 });
 
-test("SPEC-35: a non-empty queue takes priority even if the adapter looks idle", async () => {
+test("SPEC-mid-turn-steering-and-queue: a non-empty queue takes priority even if the adapter looks idle", async () => {
   // Steering is unavailable for the first mid-turn message (e.g. codex refused
   // a review turn), so it queues; then it becomes available again.
   const f = turnAdapter();
@@ -342,7 +342,7 @@ test("SPEC-35: a non-empty queue takes priority even if the adapter looks idle",
   assert.deepEqual(f.steered, [], "no steering while a queue exists");
 });
 
-test("SPEC-35: a queue built behind an approval gate drains when the gate closes", async () => {
+test("SPEC-mid-turn-steering-and-queue: a queue built behind an approval gate drains when the gate closes", async () => {
   // The wedge, end to end. pi's `ask_user` opens the gate, then the ACP prompt
   // resolves BEFORE the answer arrives, so the gate closes with no turn to
   // resume. Nothing else emits `idle` for this session, so unless the closing
@@ -378,7 +378,7 @@ test("SPEC-35: a queue built behind an approval gate drains when the gate closes
   assert.equal(session.queuedMessages.length, 0);
 });
 
-test("SPEC-35: cancelQueued removes one message; clearQueue empties it", async () => {
+test("SPEC-mid-turn-steering-and-queue: cancelQueued removes one message; clearQueue empties it", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
 
@@ -401,7 +401,7 @@ test("SPEC-35: cancelQueued removes one message; clearQueue empties it", async (
   assert.deepEqual(f.sent, ["first"], "cancelled messages are never delivered");
 });
 
-test("SPEC-35: an adapter exit drops pending messages", async () => {
+test("SPEC-mid-turn-steering-and-queue: an adapter exit drops pending messages", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
 
@@ -412,7 +412,7 @@ test("SPEC-35: an adapter exit drops pending messages", async () => {
   assert.equal(session.queuedMessages.length, 0);
 });
 
-test("SPEC-35: queued messages are exposed on the DTO", async () => {
+test("SPEC-mid-turn-steering-and-queue: queued messages are exposed on the DTO", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
 
@@ -427,7 +427,7 @@ test("SPEC-35: queued messages are exposed on the DTO", async () => {
   );
 });
 
-test("SPEC-35: two idle transitions in a row deliver only one queued message", async () => {
+test("SPEC-mid-turn-steering-and-queue: two idle transitions in a row deliver only one queued message", async () => {
   // TurnStatusTracker settles to idle on more than one path (turn completed, a
   // failed turn/start, an approval leaving with no turn left), so a duplicate
   // `idle` must not fire two turns at once.
@@ -446,9 +446,9 @@ test("SPEC-35: two idle transitions in a row deliver only one queued message", a
   assert.equal(session.queuedMessages.length, 1);
 });
 
-// ---- SPEC-38: editing + reordering pending messages -----------------------
+// ---- SPEC-pending-queue-edit-reorder: editing + reordering pending messages -----------------------
 
-test("SPEC-38: updateQueued replaces the text; empty text cancels", async () => {
+test("SPEC-pending-queue-edit-reorder: updateQueued replaces the text; empty text cancels", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
   await session.sendUserMessage("first");
@@ -469,7 +469,7 @@ test("SPEC-38: updateQueued replaces the text; empty text cancels", async () => 
   assert.deepEqual(f.sent, ["first", "a, but better"], "the EDITED text is delivered");
 });
 
-test("SPEC-38: reorderQueue applies a full order", async () => {
+test("SPEC-pending-queue-edit-reorder: reorderQueue applies a full order", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
   await session.sendUserMessage("first");
@@ -480,7 +480,7 @@ test("SPEC-38: reorderQueue applies a full order", async () => {
   assert.deepEqual(session.queuedMessages.map((q) => q.text), ["c", "a", "b"]);
 });
 
-test("SPEC-38: reorderQueue treats a stale id list as a hint, never an error", async () => {
+test("SPEC-pending-queue-edit-reorder: reorderQueue treats a stale id list as a hint, never an error", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
   await session.sendUserMessage("first");
@@ -497,9 +497,9 @@ test("SPEC-38: reorderQueue treats a stale id list as a hint, never an error", a
   assert.equal(session.reorderQueue([]), false, "nothing named = nothing to do");
 });
 
-// ---- SPEC-39: promote (the queue tray's ⤒) --------------------------------
+// ---- SPEC-queue-tray-and-promote: promote (the queue tray's ⤒) --------------------------------
 
-test("SPEC-39: promoteQueued interrupts the turn and sends THAT message next", async () => {
+test("SPEC-queue-tray-and-promote: promoteQueued interrupts the turn and sends THAT message next", async () => {
   const f = turnAdapter();
   const cancels: number[] = [];
   (f.adapter as any).cancel = async () => {
@@ -526,7 +526,7 @@ test("SPEC-39: promoteQueued interrupts the turn and sends THAT message next", a
   );
 });
 
-test("SPEC-39: promoting the head is still an interrupt, not a no-op", async () => {
+test("SPEC-queue-tray-and-promote: promoting the head is still an interrupt, not a no-op", async () => {
   const f = turnAdapter();
   (f.adapter as any).cancel = async () => f.adapter.emit("status", "idle");
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
@@ -541,7 +541,7 @@ test("SPEC-39: promoting the head is still an interrupt, not a no-op", async () 
   assert.equal(session.queuedMessages.length, 0);
 });
 
-test("SPEC-39: promoting an id the queue no longer holds is a no-op, not an interrupt", async () => {
+test("SPEC-queue-tray-and-promote: promoting an id the queue no longer holds is a no-op, not an interrupt", async () => {
   const f = turnAdapter();
   let cancels = 0;
   (f.adapter as any).cancel = async () => {
@@ -562,7 +562,7 @@ test("SPEC-39: promoting an id the queue no longer holds is a no-op, not an inte
 
 // ---- terminal failure + the queue cap -------------------------------------
 
-test("SPEC-35: an adapter.send rejection drops the queue AND names what was lost", async () => {
+test("SPEC-mid-turn-steering-and-queue: an adapter.send rejection drops the queue AND names what was lost", async () => {
   const f = turnAdapter();
   let failNext = false;
   (f.adapter as any).send = async (input: { text: string }) => {
@@ -595,7 +595,7 @@ test("SPEC-35: an adapter.send rejection drops the queue AND names what was lost
   );
 });
 
-test("SPEC-35: the queue is capped, and the refusal names the message", async () => {
+test("SPEC-mid-turn-steering-and-queue: the queue is capped, and the refusal names the message", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
 
@@ -654,7 +654,7 @@ test("replaceAdapter unbinds only the session's own listeners, not a third party
   assert.equal(foreignEvents.length, 1, "a foreign event listener survived the swap");
 });
 
-test("toDTO projects SPEC-46 lineage hydrated from meta (D10)", async () => {
+test("toDTO projects SPEC-cli-as-client lineage hydrated from meta (D10)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
   const session = new Session({
@@ -680,7 +680,7 @@ test("toDTO projects SPEC-46 lineage hydrated from meta (D10)", async () => {
   store.close();
 });
 
-test("toDTO omits lineage for a session with no parent (pre-SPEC-46 / app-spawned)", () => {
+test("toDTO omits lineage for a session with no parent (pre-SPEC-cli-as-client / app-spawned)", () => {
   const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
   const dto = session.toDTO();
   assert.equal(dto.parentId, undefined);
@@ -688,7 +688,7 @@ test("toDTO omits lineage for a session with no parent (pre-SPEC-46 / app-spawne
   assert.equal(dto.origin, undefined);
 });
 
-test("SPEC-47 D12: toDTO exposes createdAt so the app can show session age", () => {
+test("SPEC-session-timings D12: toDTO exposes createdAt so the app can show session age", () => {
   // `createdAt` was already assigned and persisted through toMeta(), but omitted
   // from the DTO — so no client could render a session's age. Rehydration passes
   // it explicitly, which is what makes the value survive a restart.

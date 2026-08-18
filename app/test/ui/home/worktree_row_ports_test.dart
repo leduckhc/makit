@@ -1,4 +1,4 @@
-// SPEC-41 §1 — the ports glyph on the mobile worktree row. It sits in the
+// SPEC-open-ports §1 — the ports glyph on the mobile worktree row. It sits in the
 // trailing control column between the fold caret and `+` (order
 // `branch · fold · ports · +`), renders nothing when the branch serves nothing,
 // and opens the ports list sheet on tap (never folds the row).

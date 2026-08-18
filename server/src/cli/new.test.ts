@@ -1,5 +1,5 @@
 /**
- * T12 (SPEC-46) — `makit new`: a session is born in the terminal, in its own
+ * T12 (SPEC-cli-as-client) — `makit new`: a session is born in the terminal, in its own
  * worktree.
  *
  * D15 is the load-bearing decision here: a session **owns a worktree**, always,
@@ -25,6 +25,7 @@ import { cliCredentialPath } from "./client.js";
 import { createControlServer, type ControlBackend } from "../daemon/control-server.js";
 import { controlSocketPath } from "../daemon/paths.js";
 import { startStubWss } from "../../test/support/stub_wss.js";
+import { hideAmbientCliToken } from "../../test/support/cli_home.js";
 
 const P1 = { id: "p1", name: "makit", path: "/tmp/repo-one", pinned: false, lastActivityAt: 0 };
 const P2 = { id: "p2", name: "other", path: "/tmp/repo-two", pinned: false, lastActivityAt: 0 };
@@ -48,6 +49,7 @@ function stubBackend(): ControlBackend {
 
 async function withHome(fn: () => Promise<void>): Promise<void> {
   const prev = process.env.MAKIT_HOME;
+  const restoreToken = hideAmbientCliToken();
   const home = mkdtempSync(join(tmpdir(), "makit-new-home-"));
   process.env.MAKIT_HOME = home;
   const control = await createControlServer({ socketPath: controlSocketPath(), backend: stubBackend() });
@@ -59,6 +61,7 @@ async function withHome(fn: () => Promise<void>): Promise<void> {
     await control.close();
     if (prev === undefined) delete process.env.MAKIT_HOME;
     else process.env.MAKIT_HOME = prev;
+    restoreToken();
     rmSync(home, { recursive: true, force: true });
   }
 }

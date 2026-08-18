@@ -13,7 +13,7 @@
  *   at its protected boundary.
  * - Screenshots come back as image blocks inside MCP tool results; those are
  *   ingested by {@link CodexEventMapper} into the media store so the app can
- *   render them (SPEC-22).
+ *   render them (SPEC-assistant-display-media).
  *
  * Off by default. Registering a desktop-driving MCP server into every codex
  * session is not a safe default, so it takes an explicit opt-in.

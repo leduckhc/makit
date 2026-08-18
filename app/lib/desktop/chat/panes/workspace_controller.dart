@@ -60,12 +60,12 @@ class WorkspaceState {
 
 /// Notified with the whole workspace after every mutation, so an owner can
 /// persist it. **Must not throw and must not be awaited** — a failed write may
-/// never crash the app or surface as an unhandled async error (SPEC-30 Lane 2).
+/// never crash the app or surface as an unhandled async error (SPEC-tab-groups Lane 2).
 typedef WorkspaceCommit = void Function(WorkspaceState next);
 
 /// Holds and mutates **one** split/tab tree.
 ///
-/// Since SPEC-30 there are many trees — one per group — so this controller no
+/// Since SPEC-tab-groups there are many trees — one per group — so this controller no
 /// longer owns persistence: it reports every mutation through a
 /// [WorkspaceCommit] sink and the groups layer decides what is written. All
 /// tree operations below are unchanged; only the plumbing moved.
@@ -84,7 +84,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   static WorkspaceState seedWorkspace() => _seed();
 
   /// Decodes a persisted workspace blob, falling back to the starter workspace
-  /// for absent/corrupt/unusable JSON. Exposed for the SPEC-30 migration, which
+  /// for absent/corrupt/unusable JSON. Exposed for the SPEC-tab-groups migration, which
   /// must read the legacy single-workspace key.
   static WorkspaceState decodeWorkspace(String? raw) => _decode(raw);
 
@@ -139,7 +139,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   /// Splits the active [Split] along [axis]. The new [Split] is seeded with one
   /// empty starter [Tab] and becomes active; the original keeps its tabs.
   ///
-  /// [worktree] seeds that starter tab's hint (SPEC-30 decision 17) so a split
+  /// [worktree] seeds that starter tab's hint (SPEC-tab-groups decision 17) so a split
   /// lands on the in-pane starter for the branch you were already in. The
   /// caller supplies it: resolving a bound tab's worktree needs the session
   /// list, which this controller deliberately knows nothing about.
@@ -423,7 +423,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
 
   // -- Session-oriented ops -------------------------------------------------
 
-  /// SPEC-28 decision 6. Reveals [sessionId]: if a tab already hosts it, focus
+  /// SPEC-desktop-workspace-tabs decision 6. Reveals [sessionId]: if a tab already hosts it, focus
   /// that split + tab; otherwise open a new [Tab] for it in the active split.
   /// The session's worktree is its own metadata — never stored on the tab.
   void revealSession(String sessionId) {
@@ -504,7 +504,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     closeTab(located.$1, located.$2);
   }
 
-  /// Whether any tab in the workspace still hosts [sessionId] (SPEC-29). Used
+  /// Whether any tab in the workspace still hosts [sessionId] (SPEC-session-lifecycle-resume-list-delete). Used
   /// after closing a tab to decide whether the session is now orphaned (no
   /// remaining view) and should be closed.
   bool isSessionBound(String sessionId) =>
@@ -638,7 +638,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   }
 }
 
-/// The **active group's** split/tab tree (SPEC-30). Derived, not owned: it is
+/// The **active group's** split/tab tree (SPEC-tab-groups). Derived, not owned: it is
 /// rebuilt whenever the active group changes, seeded with that group's stored
 /// tree, and every mutation is reported straight back to the groups layer, which
 /// owns persistence. Switching groups therefore costs one controller rebuild and

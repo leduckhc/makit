@@ -18,7 +18,7 @@ import {
 // ---------------------------------------------------------------------------
 // URL building. Forgejo's `head` filter takes a BARE branch name -- passing
 // GitHub's `owner:branch` returns an empty list, which the gateway would map to
-// `none` and erase the pill (the very defect SPEC-32 §6.5 exists to prevent).
+// `none` and erase the pill (the very defect SPEC-github-gateway-and-budget §6.5 exists to prevent).
 // ---------------------------------------------------------------------------
 
 test("prForBranchUrl filters by bare branch name, never owner:branch", () => {
@@ -220,7 +220,7 @@ test("forgejoChecks tolerates a missing or malformed statuses array", () => {
 
 // ---------------------------------------------------------------------------
 // Hazard: Forgejo returns epoch for unset timestamps instead of null. Feeding
-// that into a duration renders as ~56 years (SPEC-47's timings).
+// that into a duration renders as ~56 years (SPEC-session-timings's timings).
 // ---------------------------------------------------------------------------
 
 test("isEpochTimestamp recognises Forgejo's unset-time sentinel", () => {

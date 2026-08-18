@@ -1,4 +1,4 @@
-// SPEC-42 P2a T2 — the pure filter + grouping behind the global Ports screen.
+// SPEC-ports-global-view P2a T2 — the pure filter + grouping behind the global Ports screen.
 // No widgets, no container: data in, filtered/grouped data out.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/models.dart';

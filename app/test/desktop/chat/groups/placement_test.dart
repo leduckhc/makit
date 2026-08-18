@@ -1,4 +1,4 @@
-// SPEC-30 Lane 3 — placement policy (decision 9) and membership reconciliation.
+// SPEC-tab-groups Lane 3 — placement policy (decision 9) and membership reconciliation.
 //
 // These are pure-tree tests: no widgets, no providers. The load-bearing
 // invariant under test is decision 9's "nothing already on the canvas ever

@@ -1,4 +1,4 @@
-/// Pruning the starter pane's key spaces (SPEC-45 D10).
+/// Pruning the starter pane's key spaces (SPEC-starter-pane-parity D10).
 ///
 /// A starter's draft text, harness/model picks and staged images are held in
 /// app-wide, non-`autoDispose` providers under the key [starterDraftKey] builds

@@ -5,7 +5,7 @@
  * would be directing host filesystem operations at a path of its choosing: the
  * daemon creates directories under that root and, via prune, removes them. So the
  * refusal is asserted here, on the server, against `WsClient.isLocal` — the same
- * flag that already refuses a non-loopback client's reported pid (SPEC-37 D6).
+ * flag that already refuses a non-loopback client's reported pid (SPEC-performance-metrics-dashboard D6).
  */
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
@@ -226,7 +226,7 @@ test("an unknown project is reported, not silently ignored", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// `repo.path.set` — re-pointing a project that moved on disk (SPEC-48 D4').
+// `repo.path.set` — re-pointing a project that moved on disk (SPEC-per-repo-settings D4').
 //
 // A separate command from `repo.settings.set` because it is not a setting: it
 // mutates the project record itself, has to re-validate that the target is a git

@@ -5,7 +5,7 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/composer/context_usage.dart';
 
-/// SPEC-37 — the circular context gauge and its details panel.
+/// SPEC-context-usage — the circular context gauge and its details panel.
 ///
 /// Two rules run through all of it: **absent is not zero** (a reading nobody
 /// took must render as nothing, never as 0%), and the cumulative session total
@@ -322,7 +322,7 @@ void main() {
     testWidgets('the desktop popover survives the window shrinking under it', (
       tester,
     ) async {
-      // Found while fixing the same bug in SPEC-52's identity panel, which copied
+      // Found while fixing the same bug in SPEC-session-identity's identity panel, which copied
       // this sizing: `window.width - 2 * margin` goes NEGATIVE below 16pt (2 * _kUsagePanelMargin), and a
       // SizedBox with a negative width is a non-normalized constraint -- the
       // layout ASSERTS instead of rendering a cramped panel. The height axis was

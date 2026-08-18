@@ -1,5 +1,5 @@
 /**
- * Dev-only debug `cmd` handlers (SPEC-19, moved verbatim from server.ts's
+ * Dev-only debug `cmd` handlers (SPEC-decomposition-and-dedup, moved verbatim from server.ts's
  * `registerDebugCommands`): debug.ask, debug.ask-multi. Registered only when
  * MAKIT_DEV is set.
  */

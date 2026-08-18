@@ -1,4 +1,4 @@
-/// The profile delete confirmation sheet (SPEC-50 D8, mockup card 6).
+/// The profile delete confirmation sheet (SPEC-profiles D8, mockup card 6).
 ///
 /// The most important widget in the Profiles section: it enumerates **what will
 /// be deleted** and, just as prominently, **what will be kept**. The kept half

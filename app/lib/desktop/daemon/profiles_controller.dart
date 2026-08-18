@@ -39,7 +39,7 @@ class ProfileStatus {
   /// about an empty profile.
   final int? diskBytes;
 
-  /// Whether this is a dev profile whose origin folder has gone (SPEC-50 D9).
+  /// Whether this is a dev profile whose origin folder has gone (SPEC-profiles D9).
   final bool stale;
 
   @override

@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Throwaway end-to-end check for SPEC-22 media (feat/multimodal).
+ * Throwaway end-to-end check for SPEC-assistant-display-media media (feat/multimodal).
  *
  * Runs the REAL makit server + REAL pi-acp (real model), drives one turn that
  * makes the agent read an image, and then verifies the phone-side contract:

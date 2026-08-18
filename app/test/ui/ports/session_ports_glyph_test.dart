@@ -1,4 +1,4 @@
-// SPEC-42 P2a T6 — the session-tile ports glyph (D14). Quieter than the row
+// SPEC-ports-global-view P2a T6 — the session-tile ports glyph (D14). Quieter than the row
 // glyph (no attention dot), renders only for a port owned by this session, and
 // opens the per-worktree ports surface on tap.
 import 'package:flutter/material.dart';

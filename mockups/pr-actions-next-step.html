@@ -454,7 +454,7 @@ const st={
     cta:{label:'Fix',icon:'magic-wand',tone:'attention'}},
   oneProblem:{cap:'open · exactly one problem — keeps its own specific verb',
     /* Was pinned green. A green build no longer reports all-clear while something
-       is pressing — see §8 and SPEC-38 D17. */
+       is pressing — see §8 and SPEC-pr-actions-next-step-bar D17. */
     num:'#142',tone:'attention',dot:{},
     lead:'1 commit unpushed',rest:[],
     cta:{label:'Push',icon:'arrow-up',tone:'attention'}},
@@ -659,7 +659,7 @@ el('detail').innerHTML=`
   three places said the same thing three times. The header reads <code>needs you</code> here and
   <code>also needs you</code> on the sheet, where the headline already said the first one. Shipped
   labels tone each row by its own fact and shorten the verbs to <code>Fix</code>/<code>Resolve</code>
-  (SPEC-38 D12).</div></header>
+  (SPEC-pr-actions-next-step-bar D12).</div></header>
   <div class="body"><div class="pop">
     <div class="ph">${ic('warning')} needs you</div>
     ${fact('x-circle','2 checks failing',{rt:'var(--fail)',fix:['Fix',wash('blocking',20),TONE.blocking]})}
@@ -721,7 +721,7 @@ el('detail').innerHTML=`
 /* ═══ 5 · placement ════════════════════════════════════════════════ */
 el('place').innerHTML=`
 <div class="col" style="width:520px"><header><div class="t"><h3>Floating <span class="tag a">superseded</span></h3></div>
-  <div class="d">Its own row above the composer, as SPEC-23 had it. B is quiet enough that this no longer
+  <div class="d">Its own row above the composer, as SPEC-pr-status-and-actions had it. B is quiet enough that this no longer
   read as a third competing element &mdash; but it still spent a whole row on a caption.</div></header>
   <div class="body"><div class="pane">${bHTML(st.hot,'B1')}
     <div class="composer"><span>Message the agent…</span><span class="send">${ic('arrow-up','fill')}</span></div></div></div></div>
@@ -899,7 +899,7 @@ el('confirms').innerHTML=`
     <ul class="steps" style="margin-top:8px">
       ${step('warning','Its state could not be refreshed (GitHub quota), so this may already be out of date','var(--pending)')}
     </ul>
-    <p style="font-size:11px;margin-top:-2px">\u2191 only when <code>pr.stale</code> \u2014 see SPEC-38 \u00a711a L1</p>
+    <p style="font-size:11px;margin-top:-2px">\u2191 only when <code>pr.stale</code> \u2014 see SPEC-pr-actions-next-step-bar \u00a711a L1</p>
     <ul class="steps">
       ${step('folder-minus','Remove the worktree at <b>~/.worktrees/makit/feat-pr-actions</b>')}
       ${step('archive','Archive the sessions running in it (drafts are discarded)')}
@@ -1043,7 +1043,7 @@ el('acts').innerHTML=ACTS.map(a=>{
 }).join('');
 
 el('gaps').className='fixed';
-el('gaps').innerHTML=`<b>Four gaps this write-up exposed \u2014 all since closed (SPEC-38 \u00a711, plan phase 7).</b>
+el('gaps').innerHTML=`<b>Four gaps this write-up exposed \u2014 all since closed (SPEC-pr-actions-next-step-bar \u00a711, plan phase 7).</b>
 <ol>
 <li><b>The confirm never said it deletes the branch.</b> The step was guarded on
 <code>status.hasPr ? null : status.identity</code>, which is always the PR number here \u2014 dead code.
@@ -1089,13 +1089,13 @@ const WRONG=[
    'All of it ships except the relative time: the groups, the checks line (with the pass glyph, not a tone dot), and both residue facts, which come from data the snapshot already carries \u2014 <code>sessionIds.length</code> and the <b>primary checkout\u2019s</b> own <code>behindCount</code> (<code>HEAD..@{upstream}</code> there <i>is</i> \u201cmain is N behind\u201d). A merged PR\u2019s per-check list is dropped entirely: it is history, and it was the bulk of the scroll.'],
   ['a green build meant a green dot',
    'Any PR whose <code>checkRollup</code> was <code>pass</code> drew the all-clear disc \u2014 so <b>conflicts with the base</b>, <b>the base branch moved on</b>, <b>3 threads open</b>, <b>2 commits behind</b> and <b>1 commit unpushed</b> all showed the same green as <code>ready to merge</code>. The mock said so twice and contradicted itself: <code>oneProblem</code> pinned the dot green over an amber sentence, while <code>threads</code> \u2014 identical green build \u2014 drew it amber.',
-   'Green now means <b>nothing needs you</b>: the pass verdict holds only while the loud fact is <i>quiet</i>, otherwise the dot defers to that fact\u2019s tone (SPEC-38 D17). A failing or in-flight build is still checked first, so <code>hot</code> keeps its red dot over an amber sentence \u2014 the case \u00a78.1 exists for.'],
+   'Green now means <b>nothing needs you</b>: the pass verdict holds only while the loud fact is <i>quiet</i>, otherwise the dot defers to that fact\u2019s tone (SPEC-pr-actions-next-step-bar D17). A failing or in-flight build is still checked first, so <code>hot</code> keeps its red dot over an amber sentence \u2014 the case \u00a78.1 exists for.'],
   ['the dot inherited the sentence\u2019s tone',
    'Every dot was <code>tone</code>\u2019s hue, so a <b>green</b> PR drew a grey dot (the all-clear fact is quiet) and a <b>red build</b> drew amber the moment a local commit outranked it \u2014 this state\u2019s own picture.',
-   'The dot reports the <b>pull request</b>, the sentence reports the next step: they are different claims. <code>PrDot</code> is now derived separately from <code>PrTone</code> (SPEC-38 \u00a78.1) straight off the \u00a72 legend \u2014 pass green, fail red, pending arc, merged purple, draft/closed grey, a ring only when there is nothing to report. The ring is grey <i>whatever</i> the tone, or it would report something.'],
+   'The dot reports the <b>pull request</b>, the sentence reports the next step: they are different claims. <code>PrDot</code> is now derived separately from <code>PrTone</code> (SPEC-pr-actions-next-step-bar \u00a78.1) straight off the \u00a72 legend \u2014 pass green, fail red, pending arc, merged purple, draft/closed grey, a ring only when there is nothing to report. The ring is grey <i>whatever</i> the tone, or it would report something.'],
   ['“Fix CI” and “Resolve threads” in the bar',
    'The bar shortened only some verbs, and the fact list shortened different ones — <code>Fix CI</code> in §4, <code>Fix</code> in §6.',
-   'One verb source for every surface: <code>Fix</code> and <code>Resolve</code> (SPEC-38 D12). <code>Fix</code> is deliberately also the magic remedy’s verb — the sentence beside the button says whether one thing or three are wrong. They co-occur only on the mobile sheet, which is the accepted cost.'],
+   'One verb source for every surface: <code>Fix</code> and <code>Resolve</code> (SPEC-pr-actions-next-step-bar D12). <code>Fix</code> is deliberately also the magic remedy’s verb — the sentence beside the button says whether one thing or three are wrong. They co-occur only on the mobile sheet, which is the accepted cost.'],
   ['the merge button was purple only in the mock',
    'Hand-coloured. Derived, <code>ready to merge</code> is a <i>quiet</i> fact, and the CTA promoted every quiet tone to amber — so the one action that is good news said <code>attention</code>.',
    'The promotion now takes the <b>remedy’s</b> tone where it has one (D13): purple to land, amber for the rest. The fact stays quiet in the list.'],

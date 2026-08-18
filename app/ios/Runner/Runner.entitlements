@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
-		<!-- SPEC-07: APNs environment. Xcode's Push Notifications capability
+		<!-- SPEC-background-wake-notifications: APNs environment. Xcode's Push Notifications capability
 		     manages this; `development` for the sandbox, `production` for a
 		     release build. -->
 		<key>aps-environment</key>

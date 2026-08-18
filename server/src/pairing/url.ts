@@ -10,7 +10,7 @@
  * accidental connection to the wrong host.
  *
  * `n` (display name) and `id` (stable profile id) are OPTIONAL additions
- * (SPEC-50 D12) that let the phone label each paired server instead of showing
+ * (SPEC-profiles D12) that let the phone label each paired server instead of showing
  * a bare IP. There is NO protocol version bump: per-profile pairing already
  * works because the QR carries host/port/fp/t. When both are absent the URL is
  * byte-identical to the pre-D12 output, so already-paired phones and older app
@@ -34,9 +34,9 @@ export interface PairUrlOpts {
   port: number;
   fingerprint: string;
   token: string;
-  /** Optional human label for the profile (SPEC-50 D12). */
+  /** Optional human label for the profile (SPEC-profiles D12). */
   name?: string;
-  /** Optional stable profile id (SPEC-50 D12). */
+  /** Optional stable profile id (SPEC-profiles D12). */
   id?: string;
 }
 

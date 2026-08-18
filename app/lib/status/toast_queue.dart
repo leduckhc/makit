@@ -8,7 +8,7 @@ import 'status_event.dart';
 
 /// How long a toast lingers before it fades. Nothing is sticky — the record in
 /// the [StatusCenter] is the durable copy, so an unclosable toast would be pure
-/// obstruction (SPEC-48 D5).
+/// obstruction (SPEC-status-and-activity D5).
 Duration toastDwell(StatusSeverity severity) => switch (severity) {
   StatusSeverity.info => const Duration(seconds: 3),
   StatusSeverity.success => const Duration(seconds: 3),

@@ -1,5 +1,5 @@
 /**
- * `makit ls` — list sessions (SPEC-46 T7).
+ * `makit ls` — list sessions (SPEC-cli-as-client T7).
  *
  * The first session verb that is a client of the WSS transport (D1): the very
  * same `sessions.snapshot` the app renders, so the terminal cannot drift from
@@ -9,7 +9,7 @@
  *     `SessionDTO` array exactly as it arrived, one JSON document on stdout and
  *     nothing else.
  *   - **D8/C4** — the control socket is probed *first* (`requireDaemon`), so a
- *     dead daemon is exit `3` with SPEC-02's message, and a credential the
+ *     dead daemon is exit `3` with SPEC-cli-client-subcommands's message, and a credential the
  *     server refuses is exit `4`. That probe is also where `cli.grant` mints the
  *     CLI's own device, so liveness and credential are one round trip.
  */

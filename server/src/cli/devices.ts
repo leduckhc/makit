@@ -2,7 +2,7 @@
  * `makit devices`              — list paired devices
  * `makit devices revoke <id>` — revoke a device by id
  *
- * Both are thin clients of the daemon's control socket (SPEC-02).
+ * Both are thin clients of the daemon's control socket (SPEC-cli-client-subcommands).
  */
 
 import { requireDaemon } from "./require-daemon.js";

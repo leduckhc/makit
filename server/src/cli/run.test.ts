@@ -1,5 +1,5 @@
 /**
- * T17 (SPEC-46) — `makit run`: `new` + `wait` + print, as one command.
+ * T17 (SPEC-cli-as-client) — `makit run`: `new` + `wait` + print, as one command.
  *
  * This is the shape a git hook, a CI job, or an agent shelling out actually
  * wants: start the work, block until something happens, and let the **exit code**

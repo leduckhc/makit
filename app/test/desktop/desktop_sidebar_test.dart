@@ -1393,7 +1393,7 @@ void main() {
       );
 
       // Collapse the first worktree (branch-a) via its caret — the row itself
-      // navigates now (SPEC-30 decision 15).
+      // navigates now (SPEC-tab-groups decision 15).
       await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-a')));
       await tester.pumpAndSettle();
       expect(find.text('Session A'), findsNothing);
@@ -1478,177 +1478,191 @@ void main() {
     );
   });
 
-  group('SPEC-30 Lane 6 — sidebar board affordances (decisions 14, 15)', () {
-    Future<ProviderContainer> pumpWithGroups(
-      WidgetTester tester, {
-      required List<RepoInfo> repos,
-      required List<Session> sessions,
-      required Group group,
-    }) async {
-      final container = ProviderContainer(
-        overrides: [
-          reposProvider.overrideWithValue(ReposState(repos)),
-          sessionsProvider.overrideWithValue(SessionsState(sessions)),
-          groupsControllerProvider.overrideWith(
-            (ref) => GroupsController.ephemeral(
-              GroupsState(groups: [group], activeGroupId: group.id),
+  group(
+    'SPEC-tab-groups Lane 6 — sidebar board affordances (decisions 14, 15)',
+    () {
+      Future<ProviderContainer> pumpWithGroups(
+        WidgetTester tester, {
+        required List<RepoInfo> repos,
+        required List<Session> sessions,
+        required Group group,
+      }) async {
+        final container = ProviderContainer(
+          overrides: [
+            reposProvider.overrideWithValue(ReposState(repos)),
+            sessionsProvider.overrideWithValue(SessionsState(sessions)),
+            groupsControllerProvider.overrideWith(
+              (ref) => GroupsController.ephemeral(
+                GroupsState(groups: [group], activeGroupId: group.id),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const MaterialApp(
+              home: Scaffold(
+                body: SizedBox(width: 320, child: DesktopSidebar()),
+              ),
             ),
           ),
-        ],
+        );
+        await tester.pump();
+        return container;
+      }
+
+      Group board(List<String> members) => Group.board(
+        id: 'b1',
+        label: 'Shipping',
+        members: members,
+        tree: WorkspaceController.seedWorkspace(),
       );
-      addTearDown(container.dispose);
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: container,
-          child: const MaterialApp(
-            home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
-          ),
+
+      Group worktreeGroup() => Group.worktree(
+        id: 'g1',
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/wt-feat',
+        label: 'feat/login',
+        tree: WorkspaceController.seedWorkspace(),
+      );
+
+      final repos = [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-feat', branch: 'feat/login', sessionIds: ['s1']),
+          ],
         ),
-      );
-      await tester.pump();
-      return container;
-    }
+      ];
+      final sessions = [_session('s1', 'p1', 'Fix login bug', 'codex')];
 
-    Group board(List<String> members) => Group.board(
-      id: 'b1',
-      label: 'Shipping',
-      members: members,
-      tree: WorkspaceController.seedWorkspace(),
-    );
-
-    Group worktreeGroup() => Group.worktree(
-      id: 'g1',
-      projectId: 'p1',
-      worktreePath: '/tmp/wt/wt-feat',
-      label: 'feat/login',
-      tree: WorkspaceController.seedWorkspace(),
-    );
-
-    final repos = [
-      _repo(
-        'p1',
-        'alpha',
-        worktrees: [
-          _worktree('wt-feat', branch: 'feat/login', sessionIds: ['s1']),
-        ],
-      ),
-    ];
-    final sessions = [_session('s1', 'p1', 'Fix login bug', 'codex')];
-
-    testWidgets('a hover quick-pin appears only when a board is active', (
-      tester,
-    ) async {
-      // Worktree group active → no quick-pin (its membership is derived).
-      await pumpWithGroups(
+      testWidgets('a hover quick-pin appears only when a board is active', (
         tester,
-        repos: repos,
-        sessions: sessions,
-        group: worktreeGroup(),
-      );
-      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.addPointer(location: Offset.zero);
-      addTearDown(gesture.removePointer);
-      await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const Key('sidebarQuickPin')), findsNothing);
-    });
+      ) async {
+        // Worktree group active → no quick-pin (its membership is derived).
+        await pumpWithGroups(
+          tester,
+          repos: repos,
+          sessions: sessions,
+          group: worktreeGroup(),
+        );
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.addPointer(location: Offset.zero);
+        addTearDown(gesture.removePointer);
+        await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const Key('sidebarQuickPin')), findsNothing);
+      });
 
-    testWidgets('the quick-pin pins the session to the active board', (
-      tester,
-    ) async {
-      final container = await pumpWithGroups(
+      testWidgets('the quick-pin pins the session to the active board', (
         tester,
-        repos: repos,
-        sessions: sessions,
-        group: board(const []),
+      ) async {
+        final container = await pumpWithGroups(
+          tester,
+          repos: repos,
+          sessions: sessions,
+          group: board(const []),
+        );
+
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.addPointer(location: Offset.zero);
+        addTearDown(gesture.removePointer);
+        await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('sidebarQuickPin')), findsOneWidget);
+        await tester.tap(find.byKey(const Key('sidebarQuickPin')));
+        await tester.pump();
+
+        // Pinned exactly once (decision 3).
+        expect(container.read(groupsControllerProvider).active.members, ['s1']);
+      });
+
+      testWidgets(
+        'a board member shows the violet pin dot, not the quick-pin',
+        (tester) async {
+          await pumpWithGroups(
+            tester,
+            repos: repos,
+            sessions: sessions,
+            group: board(['s1']),
+          );
+
+          final gesture = await tester.createGesture(
+            kind: PointerDeviceKind.mouse,
+          );
+          await gesture.addPointer(location: Offset.zero);
+          addTearDown(gesture.removePointer);
+          await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
+          await tester.pumpAndSettle();
+
+          expect(find.byIcon(PhosphorIconsFill.circle), findsOneWidget);
+          expect(find.byKey(const Key('sidebarQuickPin')), findsNothing);
+        },
       );
 
-      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.addPointer(location: Offset.zero);
-      addTearDown(gesture.removePointer);
-      await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
-      await tester.pumpAndSettle();
-
-      expect(find.byKey(const Key('sidebarQuickPin')), findsOneWidget);
-      await tester.tap(find.byKey(const Key('sidebarQuickPin')));
-      await tester.pump();
-
-      // Pinned exactly once (decision 3).
-      expect(container.read(groupsControllerProvider).active.members, ['s1']);
-    });
-
-    testWidgets('a board member shows the violet pin dot, not the quick-pin', (
-      tester,
-    ) async {
-      await pumpWithGroups(
+      testWidgets('tapping a worktree row activates (mints) its group', (
         tester,
-        repos: repos,
-        sessions: sessions,
-        group: board(['s1']),
-      );
+      ) async {
+        final container = await pumpWithGroups(
+          tester,
+          repos: repos,
+          sessions: sessions,
+          group: board(const []),
+        );
+        expect(
+          container.read(groupsControllerProvider).active.kind,
+          GroupKind.board,
+        );
 
-      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.addPointer(location: Offset.zero);
-      addTearDown(gesture.removePointer);
-      await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text('feat/login'));
+        await tester.pump();
 
-      expect(find.byIcon(PhosphorIconsFill.circle), findsOneWidget);
-      expect(find.byKey(const Key('sidebarQuickPin')), findsNothing);
-    });
+        final active = container.read(groupsControllerProvider).active;
+        expect(active.kind, GroupKind.worktree);
+        expect(active.worktreePath, '/tmp/wt/wt-feat');
+      });
 
-    testWidgets('tapping a worktree row activates (mints) its group', (
-      tester,
-    ) async {
-      final container = await pumpWithGroups(
+      testWidgets('the caret discloses without moving the canvas', (
         tester,
-        repos: repos,
-        sessions: sessions,
-        group: board(const []),
-      );
-      expect(
-        container.read(groupsControllerProvider).active.kind,
-        GroupKind.board,
-      );
+      ) async {
+        final container = await pumpWithGroups(
+          tester,
+          repos: repos,
+          sessions: sessions,
+          group: board(const []),
+        );
+        final before = container.read(groupsControllerProvider).active.id;
 
-      await tester.tap(find.text('feat/login'));
-      await tester.pump();
+        // The session is visible while expanded...
+        expect(find.text('Fix login bug'), findsOneWidget);
 
-      final active = container.read(groupsControllerProvider).active;
-      expect(active.kind, GroupKind.worktree);
-      expect(active.worktreePath, '/tmp/wt/wt-feat');
-    });
+        await tester.tap(
+          find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')),
+        );
+        await tester.pumpAndSettle();
 
-    testWidgets('the caret discloses without moving the canvas', (
-      tester,
-    ) async {
-      final container = await pumpWithGroups(
-        tester,
-        repos: repos,
-        sessions: sessions,
-        group: board(const []),
-      );
-      final before = container.read(groupsControllerProvider).active.id;
+        // ...and the caret actually collapsed it. Asserting only that the active
+        // group is unchanged would pass if the caret key were misspelled or the
+        // control inert, which is the failure this test exists to catch.
+        expect(find.text('Fix login bug'), findsNothing);
+        expect(
+          container.read(groupsControllerProvider).active.id,
+          before,
+          reason: 'expanding a row is not a navigation',
+        );
+      });
+    },
+  );
 
-      // The session is visible while expanded...
-      expect(find.text('Fix login bug'), findsOneWidget);
-
-      await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')));
-      await tester.pumpAndSettle();
-
-      // ...and the caret actually collapsed it. Asserting only that the active
-      // group is unchanged would pass if the caret key were misspelled or the
-      // control inert, which is the failure this test exists to catch.
-      expect(find.text('Fix login bug'), findsNothing);
-      expect(
-        container.read(groupsControllerProvider).active.id,
-        before,
-        reason: 'expanding a row is not a navigation',
-      );
-    });
-  });
-
-  group('SPEC-41 — ports glyph on the sub-row', () {
+  group('SPEC-open-ports — ports glyph on the sub-row', () {
     PortsSnapshot snap(String worktreePath, {PortHealth? health}) =>
         PortsSnapshot(
           ports: [

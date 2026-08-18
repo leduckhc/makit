@@ -107,7 +107,7 @@ void main() {
     // The messages still exist and must stay cancellable while an ask owns the
     // composer — otherwise one fires when the ask is answered with no way to
     // have stopped it. As a sibling this is structural rather than a favour the
-    // composer does (SPEC-35/38).
+    // composer does (SPEC-mid-turn-steering-and-queue/38).
     final container = ProviderContainer(
       overrides: [
         queuedMessagesProvider(_sid).overrideWithValue(const [

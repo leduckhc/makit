@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>makit — Docs: preview the HTML and Markdown the agent just wrote (SPEC-46 draft)</title>
+<title>makit — Docs: preview the HTML and Markdown the agent just wrote (SPEC-doc-preview draft)</title>
 <style>
   :root{
     /* App M3 neutral palette (dark) — matches lib/app/theme.dart */
@@ -234,7 +234,7 @@
 </head>
 <body>
 
-<h1>Docs — preview the HTML and Markdown that live in the repo <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-46 draft</span></h1>
+<h1>Docs — preview the HTML and Markdown that live in the repo <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-doc-preview draft</span></h1>
 <p class="sub">
   This repo holds <b style="color:var(--text)">27 mockup boards</b>, <b style="color:var(--text)">70 spec &amp; plan markdowns</b>, and a shelf of
   architecture docs. They are the primary artefacts of the work — and they are the one thing makit cannot show you.
@@ -326,8 +326,8 @@
 }</pre>
 
     <p class="why">
-      <b>Titles are extracted, never filenames.</b> <code>2026-08-07-SPEC-44-ports-forward.md</code> is unreadable on a
-      375 pt row; <em>"SPEC-44 — Ports P4: forward a loopback port to the phone"</em> is the actual name of the thing.
+      <b>Titles are extracted, never filenames.</b> <code>20260807-004400-SPEC-ports-forward.md</code> is unreadable on a
+      375 pt row; <em>"SPEC-ports-forward — Ports P4: forward a loopback port to the phone"</em> is the actual name of the thing.
       Same for HTML: <code>&lt;title&gt;</code> already says <em>"makit — Ports: what's listening, and whose branch owns
       it"</em>. This single decision is most of the perceived quality.
     </p>
@@ -399,8 +399,8 @@
           <div class="doc">
             <div class="lead"><span class="icon m"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span></div>
             <div class="body2">
-              <div class="l1"><div class="ttl">SPEC-46 — Docs preview</div></div>
-              <div class="l2">docs/specs/2026-08-09-SPEC-46-doc-preview.md</div>
+              <div class="l1"><div class="ttl">SPEC-doc-preview — Docs preview</div></div>
+              <div class="l2">docs/specs/20260809-004600-SPEC-doc-preview.md</div>
               <div class="l3">
                 <span class="chip kind-md">MD</span>
                 <span class="status draft">draft</span>
@@ -432,8 +432,8 @@
           <div class="doc">
             <div class="lead"><span class="icon m"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span></div>
             <div class="body2">
-              <div class="l1"><div class="ttl">SPEC-44 — Ports P4: forward a loopback port…</div></div>
-              <div class="l2">docs/specs/2026-08-07-SPEC-44-ports-forward.md</div>
+              <div class="l1"><div class="ttl">SPEC-ports-forward — Ports P4: forward a loopback port…</div></div>
+              <div class="l2">docs/specs/20260807-004400-SPEC-ports-forward.md</div>
               <div class="l3">
                 <span class="chip kind-md">MD</span>
                 <span class="status draft">draft</span>
@@ -446,8 +446,8 @@
           <div class="doc">
             <div class="lead"><span class="icon m"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span></div>
             <div class="body2">
-              <div class="l1"><div class="ttl">SPEC-41 — Ports: what's listening…</div></div>
-              <div class="l2">docs/specs/2026-08-06-SPEC-41-open-ports.md</div>
+              <div class="l1"><div class="ttl">SPEC-open-ports — Ports: what's listening…</div></div>
+              <div class="l2">docs/specs/20260806-004100-SPEC-open-ports.md</div>
               <div class="l3">
                 <span class="chip kind-md">MD</span>
                 <span class="status impl">implemented</span>
@@ -518,8 +518,8 @@
           <div class="doc" style="padding:9px 12px">
             <div class="lead"><span class="icon m"><svg width="15" height="15" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span></div>
             <div class="body2">
-              <div class="ttl" style="font-size:12.5px">SPEC-46 — Docs preview</div>
-              <div class="l2">docs/specs/2026-08-09-SPEC-46-doc-preview.md · 6 min ago</div>
+              <div class="ttl" style="font-size:12.5px">SPEC-doc-preview — Docs preview</div>
+              <div class="l2">docs/specs/20260809-004600-SPEC-doc-preview.md · 6 min ago</div>
             </div>
           </div>
           <div class="doc" style="padding:9px 12px">
@@ -553,7 +553,7 @@
         </div>
         <p class="why">
           <b>No new sidebar chrome.</b> The doc glyph is a trailing-column icon button in the exact slot the ports plug
-          already occupies — the pattern SPEC-41 settled (nested inside the row's own InkWell, 22 × 16 pt hit box).
+          already occupies — the pattern SPEC-open-ports settled (nested inside the row's own InkWell, 22 × 16 pt hit box).
           Two glyphs read fine; a third would not, which is the natural ceiling on this slot.
         </p>
         <p class="why">
@@ -627,7 +627,7 @@
               </div>
             </div>
             <div class="bub">
-              I also updated <span class="inlinechip">docs/specs/…SPEC-46…md</span> with the decisions — the status line
+              I also updated <span class="inlinechip">docs/specs/…SPEC-doc-preview…md</span> with the decisions — the status line
               still says <em>Draft</em>.
             </div>
           </div>
@@ -659,17 +659,17 @@
           </div>
           <div class="prow">
             <span class="icon m"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span>
-            <span class="t">SPEC-44 — <span class="hl">Ports</span> P4: forward a loopback port</span>
+            <span class="t">SPEC-ports-forward — <span class="hl">Ports</span> P4: forward a loopback port</span>
             <span class="p2">docs/specs/</span>
           </div>
           <div class="prow">
             <span class="icon m"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span>
-            <span class="t">SPEC-41 — <span class="hl">Ports</span>: what's listening</span>
+            <span class="t">SPEC-open-ports — <span class="hl">Ports</span>: what's listening</span>
             <span class="p2">docs/specs/</span>
           </div>
           <div class="prow">
             <span class="icon m"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h5"/></svg></span>
-            <span class="t">SPEC-43 — <span class="hl">Ports</span> kill</span>
+            <span class="t">SPEC-ports-kill — <span class="hl">Ports</span> kill</span>
             <span class="p2">docs/specs/</span>
           </div>
           <div class="pfoot">
@@ -917,7 +917,7 @@
           makit already owns QR rendering from device pairing.
         </p>
         <div class="note warn" style="margin-top:14px">
-          <strong>⚠ Corrected during spec review (SPEC-46 D9).</strong> This frame first drew
+          <strong>⚠ Corrected during spec review (SPEC-doc-preview D9).</strong> This frame first drew
           <code>/docs/&lt;branch&gt;/&lt;path&gt;</code>. That cannot work: a URL that must open in <b>Safari</b> cannot
           carry a bearer <em>header</em>, so the capability has to live in the <b>path</b> —
           <code>/docs/<span style="color:var(--orange)">&lt;grantId&gt;</span>/&lt;relPath&gt;</code>, 32 bytes of CSPRNG.
@@ -928,7 +928,7 @@
       </div>
 
       <div class="frame" style="max-width:440px">
-        <div class="cap">The reach vocabulary — reuse SPEC-41's words, do not invent new ones</div>
+        <div class="cap">The reach vocabulary — reuse SPEC-open-ports's words, do not invent new ones</div>
         <div class="panel" style="padding:14px">
           <div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start">
             <span class="reach pinned" style="margin-top:2px">pinned</span>
@@ -954,7 +954,7 @@
         </div>
         <div class="note" style="margin-top:16px">
           <strong>✓ Sharing is a verb with an off switch.</strong> Every published doc is a
-          <b>grant</b> — 30-minute TTL, idle-reaped, listed in one place with <em>Stop sharing</em>. Reuse SPEC-44's
+          <b>grant</b> — 30-minute TTL, idle-reaped, listed in one place with <em>Stop sharing</em>. Reuse SPEC-ports-forward's
           grant record verbatim; the difference is only that the target is a file, not a port. Publishing must never be
           implicit, and the app must be able to say "3 docs are currently shared".
         </div>
@@ -985,14 +985,14 @@
           <div class="dtb">
             <span class="icon"><svg width="17" height="17" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></span>
             <div class="nm">
-              <div class="n1">SPEC-44 — Ports P4</div>
-              <div class="n2">docs/specs/…SPEC-44-ports-forward.md</div>
+              <div class="n1">SPEC-ports-forward — Ports P4</div>
+              <div class="n2">docs/specs/…SPEC-ports-forward-ports-forward.md</div>
             </div>
             <span class="ib on" title="Reader width"><svg width="13" height="13" viewBox="0 0 24 24" style="stroke:currentColor;fill:none;stroke-width:1.6"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
             <span class="ib"><svg width="13" height="13" viewBox="0 0 24 24" style="stroke:currentColor;fill:none;stroke-width:1.6"><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="6" r="1.4"/><circle cx="12" cy="18" r="1.4"/></svg></span>
           </div>
           <div class="mdview">
-            <h1>SPEC-44 — Ports P4: forward a loopback port to the phone</h1>
+            <h1>SPEC-ports-forward — Ports P4: forward a loopback port to the phone</h1>
             <p class="fm"><b style="color:var(--text)">Status:</b> <span class="status draft">draft</span> · <b style="color:var(--text)">Priority:</b> P3 · <b style="color:var(--text)">Branch:</b> <span class="chip branch" style="font-size:10px">feat/open-ports-fixup</span></p>
             <h2>D1 · Transport</h2>
             <p>Proxy over the existing HTTPS listener rather than opening a second multiplexed WSS channel. The phone
@@ -1045,11 +1045,11 @@
               <td><b>Ship in P1 — for a different device.</b> The phone is not the machine holding the file, so the bytes must be served. Zero-cost, full fidelity, works on unpaired devices.</td>
             </tr>
             <tr class="best">
-              <td><b>webview + pinned loopback proxy</b><br><span class="dim">SPEC-44's design, retargeted at files</span></td>
+              <td><b>webview + pinned loopback proxy</b><br><span class="dim">SPEC-ports-forward's design, retargeted at files</span></td>
               <td class="y">perfect</td>
               <td class="mid">webview_flutter</td>
               <td class="y">yes</td>
-              <td><b>The real answer, P3.</b> Bearer + fingerprint stay in Dart, never in a URL. Unlocks Canvas. One new dep, and SPEC-44 already needs it.</td>
+              <td><b>The real answer, P3.</b> Bearer + fingerprint stay in Dart, never in a URL. Unlocks Canvas. One new dep, and SPEC-ports-forward already needs it.</td>
             </tr>
             <tr>
               <td><b>headless screenshot → media store</b><br><span class="dim">Chrome full-page PNG</span></td>
@@ -1071,7 +1071,7 @@
           <strong>✓ The resolution (rev 2).</strong> <b>Markdown in-app from day one</b> (free). For <b>HTML</b>, the
           question is not <em>how to render</em> but <b>where the viewer is</b>: on the <b>same machine</b> as the
           server, open it on the host — no HTTP at all; on <b>another device</b>, publish it to the tailnet. Both are
-          real Safari, both ship in P1. <b>HTML in-app via webview in P3</b>, sharing SPEC-44's proxy so the cost is paid
+          real Safari, both ship in P1. <b>HTML in-app via webview in P3</b>, sharing SPEC-ports-forward's proxy so the cost is paid
           once for both features. Use the screenshot trick only for <b>thumbnails</b>, where static is exactly right.
         </div>
 
@@ -1141,7 +1141,7 @@
         </tr>
         <tr>
           <td><span class="phase ph3">P3</span></td>
-          <td><b>Webview</b> + pinned loopback proxy (shared with SPEC-44) → HTML in-app, then <b>Canvas</b> with live
+          <td><b>Webview</b> + pinned loopback proxy (shared with SPEC-ports-forward) → HTML in-app, then <b>Canvas</b> with live
             reload (Option C)</td>
           <td class="mid">webview_flutter</td>
           <td>The design-review loop: edit, watch it change, steer — without leaving makit.</td>
@@ -1162,7 +1162,7 @@
           having exactly one snapshot.
         </p>
         <p class="why">
-          <b>3 · Reuse SPEC-44's grant record.</b> Publishing a file and forwarding a port are the same security
+          <b>3 · Reuse SPEC-ports-forward's grant record.</b> Publishing a file and forwarding a port are the same security
           object with a different target. Two grant models means two revocation bugs.
         </p>
       </div>
@@ -1191,9 +1191,9 @@
     <div class="note" style="margin-top:20px">
       <strong>✓ Nothing here is new chrome.</strong> The Docs screen is <code>ports_screen.dart</code>'s app bar +
       filter row + grouped list. The row is <code>.port</code> with a narrower lead. The sheet is
-      <code>port_detail_sheet.dart</code>. The glyph is a trailing-column icon button in the slot SPEC-41 already
+      <code>port_detail_sheet.dart</code>. The glyph is a trailing-column icon button in the slot SPEC-open-ports already
       settled. The transcript card is the media-attachment card with a different body. The QR is the pairing QR. The
-      grant is SPEC-44's grant. <b>The only genuinely new thing in the whole spec is the doc index — and the watcher
+      grant is SPEC-ports-forward's grant. <b>The only genuinely new thing in the whole spec is the doc index — and the watcher
       that feeds it already runs.</b>
     </div>
   </div>

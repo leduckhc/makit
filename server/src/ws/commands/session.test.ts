@@ -1,5 +1,5 @@
 /**
- * SPEC-46 — session.spawn lineage (T10, D9/D10), the depth/fan-out guard (T11)
+ * SPEC-cli-as-client — session.spawn lineage (T10, D9/D10), the depth/fan-out guard (T11)
  * and the bounded session.transcript command (T13, contract C3).
  *
  * The handler tests drive a fake manager (the queue.test.ts pattern): the
@@ -359,7 +359,7 @@ test("the depth/fan-out bound applies to a human-stated parent too", async () =>
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-46 U4 — session.fork: an adapter-native head fork (codex thread/fork),
+// SPEC-cli-as-client U4 — session.fork: an adapter-native head fork (codex thread/fork),
 // deliberately NOT handoff (D6). The child adopts the forked thread through the
 // resume path, records the source as its parent with NO handoffReason, and is
 // held to the same depth/fan-out guard as any spawn.

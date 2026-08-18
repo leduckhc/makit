@@ -1,7 +1,7 @@
 /**
- * Control-client tests (SPEC-01, phase 3).
+ * Control-client tests (SPEC-daemon-control-plane, phase 3).
  *
- * The client is the reusable half SPEC-02's CLI consumes. We test it against a
+ * The client is the reusable half SPEC-cli-client-subcommands's CLI consumes. We test it against a
  * real control server backed by a fake backend over a temp-dir socket.
  */
 

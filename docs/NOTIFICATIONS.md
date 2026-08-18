@@ -5,9 +5,9 @@ turn. Three slices work together:
 
 | Slice | Spec | When it works |
 |-------|------|---------------|
-| **Actionable notifications** | [SPEC-08](specs/2026-07-08-SPEC-08-actionable-notifications.md) | App is alive (foreground or backgrounded with a live/recent socket) |
-| **Background wake** | [SPEC-07](specs/2026-07-08-SPEC-07-background-wake-notifications.md) | App is force-quit or long-suspended — needs APNs (see [PUSH.md](PUSH.md)) |
-| **Activity record** | [SPEC-48](specs/2026-08-09-SPEC-48-status-and-activity.md) | Always, in-app — the durable copy of what happened |
+| **Actionable notifications** | [SPEC-actionable-notifications](specs/20260708-000800-SPEC-actionable-notifications.md) | App is alive (foreground or backgrounded with a live/recent socket) |
+| **Background wake** | [SPEC-background-wake-notifications](specs/20260708-000700-SPEC-background-wake-notifications.md) | App is force-quit or long-suspended — needs APNs (see [PUSH.md](PUSH.md)) |
+| **Activity record** | [SPEC-status-and-activity](specs/20260809-004800-SPEC-status-and-activity.md) | Always, in-app — the durable copy of what happened |
 
 ## What you get
 
@@ -22,9 +22,9 @@ All session data stays on your private tailnet. APNs carries at most a generic
 in-memory and never leaves the device except through the diagnostics log you
 choose to send.
 
-## The Activity record (SPEC-48)
+## The Activity record (SPEC-status-and-activity)
 
-An OS notification is a tap on the shoulder that then vanishes, and until SPEC-48
+An OS notification is a tap on the shoulder that then vanishes, and until SPEC-status-and-activity
 nothing in the product could answer *"which session wanted something, and when?"*
 So the same judgement that decides whether to buzz your phone
 (`diffStatusNotifications`) now also writes to the in-app record:
@@ -43,16 +43,16 @@ was missing was the *history*, and that is what lands in Activity.
 
 What the app tells you about its **own** actions (a failed worktree delete, a
 refused port kill, a copied URL) posts loudly instead: a toast plus a permanent,
-copyable row. See [SPEC-48](specs/2026-08-09-SPEC-48-status-and-activity.md).
+copyable row. See [SPEC-status-and-activity](specs/20260809-004800-SPEC-status-and-activity.md).
 
 **Not covered:** *which answer* you gave an approval. `connection.responded`
 carries only a request id, and threading the answer through would change the
-response path SPEC-08 made idempotent — for a fact the `awaiting-approval` row
+response path SPEC-actionable-notifications made idempotent — for a fact the `awaiting-approval` row
 already implies. Deferred deliberately.
 
 ---
 
-## On-device checklist — SPEC-08 (actionable)
+## On-device checklist — SPEC-actionable-notifications (actionable)
 
 Requires a paired iPhone with notification permission granted.
 
@@ -75,7 +75,7 @@ Requires a paired iPhone with notification permission granted.
 10. **Android:** confirm action buttons and inline reply work when the app
     process is alive.
 
-### Known limitations (SPEC-08)
+### Known limitations (SPEC-actionable-notifications)
 
 - Locked-screen **foreground** actions may require unlock on some iOS versions
   before the tap is delivered.
@@ -84,7 +84,7 @@ Requires a paired iPhone with notification permission granted.
 
 ---
 
-## On-device checklist — SPEC-07 (background wake)
+## On-device checklist — SPEC-background-wake-notifications (background wake)
 
 Requires a real iPhone, APNs key configured on the server ([PUSH.md](PUSH.md)),
 and a TestFlight or development build with push entitlements.

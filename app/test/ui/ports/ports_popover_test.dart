@@ -29,7 +29,7 @@ PortInfo _port({
 );
 
 /// Records the `ports.kill` bodies a row sends, so a test can prove the confirm
-/// gates them (SPEC-43 D8).
+/// gates them (SPEC-ports-kill D8).
 final _killBodies = <Map<String, dynamic>>[];
 
 // The real theme, so the app-wide `tooltipTheme` dwell applies here exactly as
@@ -69,56 +69,61 @@ PortsPopover _popover({
 void main() {
   setUp(_killBodies.clear);
 
-  group('tooltip dwell (SPEC-41 §Tooltips: TOOLTIP_DWELL_MS = 500)', () {
-    test('the dwell is 500 ms and cannot race the popover open dwell', () {
-      expect(kTooltipDwell, const Duration(milliseconds: 500));
-      // The load-bearing ordering: a tooltip that fired before the popover
-      // opened would cover the glyph the pointer is aiming at.
-      expect(
-        kTooltipDwell.inMilliseconds,
-        greaterThan(kPortsHoverOpenMs),
-        reason: 'the tooltip must not appear before the popover',
-      );
-    });
-
-    test('both themes carry the dwell, not Flutter\'s zero default', () {
-      for (final theme in [makitLightTheme, makitDarkTheme]) {
+  group(
+    'tooltip dwell (SPEC-open-ports §Tooltips: TOOLTIP_DWELL_MS = 500)',
+    () {
+      test('the dwell is 500 ms and cannot race the popover open dwell', () {
+        expect(kTooltipDwell, const Duration(milliseconds: 500));
+        // The load-bearing ordering: a tooltip that fired before the popover
+        // opened would cover the glyph the pointer is aiming at.
         expect(
-          theme.tooltipTheme.waitDuration,
-          kTooltipDwell,
-          reason: '${theme.brightness.name} tooltips would fire instantly',
+          kTooltipDwell.inMilliseconds,
+          greaterThan(kPortsHoverOpenMs),
+          reason: 'the tooltip must not appear before the popover',
         );
-      }
-    });
+      });
 
-    testWidgets('a token tooltip waits out the dwell before appearing', (
-      tester,
-    ) async {
-      await tester.pumpWidget(_host(_popover()));
-      await tester.tap(find.byType(PortsPopover));
-      await tester.pump();
+      test('both themes carry the dwell, not Flutter\'s zero default', () {
+        for (final theme in [makitLightTheme, makitDarkTheme]) {
+          expect(
+            theme.tooltipTheme.waitDuration,
+            kTooltipDwell,
+            reason: '${theme.brightness.name} tooltips would fire instantly',
+          );
+        }
+      });
 
-      // Hover the reach token inside the open popover.
-      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.addPointer(location: Offset.zero);
-      addTearDown(gesture.removePointer);
-      await gesture.moveTo(tester.getCenter(find.text('loopback')));
+      testWidgets('a token tooltip waits out the dwell before appearing', (
+        tester,
+      ) async {
+        await tester.pumpWidget(_host(_popover()));
+        await tester.tap(find.byType(PortsPopover));
+        await tester.pump();
 
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(
-        find.textContaining('reachable only from this machine'),
-        findsNothing,
-        reason: 'the tooltip fired before the 500 ms dwell',
-      );
+        // Hover the reach token inside the open popover.
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.addPointer(location: Offset.zero);
+        addTearDown(gesture.removePointer);
+        await gesture.moveTo(tester.getCenter(find.text('loopback')));
 
-      await tester.pump(const Duration(milliseconds: 200));
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('reachable only from this machine'),
-        findsOneWidget,
-      );
-    });
-  });
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(
+          find.textContaining('reachable only from this machine'),
+          findsNothing,
+          reason: 'the tooltip fired before the 500 ms dwell',
+        );
+
+        await tester.pump(const Duration(milliseconds: 200));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('reachable only from this machine'),
+          findsOneWidget,
+        );
+      });
+    },
+  );
 
   group('PortsPopover glyph hover feedback (mockup §5)', () {
     Color? circleColor(WidgetTester tester) {
@@ -521,7 +526,7 @@ void main() {
     });
   });
 
-  // ── SPEC-43 P3a: the desktop Kill button (D8, mockup §2a) ────────────────
+  // ── SPEC-ports-kill P3a: the desktop Kill button (D8, mockup §2a) ────────────────
   group('Kill action', () {
     Future<void> pin(WidgetTester tester, {List<PortInfo>? ports}) async {
       await tester.pumpWidget(_host(_popover(ports: ports)));

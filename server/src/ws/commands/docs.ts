@@ -1,5 +1,5 @@
 /**
- * Docs-domain `cmd` handlers (SPEC-46): `docs.watch`, `docs.read`,
+ * Docs-domain `cmd` handlers (SPEC-doc-preview): `docs.watch`, `docs.read`,
  * `docs.publish`, `docs.unpublish`, `docs.grants`.
  *
  * `docs.watch` mirrors `ports.watch` exactly — a ref-counted flag that gates the
@@ -11,7 +11,7 @@
  * errors for HTML — D7); `docs.publish` returns a grant or a stated reason
  * (D15); `docs.unpublish` revokes; `docs.grants` enumerates the shares.
  *
- * Scoping (SPEC-44's grant-owner model). Every value a client supplies is
+ * Scoping (SPEC-ports-forward's grant-owner model). Every value a client supplies is
  * constrained against server-authoritative state, not merely type-checked:
  *   - `worktreePath` on read/publish/open must be one the index actually
  *     reported — a client may not name a directory the snapshot never listed.
@@ -68,7 +68,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.BadRequest, "docs.publish: worktreePath is not an indexed worktree");
       return;
     }
-    // The minting device scopes the grant (D9 / SPEC-44 owner model).
+    // The minting device scopes the grant (D9 / SPEC-ports-forward owner model).
     const result = await deps.docs.publish(worktreePath, relPath, ctx.client.deviceId);
     // Degrade loudly (D15): a failure carries a human reason, never a dead URL.
     if (result.ok) ctx.ack({ grant: result.grant });

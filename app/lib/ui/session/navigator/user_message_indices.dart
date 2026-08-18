@@ -1,7 +1,7 @@
-/// Where the user's own messages sit in the transcript (SPEC-34).
+/// Where the user's own messages sit in the transcript (SPEC-message-navigator).
 ///
 /// A derived view over `chatItemsProvider` — no new store state and no protocol
-/// change: the whole transcript is already in memory (SPEC-21), so "list my
+/// change: the whole transcript is already in memory (SPEC-chat-scroll-anchoring), so "list my
 /// messages" is a filter, not a fetch.
 library;
 

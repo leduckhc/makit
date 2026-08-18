@@ -1,4 +1,4 @@
-/// The `Message navigator` settings leaf (SPEC-34): the rail's on/off switch and
+/// The `Message navigator` settings leaf (SPEC-message-navigator): the rail's on/off switch and
 /// its options.
 ///
 /// One affordance, so one switch — the rail's options are shown only while it is

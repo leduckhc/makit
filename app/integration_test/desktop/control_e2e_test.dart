@@ -1,4 +1,4 @@
-// Full-stack control-plane e2e for the macOS desktop control app (SPEC-03).
+// Full-stack control-plane e2e for the macOS desktop control app (SPEC-desktop-control-app).
 //
 // Counterpart to the mobile stub suite (integration_test/stub/): instead of the
 // WS client, this drives the real desktop control surface against a real daemon

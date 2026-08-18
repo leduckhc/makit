@@ -1,4 +1,4 @@
-/// Composer pause/disabled state (SPEC-25): while a session awaits an inline
+/// Composer pause/disabled state (SPEC-ask-user-inline-in-chat): while a session awaits an inline
 /// answer, the composer is inert and shows a hint instead of the field + send.
 library;
 

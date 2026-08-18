@@ -1,4 +1,4 @@
-// Interactive demo of the SPEC-38 PR bar and everything it opens, with seeded
+// Interactive demo of the SPEC-pr-actions-next-step-bar PR bar and everything it opens, with seeded
 // data and no server. Run on the desktop you are reading this from:
 //
 //   cd app && flutter run -d macos -t tool/pr_bar_demo.dart
@@ -126,7 +126,7 @@ final _scenes = <_Scene>[
     ),
   ),
   // Two red-CI states, side by side, because they look different for a reason:
-  // one has the per-check list, the other only the rollup (SPEC-32 sheds the
+  // one has the per-check list, the other only the rollup (SPEC-github-gateway-and-budget sheds the
   // lookup when GitHub's quota is tight).
   _Scene(
     'CI red — 12 checks listed',
@@ -246,7 +246,7 @@ class _DemoAppState extends State<_DemoApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'SPEC-38 PR bar — demo',
+      title: 'SPEC-pr-actions-next-step-bar PR bar — demo',
       theme: _dark ? makitDarkTheme : makitLightTheme,
       home: Consumer(
         builder: (context, ref, _) {
@@ -297,7 +297,7 @@ class _DemoAppState extends State<_DemoApp> {
                               children: [
                                 Expanded(
                                   child: Text(
-                                    'SPEC-38 states',
+                                    'SPEC-pr-actions-next-step-bar states',
                                     style: Theme.of(
                                       context,
                                     ).textTheme.titleSmall,

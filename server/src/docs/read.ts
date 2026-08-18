@@ -1,5 +1,5 @@
 /**
- * makit — SPEC-46 D7: read one markdown document's text over the WSS channel.
+ * makit — SPEC-doc-preview D7: read one markdown document's text over the WSS channel.
  *
  * A spec file is smaller than the transcript it would sit next to, so it needs
  * no second transport — but HTML is **never** sent this way (it is only useful

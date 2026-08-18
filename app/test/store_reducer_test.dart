@@ -818,7 +818,7 @@ void main() {
     );
 
     test(
-      'a mid-turn message gets no optimistic bubble, so no server event is swallowed (SPEC-35)',
+      'a mid-turn message gets no optimistic bubble, so no server event is swallowed (SPEC-mid-turn-steering-and-queue)',
       () async {
         // While the agent is running, the next seq belongs to the agent's own
         // stream, not to our echo: the message will be steered or queued and
@@ -953,80 +953,83 @@ void main() {
     });
   });
 
-  group('StoreController — queue commands (SPEC-35/36/37)', () {
-    /// Every queue command carries the MESSAGE id as `queuedId`.
-    ///
-    /// Regression: [Envelope.toJson] spreads the command body over the frame, so
-    /// a body field named `id` silently replaced the request id — the ack came
-    /// back labelled with the queued message and could never be matched to the
-    /// command that caused it.
-    test(
-      'carry the message id as queuedId, leaving the request id intact',
-      () async {
-        final transport = _CapturingTransport();
-        final container = ProviderContainer(
-          overrides: [
-            connectionControllerProvider.overrideWith(
-              (ref) => ConnectionController(
-                _FakeStorage({
-                  'paired_server': jsonEncode({
-                    'host': '192.168.1.10',
-                    'port': 8443,
-                    'fingerprint': 'f' * 64,
-                    'bearer': 'b',
-                    'label': 'desktop',
+  group(
+    'StoreController — queue commands (SPEC-mid-turn-steering-and-queue/36/37)',
+    () {
+      /// Every queue command carries the MESSAGE id as `queuedId`.
+      ///
+      /// Regression: [Envelope.toJson] spreads the command body over the frame, so
+      /// a body field named `id` silently replaced the request id — the ack came
+      /// back labelled with the queued message and could never be matched to the
+      /// command that caused it.
+      test(
+        'carry the message id as queuedId, leaving the request id intact',
+        () async {
+          final transport = _CapturingTransport();
+          final container = ProviderContainer(
+            overrides: [
+              connectionControllerProvider.overrideWith(
+                (ref) => ConnectionController(
+                  _FakeStorage({
+                    'paired_server': jsonEncode({
+                      'host': '192.168.1.10',
+                      'port': 8443,
+                      'fingerprint': 'f' * 64,
+                      'bearer': 'b',
+                      'label': 'desktop',
+                    }),
                   }),
-                }),
-                transportFactory: () => transport,
-                browseLan:
-                    ({Duration timeout = const Duration(seconds: 3)}) async =>
-                        const [],
-                rediscoverStall: const Duration(seconds: 30),
+                  transportFactory: () => transport,
+                  browseLan:
+                      ({Duration timeout = const Duration(seconds: 3)}) async =>
+                          const [],
+                  rediscoverStall: const Duration(seconds: 30),
+                ),
               ),
-            ),
-          ],
-        );
-        addTearDown(container.dispose);
-
-        final store = container.read(storeControllerProvider.notifier);
-        await Future<void>.delayed(Duration.zero);
-
-        store.cancelQueuedMessage(_sid, 'q1');
-        store.updateQueuedMessage(_sid, 'q2', 'edited');
-        store.promoteQueuedMessage(_sid, 'q3');
-        store.reorderQueuedMessages(_sid, ['q3', 'q2']);
-        await Future<void>.delayed(Duration.zero);
-
-        final cmds = transport.sent
-            .where((e) => e.t == MsgType.cmd)
-            .where((e) => (e.body['kind'] as String).startsWith('queue.'))
-            .toList();
-        expect(cmds.map((e) => e.body['kind']), [
-          'queue.cancel',
-          'queue.update',
-          'queue.promote',
-          'queue.reorder',
-        ]);
-
-        for (final cmd in cmds) {
-          // What actually goes on the wire — `toJson`, not `body`, is where the
-          // shadowing happened.
-          final wire = cmd.toJson();
-          expect(
-            wire['id'],
-            cmd.id,
-            reason: '${cmd.body['kind']} must not overwrite the request id',
+            ],
           );
-          expect(wire['id'], isNot(anyOf('q1', 'q2', 'q3')));
-        }
-        expect(cmds[0].toJson()['queuedId'], 'q1');
-        expect(cmds[1].toJson()['queuedId'], 'q2');
-        expect(cmds[1].toJson()['text'], 'edited');
-        expect(cmds[2].toJson()['queuedId'], 'q3');
-        expect(cmds[3].toJson()['ids'], ['q3', 'q2']);
-      },
-    );
-  });
+          addTearDown(container.dispose);
+
+          final store = container.read(storeControllerProvider.notifier);
+          await Future<void>.delayed(Duration.zero);
+
+          store.cancelQueuedMessage(_sid, 'q1');
+          store.updateQueuedMessage(_sid, 'q2', 'edited');
+          store.promoteQueuedMessage(_sid, 'q3');
+          store.reorderQueuedMessages(_sid, ['q3', 'q2']);
+          await Future<void>.delayed(Duration.zero);
+
+          final cmds = transport.sent
+              .where((e) => e.t == MsgType.cmd)
+              .where((e) => (e.body['kind'] as String).startsWith('queue.'))
+              .toList();
+          expect(cmds.map((e) => e.body['kind']), [
+            'queue.cancel',
+            'queue.update',
+            'queue.promote',
+            'queue.reorder',
+          ]);
+
+          for (final cmd in cmds) {
+            // What actually goes on the wire — `toJson`, not `body`, is where the
+            // shadowing happened.
+            final wire = cmd.toJson();
+            expect(
+              wire['id'],
+              cmd.id,
+              reason: '${cmd.body['kind']} must not overwrite the request id',
+            );
+            expect(wire['id'], isNot(anyOf('q1', 'q2', 'q3')));
+          }
+          expect(cmds[0].toJson()['queuedId'], 'q1');
+          expect(cmds[1].toJson()['queuedId'], 'q2');
+          expect(cmds[1].toJson()['text'], 'edited');
+          expect(cmds[2].toJson()['queuedId'], 'q3');
+          expect(cmds[3].toJson()['ids'], ['q3', 'q2']);
+        },
+      );
+    },
+  );
 
   group('StoreController — repo refresh after project add', () {
     test('addProject requests repo.refresh after server ack', () async {
@@ -1099,7 +1102,7 @@ void main() {
       final store = container.read(storeControllerProvider.notifier);
       await Future<void>.delayed(Duration.zero);
 
-      // The /rate_limit endpoint is quota-exempt (SPEC-32 §4), so this is the
+      // The /rate_limit endpoint is quota-exempt (SPEC-github-gateway-and-budget §4), so this is the
       // one control in the popover that costs the user nothing to press.
       await store.refreshGithubBudget();
 
@@ -1150,7 +1153,7 @@ void main() {
     });
 
     test('addProject succeeds when server rejects repo.refresh', () async {
-      // An older server that predates SPEC-11 replies to `repo.refresh` with
+      // An older server that predates SPEC-repo-centric-home replies to `repo.refresh` with
       // `err {unknown cmd}`. The project was still added (project.add acked and
       // the server broadcasts its own repos.snapshot), so the best-effort
       // refresh must not turn a successful add into a failure.

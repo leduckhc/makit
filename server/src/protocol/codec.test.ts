@@ -1,6 +1,6 @@
 /**
  * Unit tests for `decodeUIResponse` — the trust boundary for `srv.response`
- * envelopes coming back from a device (SPEC-18 T1). A malformed/hostile
+ * envelopes coming back from a device (SPEC-boundary-hardening T1). A malformed/hostile
  * response must decode to `null` rather than be blindly cast to `UIResponse`.
  */
 
@@ -93,7 +93,7 @@ test("decodeUIResponse rejects a non-record input", () => {
   assert.equal(decodeUIResponse("nope" as unknown as Envelope), null);
 });
 
-test("decodeSessionEvent REJECTS host-wide broadcast kinds (SPEC-37 decision 5)", () => {
+test("decodeSessionEvent REJECTS host-wide broadcast kinds (SPEC-performance-metrics-dashboard decision 5)", () => {
   // metrics.sample and github.budget are host-wide events. If either could be
   // decoded as a session event it could be appended to the append-only log and
   // replayed on every resume — forever, at 1 Hz. This is the runtime half of the

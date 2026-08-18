@@ -11,7 +11,7 @@ import '../../store/models.dart';
 import 'attachment_chips.dart';
 import 'slash_palette.dart';
 
-/// Everything the composer needs to accept images (SPEC-33), built once per
+/// Everything the composer needs to accept images (SPEC-user-attachments), built once per
 /// surface by `composerAttachments()` in `attachment_controller.dart`.
 ///
 /// A single object because attachments are a single capability: six independent
@@ -96,7 +96,7 @@ class Composer extends StatefulWidget {
   });
   final void Function(String text) onSend;
 
-  /// Everything this composer needs to handle images (SPEC-33), or **null when
+  /// Everything this composer needs to handle images (SPEC-user-attachments), or **null when
   /// it is not attachment-aware at all** (the free-text answer composers): the
   /// paperclip is then inert, no chips are shown and ⌘V is left to the field.
   ///
@@ -107,7 +107,7 @@ class Composer extends StatefulWidget {
 
   /// When false, the composer is inert: the field + send are replaced by a
   /// muted [disabledHint] bar. Used while a session is awaiting an inline
-  /// answer (SPEC-25) so the user resolves the question above instead of
+  /// answer (SPEC-ask-user-inline-in-chat) so the user resolves the question above instead of
   /// sending a normal message.
   final bool enabled;
 
@@ -135,7 +135,7 @@ class Composer extends StatefulWidget {
   final List<Widget> footerActions;
 
   /// A fixed-size control pinned to the right of [footerActions], before `[+]`
-  /// — the context-usage ring (SPEC-37) is the only caller today.
+  /// — the context-usage ring (SPEC-context-usage) is the only caller today.
   ///
   /// It exists because [footerActions] entries are `Flexible`, and `Flexible`
   /// defaults to `FlexFit.loose`: a child is *allowed* its share, lays out at
@@ -143,7 +143,7 @@ class Composer extends StatefulWidget {
   /// 36pt ring passed as a second action therefore reserved half the row and
   /// wasted it: the config pill's label was cut to 65.5pt of the 187.5pt it
   /// wanted (`anthropic/Cl…`), codex's to 29.8pt (`gpt…`), and a session with
-  /// several options overflowed the row outright (SPEC-40).
+  /// several options overflowed the row outright (SPEC-composer-footer-space).
   ///
   /// Singular by design: one control is all any surface needs, and a caller
   /// wanting two can wrap them. Must be intrinsically sized — nothing here is
@@ -151,7 +151,7 @@ class Composer extends StatefulWidget {
   final Widget? footerTrailing;
 
   /// A single row on the composer's **top edge**, inside the box and above a
-  /// hairline — the PR next-step bar (SPEC-38) is the only caller.
+  /// hairline — the PR next-step bar (SPEC-pr-actions-next-step-bar) is the only caller.
   ///
   /// Inside rather than a sibling above, per the mockup's §5 "inside the
   /// composer": at this weight it reads as a caption on the box you are typing
@@ -209,7 +209,7 @@ class Composer extends StatefulWidget {
   /// False for a composer whose send path cannot run them: they are intercepted
   /// by `handleClientCommand`, which needs a `sessionId`, so the sessionless
   /// starter pane would send the literal text `/model` to a brand-new agent.
-  /// Same reason the queue editor excludes them (SPEC-38): a command that acts
+  /// Same reason the queue editor excludes them (SPEC-pending-queue-edit-reorder): a command that acts
   /// *now* has no meaning in a message that is not sent now, or has nowhere to
   /// act. Agent commands are unaffected.
   final bool clientCommands;

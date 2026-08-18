@@ -1,4 +1,4 @@
-// Mobile home parity with the desktop sidebar (SPEC-29): dead sessions are
+// Mobile home parity with the desktop sidebar (SPEC-session-lifecycle-resume-list-delete): dead sessions are
 // hidden from a repo card, but a cold *resumable* one stays discoverable.
 // Mirrors the desktop rule in desktop/chat/desktop_sidebar.dart.
 import 'package:flutter/material.dart';

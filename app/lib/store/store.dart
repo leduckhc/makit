@@ -127,26 +127,26 @@ class StoreState {
   /// surface transient error snackbars without adding chat items.
   final Map<String, ActionError> actionErrors;
 
-  /// Per-session context-window + cost snapshot from `session.usage` (SPEC-37).
+  /// Per-session context-window + cost snapshot from `session.usage` (SPEC-context-usage).
   /// Absent until the agent reports its first reading; pi only reports at all
   /// when the `makit-pi-usage` extension is installed.
   final Map<String, SessionUsage> usage;
 
-  /// Latest GitHub API budget snapshot (SPEC-32), or null until the first
+  /// Latest GitHub API budget snapshot (SPEC-github-gateway-and-budget), or null until the first
   /// `github.budget` frame arrives. A fresh client renders an `unknown` icon
   /// while this is null.
   final GithubBudget? githubBudget;
 
-  /// Bounded ring of performance samples (SPEC-37), oldest first. Capped at
+  /// Bounded ring of performance samples (SPEC-performance-metrics-dashboard), oldest first. Capped at
   /// [_metricsCap]; empty until the first `metrics.sample` frame.
   final List<MetricsSample> metrics;
 
-  /// Latest host-wide ports snapshot (SPEC-41), or null before the first
+  /// Latest host-wide ports snapshot (SPEC-open-ports), or null before the first
   /// `ports.snapshot` frame. Latest-wins: a snapshot replaces the last one
   /// wholesale (it is the complete picture, not a delta).
   final PortsSnapshot? ports;
 
-  /// Latest host-wide docs snapshot (SPEC-46), or null before the first
+  /// Latest host-wide docs snapshot (SPEC-doc-preview), or null before the first
   /// `docs.snapshot` frame. Latest-wins: a snapshot replaces the last one
   /// wholesale (it is the complete picture, not a delta).
   final DocsSnapshot? docs;
@@ -158,7 +158,7 @@ class StoreState {
 
   /// Session ids whose full history this client holds (a `fromSeq = 0` replay
   /// completed) — the visible mirror of the controller's private
-  /// `_historyLoaded` (SPEC-47 D16). The session rollup is gated on this: a
+  /// `_historyLoaded` (SPEC-session-timings D16). The session rollup is gated on this: a
   /// tail-only session would report "3 turns" for one that had forty.
   final Set<String> historyLoaded;
 
@@ -218,9 +218,9 @@ StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
     ),
   ),
   // Latest-wins: a ports snapshot is the whole picture, so it replaces the
-  // last one wholesale rather than merging (SPEC-41, like `metrics` history).
+  // last one wholesale rather than merging (SPEC-open-ports, like `metrics` history).
   PortsSnapshotFrame(:final snapshot) => state.copyWith(ports: snapshot),
-  // Latest-wins: a docs snapshot is the whole picture (SPEC-46 D11).
+  // Latest-wins: a docs snapshot is the whole picture (SPEC-doc-preview D11).
   DocsSnapshotFrame(:final snapshot) => state.copyWith(docs: snapshot),
   SessionsSnapshot(:final sessions) => state.copyWith(
     sessions: sessions,
@@ -267,7 +267,7 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
     return state.copyWith(meta: meta, cursors: cursors);
   }
 
-  // session.usage updates the context-usage indicator, not chat (SPEC-37).
+  // session.usage updates the context-usage indicator, not chat (SPEC-context-usage).
   // Latest-wins by whole-snapshot replacement: every update carries the complete
   // picture, so merging would resurrect a reading the agent stopped sending.
   if (ev.kind == EventKind.sessionUsage) {
@@ -358,7 +358,7 @@ class StoreController extends StateNotifier<StoreState> {
         _serverClockOffset = 0;
         _watchingGithubBudget = false;
         state = StoreState.empty();
-        // SPEC-45 D9: the per-(agent, project) command cache belonged to the old
+        // SPEC-starter-pane-parity D9: the per-(agent, project) command cache belonged to the old
         // desktop too. Project ids are host-local, so keeping it would offer one
         // machine's skills under another's project of the same name — and unlike
         // the rest of this state, that cache is persisted, so it would survive a
@@ -413,23 +413,23 @@ class StoreController extends StateNotifier<StoreState> {
   StreamSubscription<Envelope>? _sub;
 
   /// The device wall clock in epoch ms. Injected so tests can pin "now" while
-  /// asserting the server-clock offset (SPEC-47 D15).
+  /// asserting the server-clock offset (SPEC-session-timings D15).
   final int Function() _nowMs;
 
   static int _deviceNowMs() => DateTime.now().millisecondsSinceEpoch;
 
-  /// Server-minus-device clock skew in ms (SPEC-47 D15). Updated ONLY from a
+  /// Server-minus-device clock skew in ms (SPEC-session-timings D15). Updated ONLY from a
   /// live event's `ts` (see [_onFrame]), never from replayed history — a
   /// replayed `ts` is arbitrarily old and would make a fresh live counter read
   /// minutes. Zero until the first live event, which is harmless: nothing is
   /// counting while idle, and a running turn streams a delta every second.
   int _serverClockOffset = 0;
 
-  /// The current skew (SPEC-47 D15), for callers computing spans in server time.
+  /// The current skew (SPEC-session-timings D15), for callers computing spans in server time.
   int get serverClockOffset => _serverClockOffset;
 
   /// "Server now" in epoch ms: the device clock corrected by [serverClockOffset]
-  /// (SPEC-47 D15). Live counters compute `serverNowMs() - startTs`.
+  /// (SPEC-session-timings D15). Live counters compute `serverNowMs() - startTs`.
   int serverNowMs() => _nowMs() + _serverClockOffset;
 
   /// Sessions whose initial `sub` replay is still streaming in (between the
@@ -491,7 +491,7 @@ class StoreController extends StateNotifier<StoreState> {
     }
   }
 
-  /// SPEC-45 D4: mirror a session's advertised commands into the per-(agent,
+  /// SPEC-starter-pane-parity D4: mirror a session's advertised commands into the per-(agent,
   /// project) cache, so the sessionless starter pane for that project can offer
   /// the same palette.
   ///
@@ -542,7 +542,7 @@ class StoreController extends StateNotifier<StoreState> {
         events: Map<String, List<SessionEvent>>.from(next.events)
           ..remove(sessionId),
         cursors: Map<String, int>.from(next.cursors)..remove(sessionId),
-        // Expose "we now hold this session's full history" (SPEC-47 D16).
+        // Expose "we now hold this session's full history" (SPEC-session-timings D16).
         historyLoaded: {...next.historyLoaded, sessionId},
       );
     }
@@ -564,7 +564,7 @@ class StoreController extends StateNotifier<StoreState> {
     // A cold, resumable session (the server restarted while we were away) has no
     // live agent process. Ask the server to bring it back BEFORE subscribing so
     // the first message lands on a live agent instead of a `session.error`
-    // (SPEC-29). A non-resumable cold session just replays as read-only history.
+    // (SPEC-session-lifecycle-resume-list-delete). A non-resumable cold session just replays as read-only history.
     final session = state.sessions.firstWhereOrNull((s) => s.id == sessionId);
     if (session != null &&
         session.resumable &&
@@ -633,7 +633,7 @@ class StoreController extends StateNotifier<StoreState> {
     // echo renders it once, ordered after the startup events.
     final idx = state.sessions.indexWhere((s) => s.id == sessionId);
     if (idx >= 0 && state.sessions[idx].pending) return;
-    // SPEC-35: while the agent is working, the next seq belongs to ITS stream.
+    // SPEC-mid-turn-steering-and-queue: while the agent is working, the next seq belongs to ITS stream.
     // The message is about to be steered into the running turn (echoed a moment
     // later, with a seq we cannot guess) or queued (echoed only when it is
     // finally delivered, or never if cancelled) — so a bubble at cursor+1 would
@@ -665,7 +665,7 @@ class StoreController extends StateNotifier<StoreState> {
         kind: EventKind.userMessage,
         payload: {
           'text': text,
-          // SPEC-33: the optimistic copy MUST carry the attachments too. The
+          // SPEC-user-attachments: the optimistic copy MUST carry the attachments too. The
           // server's echo arrives with the same seq and is dropped by the
           // reducer's idempotency guard, so THIS payload is what gets rendered
           // — a bubble without its thumbnails would be permanent.
@@ -693,7 +693,7 @@ class StoreController extends StateNotifier<StoreState> {
               'text': text,
               // Ids only (see `toWire`) — the bytes were uploaded to
               // `POST /media` first and the server resolves each id against its
-              // store (SPEC-33 §3.3).
+              // store (SPEC-user-attachments §3.3).
               if (attachments.isNotEmpty)
                 'attachments': [for (final a in attachments) a.toWire()],
             },
@@ -701,7 +701,7 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
-  /// Cancel ONE pending mid-turn message (SPEC-35). Fire-and-forget: the
+  /// Cancel ONE pending mid-turn message (SPEC-mid-turn-steering-and-queue). Fire-and-forget: the
   /// authoritative queue arrives on the next sessions snapshot, and a message
   /// that flushed between the tap and this frame is simply gone.
   void cancelQueuedMessage(String sessionId, String id) {
@@ -722,7 +722,7 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
-  /// Replace a pending mid-turn message's text (SPEC-38). Empty text cancels it
+  /// Replace a pending mid-turn message's text (SPEC-pending-queue-edit-reorder). Empty text cancels it
   /// server-side, so the caller does not need a second command for that case.
   void updateQueuedMessage(String sessionId, String id, String text) {
     _ref
@@ -741,7 +741,7 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
-  /// Send ONE pending message now (SPEC-39): the server interrupts the running
+  /// Send ONE pending message now (SPEC-queue-tray-and-promote): the server interrupts the running
   /// turn so this message is delivered next, keeping the rest queued.
   ///
   /// Fire-and-forget like its siblings; a message that flushed between the tap
@@ -763,7 +763,7 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
-  /// Apply a new send order to the pending messages (SPEC-38). The server treats
+  /// Apply a new send order to the pending messages (SPEC-pending-queue-edit-reorder). The server treats
   /// `ids` as a hint, so a queue that flushed under the user cannot fail here.
   void reorderQueuedMessages(String sessionId, List<String> ids) {
     _ref
@@ -801,7 +801,7 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
-  /// Write per-repo settings (SPEC-48).
+  /// Write per-repo settings (SPEC-per-repo-settings).
   ///
   /// No optimistic local state on purpose — the server persists, re-broadcasts the
   /// repos snapshot, and the page re-renders from that, so what is on screen is always
@@ -828,7 +828,7 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
-  /// Re-point a repository at a new root path (SPEC-48 D4').
+  /// Re-point a repository at a new root path (SPEC-per-repo-settings D4').
   ///
   /// A separate verb from [setRepoSettings] because it is not a setting: the server
   /// re-validates that the target is a git repository and re-runs forge detection,
@@ -906,7 +906,7 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
-  /// Close a session (SPEC-29): release the agent, keep the session. The server drops it
+  /// Close a session (SPEC-session-lifecycle-resume-list-delete): release the agent, keep the session. The server drops it
   /// from the active `sessions.snapshot` (it stays resumable + restorable) and
   /// broadcasts a fresh snapshot so the list updates.
   Future<void> closeSession(String sessionId) async {
@@ -916,7 +916,7 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
-  /// Reopen a closed session: it returns to the active list and resumes on next open (SPEC-29).
+  /// Reopen a closed session: it returns to the active list and resumes on next open (SPEC-session-lifecycle-resume-list-delete).
   Future<void> reopenSession(String sessionId) async {
     await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
@@ -924,7 +924,7 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
-  /// Fetch the closed sessions (SPEC-29). Not part of the active snapshot;
+  /// Fetch the closed sessions (SPEC-session-lifecycle-resume-list-delete). Not part of the active snapshot;
   /// loaded on demand for the "Show closed sessions" list.
   Future<List<Session>> listClosedSessions() async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
@@ -963,7 +963,7 @@ class StoreController extends StateNotifier<StoreState> {
         // Sent for one release as well, so a server that predates the
         // base->target rename still receives the value instead of silently
         // falling back to the repo default.
-        // TODO(SPEC-51): drop the `baseBranch` alias one release after the
+        // TODO(SPEC-target-branch): drop the `baseBranch` alias one release after the
         // server ships with `targetBranch`.
         'baseBranch': ?targetBranch,
         'branchName': ?branchName,
@@ -1133,7 +1133,7 @@ class StoreController extends StateNotifier<StoreState> {
         // See `worktree.create` above: one-release compatibility. Here it also
         // guards the only irreversible case — a server reading the old key would
         // otherwise fast-forward the WRONG branch and report success.
-        // TODO(SPEC-51): drop the `baseBranch` alias one release after the
+        // TODO(SPEC-target-branch): drop the `baseBranch` alias one release after the
         // server ships with `targetBranch`.
         'baseBranch': ?targetBranch,
         'expectBranch': ?expectBranch,
@@ -1250,7 +1250,7 @@ class StoreController extends StateNotifier<StoreState> {
     }
   }
 
-  /// Ask the server to re-read the GitHub quota (SPEC-32 §6.6). Cheap by
+  /// Ask the server to re-read the GitHub quota (SPEC-github-gateway-and-budget §6.6). Cheap by
   /// design: it hits GitHub's `/rate_limit`, which is **exempt** from the rate
   /// limit, so checking the budget never spends it.
   ///
@@ -1273,7 +1273,7 @@ class StoreController extends StateNotifier<StoreState> {
   /// re-issued on reconnect (the server forgets it, exactly like `sub`).
   bool _watchingGithubBudget = false;
 
-  /// Tell the server whether this client has the budget panel open (SPEC-32
+  /// Tell the server whether this client has the budget panel open (SPEC-github-gateway-and-budget
   /// §6.6). While it is, the server re-reads the exempt `/rate_limit` on a fast
   /// cadence and pushes every snapshot, so the live counters actually move —
   /// its idle broadcast only fires on a level/throttle change.
@@ -1293,7 +1293,7 @@ class StoreController extends StateNotifier<StoreState> {
     }
   }
 
-  /// Pause or resume the server's background PR polling (SPEC-32 §6.6).
+  /// Pause or resume the server's background PR polling (SPEC-github-gateway-and-budget §6.6).
   ///
   /// Pausing stops only *background* work; user-initiated actions still draw on
   /// the reserve, and PR pills keep their last-known state (dimmed) rather than
@@ -1309,7 +1309,7 @@ class StoreController extends StateNotifier<StoreState> {
     }
   }
 
-  /// SPEC-46 D7: read one markdown document's text over the WSS channel.
+  /// SPEC-doc-preview D7: read one markdown document's text over the WSS channel.
   /// Errors for `kind == "html"` server-side; the caller only invokes this for
   /// markdown. Throws on transport error or a server `err` so the preview can
   /// show the reason rather than a blank body.
@@ -1323,7 +1323,7 @@ class StoreController extends StateNotifier<StoreState> {
     return text;
   }
 
-  /// SPEC-46 D8 rev 2: open the doc on the machine holding it, via the host's
+  /// SPEC-doc-preview D8 rev 2: open the doc on the machine holding it, via the host's
   /// OS opener. Only valid for a local client — a remote one is refused by the
   /// server with a stated reason, which propagates as a thrown error.
   Future<void> openDoc(String worktreePath, String relPath) async {
@@ -1333,7 +1333,7 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
-  /// SPEC-46 D9/D15: publish one document over the tailnet, returning the
+  /// SPEC-doc-preview D9/D15: publish one document over the tailnet, returning the
   /// grant. Never invents a URL — a server `err` (no usable address,
   /// `tailscale serve` unavailable) throws with the stated reason so the share
   /// sheet degrades loudly instead of offering a dead link.
@@ -1355,7 +1355,7 @@ class StoreController extends StateNotifier<StoreState> {
     return grant;
   }
 
-  /// SPEC-46 D9: revoke a publication by `grantId` (Stop sharing).
+  /// SPEC-doc-preview D9: revoke a publication by `grantId` (Stop sharing).
   Future<void> unpublishDoc(String grantId) async {
     await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
@@ -1363,7 +1363,7 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
-  /// SPEC-46: list active publications, so the app can say "3 docs are shared".
+  /// SPEC-doc-preview: list active publications, so the app can say "3 docs are shared".
   Future<List<DocGrant>> listDocGrants() async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
@@ -1395,7 +1395,7 @@ final storeControllerProvider =
 /// The harnesses this host can spawn, used by the harness picker cards.
 ///
 /// Re-fetched on every socket-state change. A persisted worktree can build the
-/// picker at boot (SPEC-20) BEFORE the WS connects; fetching then sends into a
+/// picker at boot (SPEC-worktree-scoped-panes) BEFORE the WS connects; fetching then sends into a
 /// dead socket and — since a [FutureProvider] caches its first result — would
 /// otherwise pin an empty list forever, leaving every worktree stuck on the
 /// "host default harness" fallback. Watching [WsState] makes the provider
@@ -1416,7 +1416,7 @@ final reposProvider = Provider<ReposState>((ref) {
   return ReposState(s.repos);
 });
 
-/// Latest GitHub API budget snapshot (SPEC-32), or null before any
+/// Latest GitHub API budget snapshot (SPEC-github-gateway-and-budget), or null before any
 /// `github.budget` frame has arrived. Safe to watch pre-connect — the footer
 /// icon renders an `unknown`/dimmed state while this is null.
 final githubBudgetProvider = Provider<GithubBudget?>((ref) {
@@ -1444,7 +1444,7 @@ final chatItemsProvider = Provider.family<List<ChatItem>, String>((
   sessionId,
 ) {
   final events = ref.watch(eventsProvider).forSession(sessionId);
-  // SPEC-47 D18: turn spans come from a SEPARATE pure pass over the same
+  // SPEC-session-timings D18: turn spans come from a SEPARATE pure pass over the same
   // events, then the receipt rows are projected into the fold's output. The
   // fold stays a row builder; turn correctness never depends on row order.
   return withTurnReceipts(foldEvents(events), deriveTurns(events));
@@ -1459,7 +1459,7 @@ final commandsProvider = Provider.family<List<SlashCmd>, String>((
   return s.commands[sessionId] ?? const [];
 });
 
-/// Pending mid-turn messages for a session (SPEC-35/36), in send order. Empty
+/// Pending mid-turn messages for a session (SPEC-mid-turn-steering-and-queue/36), in send order. Empty
 /// for an unknown session, so callers never branch on null.
 final queuedMessagesProvider = Provider.family<List<QueuedMessage>, String>((
   ref,
@@ -1482,7 +1482,7 @@ final sessionMetaProvider = Provider.family<SessionMeta?, String>((
   return s.meta[sessionId];
 });
 
-/// Latest context-window + cost snapshot for a session (SPEC-37), or null until
+/// Latest context-window + cost snapshot for a session (SPEC-context-usage), or null until
 /// the agent reports one. Null must render as "unknown", not as an empty bar.
 final sessionUsageProvider = Provider.family<SessionUsage?, String>((
   ref,
@@ -1503,7 +1503,7 @@ final sessionActionErrorProvider = Provider.family<ActionError?, String>((
   return s.actionErrors[sessionId];
 });
 
-/// Completed turns for a session (SPEC-47 D18), derived as a pure pass over the
+/// Completed turns for a session (SPEC-session-timings D18), derived as a pure pass over the
 /// event stream — independent of the chat-item fold.
 final sessionTurnsProvider = Provider.family<List<TurnSpan>, String>((
   ref,
@@ -1513,7 +1513,7 @@ final sessionTurnsProvider = Provider.family<List<TurnSpan>, String>((
   return deriveTurns(events);
 });
 
-/// The session-effort rollup (SPEC-47 D11): turn count, agent time, median.
+/// The session-effort rollup (SPEC-session-timings D11): turn count, agent time, median.
 final sessionRollupProvider = Provider.family<TurnRollup, String>((
   ref,
   sessionId,
@@ -1521,7 +1521,7 @@ final sessionRollupProvider = Provider.family<TurnRollup, String>((
   return turnRollup(ref.watch(sessionTurnsProvider(sessionId)));
 });
 
-/// Whether this client holds the session's full history (SPEC-47 D16). The
+/// Whether this client holds the session's full history (SPEC-session-timings D16). The
 /// rollup is only shown when true — a tail-only session would undercount turns.
 final sessionHistoryLoadedProvider = Provider.family<bool, String>((
   ref,

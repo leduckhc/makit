@@ -13,7 +13,7 @@
  *   POST /usage
  *   { sessionId, usage: { contextTokens?, contextWindow?, totals?, cost? } }
  *
- * Reports a context/cost snapshot (SPEC-37). Exists because pi reports no usage
+ * Reports a context/cost snapshot (SPEC-context-usage). Exists because pi reports no usage
  * over ACP at all, so the `makit-pi-usage` extension reads it in-process and
  * pushes it here. Fire-and-forget: the reply is an empty 200.
  *
@@ -30,7 +30,7 @@ import type { SessionUsageDTO, SessionUsageTotals } from "./protocol.js";
 export interface BridgeOpts {
   askDevice: (body: UICall & { sessionId?: string }) => Promise<UIResponse>;
   /**
-   * Receives a validated usage snapshot from an agent-side extension (SPEC-37).
+   * Receives a validated usage snapshot from an agent-side extension (SPEC-context-usage).
    * Absent = the endpoint still authenticates and validates but discards the
    * snapshot (the keyless e2e harnesses have no session store to feed).
    */
@@ -109,7 +109,7 @@ function totalsOf(v: unknown): SessionUsageTotals | undefined {
 }
 
 /**
- * Validate and forward `POST /usage` (SPEC-37).
+ * Validate and forward `POST /usage` (SPEC-context-usage).
  *
  * The sender is an ordinary user-editable pi extension, so nothing here is
  * trusted: non-numeric fields are DROPPED rather than coerced (a `NaN%` in the

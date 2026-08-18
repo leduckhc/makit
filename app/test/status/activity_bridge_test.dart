@@ -8,7 +8,7 @@ import 'package:makit/status/status_providers.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 
-/// SPEC-48 D7: the notification layer already decides which session changes are
+/// SPEC-status-and-activity D7: the notification layer already decides which session changes are
 /// worth a person's attention — and then threw that judgement away whenever the
 /// app happened to be in the foreground. These pin that every one of them now
 /// lands on the record, silently.

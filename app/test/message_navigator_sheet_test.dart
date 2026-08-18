@@ -1,4 +1,4 @@
-// SPEC-34 (mobile): the "My messages" sheet reached from session actions.
+// SPEC-message-navigator (mobile): the "My messages" sheet reached from session actions.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

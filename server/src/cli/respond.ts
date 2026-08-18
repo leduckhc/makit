@@ -1,6 +1,6 @@
 /**
  * The shared `srv.response` sender behind `makit approve` and `makit answer`
- * (SPEC-46 U3). The terminal can now unblock a session it started but does not
+ * (SPEC-cli-as-client U3). The terminal can now unblock a session it started but does not
  * have open on a screen.
  *
  * The flow, and why no server change is needed: connect → `sub {sessionId}` →

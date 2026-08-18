@@ -1,4 +1,4 @@
-/// SPEC-38 — pending messages are editable, reorderable drafts, in one of two
+/// SPEC-pending-queue-edit-reorder — pending messages are editable, reorderable drafts, in one of two
 /// placements.
 library;
 

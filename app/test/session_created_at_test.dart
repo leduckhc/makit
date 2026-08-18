@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/transport/codec.dart';
 
-/// SPEC-47 D12: `SessionDTO.createdAt?` on the wire maps to a **nullable**
+/// SPEC-session-timings D12: `SessionDTO.createdAt?` on the wire maps to a **nullable**
 /// `Session.createdAt`. Absent → null (never a fabricated epoch-0 age).
 void main() {
   Session decodeOne(Map<String, dynamic> j) =>

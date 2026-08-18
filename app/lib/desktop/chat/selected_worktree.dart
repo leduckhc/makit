@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 /// A sessionless worktree hint carried by an empty [Tab]. Used only to pre-fill
-/// the New-session dialog's Worktree field (SPEC-28 decision 4) — never an
+/// the New-session dialog's Worktree field (SPEC-desktop-workspace-tabs decision 4) — never an
 /// inline picker.
 ///
 /// Lives in its own file so the pure workspace-tree model ([Tab]) can carry one

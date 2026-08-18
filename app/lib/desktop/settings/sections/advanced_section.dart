@@ -1,4 +1,4 @@
-/// Advanced section body (SPEC-13 migration map).
+/// Advanced section body (SPEC-desktop-settings-rework migration map).
 ///
 /// Surfaces developer/diagnostic affordances that drive real behavior today:
 /// a read-only **Status** snapshot (pid / uptime / protocol version), a
@@ -146,7 +146,7 @@ class _DiagnosticsRow extends StatelessWidget {
 
 /// Developer → Fake server. There is no clean runtime toggle for the fake
 /// server (it is attached at bootstrap via `useFakeServer()` with no supported
-/// "turn off"), so per SPEC-13's YAGNI rule this is a read-only indicator of
+/// "turn off"), so per SPEC-desktop-settings-rework's YAGNI rule this is a read-only indicator of
 /// the current connection mode rather than a non-functional switch.
 class _FakeServerRow extends ConsumerWidget {
   const _FakeServerRow();
@@ -173,7 +173,7 @@ class _FakeServerRow extends ConsumerWidget {
   }
 }
 
-/// Telemetry — reserved `[future]` placeholder (SPEC-13 §7): no backend.
+/// Telemetry — reserved `[future]` placeholder (SPEC-desktop-settings-rework §7): no backend.
 /// Reset all settings: clears every stored preference override after a confirm
 /// dialog. Shows the current count of changed settings when non-zero.
 class _ResetAllRow extends ConsumerWidget {

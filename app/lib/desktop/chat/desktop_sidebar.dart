@@ -37,7 +37,7 @@ import 'split_view.dart' show SessionDragData;
 import 'title_bar_strip.dart';
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
-/// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
+/// home (SPEC-repo-centric-home): repos → worktrees (branch, diff stats, open PR) → the
 /// sessions bound to each worktree. Footer shows the connection status + a hook
 /// for the Settings/Server section.
 class DesktopSidebar extends ConsumerWidget {
@@ -308,7 +308,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
 const double _kCaretSlot = 18;
 
 /// The worktree row's disclosure control. Separate from the row's own tap
-/// (SPEC-30 decision 15: the row navigates, the caret discloses), so neither
+/// (SPEC-tab-groups decision 15: the row navigates, the caret discloses), so neither
 /// gesture has to guess which of the two the user meant.
 class _WorktreeCaret extends StatelessWidget {
   const _WorktreeCaret({
@@ -500,7 +500,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   // `_menuOpen`: opening the ports popover drops a modal-ish barrier / moves the
   // pointer off the row, flipping `_hovering` off — which would snap the `…`
   // menu back to a diff pill under the cursor while the popover is open. The
-  // popover reports its open-state through `onOpenChanged` (SPEC-41 §5 trap).
+  // popover reports its open-state through `onOpenChanged` (SPEC-open-ports §5 trap).
   bool _portsOpen = false;
   bool _docsOpen = false;
 
@@ -509,7 +509,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   late final DocsWatch _docsWatch = ref.read(docsWatchProvider);
 
   // Hold the ref-counted ports watch while any worktree group is mounted in the
-  // sidebar, so the server polls `lsof` only while the sidebar is up (SPEC-41
+  // sidebar, so the server polls `lsof` only while the sidebar is up (SPEC-open-ports
   // §Delivery); the ref-count collapses every mounted group to one
   // `ports.watch {on:true}`.
   late final PortsWatch _portsWatch = ref.read(portsWatchProvider);
@@ -533,7 +533,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   /// Note there is deliberately **no `onDoubleTap`** on the row: adding one puts
   /// a double-tap recognizer in the gesture arena, which defers `onTap` until
   /// the double-tap timer expires — every branch click would gain ~300ms of lag
-  /// for a gesture almost nobody makes. SPEC-51's "keep this branch" promotion
+  /// for a gesture almost nobody makes. SPEC-preview-groups's "keep this branch" promotion
   /// is timing-free instead: see [selectWorktree].
   SelectedWorktree _selection() => SelectedWorktree(
     projectId: widget.repo.id,
@@ -756,7 +756,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                     setState(() => _docsOpen = open),
                               ),
                               // Ports glyph, right-aligned on the same 8 pt edge
-                              // as line 1's swap (SPEC-41 §5). 14 pt glyph in a
+                              // as line 1's swap (SPEC-open-ports §5). 14 pt glyph in a
                               // 22 × 16 target: wider than tall, so the fixed
                               // 16 pt sub-row does NOT grow. Renders nothing when
                               // the branch is serving nothing.
@@ -1001,7 +1001,7 @@ class _WorktreeMenuButton extends ConsumerWidget {
   }
 }
 
-/// The worktree sub-row's docs glyph (SPEC-46), desktop form. A 14 pt glyph in
+/// The worktree sub-row's docs glyph (SPEC-doc-preview), desktop form. A 14 pt glyph in
 /// a fixed 22 × 16 hit target so the sub-row keeps its reserved height. Opens
 /// the docs popover; renders nothing when the branch owns no docs.
 class _SubRowDocsGlyph extends ConsumerStatefulWidget {
@@ -1061,7 +1061,7 @@ class _SubRowDocsGlyphState extends ConsumerState<_SubRowDocsGlyph> {
   }
 }
 
-/// The worktree sub-row's ports glyph (SPEC-41 §5), desktop form. A 14 pt glyph
+/// The worktree sub-row's ports glyph (SPEC-open-ports §5), desktop form. A 14 pt glyph
 /// in a fixed 22 × 16 hit target — wider, not taller — so the sub-row keeps its
 /// reserved 16 pt height. Hit testing is bounded by this box (Flutter clips to
 /// the parent), so the target is honestly 22 × 16, not 22 × 22. Renders nothing

@@ -1,5 +1,5 @@
 // Unit tests for the daemon lifecycle service. Lives beside the code under test
-// (per SPEC-03 desktop layout), so it imports the flutter_test dev-dependency
+// (per SPEC-desktop-control-app desktop layout), so it imports the flutter_test dev-dependency
 // from a lib/ path.
 // ignore_for_file: depend_on_referenced_packages
 import 'dart:io';

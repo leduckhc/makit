@@ -1,4 +1,4 @@
-/// SPEC-30 — the agent picker: the board half of decision 13 and one of the
+/// SPEC-tab-groups — the agent picker: the board half of decision 13 and one of the
 /// four add paths of decision 14. Every session, grouped by `repo ·
 /// branch`, with the board's current members pre-ticked; ticking a row pins or
 /// unpins it, and a leading `New session…` row opens the New-worktree dialog.

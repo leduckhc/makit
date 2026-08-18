@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { resolveDocPath, isInsideRoot, MAX_DOC_BYTES } from "./resolve.js";
 
 /**
- * The security boundary of SPEC-46 (D2). Every path that reaches the serving
+ * The security boundary of SPEC-doc-preview (D2). Every path that reaches the serving
  * layer goes through resolveDocPath, so this suite is the one that must be
  * paranoid: traversal, prefix confusion, escaping symlinks, extension and
  * dotfile policy, and the size cap.

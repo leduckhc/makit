@@ -1,5 +1,5 @@
 /**
- * StubAdapter configOptions round-trip (SPEC-26): the stub emits a small
+ * StubAdapter configOptions round-trip (SPEC-acp-config-options-unified-composer): the stub emits a small
  * `session.meta.configOptions` catalog on start and applies `configOption`
  * actions by re-emitting the complete updated list — the keyless e2e stand-in
  * for the ACP/codex adapters' config surface.
@@ -80,7 +80,7 @@ test("unknown option id or non-configOption action is ignored", async () => {
   assert.equal(metas.length, 1, "no re-emit for unknown id / other actions");
 });
 
-test("an adapter with no steering primitive reports it (SPEC-35 T1)", async () => {
+test("an adapter with no steering primitive reports it (SPEC-mid-turn-steering-and-queue T1)", async () => {
   const stub = new StubAdapter();
   const events: AdapterEvent[] = [];
   stub.on("event", (e) => events.push(e));
@@ -91,7 +91,7 @@ test("an adapter with no steering primitive reports it (SPEC-35 T1)", async () =
   assert.equal(events.length, before, "steer() must not echo or emit anything");
 });
 
-test("SLOW keeps the stub busy so the pending queue is demoable (SPEC-38)", async () => {
+test("SLOW keeps the stub busy so the pending queue is demoable (SPEC-pending-queue-edit-reorder)", async () => {
   const stub = new StubAdapter();
   const statuses: string[] = [];
   const events: AdapterEvent[] = [];
@@ -129,7 +129,7 @@ test("a plain echo is a whole turn (running → idle), so a queue keeps draining
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-46 T15 — the stub can be BLOCKED and can FAIL.
+// SPEC-cli-as-client T15 — the stub can be BLOCKED and can FAIL.
 //
 // `makit wait` promises distinct exit codes for "the agent finished" (0), "it is
 // blocked on you" (10 / 11) and "it failed" (20). None of those could be proven

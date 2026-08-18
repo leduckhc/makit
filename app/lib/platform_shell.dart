@@ -1,4 +1,4 @@
-/// SPEC-28 (decision 10) — platform/size-class entry shell.
+/// SPEC-desktop-workspace-tabs (decision 10) — platform/size-class entry shell.
 ///
 /// The workspace layout is promised for **desktop and iPad**. macOS always
 /// gets it (bootstrapped separately in `runDesktopApp`). On iPadOS the choice

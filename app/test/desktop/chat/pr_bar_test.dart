@@ -60,7 +60,7 @@ Widget _host(
 }) => ProviderScope(
   overrides: [
     preferencesControllerProvider.overrideWith((ref) => controller),
-    // SPEC-38 T7.3: the executor is injected, so a test can watch a direct op
+    // SPEC-pr-actions-next-step-bar T7.3: the executor is injected, so a test can watch a direct op
     // run (and complete) without a live connection.
     if (ran != null)
       prOpRunnerProvider.overrideWithValue((op, _) async {
@@ -568,156 +568,163 @@ void main() {
     });
   });
 
-  group('the confirms name what they actually do (SPEC-38 G1/G4)', () {
-    testWidgets('wrap up names the branch it will delete', (tester) async {
-      // wrapUpWorktree runs `git branch -D <branch>` (spec §6.1 step 3). The
-      // dialog never said so: the step was guarded on an identity that is always
-      // '#42' once a PR exists, so the line was dead code.
-      await tester.pumpWidget(
-        _host(
-          PreferencesController.ephemeral(),
-          pr: _pr(state: 'MERGED', baseRefName: 'main'),
-          branch: 'feat/x',
-          onInsert: (_) {},
-        ),
-      );
-      await tester.tap(find.text('Wrap up'));
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('Delete the local branch feat/x'),
-        findsOneWidget,
-      );
-    });
+  group(
+    'the confirms name what they actually do (SPEC-pr-actions-next-step-bar G1/G4)',
+    () {
+      testWidgets('wrap up names the branch it will delete', (tester) async {
+        // wrapUpWorktree runs `git branch -D <branch>` (spec §6.1 step 3). The
+        // dialog never said so: the step was guarded on an identity that is always
+        // '#42' once a PR exists, so the line was dead code.
+        await tester.pumpWidget(
+          _host(
+            PreferencesController.ephemeral(),
+            pr: _pr(state: 'MERGED', baseRefName: 'main'),
+            branch: 'feat/x',
+            onInsert: (_) {},
+          ),
+        );
+        await tester.tap(find.text('Wrap up'));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('Delete the local branch feat/x'),
+          findsOneWidget,
+        );
+      });
 
-    testWidgets('discard names the branch it will delete too', (tester) async {
-      await tester.pumpWidget(
-        _host(
-          PreferencesController.ephemeral(),
-          pr: _pr(state: 'CLOSED'),
-          branch: 'feat/x',
-          onInsert: (_) {},
-        ),
-      );
-      await tester.tap(find.text('Discard worktree'));
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('Delete the local branch feat/x'),
-        findsOneWidget,
-      );
-    });
+      testWidgets('discard names the branch it will delete too', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _host(
+            PreferencesController.ephemeral(),
+            pr: _pr(state: 'CLOSED'),
+            branch: 'feat/x',
+            onInsert: (_) {},
+          ),
+        );
+        await tester.tap(find.text('Discard worktree'));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('Delete the local branch feat/x'),
+          findsOneWidget,
+        );
+      });
 
-    testWidgets('a detached worktree is not promised a branch deletion', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _host(
-          PreferencesController.ephemeral(),
-          pr: _pr(state: 'MERGED'),
-          branch: null,
-          onInsert: (_) {},
-        ),
-      );
-      await tester.tap(find.text('Wrap up'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Delete the local branch'), findsNothing);
-    });
+      testWidgets('a detached worktree is not promised a branch deletion', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _host(
+            PreferencesController.ephemeral(),
+            pr: _pr(state: 'MERGED'),
+            branch: null,
+            onInsert: (_) {},
+          ),
+        );
+        await tester.tap(find.text('Wrap up'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Delete the local branch'), findsNothing);
+      });
 
-    testWidgets('says sessions are closed, after the removal', (tester) async {
-      // The server removes the worktree first and *closes* live sessions
-      // (SPEC-29) rather than stopping them; the dialog claimed the reverse order
-      // and the wrong verb.
-      await tester.pumpWidget(
-        _host(
-          PreferencesController.ephemeral(),
-          pr: _pr(state: 'MERGED'),
-          branch: 'feat/x',
-          onInsert: (_) {},
-        ),
-      );
-      await tester.tap(find.text('Wrap up'));
-      await tester.pumpAndSettle();
-      // All four, in the order the server runs them — a single pair would let any
-      // of the other three drift.
-      final ys = [
-        tester.getTopLeft(find.textContaining('Remove the worktree')).dy,
-        tester.getTopLeft(find.textContaining('Close the sessions')).dy,
-        tester.getTopLeft(find.textContaining('Delete the local branch')).dy,
-        tester.getTopLeft(find.textContaining('Fast-forward')).dy,
-      ];
-      expect(
-        ys,
-        orderedEquals(<Matcher>[
-          lessThan(ys[1]),
-          lessThan(ys[2]),
-          lessThan(ys[3]),
-          anything,
-        ]),
-      );
-    });
+      testWidgets('says sessions are closed, after the removal', (
+        tester,
+      ) async {
+        // The server removes the worktree first and *closes* live sessions
+        // (SPEC-session-lifecycle-resume-list-delete) rather than stopping them; the dialog claimed the reverse order
+        // and the wrong verb.
+        await tester.pumpWidget(
+          _host(
+            PreferencesController.ephemeral(),
+            pr: _pr(state: 'MERGED'),
+            branch: 'feat/x',
+            onInsert: (_) {},
+          ),
+        );
+        await tester.tap(find.text('Wrap up'));
+        await tester.pumpAndSettle();
+        // All four, in the order the server runs them — a single pair would let any
+        // of the other three drift.
+        final ys = [
+          tester.getTopLeft(find.textContaining('Remove the worktree')).dy,
+          tester.getTopLeft(find.textContaining('Close the sessions')).dy,
+          tester.getTopLeft(find.textContaining('Delete the local branch')).dy,
+          tester.getTopLeft(find.textContaining('Fast-forward')).dy,
+        ];
+        expect(
+          ys,
+          orderedEquals(<Matcher>[
+            lessThan(ys[1]),
+            lessThan(ys[2]),
+            lessThan(ys[3]),
+            anything,
+          ]),
+        );
+      });
 
-    testWidgets('the data-loss warning does not depend on any label text', (
-      tester,
-    ) async {
-      // It used to be inferred with `label.contains('uncommitted')`. Proving the
-      // fix means driving the dialog from a status whose labels say nothing about
-      // uncommitted work, while the count is passed structurally — the old
-      // implementation could not have produced a warning here.
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            preferencesControllerProvider.overrideWith(
-              (ref) => PreferencesController.ephemeral(),
-            ),
-          ],
-          child: MaterialApp(
-            home: Scaffold(
-              body: Builder(
-                builder: (context) => TextButton(
-                  onPressed: () => showPrDirectConfirm(
-                    context,
-                    op: PrDirectOp.wrapUp,
-                    pr: _pr(state: 'MERGED'),
-                    worktreePath: '/wt/feat-x',
-                    identity: '#42',
-                    branch: 'feat/x',
-                    uncommittedFiles: 2,
+      testWidgets('the data-loss warning does not depend on any label text', (
+        tester,
+      ) async {
+        // It used to be inferred with `label.contains('uncommitted')`. Proving the
+        // fix means driving the dialog from a status whose labels say nothing about
+        // uncommitted work, while the count is passed structurally — the old
+        // implementation could not have produced a warning here.
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              preferencesControllerProvider.overrideWith(
+                (ref) => PreferencesController.ephemeral(),
+              ),
+            ],
+            child: MaterialApp(
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => TextButton(
+                    onPressed: () => showPrDirectConfirm(
+                      context,
+                      op: PrDirectOp.wrapUp,
+                      pr: _pr(state: 'MERGED'),
+                      worktreePath: '/wt/feat-x',
+                      identity: '#42',
+                      branch: 'feat/x',
+                      uncommittedFiles: 2,
+                    ),
+                    child: const Text('go'),
                   ),
-                  child: const Text('go'),
                 ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.tap(find.text('go'));
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('2 files uncommitted here will be lost'),
-        findsOneWidget,
-      );
-    });
+        );
+        await tester.tap(find.text('go'));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('2 files uncommitted here will be lost'),
+          findsOneWidget,
+        );
+      });
 
-    testWidgets('and it is absent when there is nothing to lose', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _host(
-          PreferencesController.ephemeral(),
-          pr: _pr(state: 'MERGED'),
-          branch: 'feat/x',
-          onInsert: (_) {},
-        ),
-      );
-      await tester.tap(find.text('Wrap up'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('will be lost'), findsNothing);
-    });
-  });
+      testWidgets('and it is absent when there is nothing to lose', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          _host(
+            PreferencesController.ephemeral(),
+            pr: _pr(state: 'MERGED'),
+            branch: 'feat/x',
+            onInsert: (_) {},
+          ),
+        );
+        await tester.tap(find.text('Wrap up'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('will be lost'), findsNothing);
+      });
+    },
+  );
 
-  group('confirming on stale data (SPEC-38 L1)', () {
+  group('confirming on stale data (SPEC-pr-actions-next-step-bar L1)', () {
     // The app decides which destructive button to show from the last snapshot,
     // and the server does not re-check GitHub (L1). When that snapshot is
-    // explicitly last-known — SPEC-32 shed the refresh to save quota — the
+    // explicitly last-known — SPEC-github-gateway-and-budget shed the refresh to save quota — the
     // premise of the dialog ("this PR has merged") may simply be false, so the
     // dialog says so rather than asserting it.
     testWidgets('wrap up warns that the state could not be refreshed', (
@@ -788,7 +795,7 @@ void main() {
     });
   });
 
-  group('dispatch (SPEC-38 T7.3)', () {
+  group('dispatch (SPEC-pr-actions-next-step-bar T7.3)', () {
     testWidgets('a non-confirming op runs straight away, with no dialog', (
       tester,
     ) async {
@@ -874,7 +881,7 @@ void main() {
     });
   });
 
-  group('stale (SPEC-32)', () {
+  group('stale (SPEC-github-gateway-and-budget)', () {
     testWidgets('keeps the number crisp and says the data is last-known', (
       tester,
     ) async {

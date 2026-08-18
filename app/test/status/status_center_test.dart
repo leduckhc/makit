@@ -311,7 +311,7 @@ void main() {
       // The record still holds them — only the log is spared.
       expect(c.events.length, 3);
 
-      // Every other source still rides along (SPEC-48 D2).
+      // Every other source still rides along (SPEC-status-and-activity D2).
       c.success('Added repo', source: StatusSources.repo);
       expect(log.records.single.message, '[repo] Added repo');
     });

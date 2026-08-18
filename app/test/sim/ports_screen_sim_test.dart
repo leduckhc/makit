@@ -1,4 +1,4 @@
-// Simulation harness for the SPEC-42 global Ports screen, used to audit the
+// Simulation harness for the SPEC-ports-global-view global Ports screen, used to audit the
 // built UI against `mockups/open-ports.html` §6 without a simulator, a device
 // or a running server. Regenerate the images with:
 //
@@ -242,7 +242,7 @@ void main() {
     }
   });
 
-  // Goldens rasterise differently off macOS, same convention as the SPEC-37/40
+  // Goldens rasterise differently off macOS, same convention as the SPEC-context-usage/40
   // goldens in this repo. These are AUDIT images, not a regression gate: they
   // are anchored to the real clock (so the scan age reads sensibly), which means
   // they would flap if the suite compared them. Run them deliberately:
@@ -257,7 +257,7 @@ void main() {
         // A macOS chat pane's width, where the same screen must not look empty.
         ('macos_pane', 720, 620, 2, _snapshot()),
         // The degraded read: `lsof` denied. Must show the banner, never a fake
-        // empty list (SPEC-41 D7).
+        // empty list (SPEC-open-ports D7).
         ('iphone_degraded', 393, 760, 3, _snapshot(scanOk: false)),
         // P2b: the orphans section and the collision banner — the two reads the
         // mockup's §6 says earn the whole feature. Includes an orphan whose

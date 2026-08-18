@@ -163,7 +163,7 @@ test("migrates a legacy sessions schema in place, idempotently, keeping existing
   }
 });
 
-test("saveSession round-trips SPEC-46 lineage (absent stays undefined)", () => {
+test("saveSession round-trips SPEC-cli-as-client lineage (absent stays undefined)", () => {
   const store = new SqliteEventStore();
   store.saveSession(
     meta("s1", { parentId: "parent-1", handoffReason: "out of context", origin: "agent" }),
@@ -180,11 +180,11 @@ test("saveSession round-trips SPEC-46 lineage (absent stays undefined)", () => {
   store.close();
 });
 
-test("migrates a pre-SPEC-46 schema, rehydrating a legacy row with undefined lineage", () => {
+test("migrates a pre-SPEC-cli-as-client schema, rehydrating a legacy row with undefined lineage", () => {
   const dir = mkdtempSync(join(tmpdir(), "makit-store-"));
   const path = join(dir, "events.db");
   try {
-    // Seed a pre-SPEC-46 DB: the SPEC-29 schema (no parent_id / handoff_reason /
+    // Seed a pre-SPEC-cli-as-client DB: the SPEC-session-lifecycle-resume-list-delete schema (no parent_id / handoff_reason /
     // origin columns), plus one row written before lineage existed.
     const legacy = new DatabaseSync(path);
     legacy.exec(`
@@ -261,7 +261,7 @@ test("deleteSession removes the session and its events", () => {
   store.close();
 });
 
-test("saveSession round-trips the agentSessionId resume handle (SPEC-29)", () => {
+test("saveSession round-trips the agentSessionId resume handle (SPEC-session-lifecycle-resume-list-delete)", () => {
   const store = new SqliteEventStore();
   store.saveSession(meta("s1", { agentSessionId: "acp-abc-123" }));
   store.saveSession(meta("s2")); // no handle → undefined, not null
@@ -324,7 +324,7 @@ test("an existing DB's `archived` column migrates to `closed`, preserving values
   }
 });
 
-test("saveSession round-trips the closed flag (SPEC-29)", () => {
+test("saveSession round-trips the closed flag (SPEC-session-lifecycle-resume-list-delete)", () => {
   const store = new SqliteEventStore();
   store.saveSession(meta("s1", { closed: true }));
   store.saveSession(meta("s2"));
@@ -334,7 +334,7 @@ test("saveSession round-trips the closed flag (SPEC-29)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-46 D5 — a bounded tail is bounded in SQL, not by slicing afterwards
+// SPEC-cli-as-client D5 — a bounded tail is bounded in SQL, not by slicing afterwards
 //
 // D5 exists because `--carry last:5` on a long session "would therefore load and
 // ship the whole transcript to print five lines". Reading everything and then

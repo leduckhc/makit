@@ -1,4 +1,4 @@
-// SPEC-27 on mobile: a half-typed message survives the session screen being
+// SPEC-new-session-config-at-spawn on mobile: a half-typed message survives the session screen being
 // disposed and remounted (a route pop and re-entry, which is how a draft used
 // to vanish on the phone).
 import 'package:flutter/material.dart';

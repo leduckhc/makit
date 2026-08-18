@@ -189,7 +189,7 @@ void main() {
     },
   );
 
-  // SPEC-45 D9: the command cache is server-scoped state like everything else in
+  // SPEC-starter-pane-parity D9: the command cache is server-scoped state like everything else in
   // the store. Project ids are host-local (`RepoInfo(id: name…)`), so two
   // desktops with a same-named repo would otherwise serve each other's palettes
   // — and this cache is persisted, so it would outlive the switch.

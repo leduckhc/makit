@@ -260,51 +260,62 @@ void main() {
     );
   });
 
-  /// SPEC-37 decision 6: the app has no self-CPU API, so the SERVER samples the
+  /// SPEC-performance-metrics-dashboard decision 6: the app has no self-CPU API, so the SERVER samples the
   /// pid the app reports in `hello` (trusting it only on a loopback socket).
   /// Without that pid the dashboard's "App (Flutter)" row can only ever read
   /// "—" — which is exactly what it did, because two of the four hello paths
   /// omitted it. The pid is therefore added in `_attachReal`, the single funnel
   /// every path goes through, so no future caller can forget it.
-  group('hello advertises the app pid (SPEC-37 decision 6)', () {
-    test('every connect path reports a usable pid', () async {
-      final storage = _seededStorage();
-      final transports = <FakeTransport>[];
-      final controller = ConnectionController(
-        storage,
-        transportFactory: () {
-          final t = FakeTransport(emitConnected: true);
-          transports.add(t);
-          return t;
-        },
-        browseLan: _fixedBrowse(const <DiscoveredServer>[]),
-        rediscoverStall: Duration.zero,
-      );
+  group(
+    'hello advertises the app pid (SPEC-performance-metrics-dashboard decision 6)',
+    () {
+      test('every connect path reports a usable pid', () async {
+        final storage = _seededStorage();
+        final transports = <FakeTransport>[];
+        final controller = ConnectionController(
+          storage,
+          transportFactory: () {
+            final t = FakeTransport(emitConnected: true);
+            transports.add(t);
+            return t;
+          },
+          browseLan: _fixedBrowse(const <DiscoveredServer>[]),
+          rediscoverStall: Duration.zero,
+        );
 
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
-      expect(transports, isNotEmpty);
-      final bodies = transports.first.helloBodies;
-      expect(bodies, isNotEmpty, reason: 'a hello must have been sent');
-      final body = bodies.first;
+        expect(transports, isNotEmpty);
+        final bodies = transports.first.helloBodies;
+        expect(bodies, isNotEmpty, reason: 'a hello must have been sent');
+        final body = bodies.first;
 
-      // The bearer is still carried; the pid is additive.
-      expect(body['bearer'], 'bearer-token');
-      final reported = body['pid'];
-      expect(reported, isA<int>(), reason: 'the server ignores a non-integer');
-      // The server rejects 0, negatives and non-integers, so a "sent but
-      // useless" pid would be as bad as none at all.
-      expect(reported as int, greaterThan(0));
-      expect(reported, io.pid, reason: 'our OWN pid, not an arbitrary number');
+        // The bearer is still carried; the pid is additive.
+        expect(body['bearer'], 'bearer-token');
+        final reported = body['pid'];
+        expect(
+          reported,
+          isA<int>(),
+          reason: 'the server ignores a non-integer',
+        );
+        // The server rejects 0, negatives and non-integers, so a "sent but
+        // useless" pid would be as bad as none at all.
+        expect(reported as int, greaterThan(0));
+        expect(
+          reported,
+          io.pid,
+          reason: 'our OWN pid, not an arbitrary number',
+        );
 
-      controller.dispose();
-    });
-  });
+        controller.dispose();
+      });
+    },
+  );
 
   // D8 rev 2: locality is whatever the SERVER says in hello.ack. The app must
   // not infer it from the stored host — mDNS rediscovery rewrites that behind us
   // (see the rediscovery group above), so a host-based guess goes stale silently.
-  group('serverIsLocal comes from hello.ack (SPEC-46 D8 rev 2)', () {
+  group('serverIsLocal comes from hello.ack (SPEC-doc-preview D8 rev 2)', () {
     Future<(ConnectionController, FakeTransport)> boot() async {
       final transports = <FakeTransport>[];
       final controller = ConnectionController(
@@ -436,214 +447,220 @@ void main() {
     );
   });
 
-  group('ConnectionController push.register (SPEC-07 MAJOR 1)', () {
-    List<Envelope> pushRegs(FakeTransport t) => t.sentEnvelopes
-        .where((e) => e.t == MsgType.cmd && e.body['kind'] == 'push.register')
-        .toList();
-
-    test('registers on connect when a token is already present', () async {
-      final storage = _seededStorage();
-      final transports = <FakeTransport>[];
-      final controller = ConnectionController(
-        storage,
-        transportFactory: () {
-          final t = FakeTransport(emitConnected: true);
-          transports.add(t);
-          return t;
-        },
-        browseLan: _fixedBrowse(const []),
-        rediscoverStall: const Duration(seconds: 30),
-        pushRegistrar: FakePushRegistrar(token: 'tok-1'),
-      );
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      final regs = pushRegs(transports.single);
-      expect(regs, hasLength(1));
-      expect(regs.single.body['token'], 'tok-1');
-      expect(regs.single.body['platform'], 'apns');
-      expect(controller.state.pushRegistered, isTrue);
-
-      controller.dispose();
-    });
-
-    test('registers when the token arrives AFTER connect', () async {
-      final storage = _seededStorage();
-      final transports = <FakeTransport>[];
-      final registrar = FakePushRegistrar(); // no token yet
-      final controller = ConnectionController(
-        storage,
-        transportFactory: () {
-          final t = FakeTransport(emitConnected: true);
-          transports.add(t);
-          return t;
-        },
-        browseLan: _fixedBrowse(const []),
-        rediscoverStall: const Duration(seconds: 30),
-        pushRegistrar: registrar,
-      );
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-      expect(
-        pushRegs(transports.single),
-        isEmpty,
-        reason: 'no token at connect',
-      );
-
-      registrar.deliver('tok-late');
-      await Future<void>.delayed(Duration.zero);
-
-      final regs = pushRegs(transports.single);
-      expect(regs, hasLength(1));
-      expect(regs.single.body['token'], 'tok-late');
-
-      controller.dispose();
-    });
-
-    test('the same token is not re-sent within one connection', () async {
-      final storage = _seededStorage();
-      final transports = <FakeTransport>[];
-      final registrar = FakePushRegistrar(token: 'tok-dup');
-      final controller = ConnectionController(
-        storage,
-        transportFactory: () {
-          final t = FakeTransport(emitConnected: true);
-          transports.add(t);
-          return t;
-        },
-        browseLan: _fixedBrowse(const []),
-        rediscoverStall: const Duration(seconds: 30),
-        pushRegistrar: registrar,
-      );
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-      expect(pushRegs(transports.single), hasLength(1));
-
-      // Native re-delivers the identical token → must not double-register.
-      registrar.deliver('tok-dup');
-      await Future<void>.delayed(Duration.zero);
-
-      expect(pushRegs(transports.single), hasLength(1));
-
-      controller.dispose();
-    });
-
-    test('re-registers the same token on every reconnect', () async {
-      final storage = _seededStorage();
-      final transports = <FakeTransport>[];
-      final controller = ConnectionController(
-        storage,
-        transportFactory: () {
-          final t = FakeTransport(emitConnected: true);
-          transports.add(t);
-          return t;
-        },
-        browseLan: _fixedBrowse(const []),
-        rediscoverStall: const Duration(seconds: 30),
-        pushRegistrar: FakePushRegistrar(token: 'tok-1'),
-      );
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-      final t = transports.single;
-      expect(pushRegs(t), hasLength(1), reason: 'registers on first connect');
-
-      // The socket drops and the same transport reconnects. Per spec §B the
-      // token must be re-sent on every successful reconnect, even unchanged.
-      t.emit(WsState.reconnecting);
-      t.emit(WsState.connected);
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
-
-      expect(
-        pushRegs(t),
-        hasLength(2),
-        reason: 'each successful reconnect must re-send push.register',
-      );
-      expect(pushRegs(t).last.body['token'], 'tok-1');
-
-      controller.dispose();
-    });
-  });
-
-  group('ConnectionController respondTo idempotency (SPEC-08 step 4)', () {
-    test('a second respondTo for the same requestId is a no-op', () async {
-      final storage = _seededStorage();
-      final transports = <FakeTransport>[];
-      final controller = ConnectionController(
-        storage,
-        transportFactory: () {
-          final t = FakeTransport(emitConnected: true);
-          transports.add(t);
-          return t;
-        },
-        browseLan: _fixedBrowse(const []),
-        rediscoverStall: const Duration(seconds: 30),
-      );
-      await Future<void>.delayed(Duration.zero);
-      final t = transports.single;
-
-      controller.respondTo('r1', {'approved': true});
-      controller.respondTo('r1', {'approved': false});
-
-      final r1 = t.sentEnvelopes
-          .where((e) => e.t == MsgType.srvResponse && e.id == 'r1')
+  group(
+    'ConnectionController push.register (SPEC-background-wake-notifications MAJOR 1)',
+    () {
+      List<Envelope> pushRegs(FakeTransport t) => t.sentEnvelopes
+          .where((e) => e.t == MsgType.cmd && e.body['kind'] == 'push.register')
           .toList();
-      expect(r1, hasLength(1));
-      expect(r1.single.body['approved'], true);
 
-      // A different requestId still sends.
-      controller.respondTo('r2', {'approved': true});
-      expect(
-        t.sentEnvelopes
-            .where((e) => e.t == MsgType.srvResponse && e.id == 'r2')
-            .length,
-        1,
-      );
-
-      controller.dispose();
-    });
-
-    test(
-      'pairing handshake sends the desktop pid in hello body (SPEC-37)',
-      () async {
-        // Deliberately EMPTY storage, not a seeded one: with a stored server
-        // `_boot()` opens its own transport first, so the pairing handshake's
-        // socket would be the second and `transports.single` would throw.
-        final storage = FakeSecureStorage();
+      test('registers on connect when a token is already present', () async {
+        final storage = _seededStorage();
         final transports = <FakeTransport>[];
         final controller = ConnectionController(
           storage,
           transportFactory: () {
-            final t = FakeTransport();
+            final t = FakeTransport(emitConnected: true);
             transports.add(t);
             return t;
           },
+          browseLan: _fixedBrowse(const []),
+          rediscoverStall: const Duration(seconds: 30),
+          pushRegistrar: FakePushRegistrar(token: 'tok-1'),
         );
-        const info = PairInfo(
-          host: 'example.com',
-          port: 443,
-          fingerprint: 'sha256/abc',
-          token: 'pair-token-123',
-        );
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
 
-        unawaited(
-          controller
-              .pairWith(info, label: 'test-device')
-              .then((_) {})
-              .catchError((_) {}),
-        );
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-        expect(transports, hasLength(1));
-
-        final sent = transports.single.helloBodies.single;
-        expect(sent['pair'], 'pair-token-123');
-        expect(sent['label'], 'test-device');
-        // The key assertion: pid must be present so the server can measure the app surface.
-        expect(sent['pid'], isNotNull);
-        expect(sent['pid'], io.pid);
+        final regs = pushRegs(transports.single);
+        expect(regs, hasLength(1));
+        expect(regs.single.body['token'], 'tok-1');
+        expect(regs.single.body['platform'], 'apns');
+        expect(controller.state.pushRegistered, isTrue);
 
         controller.dispose();
-      },
-    );
-  });
+      });
+
+      test('registers when the token arrives AFTER connect', () async {
+        final storage = _seededStorage();
+        final transports = <FakeTransport>[];
+        final registrar = FakePushRegistrar(); // no token yet
+        final controller = ConnectionController(
+          storage,
+          transportFactory: () {
+            final t = FakeTransport(emitConnected: true);
+            transports.add(t);
+            return t;
+          },
+          browseLan: _fixedBrowse(const []),
+          rediscoverStall: const Duration(seconds: 30),
+          pushRegistrar: registrar,
+        );
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          pushRegs(transports.single),
+          isEmpty,
+          reason: 'no token at connect',
+        );
+
+        registrar.deliver('tok-late');
+        await Future<void>.delayed(Duration.zero);
+
+        final regs = pushRegs(transports.single);
+        expect(regs, hasLength(1));
+        expect(regs.single.body['token'], 'tok-late');
+
+        controller.dispose();
+      });
+
+      test('the same token is not re-sent within one connection', () async {
+        final storage = _seededStorage();
+        final transports = <FakeTransport>[];
+        final registrar = FakePushRegistrar(token: 'tok-dup');
+        final controller = ConnectionController(
+          storage,
+          transportFactory: () {
+            final t = FakeTransport(emitConnected: true);
+            transports.add(t);
+            return t;
+          },
+          browseLan: _fixedBrowse(const []),
+          rediscoverStall: const Duration(seconds: 30),
+          pushRegistrar: registrar,
+        );
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        expect(pushRegs(transports.single), hasLength(1));
+
+        // Native re-delivers the identical token → must not double-register.
+        registrar.deliver('tok-dup');
+        await Future<void>.delayed(Duration.zero);
+
+        expect(pushRegs(transports.single), hasLength(1));
+
+        controller.dispose();
+      });
+
+      test('re-registers the same token on every reconnect', () async {
+        final storage = _seededStorage();
+        final transports = <FakeTransport>[];
+        final controller = ConnectionController(
+          storage,
+          transportFactory: () {
+            final t = FakeTransport(emitConnected: true);
+            transports.add(t);
+            return t;
+          },
+          browseLan: _fixedBrowse(const []),
+          rediscoverStall: const Duration(seconds: 30),
+          pushRegistrar: FakePushRegistrar(token: 'tok-1'),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+        final t = transports.single;
+        expect(pushRegs(t), hasLength(1), reason: 'registers on first connect');
+
+        // The socket drops and the same transport reconnects. Per spec §B the
+        // token must be re-sent on every successful reconnect, even unchanged.
+        t.emit(WsState.reconnecting);
+        t.emit(WsState.connected);
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          pushRegs(t),
+          hasLength(2),
+          reason: 'each successful reconnect must re-send push.register',
+        );
+        expect(pushRegs(t).last.body['token'], 'tok-1');
+
+        controller.dispose();
+      });
+    },
+  );
+
+  group(
+    'ConnectionController respondTo idempotency (SPEC-actionable-notifications step 4)',
+    () {
+      test('a second respondTo for the same requestId is a no-op', () async {
+        final storage = _seededStorage();
+        final transports = <FakeTransport>[];
+        final controller = ConnectionController(
+          storage,
+          transportFactory: () {
+            final t = FakeTransport(emitConnected: true);
+            transports.add(t);
+            return t;
+          },
+          browseLan: _fixedBrowse(const []),
+          rediscoverStall: const Duration(seconds: 30),
+        );
+        await Future<void>.delayed(Duration.zero);
+        final t = transports.single;
+
+        controller.respondTo('r1', {'approved': true});
+        controller.respondTo('r1', {'approved': false});
+
+        final r1 = t.sentEnvelopes
+            .where((e) => e.t == MsgType.srvResponse && e.id == 'r1')
+            .toList();
+        expect(r1, hasLength(1));
+        expect(r1.single.body['approved'], true);
+
+        // A different requestId still sends.
+        controller.respondTo('r2', {'approved': true});
+        expect(
+          t.sentEnvelopes
+              .where((e) => e.t == MsgType.srvResponse && e.id == 'r2')
+              .length,
+          1,
+        );
+
+        controller.dispose();
+      });
+
+      test(
+        'pairing handshake sends the desktop pid in hello body (SPEC-performance-metrics-dashboard)',
+        () async {
+          // Deliberately EMPTY storage, not a seeded one: with a stored server
+          // `_boot()` opens its own transport first, so the pairing handshake's
+          // socket would be the second and `transports.single` would throw.
+          final storage = FakeSecureStorage();
+          final transports = <FakeTransport>[];
+          final controller = ConnectionController(
+            storage,
+            transportFactory: () {
+              final t = FakeTransport();
+              transports.add(t);
+              return t;
+            },
+          );
+          const info = PairInfo(
+            host: 'example.com',
+            port: 443,
+            fingerprint: 'sha256/abc',
+            token: 'pair-token-123',
+          );
+
+          unawaited(
+            controller
+                .pairWith(info, label: 'test-device')
+                .then((_) {})
+                .catchError((_) {}),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          expect(transports, hasLength(1));
+
+          final sent = transports.single.helloBodies.single;
+          expect(sent['pair'], 'pair-token-123');
+          expect(sent['label'], 'test-device');
+          // The key assertion: pid must be present so the server can measure the app surface.
+          expect(sent['pid'], isNotNull);
+          expect(sent['pid'], io.pid);
+
+          controller.dispose();
+        },
+      );
+    },
+  );
 }

@@ -3,7 +3,7 @@ import 'package:makit/store/turns.dart';
 import 'package:makit/transport/protocol.dart';
 
 /// Event at [seq] with `ts = seq * 1000` so a span's wall clock reads directly
-/// off the seqs (SPEC-47 D18 table test).
+/// off the seqs (SPEC-session-timings D18 table test).
 SessionEvent _ev(int seq, EventKind k, [Map<String, dynamic> p = const {}]) =>
     SessionEvent(
       seq: seq,

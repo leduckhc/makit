@@ -8,9 +8,9 @@ import 'panes/workspace_controller.dart';
 /// When the active group's canvas shows no session at all (every tab is an
 /// empty placeholder, or their sessions no longer resolve), reveal the most
 /// recently active session **that is already a member of the active group** so
-/// the canvas is useful on first launch (SPEC-10 Phase 1 acceptance).
+/// the canvas is useful on first launch (SPEC-desktop-chat-app Phase 1 acceptance).
 ///
-/// SPEC-30 makes this group-aware: it may only reveal a session within the
+/// SPEC-tab-groups makes this group-aware: it may only reveal a session within the
 /// active group's membership. Revealing a foreign session would inject it into
 /// the active group's tree, bypassing `addMember` and breaking decisions 4, 5
 /// and 15. If nothing in the group qualifies it stays **inert** — it must never

@@ -1,4 +1,4 @@
-/// SPEC-46 — the pure filter + grouping behind the global Docs screen.
+/// SPEC-doc-preview — the pure filter + grouping behind the global Docs screen.
 ///
 /// Pure functions and value types only: no widgets, no provider reads, so the
 /// screen's visible-set logic is testable without a container (the same split

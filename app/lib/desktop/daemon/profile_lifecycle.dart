@@ -1,4 +1,4 @@
-/// Per-profile daemon lifecycle for the macOS desktop control app (SPEC-50 D7).
+/// Per-profile daemon lifecycle for the macOS desktop control app (SPEC-profiles D7).
 ///
 /// [DaemonLifecycle] drives *the* daemon this app instance talks to: it captures
 /// a single `environment` (its own `MAKIT_HOME`) at construction. But the
@@ -10,7 +10,7 @@
 /// and `MAKIT_HOME=<home> makit stop` (`server/src/index.ts:130` →
 /// `daemon.stop()`). SIGTERM→SIGKILL semantics already live in the CLI; here we
 /// only spawn with the right home and, for deletion, *confirm* the control
-/// socket disappeared (SPEC-50 D8) before anyone unlinks files under what might
+/// socket disappeared (SPEC-profiles D8) before anyone unlinks files under what might
 /// still be a live daemon holding `makit.db-wal`.
 library;
 
@@ -121,7 +121,7 @@ class ProfileLifecycle {
   /// exited.
   ///
   /// Deleting a profile must not unlink files under a live daemon holding
-  /// `makit.db-wal` (SPEC-50 D8). Confirming only that the control socket
+  /// `makit.db-wal` (SPEC-profiles D8). Confirming only that the control socket
   /// stopped answering is not enough: the daemon's SIGTERM handler closes the
   /// socket *first* and calls `process.exit(0)` ~100 ms later, so there is a
   /// window where the socket is gone but the process is still alive and may

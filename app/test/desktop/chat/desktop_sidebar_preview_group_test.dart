@@ -1,4 +1,4 @@
-// SPEC-51 — the sidebar worktree row under preview groups: a single click opens
+// SPEC-preview-groups — the sidebar worktree row under preview groups: a single click opens
 // the branch as the disposable (preview) group, a double click keeps it.
 //
 // Mounts the real `DesktopSidebar` (the row widget is private) in a plain

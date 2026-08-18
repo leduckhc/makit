@@ -335,7 +335,7 @@ void main() {
     });
   });
 
-  group('the chosen logo is actually drawn (SPEC-48 D14\u2032)', () {
+  group('the chosen logo is actually drawn (SPEC-per-repo-settings D14\u2032)', () {
     // The reason the row exists: two repos whose names hash to the same hue are
     // indistinguishable, which defeats the one job the monogram has. A choice that
     // does not change the mark leaves that defeat in place AND adds a control that
@@ -442,18 +442,19 @@ void main() {
       expect(taps, 1);
     });
 
-    testWidgets('the root path row opens the re-point flow (SPEC-48 D4\u2032)', (
-      t,
-    ) async {
-      // It used to show a "not supported yet" notice. The row is only honest once it
-      // actually re-points, because the alternative it recommended — remove and
-      // re-add — loses the project id and everything keyed to it.
-      var taps = 0;
-      await _pump(t, _view(), onRootPath: () => taps++);
-      await t.tap(find.text('Root path'));
-      await t.pumpAndSettle();
-      expect(taps, 1);
-    });
+    testWidgets(
+      'the root path row opens the re-point flow (SPEC-per-repo-settings D4\u2032)',
+      (t) async {
+        // It used to show a "not supported yet" notice. The row is only honest once it
+        // actually re-points, because the alternative it recommended — remove and
+        // re-add — loses the project id and everything keyed to it.
+        var taps = 0;
+        await _pump(t, _view(), onRootPath: () => taps++);
+        await t.tap(find.text('Root path'));
+        await t.pumpAndSettle();
+        expect(taps, 1);
+      },
+    );
 
     testWidgets('a read-only client cannot re-point the repository', (t) async {
       // D16 governs every write, and this is the most consequential one: it names the

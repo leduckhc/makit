@@ -1,4 +1,4 @@
-/// Docs models + providers (SPEC-46).
+/// Docs models + providers (SPEC-doc-preview).
 ///
 /// Tolerant by construction, mirroring [PortInfo]/[MetricsSample]: a malformed
 /// field degrades to a null/absent value rather than taking down the socket.
@@ -28,7 +28,7 @@ DocKind? _parseKind(Object? v) => switch (v) {
 
 String? _asStringOrNull(Object? v) => v is String ? v : null;
 
-/// One renderable document inside a worktree (SPEC-46 `DocDTO`).
+/// One renderable document inside a worktree (SPEC-doc-preview `DocDTO`).
 class DocInfo {
   const DocInfo({
     required this.key,
@@ -107,7 +107,7 @@ class DocInfo {
   }
 }
 
-/// One host-wide document index (`docs.snapshot` event, SPEC-46 D11).
+/// One host-wide document index (`docs.snapshot` event, SPEC-doc-preview D11).
 class DocsSnapshot {
   const DocsSnapshot({
     required this.docs,
@@ -150,7 +150,7 @@ class DocsSnapshot {
   }
 }
 
-/// Where a published doc can be reached (SPEC-46 D15). `tailnet` when
+/// Where a published doc can be reached (SPEC-doc-preview D15). `tailnet` when
 /// `tailscale serve` fronted it, `lan` for the explicitly-labelled fallback.
 enum DocReach { tailnet, lan }
 
@@ -160,7 +160,7 @@ DocReach? _parseReach(Object? v) => switch (v) {
   _ => null,
 };
 
-/// An active publication of one document (SPEC-46 `DocGrantDTO`, D9). The
+/// An active publication of one document (SPEC-doc-preview `DocGrantDTO`, D9). The
 /// `grantId` is the capability — 32 bytes of CSPRNG, treated as secret.
 class DocGrant {
   const DocGrant({

@@ -1,5 +1,5 @@
 /**
- * SPEC-38 routing tests for the four PR/worktree commands added by the next-step
+ * SPEC-pr-actions-next-step-bar routing tests for the four PR/worktree commands added by the next-step
  * bar: `worktree.wrapUp`, `worktree.discard`, `pr.markReady`, `pr.updateBranch`
  * and `pr.squashMerge`.
  *
@@ -33,7 +33,7 @@ function fakeClient(): FakeClient {
     authed: true,
     subscribed: new Set<string>(),
     watchingMetrics: false,
-    // SPEC-41: the ports watch flag is required on WsClient (a router built
+    // SPEC-open-ports: the ports watch flag is required on WsClient (a router built
     // without it would ACK `ports.watch` and then never scan), so every fake
     // client declares it. This domain does not exercise ports.
     watchingPorts: false,
@@ -61,7 +61,7 @@ function routerWith(manager: Partial<CommandDeps["manager"]>) {
     broadcastBudget: () => {},
     onMetricsWatchersChanged: () => {},
     sendMetricsHistory: () => {},
-    // SPEC-41: required members, inert here — the PR domain sends no ports frames.
+    // SPEC-open-ports: required members, inert here — the PR domain sends no ports frames.
     onPortsWatchersChanged: () => {},
     sendPortsSnapshot: () => {},
     ...docsDepsStub,

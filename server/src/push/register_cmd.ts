@@ -1,5 +1,5 @@
 /**
- * `push.register` command handler (SPEC-07 A4).
+ * `push.register` command handler (SPEC-background-wake-notifications A4).
  *
  * Extracted from `server.ts` so the pure handler logic is unit-testable
  * against a `CommandRouter` + fake `WsClient` + fake registry, with no live

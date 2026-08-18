@@ -202,7 +202,7 @@ test("a routed repo with a forge reports hasRemote true and the forge", async ()
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-48 — the default-branch override reaches all THREE consumers.
+// SPEC-per-repo-settings — the default-branch override reaches all THREE consumers.
 //
 // The same shape as the worktree-root fix (T2/R5): a resolver is not a feature
 // until every consumer reads from it. `detectDefaultBranch` was called directly in
@@ -292,7 +292,7 @@ test("a new worktree branches from the overridden default", async () => {
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-48 D4' — re-pointing a project that moved on disk.
+// SPEC-per-repo-settings D4' — re-pointing a project that moved on disk.
 //
 // Why this is not "remove and re-add": that mints a new `PersistedProject.id`, and
 // everything keyed to it — per-repo settings, session history — is lost. Preserving
@@ -437,7 +437,7 @@ test("re-pointing re-runs detection rather than keeping the old forge decision",
 });
 
 // ---------------------------------------------------------------------------
-// SPEC-48 — "New worktree from PR" has to work on BOTH providers.
+// SPEC-per-repo-settings — "New worktree from PR" has to work on BOTH providers.
 //
 // Listing already routed through the gateway, so the picker showed Forgejo PRs
 // correctly. The CHECKOUT did not: it ran `gh pr checkout` unconditionally, which

@@ -1,5 +1,5 @@
 /**
- * SPEC-38: the composer's next-step bar asserts a *count* — `13 files
+ * SPEC-pr-actions-next-step-bar: the composer's next-step bar asserts a *count* — `13 files
  * uncommitted`, and a `Commit & push` button to clear it — and reads it from the
  * repos snapshot. The snapshot was recomputed on connect, spawn, kill,
  * pull-to-refresh and worktree add/remove, and on none of those does an agent

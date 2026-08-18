@@ -1,4 +1,4 @@
-// SPEC-30 Lane 6 — the agent picker (decision 13 board half, decision 14).
+// SPEC-tab-groups Lane 6 — the agent picker (decision 13 board half, decision 14).
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

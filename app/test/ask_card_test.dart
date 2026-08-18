@@ -1,4 +1,4 @@
-/// Widget tests for the inline ask card (SPEC-25).
+/// Widget tests for the inline ask card (SPEC-ask-user-inline-in-chat).
 library;
 
 import 'dart:async';
@@ -239,45 +239,113 @@ void main() {
     expect(body['value'], 'iOS, macOS');
   });
 
-  group('AnsweredAskCard (resolved history, SPEC-25 #1)', () {
-    testWidgets('highlights the chosen option and dims the rest', (
-      tester,
-    ) async {
-      final item = ToolCallItem(
-        seq: 1,
-        ts: 0,
-        callId: 'c1',
-        name: 'askUserQuestion',
-        args: const {
-          'question': 'Which CI?',
-          'options': [
-            {'label': 'GitHub Actions'},
-            {'label': 'CircleCI'},
-          ],
-        },
-        details: const {
-          'answers': ['GitHub Actions'],
-        },
-        ended: true,
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: AnsweredAskCard(item: item)),
-        ),
-      );
-      await tester.pumpAndSettle();
+  group(
+    'AnsweredAskCard (resolved history, SPEC-ask-user-inline-in-chat #1)',
+    () {
+      testWidgets('highlights the chosen option and dims the rest', (
+        tester,
+      ) async {
+        final item = ToolCallItem(
+          seq: 1,
+          ts: 0,
+          callId: 'c1',
+          name: 'askUserQuestion',
+          args: const {
+            'question': 'Which CI?',
+            'options': [
+              {'label': 'GitHub Actions'},
+              {'label': 'CircleCI'},
+            ],
+          },
+          details: const {
+            'answers': ['GitHub Actions'],
+          },
+          ended: true,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AnsweredAskCard(item: item)),
+          ),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('Answered'), findsOneWidget);
-      expect(find.text('Which CI?'), findsOneWidget);
-      expect(find.text('GitHub Actions'), findsOneWidget);
-      expect(find.text('CircleCI'), findsOneWidget);
-      // The non-chosen option is dimmed via an Opacity wrapper.
-      expect(find.byType(Opacity), findsWidgets);
-    });
+        expect(find.text('Answered'), findsOneWidget);
+        expect(find.text('Which CI?'), findsOneWidget);
+        expect(find.text('GitHub Actions'), findsOneWidget);
+        expect(find.text('CircleCI'), findsOneWidget);
+        // The non-chosen option is dimmed via an Opacity wrapper.
+        expect(find.byType(Opacity), findsWidgets);
+      });
 
-    testWidgets(
-      'derives the choice from output when details are absent (pi ask_user)',
-      (tester) async {
+      testWidgets(
+        'derives the choice from output when details are absent (pi ask_user)',
+        (tester) async {
+          final item = ToolCallItem(
+            seq: 1,
+            ts: 0,
+            callId: 'c1',
+            name: 'ask_user',
+            args: const {
+              'questions': [
+                {
+                  'question': 'Which CI?',
+                  'options': [
+                    {'label': 'GitHub Actions'},
+                    {'label': 'CircleCI'},
+                  ],
+                },
+              ],
+            },
+            // No details — pi's ask_user returns the chosen label as the output.
+            output: 'GitHub Actions',
+            ended: true,
+          );
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(body: AnsweredAskCard(item: item)),
+            ),
+          );
+          await tester.pumpAndSettle();
+          // Exactly one option is marked chosen (filled check).
+          expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
+          expect(find.text('GitHub Actions'), findsOneWidget);
+        },
+      );
+
+      testWidgets('shows context and comment when present', (tester) async {
+        final item = ToolCallItem(
+          seq: 1,
+          ts: 0,
+          callId: 'c1',
+          name: 'ask_user',
+          args: const {},
+          ended: true,
+          details: {
+            'question': 'Which PR?',
+            'options': [
+              {'title': 'PR #42'},
+            ],
+            'context': 'To keep the dashboard accurate',
+            'response': {
+              'kind': 'selection',
+              'selections': ['PR #42'],
+              'comment': 'This was my choice',
+            },
+          },
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AnsweredAskCard(item: item)),
+          ),
+        );
+        await tester.pump();
+        expect(find.text('To keep the dashboard accurate'), findsOneWidget);
+        expect(find.text('This was my choice'), findsOneWidget);
+      });
+
+      testWidgets('shows a free-text answer that matches no option', (
+        tester,
+      ) async {
         final item = ToolCallItem(
           seq: 1,
           ts: 0,
@@ -286,16 +354,15 @@ void main() {
           args: const {
             'questions': [
               {
-                'question': 'Which CI?',
+                'question': 'Branch name?',
                 'options': [
-                  {'label': 'GitHub Actions'},
-                  {'label': 'CircleCI'},
+                  {'label': 'feat/ci'},
+                  {'label': 'chore/actions'},
                 ],
               },
             ],
           },
-          // No details — pi's ask_user returns the chosen label as the output.
-          output: 'GitHub Actions',
+          output: 'my/custom-branch',
           ended: true,
         );
         await tester.pumpWidget(
@@ -304,95 +371,75 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        // Exactly one option is marked chosen (filled check).
+        // The typed answer appears (as the chosen row), not lost.
+        expect(find.text('my/custom-branch'), findsOneWidget);
         expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
-        expect(find.text('GitHub Actions'), findsOneWidget);
-      },
-    );
+      });
 
-    testWidgets('shows context and comment when present', (tester) async {
-      final item = ToolCallItem(
-        seq: 1,
-        ts: 0,
-        callId: 'c1',
-        name: 'ask_user',
-        args: const {},
-        ended: true,
-        details: {
-          'question': 'Which PR?',
-          'options': [
-            {'title': 'PR #42'},
-          ],
-          'context': 'To keep the dashboard accurate',
-          'response': {
-            'kind': 'selection',
-            'selections': ['PR #42'],
-            'comment': 'This was my choice',
-          },
-        },
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: AnsweredAskCard(item: item)),
-        ),
-      );
-      await tester.pump();
-      expect(find.text('To keep the dashboard accurate'), findsOneWidget);
-      expect(find.text('This was my choice'), findsOneWidget);
-    });
-
-    testWidgets('shows a free-text answer that matches no option', (
-      tester,
-    ) async {
-      final item = ToolCallItem(
-        seq: 1,
-        ts: 0,
-        callId: 'c1',
-        name: 'ask_user',
-        args: const {
-          'questions': [
-            {
-              'question': 'Branch name?',
+      testWidgets(
+        'reads pi\'s details shape (question + options[title] + response)',
+        (tester) async {
+          final item = ToolCallItem(
+            seq: 1,
+            ts: 0,
+            callId: 'c1',
+            name: 'ask_user',
+            args: const {'question': "What's your favorite color?"},
+            details: const {
+              'question': "What's your favorite color?",
               'options': [
-                {'label': 'feat/ci'},
-                {'label': 'chore/actions'},
+                {'title': 'Red'},
+                {'title': 'Green'},
+                {'title': 'Blue'},
               ],
+              'response': {'kind': 'freeform', 'text': 'teal'},
             },
-          ],
+            output: 'User answered: teal',
+            ended: true,
+          );
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(body: AnsweredAskCard(item: item)),
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text("What's your favorite color?"), findsOneWidget);
+          // Option titles render.
+          expect(find.text('Red'), findsOneWidget);
+          expect(find.text('Green'), findsOneWidget);
+          // The freeform answer shows as the chosen row.
+          expect(find.text('teal'), findsOneWidget);
+          expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
         },
-        output: 'my/custom-branch',
-        ended: true,
       );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: AnsweredAskCard(item: item)),
-        ),
-      );
-      await tester.pumpAndSettle();
-      // The typed answer appears (as the chosen row), not lost.
-      expect(find.text('my/custom-branch'), findsOneWidget);
-      expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
-    });
 
-    testWidgets(
-      'reads pi\'s details shape (question + options[title] + response)',
-      (tester) async {
+      testWidgets('renders context, option descriptions, and a comment', (
+        tester,
+      ) async {
         final item = ToolCallItem(
           seq: 1,
           ts: 0,
           callId: 'c1',
           name: 'ask_user',
-          args: const {'question': "What's your favorite color?"},
+          args: const {'question': 'PR pill?'},
           details: const {
-            'question': "What's your favorite color?",
+            'question': 'PR pill?',
+            'context':
+                'findOpenPr only queries open PRs, so the pill vanishes.',
             'options': [
-              {'title': 'Red'},
-              {'title': 'Green'},
-              {'title': 'Blue'},
+              {
+                'title': 'Keep pill',
+                'description': 'Query --state all instead.',
+              },
+              {'title': 'Drop it'},
             ],
-            'response': {'kind': 'freeform', 'text': 'teal'},
+            'response': {
+              'kind': 'selection',
+              'selections': ['Keep pill'],
+              'comment': 'persist across merges',
+            },
           },
-          output: 'User answered: teal',
+          output: 'User answered: Keep pill',
           ended: true,
         );
         await tester.pumpWidget(
@@ -401,83 +448,43 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text("What's your favorite color?"), findsOneWidget);
-        // Option titles render.
-        expect(find.text('Red'), findsOneWidget);
-        expect(find.text('Green'), findsOneWidget);
-        // The freeform answer shows as the chosen row.
-        expect(find.text('teal'), findsOneWidget);
+        expect(find.textContaining('the pill vanishes'), findsOneWidget);
+        expect(find.textContaining('Query --state all'), findsOneWidget);
+        expect(find.text('persist across merges'), findsOneWidget);
         expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
-      },
-    );
+      });
 
-    testWidgets('renders context, option descriptions, and a comment', (
-      tester,
-    ) async {
-      final item = ToolCallItem(
-        seq: 1,
-        ts: 0,
-        callId: 'c1',
-        name: 'ask_user',
-        args: const {'question': 'PR pill?'},
-        details: const {
-          'question': 'PR pill?',
-          'context': 'findOpenPr only queries open PRs, so the pill vanishes.',
-          'options': [
-            {'title': 'Keep pill', 'description': 'Query --state all instead.'},
-            {'title': 'Drop it'},
-          ],
-          'response': {
-            'kind': 'selection',
-            'selections': ['Keep pill'],
-            'comment': 'persist across merges',
+      testWidgets('a cancelled ask shows Skipped and highlights nothing', (
+        tester,
+      ) async {
+        final item = ToolCallItem(
+          seq: 1,
+          ts: 0,
+          callId: 'c1',
+          name: 'ask_user',
+          args: const {'question': 'Which CI?'},
+          details: const {
+            'question': 'Which CI?',
+            'options': [
+              {'title': 'GitHub Actions'},
+              {'title': 'CircleCI'},
+            ],
+            'response': null,
+            'cancelled': true,
           },
-        },
-        output: 'User answered: Keep pill',
-        ended: true,
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: AnsweredAskCard(item: item)),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.textContaining('the pill vanishes'), findsOneWidget);
-      expect(find.textContaining('Query --state all'), findsOneWidget);
-      expect(find.text('persist across merges'), findsOneWidget);
-      expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
-    });
-
-    testWidgets('a cancelled ask shows Skipped and highlights nothing', (
-      tester,
-    ) async {
-      final item = ToolCallItem(
-        seq: 1,
-        ts: 0,
-        callId: 'c1',
-        name: 'ask_user',
-        args: const {'question': 'Which CI?'},
-        details: const {
-          'question': 'Which CI?',
-          'options': [
-            {'title': 'GitHub Actions'},
-            {'title': 'CircleCI'},
-          ],
-          'response': null,
-          'cancelled': true,
-        },
-        output: 'User cancelled the question',
-        ended: true,
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: AnsweredAskCard(item: item)),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Skipped'), findsOneWidget);
-      expect(find.text('Answered'), findsNothing);
-      expect(find.byIcon(PhosphorIconsFill.checkCircle), findsNothing);
-    });
-  });
+          output: 'User cancelled the question',
+          ended: true,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AnsweredAskCard(item: item)),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Skipped'), findsOneWidget);
+        expect(find.text('Answered'), findsNothing);
+        expect(find.byIcon(PhosphorIconsFill.checkCircle), findsNothing);
+      });
+    },
+  );
 }

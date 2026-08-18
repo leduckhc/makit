@@ -1,12 +1,12 @@
 /**
- * makit control-plane protocol (SPEC-01).
+ * makit control-plane protocol (SPEC-daemon-control-plane).
  *
  * A tiny newline-delimited JSON (NDJSON) request/response protocol spoken over
  * the local unix-domain control socket (`~/.makit/control.sock`). It lets other
- * local processes — the CLI (SPEC-02) and the desktop app (SPEC-03) — drive a
+ * local processes — the CLI (SPEC-cli-client-subcommands) and the desktop app (SPEC-desktop-control-app) — drive a
  * *running* makit without restarting it.
  *
- * **This contract is frozen**: SPEC-02/03 depend on the verb names, argument
+ * **This contract is frozen**: SPEC-cli-client-subcommands/03 depend on the verb names, argument
  * shapes, and response envelopes below. Add verbs; do not repurpose existing
  * ones.
  *
@@ -20,7 +20,7 @@
 
 import type { SessionDTO } from "../protocol.js";
 
-/** The v1 control verbs. Frozen — SPEC-02/03 depend on these. */
+/** The v1 control verbs. Frozen — SPEC-cli-client-subcommands/03 depend on these. */
 export const CONTROL_VERBS = [
   "status",
   "pair.mint",
@@ -32,7 +32,7 @@ export const CONTROL_VERBS = [
   "logs.tail",
   "logs.cancel",
   /**
-   * SPEC-46 (D2): mint (or return) the CLI's own device credential — a bearer
+   * SPEC-cli-as-client (D2): mint (or return) the CLI's own device credential — a bearer
    * for `cli@<hostname>` with `caps: ["client"]`, cached by the caller at
    * `~/.makit/cli.json`.
    *
@@ -40,7 +40,7 @@ export const CONTROL_VERBS = [
    * verbs. It belongs on the control socket rather than behind a QR pair token
    * because a process that can write `~/.makit/control.sock` is already the
    * local user; demanding a phone camera to authorise a local terminal would be
-   * theatre. It is the *only* SPEC-46 verb here: every session verb is WSS (D1).
+   * theatre. It is the *only* SPEC-cli-as-client verb here: every session verb is WSS (D1).
    */
   "cli.grant",
 ] as const;
@@ -119,7 +119,7 @@ export interface SessionsListData {
 }
 
 /**
- * SPEC-46 (D2): the CLI's credential. `created` is false when an existing
+ * SPEC-cli-as-client (D2): the CLI's credential. `created` is false when an existing
  * `cli@<host>` device was returned, so the caller can tell first run from a
  * cache miss it caused itself.
  */

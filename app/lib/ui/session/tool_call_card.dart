@@ -252,7 +252,7 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
     );
   }
 
-  /// The trailing duration token, to the left of the status glyph (SPEC-47
+  /// The trailing duration token, to the left of the status glyph (SPEC-session-timings
   /// D2/D6/D6a/D6b/D6c/D17). A finished (or turn-closed, D6a) row shows a static
   /// figure gated at [kToolDurationFloor]; a running row in a live session shows
   /// a live counter that escalates past 60 s. Empty otherwise (D19).

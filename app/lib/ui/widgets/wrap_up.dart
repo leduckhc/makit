@@ -199,7 +199,7 @@ Future<void> runPrRemedy(
         );
         // One event carries the whole outcome: the detail that used to hide
         // behind a second "Why?" snackbar is now one tap away in the toast and
-        // permanently copyable in Activity (SPEC-48).
+        // permanently copyable in Activity (SPEC-status-and-activity).
         activity.success(
           outcome.message,
           detail: outcome.detail,
@@ -313,8 +313,8 @@ Future<bool?> showPrDirectConfirm(
               ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
             ),
             // The sentence above asserts a PR state the app took from its last
-            // snapshot, and nothing re-checks GitHub before acting (SPEC-38 §11a
-            // L1). When that snapshot is explicitly last-known — SPEC-32 shed the
+            // snapshot, and nothing re-checks GitHub before acting (SPEC-pr-actions-next-step-bar §11a
+            // L1). When that snapshot is explicitly last-known — SPEC-github-gateway-and-budget shed the
             // refresh to save quota — the assertion may be false, so qualify it.
             //
             // It warns rather than refusing: blocking here would reintroduce the
@@ -358,7 +358,7 @@ Future<bool?> showPrDirectConfirm(
                 emphasis: worktreePath,
               ),
               // Live sessions are closed, not stopped: the transcript and the
-              // resume handle survive (SPEC-29). Drafts have neither, so they go.
+              // resume handle survive (SPEC-session-lifecycle-resume-list-delete). Drafts have neither, so they go.
               const _Step(
                 'Close the sessions running in it (drafts are discarded)',
                 icon: PhosphorIconsLight.moon,

@@ -1,4 +1,4 @@
-/// SPEC-30 — the groups layer: which groups exist, which one is active, which
+/// SPEC-tab-groups — the groups layer: which groups exist, which one is active, which
 /// boards were recently closed, and the one persisted payload for all of it.
 ///
 /// This is a **pure state container**. It takes the data it needs as arguments
@@ -7,7 +7,7 @@
 /// widget tree — and so the rules live in one place rather than being
 /// re-implemented at each call site.
 ///
-/// It also owns persistence for the split/tab trees: since SPEC-30 there are
+/// It also owns persistence for the split/tab trees: since SPEC-tab-groups there are
 /// many trees (one per group), [WorkspaceController] reports mutations through a
 /// [WorkspaceCommit] sink and this controller writes them.
 library;
@@ -29,11 +29,11 @@ import 'group.dart';
 const String kGroupsPrefsKey = 'desktop_groups';
 
 /// Payload version. Bump when the shape changes; an unknown version falls back
-/// to a fresh state rather than guessing (the SPEC-28 blob had no version,
+/// to a fresh state rather than guessing (the SPEC-desktop-workspace-tabs blob had no version,
 /// which is exactly why migrating it needed a special case).
 const int kGroupsPayloadVersion = 1;
 
-/// How many closed boards are remembered (SPEC-30 decision 8).
+/// How many closed boards are remembered (SPEC-tab-groups decision 8).
 const int kRecentlyClosedLimit = 10;
 
 /// Where a session runs — the pair that decides whether it belongs to a
@@ -103,7 +103,7 @@ class GroupsState {
     this.previewGroupId,
   }) : assert(groups.length > 0, 'a workspace always has at least one group');
 
-  /// The fresh-launch state: one empty board. SPEC-30 decision 19 prefers the
+  /// The fresh-launch state: one empty board. SPEC-tab-groups decision 19 prefers the
   /// most recently active session's worktree group, but sessions are not known
   /// until the first snapshot arrives — [GroupsController.seedFromSessions]
   /// upgrades this the moment they are.
@@ -125,7 +125,7 @@ class GroupsState {
   /// Closed boards, oldest first, capped at [kRecentlyClosedLimit].
   final List<ClosedBoard> recentlyClosed;
 
-  /// SPEC-51 — the **preview** (disposable) group, or null when every group was
+  /// SPEC-preview-groups — the **preview** (disposable) group, or null when every group was
   /// kept. A single nullable id rather than a flag on [Group] because "at most
   /// one preview group" is a property of the collection: modelled here it holds
   /// by construction, modelled on the group it would be an invariant that every
@@ -155,7 +155,7 @@ class GroupsState {
   /// JSON for persistence, versioned.
   ///
   /// [previewGroupId] is written only when set, so the payload of an install
-  /// that never turns the mode on is byte-identical to before SPEC-51 — see
+  /// that never turns the mode on is byte-identical to before SPEC-preview-groups — see
   /// decision 10 for why the version is deliberately *not* bumped.
   Map<String, Object?> toJson() => {
     'v': kGroupsPayloadVersion,
@@ -199,7 +199,7 @@ class GroupsController extends StateNotifier<GroupsState> {
   GroupsController.ephemeral([GroupsState? initial])
     : this(null, initial ?? GroupsState.fresh());
 
-  /// Builds a controller from persisted state, migrating the SPEC-28 single
+  /// Builds a controller from persisted state, migrating the SPEC-desktop-workspace-tabs single
   /// workspace when this is the first run with groups.
   static GroupsController load(ScopedPrefs prefs) =>
       GroupsController(prefs, decode(prefs));
@@ -224,9 +224,9 @@ class GroupsController extends StateNotifier<GroupsState> {
   }
 
   /// Activates the group for `(projectId, worktreePath)`, minting it when no
-  /// group holds that scope yet (SPEC-30 decision 15). Returns its id.
+  /// group holds that scope yet (SPEC-tab-groups decision 15). Returns its id.
   ///
-  /// SPEC-51: [preview] mints the group as the **disposable** one — it takes the
+  /// SPEC-preview-groups: [preview] mints the group as the **disposable** one — it takes the
   /// slot of the previous preview group, which is dropped. That drop is safe by
   /// the same reasoning as [closeGroup]: a worktree group's membership is
   /// derived, so its agents keep running and clicking the branch rebuilds it.
@@ -283,7 +283,7 @@ class GroupsController extends StateNotifier<GroupsState> {
     return minted.id;
   }
 
-  /// Promotes [id] out of preview — it stops being replaceable (SPEC-51
+  /// Promotes [id] out of preview — it stops being replaceable (SPEC-preview-groups
   /// decision 4). A no-op for any other group, so the two affordances that call
   /// it (double-clicking the worktree row, "Keep this view") need no guard.
   void keepGroup(String id) {
@@ -504,7 +504,7 @@ class GroupsController extends StateNotifier<GroupsState> {
 
   // -- Persistence ---------------------------------------------------------
 
-  /// Decodes persisted state, migrating the SPEC-28 single workspace on first
+  /// Decodes persisted state, migrating the SPEC-desktop-workspace-tabs single workspace on first
   /// run and falling back to [GroupsState.fresh] for anything unusable.
   @visibleForTesting
   static GroupsState decode(ScopedPrefs prefs) {
@@ -577,7 +577,7 @@ class GroupsController extends StateNotifier<GroupsState> {
     );
   }
 
-  /// First run with groups: fold the SPEC-28 single workspace into one board so
+  /// First run with groups: fold the SPEC-desktop-workspace-tabs single workspace into one board so
   /// nobody loses their layout. Empty tabs are carried over verbatim (decision
   /// 21) and bound tabs become the board's membership.
   static GroupsState _migrateLegacy(ScopedPrefs prefs) {

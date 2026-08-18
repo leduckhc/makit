@@ -19,7 +19,7 @@ import 'chat_transcript.dart' show kAnchorNearBottomPx;
 ///
 /// This is the seam between the widget layer (which knows *which message* the
 /// user asked for) and the render layer (which is the only thing that knows
-/// where an un-built row actually is). SPEC-34.
+/// where an un-built row actually is). SPEC-message-navigator.
 ///
 /// A jump **must** be resolved by [SliverGeometry.scrollOffsetCorrection] during
 /// layout, never from a post-frame callback: the latter paints the wrong frame
@@ -90,7 +90,7 @@ class TranscriptListView extends StatelessWidget {
   /// Maps a row key back to its current index. See the constructor.
   final int? Function(Key) findChildIndexCallback;
 
-  /// Optional handle used to jump to a row (SPEC-34). Null = no navigator.
+  /// Optional handle used to jump to a row (SPEC-message-navigator). Null = no navigator.
   final TranscriptJumpTarget? jumpTarget;
 
   @override

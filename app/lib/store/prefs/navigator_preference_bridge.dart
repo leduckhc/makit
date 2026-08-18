@@ -1,4 +1,4 @@
-/// Bridges stored preferences to the shared message-rail providers (SPEC-34).
+/// Bridges stored preferences to the shared message-rail providers (SPEC-message-navigator).
 ///
 /// The rail reads its on/off state and options as plain provider *values* that
 /// an app root overrides, rather than reading `PreferenceEntry`s itself: that keeps

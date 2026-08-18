@@ -87,7 +87,7 @@ void main() {
     });
 
     test('divideActive carries a worktree hint onto the new starter tab', () {
-      // SPEC-30 decision 17: splitting a pane must not lose where you were, so
+      // SPEC-tab-groups decision 17: splitting a pane must not lose where you were, so
       // the caller (which knows the active tab's session/worktree) hands the
       // hint down and the new tab lands on the in-pane starter for that branch
       // instead of the no-worktree placeholder.
@@ -576,7 +576,7 @@ void main() {
     });
   });
 
-  // SPEC-30 Lane 2: this controller no longer owns storage — it reports every
+  // SPEC-tab-groups Lane 2: this controller no longer owns storage — it reports every
   // mutation through a commit sink and the groups layer writes it. What used to
   // be the "persistence" group therefore splits in two: the sink contract, and
   // the decoder that the groups migration reuses to read a legacy blob.

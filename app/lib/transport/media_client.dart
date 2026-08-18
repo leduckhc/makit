@@ -1,4 +1,4 @@
-/// Fetching assistant display media (SPEC-22) from the desktop server.
+/// Fetching assistant display media (SPEC-assistant-display-media) from the desktop server.
 ///
 /// Media is *not* carried on the WebSocket: session events are replayed in full
 /// on every resume, so the event carries a `mediaId` descriptor and the bytes
@@ -117,7 +117,7 @@ MediaFetcher httpMediaFetcher(MediaEndpoint endpoint) {
 }
 
 // ---------------------------------------------------------------------------
-// Upload (SPEC-33) — the input half: the user's screenshot goes UP to the same
+// Upload (SPEC-user-attachments) — the input half: the user's screenshot goes UP to the same
 // content-addressed store the agent's media comes down from.
 // ---------------------------------------------------------------------------
 

@@ -8,7 +8,7 @@
  * live in both directions — type in the terminal, see it on the phone, and
  * vice-versa — with no second pi process fighting over the session file.
  *
- * Auth: the CLI's own device credential (SPEC-46 D2) — `MAKIT_CLI_TOKEN` for an
+ * Auth: the CLI's own device credential (SPEC-cli-as-client D2) — `MAKIT_CLI_TOKEN` for an
  * agent inside a session, else `~/.makit/cli.json`, minted via `cli.grant` on
  * first use. It no longer borrows the *phone's* bearer from `devices.json`, so
  * revoking the phone leaves the terminal working and vice-versa.

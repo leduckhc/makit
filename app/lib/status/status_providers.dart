@@ -2,7 +2,7 @@
 ///
 /// Deliberately imports `app_log.dart` (the global) rather than
 /// `diagnostics_providers.dart`: that file reaches into the connection/store
-/// providers for the log uploader, and the store posts status events (SPEC-48
+/// providers for the log uploader, and the store posts status events (SPEC-status-and-activity
 /// D7), so going through it would close an import cycle.
 library;
 
@@ -45,7 +45,7 @@ Stream<StatusBadge> _badgeStates(StatusCenter center) async* {
 /// A plain object, so — unlike `ScaffoldMessenger.of(context)` — it is never null
 /// and never expires. That deletes the `maybeOf`-plus-`?.` and
 /// `if (context.mounted)` dances at 24 of the call sites this layer replaces
-/// (SPEC-48 D3).
+/// (SPEC-status-and-activity D3).
 ///
 /// **But hoist it before the first `await`.** `ref` still dies with its widget
 /// (Riverpod throws `Using "ref" when a widget … has been unmounted is unsafe`),

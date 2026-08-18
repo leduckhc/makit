@@ -1,5 +1,5 @@
 /**
- * SPEC-43 P3a e2e — `ports.kill` over the real WSS server.
+ * SPEC-ports-kill P3a e2e — `ports.kill` over the real WSS server.
  *
  * Three properties no unit test can prove together:
  *  1. an **unauthed** frame never reaches the handler (D4's floor: the paired

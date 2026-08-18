@@ -1,5 +1,5 @@
 /**
- * T7 (SPEC-46) — `makit ls`: the output contract (D7) and the exit codes (D8/C4).
+ * T7 (SPEC-cli-as-client) — `makit ls`: the output contract (D7) and the exit codes (D8/C4).
  *
  * `ls` is the first verb that is a client of the WSS transport, so these tests
  * pin the two contracts every later verb inherits: `--json` is the wire
@@ -17,6 +17,7 @@ import { cliCredentialPath } from "./client.js";
 import { createControlServer, type ControlBackend } from "../daemon/control-server.js";
 import { controlSocketPath } from "../daemon/paths.js";
 import { startStubWss } from "../../test/support/stub_wss.js";
+import { hideAmbientCliToken } from "../../test/support/cli_home.js";
 
 const SESSIONS = [
   {
@@ -36,6 +37,7 @@ async function withHome(
   opts: { control?: boolean; bearer?: string } = {},
 ): Promise<void> {
   const prev = process.env.MAKIT_HOME;
+  const restoreToken = hideAmbientCliToken();
   const home = mkdtempSync(join(tmpdir(), "makit-ls-home-"));
   process.env.MAKIT_HOME = home;
   const control = opts.control
@@ -51,6 +53,7 @@ async function withHome(
     await control?.close();
     if (prev === undefined) delete process.env.MAKIT_HOME;
     else process.env.MAKIT_HOME = prev;
+    restoreToken();
     rmSync(home, { recursive: true, force: true });
   }
 }
@@ -220,7 +223,7 @@ test("--closed reads session.listClosed instead of the pushed snapshot", async (
 // D8/C4 — exit 3 (daemon down) vs exit 4 (credential refused)
 // ---------------------------------------------------------------------------
 
-test("daemon down → SPEC-02's message and exit 3, with no stack trace", async () => {
+test("daemon down → SPEC-cli-client-subcommands's message and exit 3, with no stack trace", async () => {
   await withHome(async () => {
     const { err, code, out } = await capture(["--port", "1"]);
     assert.equal(code, 3);

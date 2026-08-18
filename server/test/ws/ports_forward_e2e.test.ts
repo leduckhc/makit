@@ -1,5 +1,5 @@
 /**
- * SPEC-44 P4b e2e — forward a REAL loopback dev server over the REAL WSS
+ * SPEC-ports-forward P4b e2e — forward a REAL loopback dev server over the REAL WSS
  * listener, and read its bytes back through the proxy.
  *
  * This is the claim that cannot be unit-tested: the forward route rides the HTTPS

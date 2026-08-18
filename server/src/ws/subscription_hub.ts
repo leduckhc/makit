@@ -27,7 +27,7 @@ export interface SubscriptionManager {
 export interface SubscriptionHubDeps {
   manager: SubscriptionManager;
   /**
-   * A session's parent from persisted lineage (SPEC-46 D10), for the D17 read
+   * A session's parent from persisted lineage (SPEC-cli-as-client D10), for the D17 read
    * rule: a session-scoped principal reads its own session and its descendants.
    * Absent in tests that do not exercise lineage — then only the own-session case
    * can pass, which is the safe direction.
@@ -95,7 +95,7 @@ export class SubscriptionHub {
    * history replay on `sub` and prompt routing (see {@link ReverseRpc}).
    * Returns the send count.
    *
-   * SPEC-46 D17 (rev 3): the auto-mirror is correct for a phone but a leak for
+   * SPEC-cli-as-client D17 (rev 3): the auto-mirror is correct for a phone but a leak for
    * an agent — `fanout` is not a command, so the router's capability check does
    * not cover it, and a session-scoped token that merely connected would
    * otherwise receive every session's transcript. A session-scoped principal

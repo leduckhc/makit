@@ -1,4 +1,4 @@
-/// Tests for the inline-ask elicitation store (SPEC-25).
+/// Tests for the inline-ask elicitation store (SPEC-ask-user-inline-in-chat).
 library;
 
 import 'dart:async';

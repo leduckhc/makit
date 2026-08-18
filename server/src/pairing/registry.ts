@@ -36,15 +36,15 @@ export interface PairedDevice {
   bearer: string;
   pairedAt: number;
   lastSeenAt: number;
-  /** Content-free wake push token (SPEC-07). Cleared on 410/BadDeviceToken. */
+  /** Content-free wake push token (SPEC-background-wake-notifications). Cleared on 410/BadDeviceToken. */
   pushToken?: string;
   /** Push routing platform: "apns" | "fcm". */
   pushPlatform?: string;
   /** APNs environment for the token: "sandbox" | "production". */
   pushEnv?: string;
   /**
-   * SPEC-46 (D2): what this device may do. **Absent means full access**, which
-   * is what every device paired before SPEC-46 is — the field is additive and
+   * SPEC-cli-as-client (D2): what this device may do. **Absent means full access**, which
+   * is what every device paired before SPEC-cli-as-client is — the field is additive and
    * must never retroactively restrict an existing phone. `cli@<host>` is minted
    * with `["client"]` so it is a separately revocable subject.
    */
@@ -106,7 +106,7 @@ export class DeviceRegistry {
   }
 
   /**
-   * SPEC-46 (D2): mint (or return) the CLI's own device — label `cli@<hostname>`
+   * SPEC-cli-as-client (D2): mint (or return) the CLI's own device — label `cli@<hostname>`
    * with `caps: ["client"]`, so it is a subject that is revocable separately
    * from the user's phone. Idempotent by label: a second call returns the SAME
    * device with `created: false`, so a CLI whose `~/.makit/cli.json` cache was
@@ -170,7 +170,7 @@ export class DeviceRegistry {
   }
 
   /**
-   * Persist a device's content-free wake push token (SPEC-07). No-op for an
+   * Persist a device's content-free wake push token (SPEC-background-wake-notifications). No-op for an
    * unknown device. Written 0600 by {@link persist}.
    */
   setPushToken(

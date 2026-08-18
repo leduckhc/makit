@@ -1,5 +1,5 @@
 /// Pure tool-result text helpers — no Flutter dependency so they can be unit
-/// tested directly. Extracted from `tool_renderers.dart` (SPEC-19).
+/// tested directly. Extracted from `tool_renderers.dart` (SPEC-decomposition-and-dedup).
 library;
 
 import 'dart:convert';

@@ -1,4 +1,4 @@
-/// The turn receipt row (SPEC-47 D9/D9a/D9b/D9c/D20/D17).
+/// The turn receipt row (SPEC-session-timings D9/D9a/D9b/D9c/D20/D17).
 ///
 /// One dim line closing a turn: its wall clock, how many tool calls it ran, and
 /// — only when a gate actually blocked — how long it waited on the user. The
