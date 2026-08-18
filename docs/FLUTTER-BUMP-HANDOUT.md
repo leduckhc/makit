@@ -298,9 +298,10 @@ The file is prescriptive, so a reader copies the template and gets a stale pin.
 A template is a pin site. Keep it in the sed.
 
 `BUILD_AND_DEPLOY.md` also states the **supported platform floor** near the top.
-That floor is macOS 12.0 and iOS 13.0.
+That floor is macOS 12.0 and iOS 15.0.
 It is not a version pin, but it moves with one. See section 11.
 Change it in the same commit as any deployment-target edit.
+`app/test/deployment_target_doc_test.dart` enforces that.
 
 **Do not touch** `docs/specs/2026-08-06-SPEC-40-composer-footer-space.md` or
 `docs/specs/2026-08-06-SPEC-40-PLAN.md`. They also say `3.44.4`, but as the
@@ -441,11 +442,11 @@ print(r[d['current_release']['stable']]['version'])"
 
 ### What it costs — five things, none of them optional
 
-1. **macOS deployment target 10.15 to 12.0. Accepted 2026-08-13 (KC).**
+1. **Deployment targets rise on both platforms. macOS accepted 2026-08-13 (KC).**
    `flutter build macos` rewrites `macos/Podfile`, `macos/Podfile.lock` and
    `macos/Runner.xcodeproj/project.pbxproj`.
    It uses its own `macos_deployment_target_migration.dart`.
-   The change drops macOS 11 and older.
+   macOS moves 10.15 to 12.0, and the change drops macOS 11 and older.
    That is a product decision, not a build artifact, so it is recorded here.
    **Decision: acceptable.** macOS 11 shipped in 2020 and is four majors behind.
    The current release is 26.5.2.
@@ -454,6 +455,20 @@ print(r[d['current_release']['stable']]['version'])"
    Only `project.pbxproj` implied one.
    Land the three migrated files in the bump commit.
    Close the documentation gap in the same commit.
+
+   **iOS moves 13.0 to 15.0, and this half was missed at landing (2026-08-18).**
+   `flutter build ios` runs the same migration for iOS.
+   It rewrites `ios/Podfile`, `ios/Podfile.lock` and
+   `ios/Runner.xcodeproj/project.pbxproj`, and it prints
+   `Updating minimum iOS deployment target to 15.0`.
+   The landing sitting never built for iOS, so only macOS migrated.
+   The iOS migration then fired on the next device build, days later.
+   `BUILD_AND_DEPLOY.md` promised iOS 13.0 for that whole window.
+   Two iOS majors lost support with no record.
+   **Decision: acceptable.** iOS 14 shipped in 2020, and iOS 26.6 is current.
+   **Lesson: a bump is not landed until you build every platform you ship.**
+   `app/test/deployment_target_doc_test.dart` now pins the table to both
+   `project.pbxproj` files, so the next drift fails a test instead of a promise.
 2. **6 SDK-forced package bumps** — `matcher` 0.12.19→0.12.20, `meta`
    1.18.0→1.19.0, `test` 1.31.0→1.31.1, `test_api` 0.7.11→0.7.12,
    `test_core` 0.6.17→0.6.18, `vector_math` **2.2.0→2.4.2**.
@@ -597,7 +612,7 @@ And one doc that §8's pin list does not cover as a version string.
 git add :/BUILD_AND_DEPLOY.md
 ```
 
-- `BUILD_AND_DEPLOY.md` — the supported minimum, **macOS 12.0+ / iOS 13.0**,
+- `BUILD_AND_DEPLOY.md` — the supported minimum, **macOS 12.0+ / iOS 15.0**,
   which the bump makes true and which no doc previously said at all. A support
   floor that exists only inside `project.pbxproj` is one nobody can check
   against.
@@ -605,14 +620,22 @@ git add :/BUILD_AND_DEPLOY.md
 `AGENTS.md` needed no change: `#165` removed its toolchain section before this
 bump landed (§8).
 
-### ⚠️ Outstanding: the section 7 step 1 move, post-merge
+### ✅ Done 2026-08-18: the section 7 step 1 move, post-merge
 
-The shared checkout `/Users/le/Work/Vibe/flutter` is **still 3.44.9**.
-Until it moves to 3.47.0, every worktree builds locally with 3.44.9.
-All 18 pins say 3.47.0.
-The five goldens above also fail locally, because 3.47.0 generated them.
+The shared checkout `/Users/le/Work/Vibe/flutter` now runs **3.47.0**
+(`4cf2416426`, Dart 3.13.0), and the `flutter-3.47.0` worktree is removed.
+The four steps below ran in order, and each one behaved as written.
+Step 3 reported `[188060] patched 5 class(es); 0 already patched`.
+After the move, `flutter pub get --enforce-lockfile` changed no file.
+The five goldens in the table above now pass locally.
+`flutter analyze --fatal-infos` is clean, and `flutter build macos --release`
+prints only the three short SkSL warnings.
 
-Section 0 records this same drift sitting undone for four days.
+Keep the steps. The next bump repeats them.
+
+The drift they fix is real: before the move, all 18 pins said 3.47.0 while every
+worktree still built with 3.44.9, and the five goldens failed locally.
+Section 0 records that drift sitting undone for four days.
 Do the move in the **same sitting as the merge**:
 
 ```sh
@@ -654,15 +677,15 @@ want to see what `--force` discards.
 The section 5 patch applies per SDK, not per worktree (section 6).
 One run therefore covers every worktree.
 
-**The pre-push hook makes this urgent.** `.pre-commit-config.yaml` runs
+**The pre-push hook is why this move matters.** `.pre-commit-config.yaml` runs
 `flutter pub get && flutter analyze` and takes `flutter` from `PATH`.
 A push from a shell that still resolves 3.44.9 rewrites `app/pubspec.lock`.
 It downgrades the 6 packages in cost 2 above, and the push then fails.
 This happened while landing this bump.
-Until the shared checkout moves, export the pinned SDK before you push:
 
-```sh
-export PATH="/Users/le/Work/Vibe/flutter-3.47.0/bin:$PATH"
-```
+The move fixes that at the source, because `/Users/le/Work/Vibe/flutter` is the
+SDK on `PATH`. No `export` workaround is needed now.
+The `flutter-3.47.0` worktree is gone, so do not export it.
+Check `flutter --version` before a push if a shell looks stale.
 
 Do not pass `--no-verify`. The hook is correct; the SDK on `PATH` is not.
