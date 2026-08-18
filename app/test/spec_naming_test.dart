@@ -11,13 +11,13 @@
 // The timestamp comes from the clock when the spec is created, so two worktrees
 // cannot collide. The slug is the id a human reads and code refers to.
 //
-// This test enforces four things, because prose could not:
+// This test enforces six things, because prose could not:
 //   1. every spec filename matches the convention,
 //   2. slugs are unique  — the readable id stays unambiguous,
 //   3. timestamps are unique — the sort key stays a key,
 //   4. every `SPEC-<slug>` reference in the repo resolves to a real spec, and no
 //      numeric `SPEC-<NN>` reference survives anywhere,
-//   5. every relative link to a spec file resolves on disk,
+//   5. every link to a spec file resolves on disk,
 //   6. `scripts/rewrite_spec_refs.py` selects the same files this guard scans.
 //
 // Rule 4 is the one that pays. A renamed or deleted spec now fails a test
@@ -26,6 +26,9 @@
 // Rule 5 covers what rule 4 cannot see. A link carries the slug inside a path,
 // so `../../docs/specs/...-SPEC-computer-use.md` satisfies rule 4 while the
 // path itself points one directory too high, and the link opens nothing.
+// It must match every path form a link can take. It once demanded a leading
+// `./` or `../`, which skipped the bare `docs/specs/...` links in `README.md`:
+// a mistyped filename there still carries a valid slug, so rule 4 passed it.
 //
 // Rule 6 closes the gap that let #168 through. The guard and the rewrite script
 // each carry their own exclusion list, so a guard that scans a tree the script
@@ -133,6 +136,24 @@ String _rewriteScript(List<String> args) {
   );
   return r.stdout as String;
 }
+
+/// A markdown link whose target reaches `docs/specs/`, with any `#anchor` left
+/// off. It matches every path form, including a bare one with no leading `./`,
+/// because `README.md` writes its spec links that way.
+final _specLink = RegExp(r'\]\(([^)\s#]*docs/specs/[^)\s#]+)');
+
+/// The spec links on one line, as written. A URL names a file on a server, so it
+/// drops out here: no check against this working tree could resolve it.
+Iterable<String> _specLinkTargets(String line) => _specLink
+    .allMatches(line)
+    .map((m) => m.group(1)!)
+    .where((t) => !t.contains('://'));
+
+/// The file a link target opens. A target that starts with `/` is repo-absolute;
+/// every other form resolves against the directory of the file that holds it.
+File _resolveSpecLink(File from, String target) => target.startsWith('/')
+    ? File('${_repoRoot.path}$target')
+    : File('${from.parent.path}/$target');
 
 /// Only git-tracked files, so an untracked draft never fails the comparison.
 Set<String> _trackedFiles() {
@@ -250,21 +271,45 @@ void main() {
     );
   });
 
-  test('every relative link to a spec file resolves on disk', () {
-    // A relative link whose path reaches `docs/specs/`. The slug inside it
-    // satisfies the reference guard above, so only the path needs checking.
-    final link = RegExp(r'\]\((\.\.?/[^)\s#]*docs/specs/[^)\s#]+)');
+  test('the link guard sees every path form a link can take', () {
+    // Rule 5 is only as strong as the forms it matches. `README.md` links specs
+    // bare, with no leading `./`, so a pattern that demands one audits nothing
+    // there: a mistyped filename still carries a valid slug, so rule 4 passes
+    // it and rule 5 never looks.
+    // A real spec name, so the reference guard above stays strict over this file.
+    const spec = '20260804-003600-SPEC-computer-use.md';
+    const forms = {
+      '](./docs/specs/$spec)': './docs/specs/$spec',
+      '](../../../docs/specs/$spec)': '../../../docs/specs/$spec',
+      '](docs/specs/$spec)': 'docs/specs/$spec',
+      '](/docs/specs/$spec)': '/docs/specs/$spec',
+      '](docs/specs/README.md#spec-naming)': 'docs/specs/README.md',
+    };
+    forms.forEach((line, target) {
+      expect(_specLinkTargets(line), [target], reason: 'missed in: $line');
+    });
+
+    // A URL names a file on a server, and no check on disk can resolve it.
+    for (final line in const [
+      '](https://github.com/leduckhc/makit/blob/main/docs/specs/$spec)',
+      '](http://example.com/docs/specs/$spec)',
+    ]) {
+      expect(_specLinkTargets(line), isEmpty, reason: 'not on disk: $line');
+    }
+  });
+
+  test('every link to a spec file resolves on disk', () {
+    // The slug inside a link satisfies the reference guard above, so only the
+    // path needs checking here.
     final broken = <String>[];
     for (final f in _sourceFiles()) {
       if (!f.path.endsWith('.md')) continue;
-      final dir = f.parent.path;
       final lines = f.readAsStringSync().split('\n');
       for (var i = 0; i < lines.length; i++) {
-        for (final m in link.allMatches(lines[i])) {
-          final target = File('$dir/${m.group(1)}');
-          if (target.existsSync()) continue;
+        for (final target in _specLinkTargets(lines[i])) {
+          if (_resolveSpecLink(f, target).existsSync()) continue;
           final rel = f.path.substring(_repoRoot.path.length + 1);
-          broken.add('$rel:${i + 1} -> ${m.group(1)}');
+          broken.add('$rel:${i + 1} -> $target');
         }
       }
     }
