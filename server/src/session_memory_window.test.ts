@@ -207,3 +207,87 @@ test("a long stream is not trimmed away while it is still open", () => {
     .find((e) => e.kind === "agent.message")?.payload.text as string | undefined;
   assert.ok(text?.startsWith("c1 "), "and the aggregate kept the text from the first chunk on");
 });
+
+// The field incident: a session streamed 6,147 work events over an hour without
+// a turn-end status. `trimCache` only ran once the digest was empty, and the
+// digest stayed open for the whole turn, so the cache never shrank. A finished
+// stream's deltas are redundant — its persisted final carries the same text — so
+// they must leave memory the moment the final lands, not at a turn end that may
+// never come.
+test("a never-idle session evicts finished streams' deltas and stays bounded", () => {
+  const store = storeWith("s1", 0);
+  const session = new Session({
+    id: "s1",
+    projectId: "p",
+    agent: "pi",
+    adapter: fakeAdapter(),
+    store,
+  });
+
+  session.adapter.emit("event", { ts: 0, kind: "session.status", payload: { status: "running" } });
+  // Many COMPLETE message streams, but the turn never ends (no idle/exited).
+  const messages = MEMORY_EVENT_CAP * 3;
+  for (let m = 1; m <= messages; m++) {
+    const msgId = `m${m}`;
+    for (const chunk of ["a", "b", "c"]) {
+      session.adapter.emit("event", { ts: m, kind: "agent.message.delta", payload: { msgId, chunk } });
+    }
+    session.adapter.emit("event", { ts: m, kind: "agent.message", payload: { msgId, text: "abc" } });
+  }
+
+  // No turn-end status ever arrived: the agent is still working.
+  assert.equal(session.status, "running");
+  assert.ok(
+    session.events.length <= MEMORY_EVENT_CAP * 2,
+    `cache stayed bounded mid-turn, got ${session.events.length}`,
+  );
+  // The whole answer is still readable from the store.
+  assert.equal(
+    session.eventsSince(0).filter((e) => e.kind === "agent.message").length,
+    messages,
+    "every finished message is still history",
+  );
+});
+
+// The invariant that guards the bound above: evicting FINISHED streams must
+// never touch the OPEN one. A mid-turn subscriber replays the store's finals
+// plus the un-persisted deltas of the answer still being typed, complete and in
+// order.
+test("a mid-turn subscriber still replays the open answer after evictions", () => {
+  const store = storeWith("s1", 0);
+  const session = new Session({
+    id: "s1",
+    projectId: "p",
+    agent: "pi",
+    adapter: fakeAdapter(),
+    store,
+  });
+
+  // Enough finished streams to force the cache to trim.
+  for (let m = 1; m <= MEMORY_EVENT_CAP * 3; m++) {
+    session.adapter.emit("event", { ts: m, kind: "agent.message.delta", payload: { msgId: `m${m}`, chunk: "x" } });
+    session.adapter.emit("event", { ts: m, kind: "agent.message", payload: { msgId: `m${m}`, text: `full${m}` } });
+  }
+  // The current answer is still streaming — no final yet.
+  for (const chunk of ["Hello ", "world", "!"]) {
+    session.adapter.emit("event", { ts: 9000, kind: "agent.message.delta", payload: { msgId: "open", chunk } });
+  }
+
+  const replay = session.eventsSince(0);
+  // The open answer's deltas live only in memory, so they must all survive.
+  assert.deepEqual(
+    replay
+      .filter((e) => e.kind === "agent.message.delta" && e.payload.msgId === "open")
+      .map((e) => e.payload.chunk),
+    ["Hello ", "world", "!"],
+    "the open answer is replayed whole, not truncated",
+  );
+  // And an early finished message is still replayable from the store.
+  assert.ok(
+    replay.some((e) => e.kind === "agent.message" && e.payload.text === "full1"),
+    "finished history is still there",
+  );
+  const seqs = replay.map((e) => e.seq);
+  assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b), "the replay stays seq-ordered");
+  assert.equal(new Set(seqs).size, seqs.length, "and carries no duplicate seq");
+});
