@@ -55,7 +55,13 @@ const _skipDirs = {
 
 /// Trees that are checkouts of *other* repositories. makit's convention does not
 /// govern them, and rewriting them would fight the tool that manages the clone.
-const _vendored = {'.pi/git', '.agents/skills', 'signatures'};
+///
+/// `.agents/skills` is NOT in this list, and must not be. It holds makit's own
+/// skills beside the vendored ones, so exempting the whole tree left a hole:
+/// #168 added twelve first-party skills through it, and they reintroduced ten
+/// retired numeric ids and one link to a spec file that no longer exists.
+/// Exempt only the vendor subtree.
+const _vendored = {'.pi/git', '.agents/skills/vendor', 'signatures'};
 
 /// Extensions that can carry a spec reference in prose or in a comment.
 const _textExt = {

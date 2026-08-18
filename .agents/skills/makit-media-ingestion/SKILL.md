@@ -1,6 +1,6 @@
 ---
-name: "makit-spec22-media-ingestion"
-description: "Implement multimodal media ingestion for SPEC-22: wire agent.media events at registration points, then extract image blocks from ACP and codex adapter streams into the store."
+name: "makit-media-ingestion"
+description: "Implement multimodal media ingestion for SPEC-assistant-display-media: wire agent.media events at registration points, then extract image blocks from ACP and codex adapter streams into the store."
 ---
 ## When to Use
 Use when adding agent.media event registration (step 4) or implementing ingestion in acp-map.ts / codex-map.ts (steps 5–6). Prerequisites: media store (server/src/media/store.ts) and /media route (server/src/media/route.ts) must already be complete and wired.

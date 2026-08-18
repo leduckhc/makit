@@ -27,7 +27,14 @@ ROOT = Path(__file__).resolve().parents[1]
 MAP = json.loads((ROOT / "scripts/spec-migration/map.json").read_text())
 
 # Trees that are checkouts of other repositories, or build output.
-VENDORED = (".pi/git/", ".agents/skills/", "signatures/", "server/dist/", "node_modules/")
+# Only the VENDOR subtree of .agents/skills is third-party. makit's own skills
+# live beside it and must be rewritten, or retired ids creep back in through
+# them — which is exactly what happened after #168.
+VENDORED = (".pi/git/", ".agents/skills/vendor/", "signatures/", "server/dist/",
+            "node_modules/",
+            # The migration's own record keeps the retired names on purpose. Rewriting
+            # it would erase the mapping that makes this script auditable.
+            "scripts/spec-migration/")
 TEXT_EXT = {
     ".dart", ".ts", ".js", ".md", ".html", ".sh", ".yaml", ".yml", ".json",
     ".swift", ".entitlements", ".pbxproj", ".plist",
