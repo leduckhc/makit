@@ -803,3 +803,85 @@ test("ignores a usage_update with no numbers", () => {
   mapper.handle(usage({}));
   assert.equal(events.filter((e) => e.kind === "session.usage").length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// pi-acp's turn signal. It rides `session_info_update` as
+// `_meta.piAcp = { queueDepth, running }`: `running: true` when it starts a
+// turn, `running: false` at every `agent_end` and on a prompt error. makit read
+// only `title` from that update, so it had no way to learn the agent was still
+// working after a prompt promise settled early.
+// ---------------------------------------------------------------------------
+
+function collectTurnSignals() {
+  const events: AdapterEvent[] = [];
+  const running: boolean[] = [];
+  let work = 0;
+  const mapper = new AcpEventMapper({
+    emit: (e) => events.push(e),
+    onAgentRunning: (r) => running.push(r),
+    onWork: () => (work += 1),
+  });
+  return { events, running, mapper, work: () => work };
+}
+
+const info = (meta?: Record<string, unknown>, title?: string): SessionUpdate =>
+  ({
+    sessionUpdate: "session_info_update",
+    ...(title === undefined ? {} : { title }),
+    ...(meta === undefined ? {} : { _meta: meta }),
+  }) as SessionUpdate;
+
+test("pi-acp's running flag is reported, both ways", () => {
+  const { mapper, running } = collectTurnSignals();
+  mapper.handle(info({ piAcp: { queueDepth: 0, running: true } }));
+  mapper.handle(info({ piAcp: { queueDepth: 0, running: false } }));
+  assert.deepEqual(running, [true, false]);
+});
+
+test("a title still arrives, with or without the turn signal", () => {
+  const running: boolean[] = [];
+  const titles: string[] = [];
+  const withTitle = new AcpEventMapper({
+    emit: () => {},
+    onTitle: (t) => titles.push(t),
+    onAgentRunning: (r) => running.push(r),
+  });
+  withTitle.handle(info({ piAcp: { queueDepth: 1, running: true } }, "Fix the dot"));
+  assert.deepEqual(titles, ["Fix the dot"]);
+  assert.deepEqual(running, [true]);
+});
+
+test("a malformed turn signal is ignored, not guessed", () => {
+  const { mapper, running } = collectTurnSignals();
+  mapper.handle(info({ piAcp: { queueDepth: 0 } })); // no `running`
+  mapper.handle(info({ piAcp: { running: "yes" } })); // wrong type
+  mapper.handle(info({ other: { running: true } })); // another agent's meta
+  mapper.handle(info());
+  assert.deepEqual(running, []);
+});
+
+test("chunks and new tool calls count as work; bookkeeping updates do not", () => {
+  const { mapper, work } = collectTurnSignals();
+  mapper.handle(text("hi"));
+  mapper.handle(thought("hmm"));
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "t1",
+    title: "read",
+    status: "pending",
+  } as SessionUpdate);
+  assert.equal(work(), 3, "each streamed chunk and each new call is evidence");
+
+  const before = work();
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t1",
+    status: "completed",
+  } as SessionUpdate);
+  mapper.handle(info({ piAcp: { queueDepth: 0, running: false } }));
+  assert.equal(
+    work(),
+    before,
+    "a completion trailing a finished turn must not re-open one",
+  );
+});

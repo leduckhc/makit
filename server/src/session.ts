@@ -342,22 +342,36 @@ export class Session extends EventEmitter {
   private truncated = false;
 
   /**
-   * Drop the oldest events once the cache grows past twice the cap, so a long
-   * turn costs one trim instead of one per event. Only with a store: without one
-   * the cache is the history.
+   * Keep the in-memory cache bounded. Only with a store: without one the cache
+   * is the history and must never shrink.
    *
-   * Never while a stream is open. A delta is not persisted, so a delta this drops
-   * cannot be read back — trimming mid-stream truncated the answer that a
-   * mid-turn subscriber replays. The digest already holds the same text to build
-   * the aggregate, so waiting for the close costs no new order of memory, and
-   * {@link closeStreams} trims as soon as the aggregate replaces the deltas.
+   * Two steps run on every non-delta event. First, evict the deltas of any
+   * stream that has finished: its final is persisted, so those deltas are
+   * redundant, and evicting them mid-turn bounds a turn that never ends. Second,
+   * drop the oldest events once the tail passes twice the cap. A delta of a
+   * still-OPEN stream is never persisted, so it is never dropped — dropping it
+   * truncated the answer a mid-turn subscriber replays.
    */
   private trimCache(): void {
     if (!this.store) return;
-    if (!this.digest.isEmpty) return;
-    if (this._events.length <= MEMORY_EVENT_CAP * 2) return;
-    this._events.splice(0, this._events.length - MEMORY_EVENT_CAP);
-    this.truncated = true;
+    // Evict the deltas of every stream whose final already carries the text, so
+    // a turn that never ends (the field incident: 6,147 events streamed over an
+    // hour with no turn-end status) does not grow the cache without bound. A
+    // finished stream's final is persisted, so its deltas are redundant; the
+    // open stream's deltas are left untouched (see StreamDigest.harvestFinished).
+    const finishedSeqs = this.digest.harvestFinished();
+    if (finishedSeqs.size > 0) {
+      const kept = this._events.filter((ev) => !finishedSeqs.has(ev.seq));
+      this._events.length = 0;
+      this._events.push(...kept);
+    }
+    // Cap the tail only when no stream is still OPEN: an open stream's deltas are
+    // never persisted, so trimming them would truncate the answer a mid-turn
+    // subscriber replays. The eviction above already dropped the finished ones.
+    if (this.digest.isEmpty && this._events.length > MEMORY_EVENT_CAP * 2) {
+      this._events.splice(0, this._events.length - MEMORY_EVENT_CAP);
+      this.truncated = true;
+    }
   }
 
   /** Run the pending lazy loader (if any) exactly once. History must precede

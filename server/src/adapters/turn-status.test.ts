@@ -95,3 +95,70 @@ test("hasActiveTurns reflects in-flight turns", () => {
   tracker.leaveTurn(key);
   assert.equal(tracker.hasActiveTurns, false);
 });
+
+// ---------------------------------------------------------------------------
+// Work evidence: an agent that keeps streaming after its prompt was answered.
+//
+// A pi session ran for an hour with `status: idle`, because pi-acp resolved
+// `session/prompt` (a duplicate `agent_end`) while pi kept working. The app
+// hides the working shimmer and the live dot whenever status is not `running`,
+// so both went quiet while 6,147 work events streamed in.
+// ---------------------------------------------------------------------------
+
+test("work arriving while nothing is in flight re-enters running", () => {
+  const { tracker, statuses } = makeTracker();
+  const key = tracker.enterTurn();
+  tracker.leaveTurn(key); // the prompt was answered early
+  assert.deepEqual(statuses, ["running", "idle"]);
+
+  tracker.noteWork();
+
+  assert.deepEqual(statuses, ["running", "idle", "running"]);
+  assert.equal(tracker.hasActiveTurns, true);
+});
+
+test("more work while already running emits nothing new", () => {
+  const { tracker, statuses } = makeTracker();
+  tracker.noteWork();
+  tracker.noteWork();
+  tracker.noteWork();
+  assert.deepEqual(statuses, ["running"], "one transition, not one per token");
+});
+
+test("work during a real turn does not outlive it", () => {
+  const { tracker, statuses } = makeTracker();
+  const key = tracker.enterTurn();
+  tracker.noteWork(); // no second turn: the real one is already open
+  tracker.leaveTurn(key);
+  assert.deepEqual(statuses, ["running", "idle"]);
+});
+
+test("the agent's own settle closes a turn opened by work evidence", () => {
+  const { tracker, statuses } = makeTracker();
+  tracker.noteWork();
+  tracker.noteAgentSettled();
+  assert.deepEqual(statuses, ["running", "idle"]);
+});
+
+test("a settle for a turn nobody opened emits nothing", () => {
+  const { tracker, statuses } = makeTracker();
+  tracker.noteAgentSettled();
+  assert.deepEqual(statuses, []);
+});
+
+test("the agent's settle never cuts a real prompt turn short", () => {
+  const { tracker, statuses } = makeTracker();
+  const key = tracker.enterTurn();
+  tracker.noteAgentSettled();
+  assert.deepEqual(statuses, ["running"], "the prompt is still in flight");
+  tracker.leaveTurn(key);
+  assert.deepEqual(statuses, ["running", "idle"]);
+});
+
+test("no work turn is opened once the adapter has exited", () => {
+  const exited = { value: true };
+  const { tracker, statuses } = makeTracker(exited);
+  tracker.noteWork();
+  assert.deepEqual(statuses, []);
+  assert.equal(tracker.hasActiveTurns, false);
+});
