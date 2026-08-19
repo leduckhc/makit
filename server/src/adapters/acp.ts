@@ -142,6 +142,16 @@ export class AcpAdapter extends SubprocessAdapter {
     this.mapper = new AcpEventMapper({
       emit: (e) => this.emit("event", e),
       onTitle: (t) => this.emit("title", t),
+      // A prompt promise is not the whole truth: pi emits several `agent_end`s
+      // per prompt, so pi-acp can answer ours while the agent works on. The
+      // stream re-opens the turn, and the agent's own `running: false` closes it.
+      onWork: () => this.turns.noteWork(),
+      onAgentRunning: (running) => {
+        // Held independently of the prompt turn, which pi-acp routinely ends
+        // first — and it outlives a tool that streams nothing at all.
+        if (running) this.turns.noteAgentRunning();
+        else this.turns.noteAgentSettled();
+      },
       // Sync + before the event is emitted: the blob is durable by the time the
       // referencing `agent.media` reaches the (authoritative) event log.
       putMedia: (data, mime) => media.putBase64(data, mime),

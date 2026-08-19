@@ -803,3 +803,173 @@ test("ignores a usage_update with no numbers", () => {
   mapper.handle(usage({}));
   assert.equal(events.filter((e) => e.kind === "session.usage").length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// pi-acp's turn signal. It rides `session_info_update` as
+// `_meta.piAcp = { queueDepth, running }`: `running: true` when it starts a
+// turn, `running: false` at every `agent_end` and on a prompt error. makit read
+// only `title` from that update, so it had no way to learn the agent was still
+// working after a prompt promise settled early.
+// ---------------------------------------------------------------------------
+
+function collectTurnSignals() {
+  const events: AdapterEvent[] = [];
+  const running: boolean[] = [];
+  let work = 0;
+  const mapper = new AcpEventMapper({
+    emit: (e) => events.push(e),
+    onAgentRunning: (r) => running.push(r),
+    onWork: () => (work += 1),
+  });
+  return { events, running, mapper, work: () => work };
+}
+
+const info = (meta?: Record<string, unknown>, title?: string): SessionUpdate =>
+  ({
+    sessionUpdate: "session_info_update",
+    ...(title === undefined ? {} : { title }),
+    ...(meta === undefined ? {} : { _meta: meta }),
+  }) as SessionUpdate;
+
+test("pi-acp's running flag is reported, both ways", () => {
+  const { mapper, running } = collectTurnSignals();
+  mapper.handle(info({ piAcp: { queueDepth: 0, running: true } }));
+  mapper.handle(info({ piAcp: { queueDepth: 0, running: false } }));
+  assert.deepEqual(running, [true, false]);
+});
+
+test("a title still arrives, with or without the turn signal", () => {
+  const running: boolean[] = [];
+  const titles: string[] = [];
+  const withTitle = new AcpEventMapper({
+    emit: () => {},
+    onTitle: (t) => titles.push(t),
+    onAgentRunning: (r) => running.push(r),
+  });
+  withTitle.handle(info({ piAcp: { queueDepth: 1, running: true } }, "Fix the dot"));
+  assert.deepEqual(titles, ["Fix the dot"]);
+  assert.deepEqual(running, [true]);
+});
+
+test("a malformed turn signal is ignored, not guessed", () => {
+  const { mapper, running } = collectTurnSignals();
+  mapper.handle(info({ piAcp: { queueDepth: 0 } })); // no `running`
+  mapper.handle(info({ piAcp: { running: "yes" } })); // wrong type
+  mapper.handle(info({ other: { running: true } })); // another agent's meta
+  mapper.handle(info());
+  assert.deepEqual(running, []);
+});
+
+test("chunks and new tool calls count as work; bookkeeping updates do not", () => {
+  const { mapper, work } = collectTurnSignals();
+  mapper.handle(text("hi"));
+  mapper.handle(thought("hmm"));
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "t1",
+    title: "read",
+    status: "pending",
+  } as SessionUpdate);
+  assert.equal(work(), 3, "each streamed chunk and each new call is evidence");
+
+  const before = work();
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t1",
+    status: "completed",
+  } as SessionUpdate);
+  mapper.handle(info({ piAcp: { queueDepth: 0, running: false } }));
+  assert.equal(
+    work(),
+    before,
+    "a completion trailing a finished turn must not re-open one",
+  );
+});
+
+test("output streamed by a running tool counts as work", () => {
+  // A long `bash` reports progress only through `tool_call_update`s. Those are
+  // the sole evidence that the agent still works, so they must re-open a turn:
+  // without this a session whose prompt settled early sat `idle` for the whole
+  // tool run, with no shimmer and no live dot.
+  const { mapper, work } = collectTurnSignals();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "b1",
+    title: "sleep 300",
+    kind: "execute",
+    status: "in_progress",
+    rawInput: { command: "sleep 300" },
+  } as unknown as SessionUpdate);
+  const before = work();
+
+  // The ACP terminal convention: `_meta.terminal_output.data` is a delta.
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "b1",
+    status: "in_progress",
+    _meta: { terminal_output: { terminal_id: "b1", data: "tick\n" } },
+  } as unknown as SessionUpdate);
+  assert.equal(work(), before + 1, "streamed output is the agent working");
+
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "b1",
+    status: "in_progress",
+    _meta: { terminal_output: { terminal_id: "b1", data: "tock\n" } },
+  } as unknown as SessionUpdate);
+  assert.equal(work(), before + 2, "and each further delta keeps it alive");
+});
+
+test("a re-sent cumulative tool output is not new work", () => {
+  // `content` is cumulative: agents re-send the whole buffer on every update.
+  // Only a change is evidence, or a stalled tool would look busy forever.
+  const { mapper, work } = collectTurnSignals();
+  const output = (text: string) =>
+    ({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "r1",
+      status: "in_progress",
+      content: [{ type: "content", content: { type: "text", text } }],
+    }) as unknown as SessionUpdate;
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "r1",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: { path: "a.txt" },
+  } as unknown as SessionUpdate);
+
+  mapper.handle(output("line 1"));
+  const grown = work();
+  mapper.handle(output("line 1"));
+
+  assert.equal(work(), grown, "the same buffer again proves nothing");
+  mapper.handle(output("line 1line 2"));
+  assert.equal(work(), grown + 1, "but a grown buffer does");
+});
+
+test("a completion carrying its output still does not count as work", () => {
+  // The rule that protects a finished turn: a terminal update is bookkeeping
+  // even when it ships the final buffer, because nothing would close the turn
+  // it re-opened.
+  const { mapper, work } = collectTurnSignals();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "c1",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: { path: "a.txt" },
+  } as unknown as SessionUpdate);
+  const before = work();
+
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "c1",
+    status: "completed",
+    content: [{ type: "content", content: { type: "text", text: "the whole file" } }],
+  } as unknown as SessionUpdate);
+
+  assert.equal(work(), before, "a completion is not evidence of more work");
+});

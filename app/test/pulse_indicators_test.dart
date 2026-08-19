@@ -63,6 +63,41 @@ void main() {
       );
     });
 
+    testWidgets('parked states render a solid dot and never start the clock', (
+      tester,
+    ) async {
+      // A parked session waits on the human and does no work. Motion means
+      // work, so a parked dot must stay solid and add no listener to the clock.
+      for (final status in [
+        SessionStatus.awaitingInput,
+        SessionStatus.awaitingApproval,
+      ]) {
+        final clock = PulseClock();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SessionStatusDot(status: status, clock: clock),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byType(PulseBuilder),
+          findsNothing,
+          reason: '$status must not pulse',
+        );
+        expect(
+          clock.isTicking,
+          isFalse,
+          reason: '$status must not start the clock',
+        );
+        // The dot must never become a colour-only signal.
+        expect(find.byType(Tooltip), findsOneWidget);
+        expect(find.byType(Semantics), findsWidgets);
+      }
+    });
+
     testWidgets('solid states carry no pulse at all', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(

@@ -19,6 +19,7 @@ import 'notifications/notification_observer.dart';
 import 'notifications/notification_request.dart';
 import 'notifications/pending_action_drain.dart';
 import 'notifications/push_registration.dart';
+import 'perf/idle_reclaim.dart';
 import 'status/status_event.dart';
 import 'status/status_toast.dart';
 import 'store/connection.dart';
@@ -56,6 +57,11 @@ Future<void> main() async {
     appLog.warn('boot', 'log file unavailable: $e');
   }
   appLog.info('boot', 'makit starting (protocol v$protocolVersion)');
+
+  // Reclaim idle cost on both roots: pause the pulse clock while the window is
+  // hidden, and trim the image cache on park and on OS memory pressure. Install
+  // it before the platform branch so desktop and mobile both benefit.
+  installIdleReclaim();
 
   // macOS is the server-side *control* app (SPEC-desktop-control-app), a different app from the
   // mobile client — it must never show the pairing/chat flow. Branch to its own

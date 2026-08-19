@@ -1362,7 +1362,9 @@ test("start({resumeAgentSessionId}) loads and drops the replayed history (silent
 
   const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
   const events: AdapterEvent[] = [];
+  const statuses: string[] = [];
   adapter.on("event", (e) => events.push(e));
+  adapter.on("status", (s) => statuses.push(s));
   await adapter.start({ cwd: process.cwd(), sessionId: "m1", resumeAgentSessionId: "acp-prev" });
 
   // Resumed by native id via session/load — never session/new.
@@ -1370,6 +1372,10 @@ test("start({resumeAgentSessionId}) loads and drops the replayed history (silent
   assert.equal(adapter.agentSessionId, "acp-prev");
   // The replayed history was dropped (not appended to makit's log).
   assert.ok(!events.some((e) => e.kind === "agent.message" && (e.payload as any)?.text === "OLD HISTORY"));
+  // And it did not read as live work: a resumed session must not come up
+  // "running" on history alone, or every later message queues behind a turn
+  // that no agent is running.
+  assert.equal(statuses.includes("running"), false);
 });
 
 test("ingests a tool-result image and rewrites a local markdown image path", async () => {
@@ -1573,4 +1579,91 @@ test("start() leaves the agent's model alone when it already matches, or is unkn
   assert.deepEqual(missing.sets, [], "an unoffered model is never sent to the agent");
   assert.ok(statuses.includes("idle"), "the session still started");
   await a2.kill();
+});
+
+test("an agent that keeps working after its prompt resolved stays running", async () => {
+  // The field incident: pi-acp resolves `session/prompt` on pi's `agent_end`,
+  // and pi emits more than one of those per prompt. makit therefore left the
+  // turn while the agent carried on, and one session streamed 6,147 events with
+  // `status: idle` — no working shimmer, no live dot, for an hour.
+  let agentRef!: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async () => {
+      // Answer the prompt at once, the way a duplicate `agent_end` does.
+    });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const all: string[] = [];
+  const events: AdapterEvent[] = [];
+  adapter.on("status", (s) => all.push(s));
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  // `start` settles to idle; the turn transitions are what this test is about.
+  const from = all.length;
+  const statuses = () => all.slice(from);
+  await adapter.send({ text: "go" });
+  await collectUntil(events, "user.message");
+  // The prompt settled early, so makit reported idle here.
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(statuses(), ["running", "idle"]);
+
+  // The agent is not finished: it streams on.
+  await agentRef.update("acp-sess-1", {
+    sessionUpdate: "agent_thought_chunk",
+    content: { type: "text", text: "still thinking" },
+  });
+  await collectUntil(events, "agent.thinking.delta");
+  assert.deepEqual(statuses(), ["running", "idle", "running"], "the stream re-opens the turn");
+
+  // Now the agent really stops, and says so.
+  await agentRef.update("acp-sess-1", {
+    sessionUpdate: "session_info_update",
+    _meta: { piAcp: { queueDepth: 0, running: false } },
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(statuses(), ["running", "idle", "running", "idle"]);
+});
+
+test("a silent agent that reported itself running stays running past its prompt", async () => {
+  // Work evidence cannot cover this one: the agent says `running: true`, answers
+  // the prompt early (a duplicate `agent_end`), then spends minutes inside a
+  // tool that streams nothing. With the running flag derived from the prompt
+  // turn, `.finally()` dropped it and the session reported `idle` mid-work.
+  let agentRef!: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      // The agent announces the turn, then answers the prompt at once.
+      await agentRef.update(sessionId, {
+        sessionUpdate: "session_info_update",
+        _meta: { piAcp: { queueDepth: 0, running: true } },
+      });
+    });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const all: string[] = [];
+  const events: AdapterEvent[] = [];
+  adapter.on("status", (s) => all.push(s));
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  const from = all.length;
+  const statuses = () => all.slice(from);
+  await adapter.send({ text: "go" });
+  await collectUntil(events, "user.message");
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.deepEqual(statuses(), ["running"], "the agent said it is working: no idle");
+
+  // It finally stops, and says so — the only thing that may settle it.
+  await agentRef.update("acp-sess-1", {
+    sessionUpdate: "session_info_update",
+    _meta: { piAcp: { queueDepth: 0, running: false } },
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(statuses(), ["running", "idle"]);
 });

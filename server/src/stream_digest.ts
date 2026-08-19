@@ -82,6 +82,9 @@ interface OpenStream {
   /** Timestamp of the first delta. */
   firstTs: number;
   chunks: string[];
+  /** Every seq this stream's deltas took, so a finished stream frees exactly its
+   *  own deltas — even when streams interleave or a delta carried no chunk. */
+  seqs: number[];
   /** True once a final for this stream arrived, so history needs no aggregate. */
   finalSeen: boolean;
 }
@@ -103,6 +106,18 @@ export class StreamDigest {
     return this.open.size === 0 && this.deltaSeqs.size === 0;
   }
 
+  /**
+   * Seqs of the deltas that exist ONLY in memory: the store never holds a delta,
+   * and no final or aggregate has replaced these yet.
+   *
+   * A cache eviction must keep exactly these and may drop anything else, which
+   * the store can reload. This is a live view of the digest's own set, so reading
+   * it on the hot path costs nothing.
+   */
+  get unpersistedSeqs(): ReadonlySet<number> {
+    return this.deltaSeqs;
+  }
+
   /** Note one streamed delta. Call after the event has its seq. */
   noteDelta(event: SessionEvent): void {
     const field = STREAM_ID_FIELD[event.kind];
@@ -119,10 +134,12 @@ export class StreamDigest {
         firstSeq: event.seq,
         firstTs: event.ts,
         chunks: chunk === "" ? [] : [chunk],
+        seqs: [event.seq],
         finalSeen: false,
       });
       return;
     }
+    stream.seqs.push(event.seq);
     if (chunk !== "") stream.chunks.push(chunk);
   }
 
@@ -142,6 +159,29 @@ export class StreamDigest {
     if (typeof payload.output === "string" && payload.output !== "") return payload;
     if (stream.chunks.length === 0) return payload;
     return { ...payload, output: stream.chunks.join("") };
+  }
+
+  /**
+   * Harvest deltas of streams that got a final. The final already carries the
+   * text, so the deltas can be evicted from memory without writing an aggregate.
+   * Call mid-turn to keep the cache bounded; `close()` will write aggregates for
+   * the unfinished streams only.
+   */
+  harvestFinished(): Set<number> {
+    const evicted = new Set<number>();
+    for (const [key, stream] of this.open.entries()) {
+      if (!stream.finalSeen) continue;
+      // A finalized stream's deltas are redundant: its final carried the text.
+      // Remove it from `open` so close() never writes an aggregate for it, and
+      // return exactly its own seqs (streams interleave, so a seq range would
+      // sweep up other streams' deltas or miss a delta that carried no chunk).
+      this.open.delete(key);
+      for (const seq of stream.seqs) {
+        evicted.add(seq);
+        this.deltaSeqs.delete(seq);
+      }
+    }
+    return evicted;
   }
 
   /**
