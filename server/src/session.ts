@@ -272,8 +272,10 @@ export class Session extends EventEmitter {
    */
   eventsSince(fromSeq: number): SessionEvent[] {
     this.ensureHydrated();
-    const oldest = this._events[0]?.seq;
-    const complete = !this.truncated || oldest === undefined || fromSeq >= oldest - 1;
+    // Complete exactly when the caller asks for nothing that was evicted. The
+    // oldest cached seq cannot decide this: an open stream's deltas are kept even
+    // when older events around them are dropped.
+    const complete = fromSeq >= this.evictedThrough;
     if (complete) return this._events.filter((e) => e.seq > fromSeq);
     if (!this.store) return this._events.filter((e) => e.seq > fromSeq);
 
@@ -331,15 +333,22 @@ export class Session extends EventEmitter {
     for (const e of events) if (e.seq > this.lastSeq) this.lastSeq = e.seq;
     // A tail read starts above seq 1, so the cache no longer reaches the log's
     // start and `eventsSince` must go to the store for anything older.
-    if (this.store && (this._events[0]?.seq ?? 1) > 1) this.truncated = true;
+    const oldest = this._events[0]?.seq ?? 1;
+    if (this.store && oldest > 1) this.evictedThrough = Math.max(this.evictedThrough, oldest - 1);
   }
 
   /**
-   * True when the cache no longer holds the session's oldest event, so the store
-   * is the only complete history. False for a session with no store, where the
-   * cache IS the history and must never be trimmed.
+   * The highest seq ever dropped from the cache. The cache is complete for a
+   * caller asking about `fromSeq >= evictedThrough`, and the store must fill the
+   * gap below that.
+   *
+   * A count, not a flag: eviction keeps an open stream's un-persisted deltas even
+   * when they are older than events it drops, so the cache is not always a
+   * contiguous tail and "the oldest cached seq" cannot answer the question.
+   * Zero for a session with no store, where the cache IS the history and must
+   * never be trimmed.
    */
-  private truncated = false;
+  private evictedThrough = 0;
 
   /**
    * Keep the in-memory cache bounded. Only with a store: without one the cache
@@ -348,9 +357,9 @@ export class Session extends EventEmitter {
    * Two steps run on every non-delta event. First, evict the deltas of any
    * stream that has finished: its final is persisted, so those deltas are
    * redundant, and evicting them mid-turn bounds a turn that never ends. Second,
-   * drop the oldest events once the tail passes twice the cap. A delta of a
-   * still-OPEN stream is never persisted, so it is never dropped — dropping it
-   * truncated the answer a mid-turn subscriber replays.
+   * drop the oldest droppable events once the tail passes twice the cap. A delta
+   * of a still-OPEN stream is never persisted, so it is never dropped — dropping
+   * it truncated the answer a mid-turn subscriber replays.
    */
   private trimCache(): void {
     if (!this.store) return;
@@ -365,13 +374,28 @@ export class Session extends EventEmitter {
       this._events.length = 0;
       this._events.push(...kept);
     }
-    // Cap the tail only when no stream is still OPEN: an open stream's deltas are
-    // never persisted, so trimming them would truncate the answer a mid-turn
-    // subscriber replays. The eviction above already dropped the finished ones.
-    if (this.digest.isEmpty && this._events.length > MEMORY_EVENT_CAP * 2) {
-      this._events.splice(0, this._events.length - MEMORY_EVENT_CAP);
-      this.truncated = true;
+    // Cap the tail. An open stream's deltas are the one thing that lives nowhere
+    // but here, so they are kept and everything else may go — the store reloads
+    // it on demand. Only the DROPPABLE events count towards the cap: gating the
+    // whole cap on "no stream is open" switched it off for the entire turn, so a
+    // single never-finalized stream let the cache grow unbounded again.
+    const unpersisted = this.digest.unpersistedSeqs;
+    if (this._events.length - unpersisted.size <= MEMORY_EVENT_CAP * 2) return;
+    let over = this._events.length - MEMORY_EVENT_CAP;
+    let highestDropped = 0;
+    const kept: SessionEvent[] = [];
+    for (const ev of this._events) {
+      if (over > 0 && !unpersisted.has(ev.seq)) {
+        over--;
+        if (ev.seq > highestDropped) highestDropped = ev.seq;
+        continue;
+      }
+      kept.push(ev);
     }
+    if (highestDropped === 0) return;
+    this._events.length = 0;
+    this._events.push(...kept);
+    this.evictedThrough = Math.max(this.evictedThrough, highestDropped);
   }
 
   /** Run the pending lazy loader (if any) exactly once. History must precede

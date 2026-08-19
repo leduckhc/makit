@@ -106,6 +106,18 @@ export class StreamDigest {
     return this.open.size === 0 && this.deltaSeqs.size === 0;
   }
 
+  /**
+   * Seqs of the deltas that exist ONLY in memory: the store never holds a delta,
+   * and no final or aggregate has replaced these yet.
+   *
+   * A cache eviction must keep exactly these and may drop anything else, which
+   * the store can reload. This is a live view of the digest's own set, so reading
+   * it on the hot path costs nothing.
+   */
+  get unpersistedSeqs(): ReadonlySet<number> {
+    return this.deltaSeqs;
+  }
+
   /** Note one streamed delta. Call after the event has its seq. */
   noteDelta(event: SessionEvent): void {
     const field = STREAM_ID_FIELD[event.kind];

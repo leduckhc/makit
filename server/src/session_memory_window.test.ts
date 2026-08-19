@@ -253,6 +253,10 @@ test("a never-idle session evicts finished streams' deltas and stays bounded", (
 // never touch the OPEN one. A mid-turn subscriber replays the store's finals
 // plus the un-persisted deltas of the answer still being typed, complete and in
 // order.
+//
+// The open stream is opened FIRST here, on purpose. That keeps the digest
+// non-empty for every event that follows, which is the shape that used to switch
+// the tail cap off completely and let the cache grow for the whole turn.
 test("a mid-turn subscriber still replays the open answer after evictions", () => {
   const store = storeWith("s1", 0);
   const session = new Session({
@@ -263,15 +267,23 @@ test("a mid-turn subscriber still replays the open answer after evictions", () =
     store,
   });
 
+  // The answer being typed opens first and never finals, so the digest stays
+  // non-empty from here on.
+  for (const chunk of ["Hello ", "world", "!"]) {
+    session.adapter.emit("event", { ts: 9000, kind: "agent.message.delta", payload: { msgId: "open", chunk } });
+  }
+
   // Enough finished streams to force the cache to trim.
   for (let m = 1; m <= MEMORY_EVENT_CAP * 3; m++) {
     session.adapter.emit("event", { ts: m, kind: "agent.message.delta", payload: { msgId: `m${m}`, chunk: "x" } });
     session.adapter.emit("event", { ts: m, kind: "agent.message", payload: { msgId: `m${m}`, text: `full${m}` } });
   }
-  // The current answer is still streaming — no final yet.
-  for (const chunk of ["Hello ", "world", "!"]) {
-    session.adapter.emit("event", { ts: 9000, kind: "agent.message.delta", payload: { msgId: "open", chunk } });
-  }
+
+  // An open stream may hold its own deltas, and nothing else.
+  assert.ok(
+    session.events.length <= MEMORY_EVENT_CAP * 2,
+    `cache stayed bounded around an open stream, got ${session.events.length}`,
+  );
 
   const replay = session.eventsSince(0);
   // The open answer's deltas live only in memory, so they must all survive.
@@ -290,4 +302,38 @@ test("a mid-turn subscriber still replays the open answer after evictions", () =
   const seqs = replay.map((e) => e.seq);
   assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b), "the replay stays seq-ordered");
   assert.equal(new Set(seqs).size, seqs.length, "and carries no duplicate seq");
+});
+
+// Eviction keeps an open stream's deltas even when it drops NEWER events, so the
+// cache is no longer a contiguous tail. "Is the cache complete for this caller?"
+// therefore cannot be answered from the oldest cached seq: that seq belongs to
+// the open answer, and reading it as the start of an unbroken tail would serve a
+// subscriber a cache with a hole in it and skip the store entirely.
+test("a cursor above the open stream still reloads the evicted middle", () => {
+  const store = storeWith("s1", 0);
+  const session = new Session({
+    id: "s1",
+    projectId: "p",
+    agent: "pi",
+    adapter: fakeAdapter(),
+    store,
+  });
+
+  // Seqs 1..3: the open answer, kept in memory for the whole turn.
+  for (const chunk of ["Hello ", "world", "!"]) {
+    session.adapter.emit("event", { ts: 1, kind: "agent.message.delta", payload: { msgId: "open", chunk } });
+  }
+  // Seq 4 onwards: finished streams, evicted once the cap bites.
+  for (let m = 1; m <= MEMORY_EVENT_CAP * 3; m++) {
+    session.adapter.emit("event", { ts: m, kind: "agent.message.delta", payload: { msgId: `m${m}`, chunk: "x" } });
+    session.adapter.emit("event", { ts: m, kind: "agent.message", payload: { msgId: `m${m}`, text: `full${m}` } });
+  }
+
+  // A cursor just past the open deltas: every finished message must still arrive.
+  const replay = session.eventsSince(3);
+  const finals = replay.filter((e) => e.kind === "agent.message").length;
+  assert.equal(finals, MEMORY_EVENT_CAP * 3, "the evicted middle came back from the store");
+  const seqs = replay.map((e) => e.seq);
+  assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b), "still seq-ordered");
+  assert.equal(new Set(seqs).size, seqs.length, "and free of duplicates");
 });
