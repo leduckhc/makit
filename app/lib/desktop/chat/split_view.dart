@@ -6,6 +6,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
+import '../../store/prefs/preference_entries.dart';
+import '../../store/prefs/preferences_providers.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/session/session_identity.dart';
@@ -15,6 +17,7 @@ import 'groups/agent_picker.dart';
 import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
+import 'panes/pane_zoom.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 import 'selected_session.dart';
@@ -347,15 +350,33 @@ class _SplitViewState extends ConsumerState<SplitView> {
                     children: [
                       _TabBar(split: widget.split, active: widget.active),
                       Expanded(
-                        child: DesktopChatPane(
-                          // Key by the active tab so switching tabs recreates
-                          // the pane state (composer draft is re-seeded).
-                          key: ValueKey(active.id),
-                          sessionId: active.sessionId,
-                          worktree: active.worktree,
-                          showHeader: false,
-                          composerFocusId: active.id,
-                          composerExpanded: widget.active,
+                        // SPEC-pane-zoom D1/D6: the pane's own text scale, and
+                        // nothing above it. The strip above stays at the global
+                        // scale, so chrome does not shift as the pane grows.
+                        // A TextScaler (not Transform.scale) lets the content
+                        // reflow to its real width, so a wide code block never
+                        // clips.
+                        child: MediaQuery(
+                          data: MediaQuery.of(context).copyWith(
+                            textScaler: TextScaler.linear(
+                              PaneZoom.effective(
+                                globalTextScale: ref.preference(
+                                  textScalePreference,
+                                ),
+                                zoom: widget.split.zoom,
+                              ),
+                            ),
+                          ),
+                          child: DesktopChatPane(
+                            // Key by the active tab so switching tabs recreates
+                            // the pane state (composer draft is re-seeded).
+                            key: ValueKey(active.id),
+                            sessionId: active.sessionId,
+                            worktree: active.worktree,
+                            showHeader: false,
+                            composerFocusId: active.id,
+                            composerExpanded: widget.active,
+                          ),
                         ),
                       ),
                     ],

@@ -146,6 +146,32 @@ enum ShortcutAction {
     scope: ShortcutScope.global,
   ),
 
+  // SPEC-pane-zoom: zoom is per-pane, so these three act on the ACTIVE pane and
+  // leave every other pane, and all chrome, at the global text scale.
+  /// Zoom the active pane one step in.
+  zoomIn(
+    id: 'zoomIn',
+    label: 'Zoom in',
+    description: 'Make the text in the active pane larger',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Zoom the active pane one step out.
+  zoomOut(
+    id: 'zoomOut',
+    label: 'Zoom out',
+    description: 'Make the text in the active pane smaller',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Return the active pane to 100%.
+  zoomReset(
+    id: 'zoomReset',
+    label: 'Actual size',
+    description: 'Return the active pane to 100%',
+    scope: ShortcutScope.global,
+  ),
+
   // SPEC-tab-groups decision 16: ⌘1…⌘9 switch to the 1st–9th group. There is
   // deliberately no action for a tenth group — no wrap-around, no "⌘9 = last";
   // groups past the ninth are reached by clicking or scrolling the rail.

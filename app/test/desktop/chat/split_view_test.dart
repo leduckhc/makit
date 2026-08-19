@@ -8,6 +8,7 @@ import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/groups/agent_picker.dart';
 import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
@@ -671,6 +672,83 @@ void main() {
 
       expect(find.byType(AgentPicker), findsOneWidget);
       expect(find.text('Add agents to “Shipping”'), findsOneWidget);
+    });
+  });
+
+  // SPEC-pane-zoom D1/D6: zoom reaches the pane's content as a TextScaler, and
+  // stops at the pane boundary.
+  group('pane zoom', () {
+    /// The text scale the content of the pane holding [label] actually reads.
+    double paneScale(WidgetTester tester, String label) {
+      final pane = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(SplitView),
+      );
+      final content = find.descendant(
+        of: pane,
+        matching: find.byType(DesktopChatPane),
+      );
+      final scaler = MediaQuery.of(tester.element(content)).textScaler;
+      // Linear scalers are exact at any size; 100 keeps the arithmetic readable.
+      return scaler.scale(100) / 100;
+    }
+
+    testWidgets('starts at 100% in both panes', (tester) async {
+      await _twoPanes(tester);
+      expect(paneScale(tester, 'Alpha'), 1);
+      expect(paneScale(tester, 'Beta'), 1);
+    });
+
+    testWidgets('scales the active pane only', (tester) async {
+      final c = await _twoPanes(tester); // pane B (Beta) is active
+      _ws(c).stepZoomIn();
+      await tester.pump();
+
+      expect(paneScale(tester, 'Beta'), closeTo(1.1, 1e-9));
+      expect(
+        paneScale(tester, 'Alpha'),
+        1,
+        reason: 'the inactive pane must not move',
+      );
+    });
+
+    testWidgets('each pane keeps its own scale', (tester) async {
+      final c = await _twoPanes(tester);
+      _ws(c).stepZoomIn(); // Beta -> 1.1
+      final alpha = _ws(c).state.root as Splitter;
+      _ws(c).setActiveSplit((alpha.first as Split).id);
+      _ws(c).stepZoomOut(); // Alpha -> 0.9
+      await tester.pump();
+
+      expect(paneScale(tester, 'Beta'), closeTo(1.1, 1e-9));
+      expect(paneScale(tester, 'Alpha'), closeTo(0.9, 1e-9));
+    });
+
+    testWidgets('a reset returns the pane to 100%', (tester) async {
+      final c = await _twoPanes(tester);
+      _ws(c).stepZoomIn();
+      _ws(c).stepZoomIn();
+      await tester.pump();
+      expect(paneScale(tester, 'Beta'), closeTo(1.25, 1e-9));
+
+      _ws(c).resetZoom();
+      await tester.pump();
+      expect(paneScale(tester, 'Beta'), 1);
+    });
+
+    testWidgets('the tab strip stays at the global scale (D6)', (tester) async {
+      final c = await _twoPanes(tester);
+      _ws(c).stepZoomIn();
+      await tester.pump();
+      // The tab label sits in the strip, above the zoomed content.
+      final scaler = MediaQuery.of(
+        tester.element(find.text('Beta')),
+      ).textScaler;
+      expect(
+        scaler.scale(100) / 100,
+        1,
+        reason: 'chrome must not move with the pane',
+      );
     });
   });
 }

@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart' show Axis;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
+import 'pane_zoom.dart';
 import 'split_node.dart';
 // Aliased so the controller's own `setRatio`/`moveSplit` methods can still
 // reach the pure tree functions of the same name.
@@ -196,6 +197,45 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     final current = _ratioOf(state.root, splitterId);
     if (current == null) return;
     setRatio(splitterId, current + delta);
+  }
+
+  /// Zooms the active pane one ladder stop in (SPEC-pane-zoom D4).
+  void stepZoomIn() => _setZoom(PaneZoom.stepIn(_activeZoom));
+
+  /// Zooms the active pane one ladder stop out.
+  void stepZoomOut() => _setZoom(PaneZoom.stepOut(_activeZoom));
+
+  /// Returns the active pane to 100%.
+  void resetZoom() => _setZoom(PaneZoom.none);
+
+  /// Scales the active pane's zoom by [factor], without snapping to a stop.
+  ///
+  /// This is the trackpad-pinch and modifier+wheel path (D5). It reads the live
+  /// state, so the many small factors of one gesture accumulate — the same
+  /// reason [adjustRatio] exists.
+  void nudgeZoom(double factor) =>
+      _setZoom(PaneZoom.nudge(_activeZoom, factor));
+
+  /// The active pane's current zoom, or [PaneZoom.none] if it cannot be found.
+  double get _activeZoom =>
+      tree
+          .firstSplitWhere(
+            state.root,
+            (s) => s.id == state.activeSplitId ? s : null,
+          )
+          ?.zoom ??
+      PaneZoom.none;
+
+  /// Writes [zoom] onto the active pane only (D6). A value that changes nothing
+  /// does not commit, so holding `⌘=` at the maximum cannot churn storage.
+  void _setZoom(double zoom) {
+    final clamped = PaneZoom.clamp(zoom);
+    if (clamped == _activeZoom) return;
+    final root = tree.mapSplits(
+      state.root,
+      (s) => s.id == state.activeSplitId ? s.withZoom(clamped) : s,
+    );
+    _commit(WorkspaceState(root: root, activeSplitId: state.activeSplitId));
   }
 
   /// Re-docks the [source] split onto [edge] of the [target] split; the moved

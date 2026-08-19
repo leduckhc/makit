@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/widgets.dart' show Axis;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/chat/panes/pane_zoom.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_worktree.dart';
@@ -703,6 +704,107 @@ void main() {
         }),
       );
       expect(state.activeSplitId, 'split-0');
+    });
+  });
+
+  // SPEC-pane-zoom: the controller always acts on the ACTIVE split, because the
+  // keyboard and the menu carry no pane id.
+  group('WorkspaceController zoom', () {
+    test('stepZoomIn walks the active pane up the ladder', () {
+      final c = WorkspaceController.ephemeral();
+      expect(activeSplit(c).zoom, PaneZoom.none);
+      c.stepZoomIn();
+      expect(activeSplit(c).zoom, 1.1);
+      c.stepZoomIn();
+      expect(activeSplit(c).zoom, 1.25);
+      expectIntegrity(c);
+    });
+
+    test('stepZoomOut walks the active pane down the ladder', () {
+      final c = WorkspaceController.ephemeral();
+      c.stepZoomOut();
+      expect(activeSplit(c).zoom, 0.9);
+      expectIntegrity(c);
+    });
+
+    test('resetZoom returns the active pane to 100%', () {
+      final c = WorkspaceController.ephemeral();
+      c.stepZoomIn();
+      c.stepZoomIn();
+      c.resetZoom();
+      expect(activeSplit(c).zoom, PaneZoom.none);
+    });
+
+    test('nudgeZoom scales continuously, for a pinch or a wheel', () {
+      final c = WorkspaceController.ephemeral();
+      c.nudgeZoom(1.5);
+      expect(activeSplit(c).zoom, closeTo(1.5, 1e-9));
+      c.nudgeZoom(1 / 1.5);
+      expect(activeSplit(c).zoom, closeTo(1, 1e-9));
+    });
+
+    test('holds at the ladder ends instead of drifting past them', () {
+      final c = WorkspaceController.ephemeral();
+      for (var i = 0; i < 40; i++) {
+        c.stepZoomIn();
+      }
+      expect(activeSplit(c).zoom, PaneZoom.max);
+      for (var i = 0; i < 40; i++) {
+        c.stepZoomOut();
+      }
+      expect(activeSplit(c).zoom, PaneZoom.min);
+    });
+
+    test('zooms ONLY the active pane, and leaves its neighbour alone', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.divideActive(Axis.horizontal);
+      final second = c.state.activeSplitId;
+      expect(second, isNot(first));
+
+      c.stepZoomIn();
+      expect(splitById(c, second)!.zoom, 1.1);
+      expect(
+        splitById(c, first)!.zoom,
+        PaneZoom.none,
+        reason: 'the inactive pane must not move (SPEC-pane-zoom D6)',
+      );
+
+      // Focus the neighbour: zoom follows the focus, and each pane keeps its own.
+      c.setActiveSplit(first);
+      c.stepZoomOut();
+      expect(splitById(c, first)!.zoom, 0.9);
+      expect(splitById(c, second)!.zoom, 1.1);
+      expectIntegrity(c);
+    });
+
+    test('a zoom change reaches the persistence sink', () {
+      final commits = <WorkspaceState>[];
+      final c = WorkspaceController(
+        commits.add,
+        WorkspaceController.seedWorkspace(),
+      );
+      c.stepZoomIn();
+      expect(commits, hasLength(1));
+      expect(
+        (commits.single.root as Split).zoom,
+        1.1,
+        reason: 'zoom must survive a restart',
+      );
+    });
+
+    test('a no-op zoom does not commit, so it cannot churn storage', () {
+      final commits = <WorkspaceState>[];
+      final c = WorkspaceController(
+        commits.add,
+        WorkspaceController.seedWorkspace(),
+      );
+      c.resetZoom(); // already 100%
+      expect(commits, isEmpty);
+      c.stepZoomOut();
+      commits.clear();
+      c.nudgeZoom(1); // a factor of 1 changes nothing
+      expect(commits, isEmpty);
     });
   });
 }

@@ -199,6 +199,14 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _cycleTab(ref, 1);
       case ShortcutAction.prevTab:
         _cycleTab(ref, -1);
+      // SPEC-pane-zoom: the controller resolves "which pane" from activeSplitId,
+      // so zoom follows the focus without the keymap knowing about panes.
+      case ShortcutAction.zoomIn:
+        ref.read(workspaceControllerProvider.notifier).stepZoomIn();
+      case ShortcutAction.zoomOut:
+        ref.read(workspaceControllerProvider.notifier).stepZoomOut();
+      case ShortcutAction.zoomReset:
+        ref.read(workspaceControllerProvider.notifier).resetZoom();
       // SPEC-notice-layer D8: reads the record, not the screen, so it still answers
       // "what was that?" after the notice has faded. Deliberately placed below
       // the settings gate above (D9): copy is not exempt from it.
