@@ -21,11 +21,28 @@ import { isBusy } from "./protocol.js";
 import type { Session } from "./session.js";
 import { log } from "./log.js";
 
-/** Default window: quiet for this long and the agent is released. */
-export const DEFAULT_IDLE_CLOSE_MS = 60 * 60_000;
+/**
+ * Default window: quiet for this long and the agent is released.
+ *
+ * A fortnight, deliberately generous. An hour reclaimed more memory, but it moved
+ * sessions a user was still working through out of their worktree and into the
+ * Closed list several times a day, which reads as lost work. Two weeks keep the
+ * hygiene for genuinely abandoned sessions and leave live work where the user
+ * left it. Shorten it with `MAKIT_IDLE_CLOSE_MIN` on a memory-tight host.
+ */
+export const DEFAULT_IDLE_CLOSE_MS = 14 * 24 * 60 * 60_000;
 
 /** Floor on the sweep interval, so a short window can't busy-loop the daemon. */
 const MIN_SWEEP_MS = 30_000;
+
+/**
+ * Ceiling on the sweep interval. A quarter of the fortnight-long default is 84
+ * hours, far longer than a typical daemon lifetime, so the derived interval alone
+ * would let a session sit released-but-resident indefinitely. A sweep with no
+ * candidate is an in-memory filter over a few hundred sessions, so a 15-minute
+ * tick costs nothing.
+ */
+const MAX_SWEEP_MS = 15 * 60_000;
 
 export interface IdleReaperDeps {
   /** Every session the server currently holds. */
@@ -73,9 +90,11 @@ export class IdleReaper {
 
   constructor(private readonly deps: IdleReaperDeps) {
     this.idleCloseMs = deps.idleCloseMs ?? 0;
-    // Sweep four times per window: prompt enough that a cold session is released
-    // soon after it goes quiet, coarse enough to cost nothing.
-    this.sweepMs = deps.sweepMs ?? Math.max(MIN_SWEEP_MS, Math.floor(this.idleCloseMs / 4));
+    // Sweep four times per window, bounded at both ends: prompt enough that a
+    // cold session is released soon after it goes quiet, coarse enough to cost
+    // nothing, and never so coarse that a long window stops being enforced.
+    this.sweepMs =
+      deps.sweepMs ?? Math.min(MAX_SWEEP_MS, Math.max(MIN_SWEEP_MS, Math.floor(this.idleCloseMs / 4)));
     this.now = deps.now ?? (() => Date.now());
     this.setTimer = deps.setTimer ?? ((fn, ms) => setInterval(fn, ms));
     this.clearTimer = deps.clearTimer ?? ((h) => clearInterval(h as NodeJS.Timeout));

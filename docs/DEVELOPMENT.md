@@ -120,7 +120,7 @@ an agent.
 
 | Env var | Default | Meaning |
 | --- | --- | --- |
-| `MAKIT_IDLE_CLOSE_MIN` | `60` | Minutes of inactivity before a session is auto-closed. `0` disables it. |
+| `MAKIT_IDLE_CLOSE_MIN` | `20160` (14 days) | Minutes of inactivity before a session is auto-closed. `0` disables it. |
 
 Sessions that are mid-turn, awaiting input/approval, still drafts, already cold,
 or lacking a native resume handle are never auto-closed.
