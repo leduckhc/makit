@@ -40,6 +40,36 @@ void main() {
       expect(PaneZoom.stepIn(9), PaneZoom.max);
       expect(PaneZoom.stepOut(0.01), PaneZoom.min);
     });
+
+    test('walks every adjacent pair of stops, up and back down', () {
+      // The spec promises every step, so check every step rather than a sample.
+      for (var i = 0; i < PaneZoom.stops.length - 1; i++) {
+        final from = PaneZoom.stops[i];
+        final to = PaneZoom.stops[i + 1];
+        expect(
+          PaneZoom.stepIn(from),
+          to,
+          reason: 'stepIn($from) should reach $to',
+        );
+        expect(
+          PaneZoom.stepOut(to),
+          from,
+          reason: 'stepOut($to) should reach $from',
+        );
+      }
+    });
+
+    test('reaches both ends by stepping, and no further', () {
+      var zoom = PaneZoom.none;
+      for (var i = 0; i < PaneZoom.stops.length; i++) {
+        zoom = PaneZoom.stepIn(zoom);
+      }
+      expect(zoom, PaneZoom.max);
+      for (var i = 0; i < PaneZoom.stops.length; i++) {
+        zoom = PaneZoom.stepOut(zoom);
+      }
+      expect(zoom, PaneZoom.min);
+    });
   });
 
   group('nudge, for a pinch or a wheel', () {

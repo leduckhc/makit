@@ -806,5 +806,61 @@ void main() {
       c.nudgeZoom(1); // a factor of 1 changes nothing
       expect(commits, isEmpty);
     });
+
+    // Zoom belongs to the pane, not to a tab (D2), so binding or adding a tab
+    // must leave the pane's scale alone.
+    test('survives revealSession filling the pane\u2019s starter tab', () {
+      final c = WorkspaceController.ephemeral();
+      c.stepZoomIn();
+      c.revealSession('s1');
+      expect(activeSplit(c).zoom, 1.1);
+      expect(activeSplit(c).tabs.single.sessionId, 's1');
+    });
+
+    test('survives revealWorktree filling the pane\u2019s starter tab', () {
+      const wt = SelectedWorktree(
+        projectId: 'p1',
+        path: '/tmp/wt/feat-x',
+        branch: 'feat/x',
+      );
+      final c = WorkspaceController.ephemeral();
+      c.stepZoomIn();
+      c.revealWorktree(wt);
+      expect(activeSplit(c).zoom, 1.1);
+    });
+
+    test('survives adding and then switching tabs in the pane', () {
+      final c = WorkspaceController.ephemeral();
+      c.stepZoomIn();
+      c.revealSession('s1');
+      c.openTab(activeSplit(c).id, const Tab(id: 'tab-new'));
+      expect(
+        activeSplit(c).zoom,
+        1.1,
+        reason: 'a new tab must not reset the pane it opens in',
+      );
+      final first = activeSplit(c).tabs.first.id;
+      c.setActiveTab(activeSplit(c).id, first);
+      expect(
+        activeSplit(c).zoom,
+        1.1,
+        reason: 'switching tabs must not reset the pane',
+      );
+    });
+
+    test('survives closing the last tab of the only pane', () {
+      // The pane itself lives on (same id), so it keeps its scale. Every other
+      // tab edit preserves zoom, and this path must not be the odd one out.
+      final c = WorkspaceController.ephemeral();
+      c.revealSession('s1');
+      c.stepZoomIn();
+      final pane = activeSplit(c).id;
+      c.closeTab(pane, activeSplit(c).activeTabId);
+
+      expect(activeSplit(c).id, pane);
+      expect(activeSplit(c).tabs.single.sessionId, isNull);
+      expect(activeSplit(c).zoom, 1.1);
+      expectIntegrity(c);
+    });
   });
 }

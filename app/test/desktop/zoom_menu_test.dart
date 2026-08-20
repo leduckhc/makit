@@ -114,6 +114,50 @@ void main() {
         expect(published().last['key'], 'g');
       },
     );
+
+    // AppKit matches a key equivalent against the Unicode input of one keypress.
+    // A special key needs its function-key character, not its Flutter label.
+    group('special keys', () {
+      Future<String?> keyFor(LogicalKeyboardKey trigger) async {
+        toPlatform.clear();
+        await bridge.publish(
+          Keymap.defaults(
+            cmdIsPrimary: true,
+          ).rebind(ShortcutAction.zoomIn, KeyChord(trigger, meta: true)),
+        );
+        return published().first['key'] as String?;
+      }
+
+      test('maps the arrow keys to their function-key characters', () async {
+        expect(await keyFor(LogicalKeyboardKey.arrowUp), '\uF700');
+        expect(await keyFor(LogicalKeyboardKey.arrowDown), '\uF701');
+        expect(await keyFor(LogicalKeyboardKey.arrowLeft), '\uF702');
+        expect(await keyFor(LogicalKeyboardKey.arrowRight), '\uF703');
+      });
+
+      test('maps the function keys', () async {
+        expect(await keyFor(LogicalKeyboardKey.f1), '\uF704');
+        expect(await keyFor(LogicalKeyboardKey.f12), '\uF70F');
+      });
+
+      test('maps the common editing keys', () async {
+        expect(await keyFor(LogicalKeyboardKey.home), '\uF729');
+        expect(await keyFor(LogicalKeyboardKey.end), '\uF72B');
+        expect(await keyFor(LogicalKeyboardKey.pageUp), '\uF72C');
+        expect(await keyFor(LogicalKeyboardKey.pageDown), '\uF72D');
+        expect(await keyFor(LogicalKeyboardKey.enter), '\r');
+        expect(await keyFor(LogicalKeyboardKey.tab), '\t');
+        expect(await keyFor(LogicalKeyboardKey.escape), '\u001B');
+        expect(await keyFor(LogicalKeyboardKey.backspace), '\u0008');
+        expect(await keyFor(LogicalKeyboardKey.space), ' ');
+      });
+
+      test('sends no key for a label AppKit could never match', () async {
+        // Better an item with no shortcut than an item with a broken one. The
+        // chord still works, because Flutter handles it.
+        expect(await keyFor(LogicalKeyboardKey.numLock), isNull);
+      });
+    });
   });
 
   group('invoke', () {

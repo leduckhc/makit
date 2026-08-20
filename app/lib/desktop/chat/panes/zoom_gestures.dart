@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -20,6 +22,25 @@ bool get zoomModifierHeld {
   final keyboard = HardwareKeyboard.instance;
   return keyboard.isMetaPressed || keyboard.isControlPressed;
 }
+
+/// The scroll distance that means "one notch", i.e. one tenth of zoom.
+///
+/// A mouse wheel reports roughly this much for one physical click on macOS. A
+/// trackpad reports the same distance in many smaller events.
+const double kWheelZoomReferencePixels = 100;
+
+/// The relative zoom factor for a scroll of [deltaY] logical pixels.
+///
+/// Exponential in the distance, which makes the factor **compose**: twenty
+/// events of 5 pixels produce exactly the same zoom as one event of 100 pixels.
+/// A fixed factor per event would instead let a trackpad, which reports many
+/// small deltas per gesture, race to the zoom limit in one flick.
+///
+/// A negative [deltaY] is a scroll up, which zooms in, as everywhere else.
+double wheelZoomFactor(double deltaY) =>
+    math.exp(-deltaY * _lnNotch / kWheelZoomReferencePixels);
+
+final double _lnNotch = math.log(1.1);
 
 /// Scroll physics that refuse a user offset while [zoomModifierHeld].
 ///
@@ -80,10 +101,6 @@ class _PaneZoomGesturesState extends State<PaneZoomGestures> {
   /// each frame's *relative* factor is the ratio against the previous frame.
   double _lastPinchScale = 1;
 
-  /// One wheel notch. Smaller than a ladder step, so a wheel feels smooth while
-  /// the keyboard stays predictable.
-  static const double _wheelFactor = 1.1;
-
   void _onPanZoomStart(PointerPanZoomStartEvent event) => _lastPinchScale = 1;
 
   void _onPanZoomUpdate(PointerPanZoomUpdateEvent event) {
@@ -103,12 +120,10 @@ class _PaneZoomGesturesState extends State<PaneZoomGestures> {
     // interested handler: exactly one of us reacts to this event.
     GestureBinding.instance.pointerSignalResolver.register(event, (resolved) {
       final scroll = resolved as PointerScrollEvent;
-      if (scroll.scrollDelta.dy == 0) return;
+      final delta = scroll.scrollDelta.dy;
+      if (delta == 0) return;
       widget.onFocus();
-      // Wheel up (a negative delta) zooms in, as everywhere else.
-      widget.onNudge(
-        scroll.scrollDelta.dy < 0 ? _wheelFactor : 1 / _wheelFactor,
-      );
+      widget.onNudge(wheelZoomFactor(delta));
     });
   }
 

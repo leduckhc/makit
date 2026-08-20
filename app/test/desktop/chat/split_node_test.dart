@@ -627,5 +627,57 @@ void main() {
       expect(origin.withZoom(1.4), isNot(origin));
       expect(origin.withZoom(PaneZoom.none), origin);
     });
+
+    // A pane keeps its scale across its whole tab strip (D2), so no tab edit may
+    // quietly drop it. Every one of these rebuilds the Split.
+    group('survives a tab edit', () {
+      Split zoomed() => const Split(
+        id: 'a',
+        tabs: [
+          Tab(id: 't1'),
+          Tab(id: 't2'),
+        ],
+        activeTabId: 't1',
+        zoom: 1.4,
+      );
+
+      test('addTab', () {
+        expect(addTab(zoomed(), const Tab(id: 't3')).zoom, 1.4);
+      });
+
+      test('removeTab', () {
+        expect(removeTab(zoomed(), 't2')!.zoom, 1.4);
+      });
+
+      test('activateTab — switching tabs must not reset the pane', () {
+        expect(activateTab(zoomed(), 't2').zoom, 1.4);
+      });
+
+      test('reorderTab', () {
+        expect(reorderTab(zoomed(), 't1', 1).zoom, 1.4);
+      });
+    });
+
+    group('copyWith', () {
+      test('keeps the zoom when it is not named', () {
+        final origin = _leaf('a', 't1').withZoom(1.6);
+        expect(origin.copyWith(activeTabId: 't1').zoom, 1.6);
+      });
+
+      test('clamps a named zoom, like the constructor path does', () {
+        expect(_leaf('a', 't1').copyWith(zoom: 99).zoom, PaneZoom.max);
+      });
+
+      test('replaces only what it is given', () {
+        final origin = _leaf('a', 't1').withZoom(1.25);
+        final next = origin.copyWith(
+          tabs: [const Tab(id: 'tX')],
+          activeTabId: 'tX',
+        );
+        expect(next.id, 'a');
+        expect(next.zoom, 1.25);
+        expect(next.activeTabId, 'tX');
+      });
+    });
   });
 }

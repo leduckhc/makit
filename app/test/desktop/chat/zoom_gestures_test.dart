@@ -67,6 +67,38 @@ void main() {
     });
   });
 
+  // A wheel notch and a trackpad both arrive as PointerScrollEvent, but a
+  // trackpad sends many small deltas where a wheel sends one large one. The
+  // factor is therefore exponential in the delta, so the zoom a gesture produces
+  // depends on how far the user scrolled and not on how many events that took.
+  group('wheelZoomFactor', () {
+    test('zooms in on a negative delta, and out on a positive one', () {
+      expect(wheelZoomFactor(-100), greaterThan(1));
+      expect(wheelZoomFactor(100), lessThan(1));
+    });
+
+    test('a reference notch is about one tenth', () {
+      expect(wheelZoomFactor(-kWheelZoomReferencePixels), closeTo(1.1, 1e-9));
+    });
+
+    test('is symmetric, so a scroll back undoes a scroll out', () {
+      expect(wheelZoomFactor(40) * wheelZoomFactor(-40), closeTo(1, 1e-9));
+    });
+
+    test('many small deltas equal one big delta of the same distance', () {
+      // This is the property that stops a trackpad racing to the limit.
+      var compounded = 1.0;
+      for (var i = 0; i < 20; i++) {
+        compounded *= wheelZoomFactor(-5);
+      }
+      expect(compounded, closeTo(wheelZoomFactor(-100), 1e-9));
+    });
+
+    test('a zero delta changes nothing', () {
+      expect(wheelZoomFactor(0), 1);
+    });
+  });
+
   group('ZoomAwareScrollPhysics', () {
     testWidgets('accepts a user offset normally', (tester) async {
       const physics = ZoomAwareScrollPhysics();

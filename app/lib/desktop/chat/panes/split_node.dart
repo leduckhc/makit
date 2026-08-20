@@ -153,11 +153,18 @@ final class Split extends SplitNode {
   final double zoom;
 
   /// This split at [zoom], clamped to the ladder's ends.
-  Split withZoom(double zoom) => Split(
+  Split withZoom(double zoom) => copyWith(zoom: zoom);
+
+  /// This split with the named parts replaced, and every other part kept.
+  ///
+  /// Every rebuild path must go through here. A `Split(...)` literal silently
+  /// drops any field it does not name, which is how a tab edit used to reset the
+  /// pane's [zoom] to 100%.
+  Split copyWith({List<Tab>? tabs, String? activeTabId, double? zoom}) => Split(
     id: id,
-    tabs: tabs,
-    activeTabId: activeTabId,
-    zoom: PaneZoom.clamp(zoom),
+    tabs: tabs ?? this.tabs,
+    activeTabId: activeTabId ?? this.activeTabId,
+    zoom: PaneZoom.clamp(zoom ?? this.zoom),
   );
 
   @override
@@ -501,7 +508,7 @@ bool containsSplit(SplitNode root, String splitId) =>
 
 /// Appends [tab] to [split] and makes it the active tab.
 Split addTab(Split split, Tab tab) =>
-    Split(id: split.id, tabs: [...split.tabs, tab], activeTabId: tab.id);
+    split.copyWith(tabs: [...split.tabs, tab], activeTabId: tab.id);
 
 /// Removes tab [tabId] from [split]. Returns null when it was the last tab (the
 /// caller collapses or resets the split), or [split] unchanged (same identity)
@@ -515,7 +522,7 @@ Split? removeTab(Split split, String tabId) {
   final activeTabId = split.activeTabId == tabId
       ? tabs[index < tabs.length ? index : tabs.length - 1].id
       : split.activeTabId;
-  return Split(id: split.id, tabs: tabs, activeTabId: activeTabId);
+  return split.copyWith(tabs: tabs, activeTabId: activeTabId);
 }
 
 /// Makes tab [tabId] active in [split]. Returns [split] unchanged (same
@@ -524,7 +531,7 @@ Split activateTab(Split split, String tabId) {
   if (split.activeTabId == tabId || !split.tabs.any((t) => t.id == tabId)) {
     return split;
   }
-  return Split(id: split.id, tabs: split.tabs, activeTabId: tabId);
+  return split.copyWith(activeTabId: tabId);
 }
 
 /// Moves tab [tabId] to [newIndex] within [split], preserving the active tab.
@@ -535,5 +542,5 @@ Split reorderTab(Split split, String tabId, int newIndex) {
   final tabs = [...split.tabs];
   final tab = tabs.removeAt(index);
   tabs.insert(newIndex.clamp(0, tabs.length), tab);
-  return Split(id: split.id, tabs: tabs, activeTabId: split.activeTabId);
+  return split.copyWith(tabs: tabs);
 }

@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../shortcuts/key_chord.dart';
@@ -51,20 +50,78 @@ class ZoomMenuBridge {
   );
 
   /// One item as Swift expects it. A null chord renders with no shortcut, which
-  /// is what an unbound action should look like.
-  static Map<String, Object?> _spec(ShortcutAction action, KeyChord? chord) => {
-    'id': action.id,
-    'label': action.label,
-    if (chord != null) ...{
-      'key': _keyEquivalent(chord),
-      'modifiers': _modifiers(chord),
-    },
+  /// is what an unbound action should look like. A chord AppKit cannot express
+  /// also renders with no shortcut, rather than a broken one.
+  static Map<String, Object?> _spec(ShortcutAction action, KeyChord? chord) {
+    final key = chord == null ? null : _keyEquivalent(chord);
+    return {
+      'id': action.id,
+      'label': action.label,
+      if (chord != null && key != null) ...{
+        'key': key,
+        'modifiers': _modifiers(chord),
+      },
+    };
+  }
+
+  /// The Unicode character AppKit matches on, or null when it cannot be
+  /// expressed.
+  ///
+  /// AppKit compares a key equivalent against the input one keypress produces.
+  /// A special key therefore needs its function-key character, not the
+  /// multi-character Flutter label (`Arrow Up`, `F1`). A label that is neither a
+  /// single character nor a known special key returns null, so the menu shows no
+  /// shortcut instead of one that can never fire. Flutter still handles the
+  /// chord either way.
+  static String? _keyEquivalent(KeyChord chord) {
+    final special = _appKitSpecialKeys[chord.trigger.keyId];
+    if (special != null) return special;
+    final label = chord.trigger.keyLabel;
+    // Lower case, because AppKit treats an upper-case equivalent as implying
+    // Shift, which would double the modifier the chord already carries.
+    if (label.length == 1) return label.toLowerCase();
+    return null;
+  }
+
+  /// AppKit's function-key characters, from `NSEvent.h`.
+  static final Map<int, String> _appKitSpecialKeys = {
+    LogicalKeyboardKey.arrowUp.keyId: '\uF700',
+    LogicalKeyboardKey.arrowDown.keyId: '\uF701',
+    LogicalKeyboardKey.arrowLeft.keyId: '\uF702',
+    LogicalKeyboardKey.arrowRight.keyId: '\uF703',
+    LogicalKeyboardKey.home.keyId: '\uF729',
+    LogicalKeyboardKey.end.keyId: '\uF72B',
+    LogicalKeyboardKey.pageUp.keyId: '\uF72C',
+    LogicalKeyboardKey.pageDown.keyId: '\uF72D',
+    LogicalKeyboardKey.delete.keyId: '\uF728',
+    LogicalKeyboardKey.insert.keyId: '\uF727',
+    LogicalKeyboardKey.help.keyId: '\uF746',
+    // Control characters, which AppKit takes verbatim.
+    LogicalKeyboardKey.enter.keyId: '\r',
+    LogicalKeyboardKey.numpadEnter.keyId: '\u0003',
+    LogicalKeyboardKey.tab.keyId: '\t',
+    LogicalKeyboardKey.escape.keyId: '\u001B',
+    LogicalKeyboardKey.backspace.keyId: '\u0008',
+    LogicalKeyboardKey.space.keyId: ' ',
+    // NSF1FunctionKey is 0xF704, and the rest follow in order.
+    for (var i = 1; i <= 12; i++)
+      _functionKeys[i - 1].keyId: String.fromCharCode(0xF703 + i),
   };
 
-  /// The single character AppKit matches on. Lower case, because AppKit treats
-  /// an upper-case equivalent as implying Shift.
-  static String _keyEquivalent(KeyChord chord) =>
-      chord.trigger.keyLabel.toLowerCase();
+  static const List<LogicalKeyboardKey> _functionKeys = [
+    LogicalKeyboardKey.f1,
+    LogicalKeyboardKey.f2,
+    LogicalKeyboardKey.f3,
+    LogicalKeyboardKey.f4,
+    LogicalKeyboardKey.f5,
+    LogicalKeyboardKey.f6,
+    LogicalKeyboardKey.f7,
+    LogicalKeyboardKey.f8,
+    LogicalKeyboardKey.f9,
+    LogicalKeyboardKey.f10,
+    LogicalKeyboardKey.f11,
+    LogicalKeyboardKey.f12,
+  ];
 
   static int _modifiers(KeyChord chord) =>
       (chord.meta ? _command : 0) |
@@ -84,7 +141,9 @@ class ZoomMenuBridge {
     return null;
   }
 
-  /// Stops listening. The menu keeps its last pushed items.
-  @visibleForTesting
+  /// Stops listening, and releases this bridge from the channel handler.
+  ///
+  /// The menu keeps its last pushed items. Call this when the owning scope goes
+  /// away, or the handler keeps the bridge and its callback reachable.
   void dispose() => _channel.setMethodCallHandler(null);
 }

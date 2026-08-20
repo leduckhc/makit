@@ -77,6 +77,9 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
   @override
   void dispose() {
     FocusManager.instance.removeListener(_reclaimFocusWhenIdle);
+    // The channel handler retains the bridge, whose callback retains this state.
+    // Without this the removed scope stays reachable.
+    _zoomMenu?.dispose();
     _scopeFocus.dispose();
     super.dispose();
   }

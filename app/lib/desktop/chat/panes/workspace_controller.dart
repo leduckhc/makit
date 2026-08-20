@@ -486,8 +486,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
         state.root,
         (s) => s.id != active.id
             ? s
-            : Split(
-                id: s.id,
+            : s.copyWith(
                 tabs: [
                   for (final t in s.tabs) t.id == activeTab.id ? bound : t,
                 ],
@@ -518,8 +517,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
         state.root,
         (s) => s.id != active.id
             ? s
-            : Split(
-                id: s.id,
+            : s.copyWith(
                 tabs: [
                   for (final t in s.tabs) t.id == activeTab.id ? bound : t,
                 ],
@@ -580,9 +578,22 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   }
 
   /// Resets the sole split [splitId] to a single fresh empty starter [Tab].
+  ///
+  /// The pane itself lives on under the same id, so it keeps its zoom. Closing
+  /// the last tab is a tab edit, and no tab edit resets the pane's scale (D2).
   void _resetSole(String splitId) {
     final tab = Tab(id: nextNodeId(SplitNodeKind.tab));
-    final fresh = Split(id: splitId, tabs: [tab], activeTabId: tab.id);
+    final zoom =
+        tree
+            .firstSplitWhere(state.root, (s) => s.id == splitId ? s : null)
+            ?.zoom ??
+        PaneZoom.none;
+    final fresh = Split(
+      id: splitId,
+      tabs: [tab],
+      activeTabId: tab.id,
+      zoom: zoom,
+    );
     _commit(WorkspaceState(root: fresh, activeSplitId: splitId));
   }
 
@@ -613,7 +624,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   Split _insertTab(Split split, Tab tab, int index) {
     final tabs = [...split.tabs];
     tabs.insert(index.clamp(0, tabs.length), tab);
-    return Split(id: split.id, tabs: tabs, activeTabId: tab.id);
+    return split.copyWith(tabs: tabs, activeTabId: tab.id);
   }
 
   /// The left-most split id of [targetId]'s sibling subtree, or null when
