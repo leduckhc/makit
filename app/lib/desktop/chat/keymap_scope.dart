@@ -1,10 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart' hide Tab;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../desktop_ports_route.dart';
+import '../zoom_menu.dart';
+import '../../shortcuts/keymap.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../status/status_providers.dart';
@@ -59,14 +62,38 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
   void initState() {
     super.initState();
     FocusManager.instance.addListener(_reclaimFocusWhenIdle);
+    // SPEC-pane-zoom D7/D8: the native View menu dispatches through the same
+    // _invoke as the keyboard, so a menu click and a chord cannot drift apart.
+    if (_hasNativeMenu) {
+      _zoomMenu = ZoomMenuBridge(
+        onInvoke: (action) {
+          if (!mounted) return;
+          _invoke(context, ref, action);
+        },
+      );
+    }
   }
 
   @override
   void dispose() {
     FocusManager.instance.removeListener(_reclaimFocusWhenIdle);
+    // The channel handler retains the bridge, whose callback retains this state.
+    // Without this the removed scope stays reachable.
+    _zoomMenu?.dispose();
     _scopeFocus.dispose();
     super.dispose();
   }
+
+  /// Only macOS has a native menu bar to fill.
+  bool get _hasNativeMenu =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+
+  /// Null off macOS, and in a test that never pumps a platform channel.
+  ZoomMenuBridge? _zoomMenu;
+
+  /// The keymap last pushed to the native menu, so an unrelated rebuild does not
+  /// cross the channel again.
+  Keymap? _publishedKeymap;
 
   /// Re-grabs focus for [_scopeFocus] when no concrete widget holds it. A real
   /// focusable (text field, button) is a leaf [FocusNode]; when focus instead
@@ -131,6 +158,11 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
   @override
   Widget build(BuildContext context) {
     final keymap = ref.watch(keymapProvider);
+    // Keeps the menu's shortcuts truthful after a rebind (D8).
+    if (_zoomMenu != null && keymap != _publishedKeymap) {
+      _publishedKeymap = keymap;
+      _zoomMenu!.publish(keymap);
+    }
     final shortcuts = <ShortcutActivator, Intent>{};
     for (final action in ShortcutAction.values) {
       if (action.scope != ShortcutScope.global) continue;
@@ -199,6 +231,14 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _cycleTab(ref, 1);
       case ShortcutAction.prevTab:
         _cycleTab(ref, -1);
+      // SPEC-pane-zoom: the controller resolves "which pane" from activeSplitId,
+      // so zoom follows the focus without the keymap knowing about panes.
+      case ShortcutAction.zoomIn:
+        ref.read(workspaceControllerProvider.notifier).stepZoomIn();
+      case ShortcutAction.zoomOut:
+        ref.read(workspaceControllerProvider.notifier).stepZoomOut();
+      case ShortcutAction.zoomReset:
+        ref.read(workspaceControllerProvider.notifier).resetZoom();
       // SPEC-notice-layer D8: reads the record, not the screen, so it still answers
       // "what was that?" after the notice has faded. Deliberately placed below
       // the settings gate above (D9): copy is not exempt from it.

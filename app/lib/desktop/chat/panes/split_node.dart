@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show Axis;
 
 import '../selected_worktree.dart';
+import 'pane_zoom.dart';
 
 /// The edge of a target [Split] a dragged [Split] is dropped onto.
 ///
@@ -114,12 +115,21 @@ final class Split extends SplitNode {
     required this.id,
     required this.tabs,
     required this.activeTabId,
+    this.zoom = PaneZoom.none,
   });
 
   /// Rebuilds a split (and its tabs) from its [toJson] map.
+  ///
+  /// A layout persisted before SPEC-pane-zoom carries no `zoom` key, and loads
+  /// at [PaneZoom.none]. A corrupt or hand-edited value is clamped, because a
+  /// stored scale is untrusted input like any other.
   factory Split.fromJson(Map<String, Object?> json) => Split(
     id: json['id'] as String,
     activeTabId: json['activeTabId'] as String,
+    zoom: switch (json['zoom']) {
+      final num z => PaneZoom.clamp(z.toDouble()),
+      _ => PaneZoom.none,
+    },
     tabs: [
       for (final t in json['tabs'] as List)
         Tab.fromJson(t as Map<String, Object?>),
@@ -135,11 +145,36 @@ final class Split extends SplitNode {
   /// The id of the active tab; always references a tab in [tabs].
   final String activeTabId;
 
+  /// This pane's text zoom (SPEC-pane-zoom D2). [PaneZoom.none] when untouched.
+  ///
+  /// Zoom belongs to the pane, not to the tab, so every tab in the strip reads
+  /// at the same scale. It rides the split tree, so it survives a restart and
+  /// dies with the pane.
+  final double zoom;
+
+  /// This split at [zoom], clamped to the ladder's ends.
+  Split withZoom(double zoom) => copyWith(zoom: zoom);
+
+  /// This split with the named parts replaced, and every other part kept.
+  ///
+  /// Every rebuild path must go through here. A `Split(...)` literal silently
+  /// drops any field it does not name, which is how a tab edit used to reset the
+  /// pane's [zoom] to 100%.
+  Split copyWith({List<Tab>? tabs, String? activeTabId, double? zoom}) => Split(
+    id: id,
+    tabs: tabs ?? this.tabs,
+    activeTabId: activeTabId ?? this.activeTabId,
+    zoom: PaneZoom.clamp(zoom ?? this.zoom),
+  );
+
   @override
   Map<String, Object?> toJson() => {
     'k': 'split',
     'id': id,
     'activeTabId': activeTabId,
+    // Omitted at 100%, like Tab's worktree hint, to keep a persisted layout
+    // small and unchanged for the majority of panes.
+    if (zoom != PaneZoom.none) 'zoom': zoom,
     'tabs': [for (final t in tabs) t.toJson()],
   };
 
@@ -148,10 +183,11 @@ final class Split extends SplitNode {
       other is Split &&
       other.id == id &&
       other.activeTabId == activeTabId &&
+      other.zoom == zoom &&
       listEquals(other.tabs, tabs);
 
   @override
-  int get hashCode => Object.hash(id, activeTabId, Object.hashAll(tabs));
+  int get hashCode => Object.hash(id, activeTabId, zoom, Object.hashAll(tabs));
 }
 
 /// An internal divider node. [ratio] is the [first] child's fraction of the
@@ -472,7 +508,7 @@ bool containsSplit(SplitNode root, String splitId) =>
 
 /// Appends [tab] to [split] and makes it the active tab.
 Split addTab(Split split, Tab tab) =>
-    Split(id: split.id, tabs: [...split.tabs, tab], activeTabId: tab.id);
+    split.copyWith(tabs: [...split.tabs, tab], activeTabId: tab.id);
 
 /// Removes tab [tabId] from [split]. Returns null when it was the last tab (the
 /// caller collapses or resets the split), or [split] unchanged (same identity)
@@ -486,7 +522,7 @@ Split? removeTab(Split split, String tabId) {
   final activeTabId = split.activeTabId == tabId
       ? tabs[index < tabs.length ? index : tabs.length - 1].id
       : split.activeTabId;
-  return Split(id: split.id, tabs: tabs, activeTabId: activeTabId);
+  return split.copyWith(tabs: tabs, activeTabId: activeTabId);
 }
 
 /// Makes tab [tabId] active in [split]. Returns [split] unchanged (same
@@ -495,7 +531,7 @@ Split activateTab(Split split, String tabId) {
   if (split.activeTabId == tabId || !split.tabs.any((t) => t.id == tabId)) {
     return split;
   }
-  return Split(id: split.id, tabs: split.tabs, activeTabId: tabId);
+  return split.copyWith(activeTabId: tabId);
 }
 
 /// Moves tab [tabId] to [newIndex] within [split], preserving the active tab.
@@ -506,5 +542,5 @@ Split reorderTab(Split split, String tabId, int newIndex) {
   final tabs = [...split.tabs];
   final tab = tabs.removeAt(index);
   tabs.insert(newIndex.clamp(0, tabs.length), tab);
-  return Split(id: split.id, tabs: tabs, activeTabId: split.activeTabId);
+  return split.copyWith(tabs: tabs);
 }

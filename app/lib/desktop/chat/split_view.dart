@@ -6,6 +6,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../status/status_event.dart';
 import '../../status/status_providers.dart';
+import '../../store/prefs/preference_entries.dart';
+import '../../store/prefs/preferences_providers.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/session/session_identity.dart';
@@ -15,8 +17,10 @@ import 'groups/agent_picker.dart';
 import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
+import 'panes/pane_zoom.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
+import 'panes/zoom_gestures.dart';
 import 'selected_session.dart';
 import '../../ui/widgets/session_status_dot.dart';
 
@@ -140,6 +144,27 @@ class _SplitViewState extends ConsumerState<SplitView> {
   // True while a *tab* is hovering the pane's centre zone (drop = move the tab
   // into this group). Edge zones set [_hoverEdge] instead (drop = new split).
   bool _hoverTabCentre = false;
+
+  /// The pane's scroll behaviour, which gates the transcript's physics for
+  /// SPEC-pane-zoom D5.
+  ///
+  /// Built in [didChangeDependencies] and cached, because `Scrollable` recreates
+  /// its `ScrollPosition` whenever the inherited behaviour changes. A behaviour
+  /// rebuilt on every frame would throw the transcript's anchoring away.
+  late ScrollBehavior _scrollBehavior;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final inherited = ScrollConfiguration.of(context);
+    _scrollBehavior = inherited.copyWith(
+      // Ours sits outermost, so its gate runs first and the platform's physics
+      // (bouncing on macOS) still decide everything else.
+      physics: const ZoomAwareScrollPhysics().applyTo(
+        inherited.getScrollPhysics(context),
+      ),
+    );
+  }
 
   /// The drop edge nearest [global] (a [DragTargetDetails.offset]). The same
   /// offset drives both the hover highlight and the accept, so they always
@@ -347,15 +372,45 @@ class _SplitViewState extends ConsumerState<SplitView> {
                     children: [
                       _TabBar(split: widget.split, active: widget.active),
                       Expanded(
-                        child: DesktopChatPane(
-                          // Key by the active tab so switching tabs recreates
-                          // the pane state (composer draft is re-seeded).
-                          key: ValueKey(active.id),
-                          sessionId: active.sessionId,
-                          worktree: active.worktree,
-                          showHeader: false,
-                          composerFocusId: active.id,
-                          composerExpanded: widget.active,
+                        // SPEC-pane-zoom D1/D6: the pane's own text scale, and
+                        // nothing above it. The strip above stays at the global
+                        // scale, so chrome does not shift as the pane grows.
+                        // A TextScaler (not Transform.scale) lets the content
+                        // reflow to its real width, so a wide code block never
+                        // clips.
+                        child: MediaQuery(
+                          data: MediaQuery.of(context).copyWith(
+                            textScaler: TextScaler.linear(
+                              PaneZoom.effective(
+                                globalTextScale: ref.preference(
+                                  textScalePreference,
+                                ),
+                                zoom: widget.split.zoom,
+                              ),
+                            ),
+                          ),
+                          // D5. The behaviour gates the transcript's physics so a
+                          // modifier+wheel zooms instead of scrolling; the
+                          // gestures widget turns pinch and wheel into zoom.
+                          child: ScrollConfiguration(
+                            behavior: _scrollBehavior,
+                            child: PaneZoomGestures(
+                              onFocus: () =>
+                                  controller.setActiveSplit(widget.split.id),
+                              onNudge: controller.nudgeZoom,
+                              child: DesktopChatPane(
+                                // Key by the active tab so switching tabs
+                                // recreates the pane state (composer draft is
+                                // re-seeded).
+                                key: ValueKey(active.id),
+                                sessionId: active.sessionId,
+                                worktree: active.worktree,
+                                showHeader: false,
+                                composerFocusId: active.id,
+                                composerExpanded: widget.active,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -422,6 +477,10 @@ class _TabBar extends ConsumerWidget {
                     ),
                   ),
                 ),
+                // SPEC-pane-zoom D10. Only present off 100%, so an untouched
+                // pane carries no extra chrome. It sits before the `+` because
+                // it is pane state, not a pane action.
+                if (split.zoom != PaneZoom.none) PaneZoomChip(split: split),
                 IconButton(
                   iconSize: 14,
                   visualDensity: VisualDensity.compact,
@@ -797,6 +856,49 @@ class _DropHighlight extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The `120%` chip a zoomed pane shows in its tab strip (SPEC-pane-zoom D10).
+///
+/// Zoom is otherwise invisible state that survives a restart, so a user who
+/// zooms out far and forgets has no way to explain why one pane looks wrong.
+/// This is also the only zoom affordance that needs no keyboard.
+class PaneZoomChip extends ConsumerWidget {
+  /// Shows [split]'s zoom, and resets [split] when tapped.
+  const PaneZoomChip({required this.split, super.key});
+
+  /// The pane this chip belongs to.
+  final Split split;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Tooltip(
+        message: 'Pane zoom — click for actual size',
+        child: InkWell(
+          borderRadius: BorderRadius.circular(4),
+          // Resets the pane the chip sits in, which is not always the active
+          // one. Focusing it first keeps "zoom acts on the active pane" true.
+          onTap: () {
+            final controller = ref.read(workspaceControllerProvider.notifier);
+            controller.setActiveSplit(split.id);
+            controller.resetZoom();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: Text(
+              PaneZoom.label(split.zoom),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

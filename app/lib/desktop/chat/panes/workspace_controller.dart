@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart' show Axis;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
+import 'pane_zoom.dart';
 import 'split_node.dart';
 // Aliased so the controller's own `setRatio`/`moveSplit` methods can still
 // reach the pure tree functions of the same name.
@@ -196,6 +197,45 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     final current = _ratioOf(state.root, splitterId);
     if (current == null) return;
     setRatio(splitterId, current + delta);
+  }
+
+  /// Zooms the active pane one ladder stop in (SPEC-pane-zoom D4).
+  void stepZoomIn() => _setZoom(PaneZoom.stepIn(_activeZoom));
+
+  /// Zooms the active pane one ladder stop out.
+  void stepZoomOut() => _setZoom(PaneZoom.stepOut(_activeZoom));
+
+  /// Returns the active pane to 100%.
+  void resetZoom() => _setZoom(PaneZoom.none);
+
+  /// Scales the active pane's zoom by [factor], without snapping to a stop.
+  ///
+  /// This is the trackpad-pinch and modifier+wheel path (D5). It reads the live
+  /// state, so the many small factors of one gesture accumulate — the same
+  /// reason [adjustRatio] exists.
+  void nudgeZoom(double factor) =>
+      _setZoom(PaneZoom.nudge(_activeZoom, factor));
+
+  /// The active pane's current zoom, or [PaneZoom.none] if it cannot be found.
+  double get _activeZoom =>
+      tree
+          .firstSplitWhere(
+            state.root,
+            (s) => s.id == state.activeSplitId ? s : null,
+          )
+          ?.zoom ??
+      PaneZoom.none;
+
+  /// Writes [zoom] onto the active pane only (D6). A value that changes nothing
+  /// does not commit, so holding `⌘=` at the maximum cannot churn storage.
+  void _setZoom(double zoom) {
+    final clamped = PaneZoom.clamp(zoom);
+    if (clamped == _activeZoom) return;
+    final root = tree.mapSplits(
+      state.root,
+      (s) => s.id == state.activeSplitId ? s.withZoom(clamped) : s,
+    );
+    _commit(WorkspaceState(root: root, activeSplitId: state.activeSplitId));
   }
 
   /// Re-docks the [source] split onto [edge] of the [target] split; the moved
@@ -446,8 +486,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
         state.root,
         (s) => s.id != active.id
             ? s
-            : Split(
-                id: s.id,
+            : s.copyWith(
                 tabs: [
                   for (final t in s.tabs) t.id == activeTab.id ? bound : t,
                 ],
@@ -478,8 +517,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
         state.root,
         (s) => s.id != active.id
             ? s
-            : Split(
-                id: s.id,
+            : s.copyWith(
                 tabs: [
                   for (final t in s.tabs) t.id == activeTab.id ? bound : t,
                 ],
@@ -540,9 +578,22 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   }
 
   /// Resets the sole split [splitId] to a single fresh empty starter [Tab].
+  ///
+  /// The pane itself lives on under the same id, so it keeps its zoom. Closing
+  /// the last tab is a tab edit, and no tab edit resets the pane's scale (D2).
   void _resetSole(String splitId) {
     final tab = Tab(id: nextNodeId(SplitNodeKind.tab));
-    final fresh = Split(id: splitId, tabs: [tab], activeTabId: tab.id);
+    final zoom =
+        tree
+            .firstSplitWhere(state.root, (s) => s.id == splitId ? s : null)
+            ?.zoom ??
+        PaneZoom.none;
+    final fresh = Split(
+      id: splitId,
+      tabs: [tab],
+      activeTabId: tab.id,
+      zoom: zoom,
+    );
     _commit(WorkspaceState(root: fresh, activeSplitId: splitId));
   }
 
@@ -573,7 +624,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   Split _insertTab(Split split, Tab tab, int index) {
     final tabs = [...split.tabs];
     tabs.insert(index.clamp(0, tabs.length), tab);
-    return Split(id: split.id, tabs: tabs, activeTabId: tab.id);
+    return split.copyWith(tabs: tabs, activeTabId: tab.id);
   }
 
   /// The left-most split id of [targetId]'s sibling subtree, or null when

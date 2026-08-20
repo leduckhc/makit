@@ -60,6 +60,11 @@ class Keymap {
         LogicalKeyboardKey.bracketLeft,
         shift: true,
       ),
+      // SPEC-pane-zoom D11: `digit0` is free, because groups own ⌘1…⌘9.
+      // `equal` (not `plus`) keeps ⌘= reachable without shift.
+      ShortcutAction.zoomIn: primary(LogicalKeyboardKey.equal),
+      ShortcutAction.zoomOut: primary(LogicalKeyboardKey.minus),
+      ShortcutAction.zoomReset: primary(LogicalKeyboardKey.digit0),
     };
     // SPEC-tab-groups decision 16: ⌘1…⌘9 (⎃1…⎃9 off macOS) switch to the 1st–9th
     // group. The tenth group onward gets no binding on purpose. Added through

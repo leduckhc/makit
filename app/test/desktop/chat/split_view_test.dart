@@ -5,9 +5,11 @@
 //
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter/material.dart' hide Tab, Split;
-import 'package:flutter/gestures.dart' show kSecondaryButton;
+import 'package:flutter/gestures.dart' show kSecondaryButton, PointerDeviceKind;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/groups/agent_picker.dart';
 import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
@@ -671,6 +673,225 @@ void main() {
 
       expect(find.byType(AgentPicker), findsOneWidget);
       expect(find.text('Add agents to “Shipping”'), findsOneWidget);
+    });
+  });
+
+  // SPEC-pane-zoom D1/D6: zoom reaches the pane's content as a TextScaler, and
+  // stops at the pane boundary.
+  group('pane zoom', () {
+    /// The text scale the content of the pane holding [label] actually reads.
+    double paneScale(WidgetTester tester, String label) {
+      final pane = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(SplitView),
+      );
+      final content = find.descendant(
+        of: pane,
+        matching: find.byType(DesktopChatPane),
+      );
+      final scaler = MediaQuery.of(tester.element(content)).textScaler;
+      // Linear scalers are exact at any size; 100 keeps the arithmetic readable.
+      return scaler.scale(100) / 100;
+    }
+
+    testWidgets('starts at 100% in both panes', (tester) async {
+      await _twoPanes(tester);
+      expect(paneScale(tester, 'Alpha'), 1);
+      expect(paneScale(tester, 'Beta'), 1);
+    });
+
+    testWidgets('scales the active pane only', (tester) async {
+      final c = await _twoPanes(tester); // pane B (Beta) is active
+      _ws(c).stepZoomIn();
+      await tester.pump();
+
+      expect(paneScale(tester, 'Beta'), closeTo(1.1, 1e-9));
+      expect(
+        paneScale(tester, 'Alpha'),
+        1,
+        reason: 'the inactive pane must not move',
+      );
+    });
+
+    testWidgets('each pane keeps its own scale', (tester) async {
+      final c = await _twoPanes(tester);
+      _ws(c).stepZoomIn(); // Beta -> 1.1
+      final alpha = _ws(c).state.root as Splitter;
+      _ws(c).setActiveSplit((alpha.first as Split).id);
+      _ws(c).stepZoomOut(); // Alpha -> 0.9
+      await tester.pump();
+
+      expect(paneScale(tester, 'Beta'), closeTo(1.1, 1e-9));
+      expect(paneScale(tester, 'Alpha'), closeTo(0.9, 1e-9));
+    });
+
+    testWidgets('a reset returns the pane to 100%', (tester) async {
+      final c = await _twoPanes(tester);
+      _ws(c).stepZoomIn();
+      _ws(c).stepZoomIn();
+      await tester.pump();
+      expect(paneScale(tester, 'Beta'), closeTo(1.25, 1e-9));
+
+      _ws(c).resetZoom();
+      await tester.pump();
+      expect(paneScale(tester, 'Beta'), 1);
+    });
+
+    testWidgets('the tab strip stays at the global scale (D6)', (tester) async {
+      final c = await _twoPanes(tester);
+      _ws(c).stepZoomIn();
+      await tester.pump();
+      // The tab label sits in the strip, above the zoomed content.
+      final scaler = MediaQuery.of(
+        tester.element(find.text('Beta')),
+      ).textScaler;
+      expect(
+        scaler.scale(100) / 100,
+        1,
+        reason: 'chrome must not move with the pane',
+      );
+    });
+
+    // SPEC-pane-zoom D5. The physics gate itself is unit-tested in
+    // zoom_gestures_test.dart; this proves the pane is wired to it.
+    group('modifier + wheel', () {
+      /// Sends one wheel notch of [dy] over the pane holding [label].
+      Future<void> wheel(WidgetTester tester, String label, double dy) async {
+        final pane = find.ancestor(
+          of: find.text(label),
+          matching: find.byType(SplitView),
+        );
+        final pointer = TestPointer(1, PointerDeviceKind.mouse);
+        final centre = tester.getCenter(
+          find.descendant(of: pane, matching: find.byType(DesktopChatPane)),
+        );
+        await tester.sendEventToBinding(pointer.hover(centre));
+        await tester.sendEventToBinding(pointer.scroll(Offset(0, dy)));
+        await tester.pump();
+      }
+
+      testWidgets('zooms in on a wheel-up while ⌘ is held', (tester) async {
+        await _twoPanes(tester);
+        await simulateKeyDownEvent(LogicalKeyboardKey.metaLeft);
+        addTearDown(() => simulateKeyUpEvent(LogicalKeyboardKey.metaLeft));
+
+        await wheel(tester, 'Beta', -10);
+        expect(paneScale(tester, 'Beta'), greaterThan(1));
+      });
+
+      testWidgets('zooms out on a wheel-down while ⌘ is held', (tester) async {
+        await _twoPanes(tester);
+        await simulateKeyDownEvent(LogicalKeyboardKey.metaLeft);
+        addTearDown(() => simulateKeyUpEvent(LogicalKeyboardKey.metaLeft));
+
+        await wheel(tester, 'Beta', 10);
+        expect(paneScale(tester, 'Beta'), lessThan(1));
+      });
+
+      testWidgets('a bare wheel does not zoom — it is still a scroll', (
+        tester,
+      ) async {
+        await _twoPanes(tester);
+        await wheel(tester, 'Beta', -10);
+        expect(paneScale(tester, 'Beta'), 1);
+      });
+
+      testWidgets('zooms the pane under the pointer, and focuses it', (
+        tester,
+      ) async {
+        final c = await _twoPanes(tester); // Beta is active
+        await simulateKeyDownEvent(LogicalKeyboardKey.metaLeft);
+        addTearDown(() => simulateKeyUpEvent(LogicalKeyboardKey.metaLeft));
+
+        // Gesture over the *inactive* pane: it takes focus, then zooms.
+        await wheel(tester, 'Alpha', -10);
+        expect(paneScale(tester, 'Alpha'), greaterThan(1));
+        expect(
+          paneScale(tester, 'Beta'),
+          1,
+          reason: 'the pane the pointer left must not zoom',
+        );
+        final root = _ws(c).state.root as Splitter;
+        expect(_ws(c).state.activeSplitId, (root.first as Split).id);
+      });
+    });
+
+    // SPEC-pane-zoom D10: zoom is invisible state that survives a restart, so a
+    // pane that is not at 100% must say so.
+    group('the percentage chip', () {
+      Finder chipIn(String label) => find.descendant(
+        of: find.ancestor(
+          of: find.text(label),
+          matching: find.byType(SplitView),
+        ),
+        matching: find.byType(PaneZoomChip),
+      );
+
+      testWidgets('is absent at 100%', (tester) async {
+        await _twoPanes(tester);
+        expect(find.byType(PaneZoomChip), findsNothing);
+      });
+
+      testWidgets('states the percentage of the pane it belongs to', (
+        tester,
+      ) async {
+        final c = await _twoPanes(tester);
+        _ws(c).stepZoomIn();
+        _ws(c).stepZoomIn(); // Beta -> 1.25
+        await tester.pump();
+
+        expect(find.text('125%'), findsOneWidget);
+        expect(chipIn('Beta'), findsOneWidget);
+        expect(
+          chipIn('Alpha'),
+          findsNothing,
+          reason: 'a pane at 100% shows no chip',
+        );
+      });
+
+      testWidgets('reads under 100% when zoomed out', (tester) async {
+        final c = await _twoPanes(tester);
+        _ws(c).stepZoomOut();
+        await tester.pump();
+        expect(find.text('90%'), findsOneWidget);
+      });
+
+      testWidgets('a tap resets that pane, and the chip goes away', (
+        tester,
+      ) async {
+        final c = await _twoPanes(tester);
+        _ws(c).stepZoomIn();
+        await tester.pump();
+        expect(find.byType(PaneZoomChip), findsOneWidget);
+
+        await tester.tap(find.byType(PaneZoomChip));
+        await tester.pump();
+
+        expect(paneScale(tester, 'Beta'), 1);
+        expect(find.byType(PaneZoomChip), findsNothing);
+      });
+
+      testWidgets('a tap resets the pane it sits in, not the active one', (
+        tester,
+      ) async {
+        final c = await _twoPanes(tester);
+        // Zoom Beta, then focus and zoom Alpha, so the two disagree.
+        _ws(c).stepZoomIn(); // Beta -> 1.1
+        final root = _ws(c).state.root as Splitter;
+        _ws(c).setActiveSplit((root.first as Split).id);
+        _ws(c).stepZoomOut(); // Alpha -> 0.9, and Alpha is active
+        await tester.pump();
+
+        await tester.tap(chipIn('Beta'));
+        await tester.pump();
+
+        expect(paneScale(tester, 'Beta'), 1);
+        expect(
+          paneScale(tester, 'Alpha'),
+          closeTo(0.9, 1e-9),
+          reason: 'tapping Beta\u2019s chip must not touch Alpha',
+        );
+      });
     });
   });
 }
