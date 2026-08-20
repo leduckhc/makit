@@ -165,20 +165,58 @@ test("a disabled reaper never arms a timer", () => {
 });
 
 /**
- * The default window is TWO WEEKS, not an hour. An hour made a session the user
- * was still working through vanish out of its worktree into the Closed list
- * several times a day, which reads as lost work even though it is reversible.
+ * Idle auto-close is OFF by default. A window of an hour, then a fortnight, still
+ * moved a session out of its worktree and into the Closed list on its own. The
+ * user never asked for that, and it reclaimed a fraction of the host's memory,
+ * because the agent processes that cost real memory are the BUSY ones. Releasing
+ * a session the user still has open is not hygiene; it is lost context.
+ *
+ * A memory-tight host opts in with `MAKIT_IDLE_CLOSE_MIN`.
  */
-test("the default idle window is two weeks", () => {
-  assert.equal(DEFAULT_IDLE_CLOSE_MS, 14 * 24 * 60 * 60_000);
+test("idle auto-close is off by default", () => {
+  assert.equal(DEFAULT_IDLE_CLOSE_MS, 0);
 });
 
-test("resolveIdleCloseMs reads minutes, defaults, and honours 0", () => {
+test("a default-configured reaper is disabled and never arms a timer", () => {
+  let armed = false;
+  const r = new IdleReaper({
+    sessions: () => [],
+    close: async () => {},
+    idleCloseMs: resolveIdleCloseMs({} as NodeJS.ProcessEnv),
+    setTimer: () => {
+      armed = true;
+      return "h";
+    },
+  });
+  assert.equal(r.enabled, false);
+  r.start();
+  assert.equal(armed, false);
+});
+
+/** A session must survive any amount of silence unless the operator opts in. */
+test("a default-configured reaper never closes a long-quiet session", async () => {
+  const s = session({ lastActivityAt: 0 });
+  const closed: string[] = [];
+  const r = new IdleReaper({
+    sessions: () => [s],
+    close: async (id) => {
+      closed.push(id);
+    },
+    idleCloseMs: resolveIdleCloseMs({} as NodeJS.ProcessEnv),
+    now: () => 365 * 24 * 60 * 60_000,
+  });
+  assert.deepEqual(await r.sweep(), []);
+  assert.deepEqual(closed, [], "a year of silence still keeps the session");
+});
+
+test("resolveIdleCloseMs reads minutes, defaults to off, and honours 0", () => {
   assert.equal(resolveIdleCloseMs({} as NodeJS.ProcessEnv), DEFAULT_IDLE_CLOSE_MS);
   assert.equal(resolveIdleCloseMs({ MAKIT_IDLE_CLOSE_MIN: "" } as NodeJS.ProcessEnv), DEFAULT_IDLE_CLOSE_MS);
   assert.equal(resolveIdleCloseMs({ MAKIT_IDLE_CLOSE_MIN: "5" } as NodeJS.ProcessEnv), 5 * 60_000);
   assert.equal(resolveIdleCloseMs({ MAKIT_IDLE_CLOSE_MIN: "0" } as NodeJS.ProcessEnv), 0);
-  // Garbage must fall back to the default, not silently disable memory hygiene.
+  assert.equal(resolveIdleCloseMs({ MAKIT_IDLE_CLOSE_MIN: "20160" } as NodeJS.ProcessEnv), 14 * 24 * 60 * 60_000);
+  // Garbage must fall back to the default, which is the safe direction: keep the
+  // session rather than release it on the strength of a value nobody meant.
   assert.equal(resolveIdleCloseMs({ MAKIT_IDLE_CLOSE_MIN: "soon" } as NodeJS.ProcessEnv), DEFAULT_IDLE_CLOSE_MS);
   assert.equal(resolveIdleCloseMs({ MAKIT_IDLE_CLOSE_MIN: "-3" } as NodeJS.ProcessEnv), DEFAULT_IDLE_CLOSE_MS);
 });
@@ -203,9 +241,9 @@ test("the default sweep interval is a quarter of the window, floored at 30s and 
   };
   assert.equal(armedFor(60 * 60_000), 15 * 60_000, "an hour window sweeps every 15min");
   assert.equal(armedFor(60_000), 30_000, "a 1min window is floored, not swept every 15s");
-  // A quarter of the fortnight-long default would be 84 hours — longer than most
-  // daemon lifetimes, so the ceiling is what keeps the sweep from never running.
-  assert.equal(armedFor(DEFAULT_IDLE_CLOSE_MS), 15 * 60_000, "a long window is capped, not swept every 84h");
+  // A quarter of an opted-in fortnight would be 84 hours — longer than most daemon
+  // lifetimes, so the ceiling is what keeps the window enforced at all.
+  assert.equal(armedFor(14 * 24 * 60 * 60_000), 15 * 60_000, "a long window is capped, not swept every 84h");
 });
 
 /**

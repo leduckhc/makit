@@ -1,10 +1,16 @@
 /**
- * IdleReaper — closes sessions nobody is working with, so their agent processes
- * stop costing memory (SPEC-session-lifecycle-resume-list-delete option D).
+ * IdleReaper — an OPT-IN policy that closes sessions nobody is working with, so
+ * their agent processes stop costing memory (SPEC-session-lifecycle-resume-list-delete
+ * option D).
  *
- * makit runs ONE agent process per session (60–450 MB each) and, before this,
- * nothing ever took an idle one down: agents accumulated for days. Measured on a
- * dev host: 19 resident agents, ~0.95 GB RSS, the oldest 5 days old.
+ * makit runs ONE agent process per session (60–450 MB each) and nothing else ever
+ * takes an idle one down: agents accumulate for days. Measured on a dev host: 19
+ * resident agents, ~0.95 GB RSS, the oldest 5 days old.
+ *
+ * It is nonetheless OFF by default ({@link DEFAULT_IDLE_CLOSE_MS}). Both windows
+ * tried in practice, an hour and then a fortnight, moved sessions the user was
+ * still working through into the Closed list, which reads as lost work. A host
+ * that needs the memory back opts in with `MAKIT_IDLE_CLOSE_MIN`.
  *
  * A policy collaborator rather than manager behaviour, matching `MetricsCollector`
  * and the ports service: it owns its own window, interval, clock and timer, and
@@ -12,9 +18,9 @@
  * keeps the "when may we release a session?" rules in one readable place instead
  * of as another few fields and branches inside `SessionManager`.
  *
- * Auto-closing is safe because closing keeps the transcript and the resume
- * handle: every sweep is reversible, and a later message reopens the session
- * transparently (`SessionManager.ensureLiveForInput`).
+ * When it is armed, auto-closing is safe because closing keeps the transcript and
+ * the resume handle: every sweep is reversible, and a later message reopens the
+ * session transparently (`SessionManager.ensureLiveForInput`).
  */
 
 import { isBusy } from "./protocol.js";
@@ -22,25 +28,28 @@ import type { Session } from "./session.js";
 import { log } from "./log.js";
 
 /**
- * Default window: quiet for this long and the agent is released.
+ * Default window: `0`, meaning idle auto-close is DISABLED. A session stays where
+ * the user left it until they close it.
  *
- * A fortnight, deliberately generous. An hour reclaimed more memory, but it moved
- * sessions a user was still working through out of their worktree and into the
- * Closed list several times a day, which reads as lost work. Two weeks keep the
- * hygiene for genuinely abandoned sessions and leave live work where the user
- * left it. Shorten it with `MAKIT_IDLE_CLOSE_MIN` on a memory-tight host.
+ * Two windows were tried and both were wrong. An hour moved sessions a user was
+ * still working through into the Closed list several times a day. A fortnight only
+ * made that rarer, not correct: the sessions that actually cost memory are the
+ * busy ones, which {@link IdleReaper.closable} must never touch anyway, so the
+ * sweep gave up real context for very little of the host back.
+ *
+ * Set `MAKIT_IDLE_CLOSE_MIN` on a memory-tight host to opt back in.
  */
-export const DEFAULT_IDLE_CLOSE_MS = 14 * 24 * 60 * 60_000;
+export const DEFAULT_IDLE_CLOSE_MS = 0;
 
 /** Floor on the sweep interval, so a short window can't busy-loop the daemon. */
 const MIN_SWEEP_MS = 30_000;
 
 /**
- * Ceiling on the sweep interval. A quarter of the fortnight-long default is 84
- * hours, far longer than a typical daemon lifetime, so the derived interval alone
- * would let a session sit released-but-resident indefinitely. A sweep with no
- * candidate is an in-memory filter over a few hundred sessions, so a 15-minute
- * tick costs nothing.
+ * Ceiling on the sweep interval. An opted-in fortnight-long window would derive a
+ * 84-hour interval, far longer than a typical daemon lifetime, so the derived
+ * interval alone would let a session sit released-but-resident indefinitely. A
+ * sweep with no candidate is an in-memory filter over a few hundred sessions, so
+ * a 15-minute tick costs nothing.
  */
 const MAX_SWEEP_MS = 15 * 60_000;
 
@@ -60,9 +69,10 @@ export interface IdleReaperDeps {
 }
 
 /**
- * Resolve the idle window from the environment. `MAKIT_IDLE_CLOSE_MIN` overrides
- * the default; `0` disables auto-close. A garbage value falls back to the default
- * rather than silently disabling memory hygiene.
+ * Resolve the idle window from the environment. `MAKIT_IDLE_CLOSE_MIN` opts in;
+ * unset means disabled ({@link DEFAULT_IDLE_CLOSE_MS}). A garbage value falls back
+ * to the default, which is the safe direction: keep the session rather than
+ * release it on the strength of a value nobody meant.
  */
 export function resolveIdleCloseMs(env = process.env): number {
   const raw = env.MAKIT_IDLE_CLOSE_MIN;
@@ -70,7 +80,7 @@ export function resolveIdleCloseMs(env = process.env): number {
   const min = Number(raw);
   if (!Number.isFinite(min) || min < 0) {
     log.warn(
-      `[makit] ignoring MAKIT_IDLE_CLOSE_MIN="${raw}" (not a non-negative number); using ${DEFAULT_IDLE_CLOSE_MS / 60_000}min`,
+      `[makit] ignoring MAKIT_IDLE_CLOSE_MIN="${raw}" (not a non-negative number); idle auto-close stays ${DEFAULT_IDLE_CLOSE_MS === 0 ? "disabled" : `${DEFAULT_IDLE_CLOSE_MS / 60_000}min`}`,
     );
     return DEFAULT_IDLE_CLOSE_MS;
   }
