@@ -133,8 +133,9 @@ export interface ServerOpts {
   onListenError?: (err: NodeJS.ErrnoException, where: string) => void;
   /**
    * Idle auto-close window in ms (SPEC-session-lifecycle-resume-list-delete option D). Production reads
-   * `MAKIT_IDLE_CLOSE_MIN` via `resolveIdleCloseMs()`; tests pass `0` to keep the
-   * reaper disarmed, so no interval outlives the test.
+   * `MAKIT_IDLE_CLOSE_MIN` via `resolveIdleCloseMs()`, which is off unless set;
+   * tests pass `0` explicitly to keep the reaper disarmed regardless of the
+   * ambient environment, so no interval outlives the test.
    */
   idleCloseMs?: number;
   /**
@@ -503,9 +504,9 @@ export function startWsServer(opts: ServerOpts) {
   https.on("close", () => metricsCollector.stop());
 
   // -------- SPEC-session-lifecycle-resume-list-delete idle auto-close ----------------------------------------
-  // Reclaims the agent process of any session that has gone quiet. Disabled when
-  // `MAKIT_IDLE_CLOSE_MIN=0`. Stopped with the server so an in-process restart
-  // (tests) leaves no stray interval behind.
+  // Opt-in only: reclaims the agent process of any session that has gone quiet,
+  // but stays disarmed unless `MAKIT_IDLE_CLOSE_MIN` sets a window. Stopped with
+  // the server so an in-process restart (tests) leaves no stray interval behind.
   const idleReaper = new IdleReaper({
     sessions: () => manager.allSessions(),
     close: (id: string) => manager.closeSession(id),

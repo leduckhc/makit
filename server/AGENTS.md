@@ -47,8 +47,8 @@ Tests sit beside the code as `*.test.ts`.
   interface members. Fix the double, not the production code.
 - Errors carry `{code, message}` with a shared code enum. Nothing is swallowed
   on a path a user waits on.
-- One session is one agent process, at 60–450 MB. Idle sessions close after
-  `MAKIT_IDLE_CLOSE_MIN` minutes. Keep that reversible.
+- One session is one agent process, at 60–450 MB. Idle auto-close is off unless
+  `MAKIT_IDLE_CLOSE_MIN` sets a window. Keep that reversible.
 
 ## Deeper reading
 
