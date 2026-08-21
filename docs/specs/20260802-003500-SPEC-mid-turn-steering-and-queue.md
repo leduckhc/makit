@@ -306,7 +306,7 @@ Keyless and deterministic, per `makit-verify-feature-end-to-end`:
   a queued message produces its `user.message` **only** at flush; attachments are
   materialised at flush (assert no file in the worktree while pending).
 - **Stray post-turn work** (`turn-status.test.ts`, `session.test.ts`, `acp-map.test.ts`,
-  `acp.test.ts`):
+  `acp.test.ts`, `stub.test.ts`):
   - `releaseStrayWork frees a turn that only a post-turn chunk opened`
   - `releaseStrayWork keeps a real prompt turn, an approval, and a running agent`
   - `a stray post-turn chunk never swallows the next message`
@@ -314,6 +314,10 @@ Keyless and deterministic, per `makit-verify-feature-end-to-end`:
   - `a streaming agent still gets a queue, not a second prompt`
   - `a notification chunk is not agent work`
   - `a live adapter can release the busy state one post-turn chunk pinned`
+  - `a live adapter ignores a post-turn notification for turn state`
+  - `a session wedged by a post-turn chunk delivers the next message to the real adapter`
+  - `a malformed notify flag reads as a normal chunk`
+  - `STRAY pins the stub the way a post-turn chunk pins pi, and the release frees it`
 - **App:** chips render in order from `SessionDTO.queued`; ✕ sends `queue.cancel`; an empty
   snapshot removes the row; a steered message shows no chip.
 - **Live smoke (documented, not CI):** `/tmp/spike-steer/live-adapter.mts`-style harness

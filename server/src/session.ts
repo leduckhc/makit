@@ -875,7 +875,12 @@ export class Session extends EventEmitter {
     // a queue that was already waiting flushes in order and this message falls in
     // behind it. Everything with a real closer — a live prompt, an open gate, an
     // agent that says it is working — is left alone and still queues below.
-    if (BUSY_STATUSES.has(this.status)) this.adapter.releaseStrayBusy?.();
+    //
+    // The adapter's answer is what this trusts, not `this.status`: an adapter that
+    // emitted the release asynchronously would otherwise still look busy here and
+    // the message would queue behind the state we just cleared.
+    const released =
+      BUSY_STATUSES.has(this.status) && this.adapter.releaseStrayBusy?.() === true;
 
     // SPEC-mid-turn-steering-and-queue. Three cases, in this order:
     //  1. a queue already exists OR flushing is active -> append (never overtake
@@ -887,7 +892,7 @@ export class Session extends EventEmitter {
       this.enqueue(input);
       return;
     }
-    if (BUSY_STATUSES.has(this.status)) {
+    if (!released && BUSY_STATUSES.has(this.status)) {
       const steered = await this.adapter.steer(input);
       if (steered) return;
       // Steer failed: re-check the queue state before deciding. If another

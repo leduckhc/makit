@@ -18,6 +18,7 @@ import { AcpAdapter, defaultConnect, probeAcpConfigOptions, listAcpSessions, der
 import type { AdapterEvent } from "./adapter.js";
 import type { UICall, UIResponse } from "../uicall.js";
 import { MediaStore } from "../media/store.js";
+import { Session } from "../session.js";
 
 /**
  * Build a paired in-memory transport: makit's AcpAdapter (client) on one end,
@@ -1758,6 +1759,55 @@ test("a live adapter ignores a post-turn notification for turn state", async () 
   assert.equal(statuses.length, settled, "no status transition from a notification");
   assert.equal(statuses.at(-1), "idle", "the session is still ready for a message");
   assert.equal(adapter.releaseStrayBusy(), false, "there was never a stray turn to release");
+
+  await adapter.kill();
+});
+
+test("a session wedged by a post-turn chunk delivers the next message to the real adapter", async () => {
+  // The production path, end to end and with no fake in it: Session ->
+  // SubprocessAdapter.releaseStrayBusy -> TurnStatusTracker -> AcpAdapter.send ->
+  // the wire. This is the exact route the recorded defect took, and the one a
+  // fake adapter in session.test.ts cannot prove.
+  const prompts: string[] = [];
+  let agentRef: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId, text) => {
+      prompts.push(text);
+      await agentRef.update(sessionId, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "ok" },
+      });
+      await agentRef.update(sessionId, {
+        sessionUpdate: "session_info_update",
+        _meta: { piAcp: { queueDepth: 0, running: false } },
+      });
+    });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+
+  await session.sendUserMessage("first");
+  await collectUntil(session.events as unknown as AdapterEvent[], "agent.message");
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(session.status, "idle");
+
+  // One chunk outside any turn: the memory extension notifying after the turn,
+  // as pi-acp forwarded it before it flagged notifications.
+  await agentRef!.update("acp-sess-1", {
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text: "💾 Memory auto-reviewed and updated" },
+  });
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(session.status, "running", "the session is wedged");
+
+  await session.sendUserMessage("second");
+  await new Promise((r) => setTimeout(r, 60));
+
+  assert.deepEqual(prompts, ["first", "second"], "both prompts reached the agent");
+  assert.equal(session.queuedMessages.length, 0, "nothing stranded in the queue");
 
   await adapter.kill();
 });

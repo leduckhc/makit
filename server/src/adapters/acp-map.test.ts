@@ -999,3 +999,24 @@ test("a notification chunk is not agent work", () => {
   mapper.handle(text("real output"));
   assert.equal(work(), 1);
 });
+
+test("a malformed notify flag reads as a normal chunk", () => {
+  // Untrusted boundary: only a real notify object suppresses the work signal.
+  // Anything else is treated as the agent's own output, which is the safe way
+  // round — a chunk wrongly read as a notice would hide a working agent.
+  const { mapper, work } = collectTurnSignals();
+  for (const notify of [true, "info", 1, null]) {
+    mapper.handle({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "hi" },
+      _meta: { piAcp: { notify } },
+    } as SessionUpdate);
+  }
+  mapper.handle({
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text: "hi" },
+    _meta: { piAcp: "not-an-object" },
+  } as SessionUpdate);
+
+  assert.equal(work(), 5, "every malformed flag still counts as work");
+});
