@@ -1667,3 +1667,97 @@ test("a silent agent that reported itself running stays running past its prompt"
   await new Promise((r) => setTimeout(r, 20));
   assert.deepEqual(statuses(), ["running", "idle"]);
 });
+
+test("a live adapter can release the busy state one post-turn chunk pinned", async () => {
+  // End to end over a real AcpAdapter, because the guard is only worth anything
+  // if the adapter is wired to it: the tracker's release must be reachable
+  // through `releaseStrayBusy`, which is what Session calls before it queues.
+  let agentRef: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      await agentRef.update(sessionId, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "done" },
+      });
+      // pi-acp reports the end of work at `agent_end`.
+      await agentRef.update(sessionId, {
+        sessionUpdate: "session_info_update",
+        _meta: { piAcp: { queueDepth: 0, running: false } },
+      });
+    });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const events: AdapterEvent[] = [];
+  const statuses: string[] = [];
+  adapter.on("event", (e) => events.push(e));
+  adapter.on("status", (s) => statuses.push(s));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await adapter.send({ text: "hello" });
+  await collectUntil(events, "agent.message");
+  assert.equal(statuses.at(-1), "idle", "the turn ended");
+  assert.equal(adapter.releaseStrayBusy(), false, "nothing to release while idle");
+
+  // Now one chunk with no turn around it: a pi extension notifying after the
+  // turn (this one without pi-acp's notify flag, so it counts as work).
+  await agentRef!.update("acp-sess-1", {
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text: "💾 Memory auto-reviewed and updated" },
+  });
+  await collectUntil(events, "agent.message.delta");
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(statuses.at(-1), "running", "the stray chunk re-opened a turn");
+
+  assert.equal(adapter.releaseStrayBusy(), true);
+  assert.equal(statuses.at(-1), "idle", "and the session can take a message again");
+
+  await adapter.kill();
+});
+
+test("a live adapter ignores a post-turn notification for turn state", async () => {
+  // The exact update pi-acp sends for a pi extension's `ui.notify`: a message
+  // chunk flagged `_meta.piAcp.notify`. It must reach the client as text and
+  // leave the turn state alone, so the session stays ready for the next message.
+  let agentRef: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      await agentRef.update(sessionId, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "done" },
+      });
+      await agentRef.update(sessionId, {
+        sessionUpdate: "session_info_update",
+        _meta: { piAcp: { queueDepth: 0, running: false } },
+      });
+    });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const events: AdapterEvent[] = [];
+  const statuses: string[] = [];
+  adapter.on("event", (e) => events.push(e));
+  adapter.on("status", (s) => statuses.push(s));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await adapter.send({ text: "hello" });
+  await collectUntil(events, "agent.message");
+  const settled = statuses.length;
+  assert.equal(statuses.at(-1), "idle");
+
+  await agentRef!.update("acp-sess-1", {
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text: "💾 Memory auto-reviewed and updated" },
+    _meta: { piAcp: { notify: { level: "info" } } },
+  });
+  await collectUntil(events, "agent.message.delta");
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.equal(statuses.length, settled, "no status transition from a notification");
+  assert.equal(statuses.at(-1), "idle", "the session is still ready for a message");
+  assert.equal(adapter.releaseStrayBusy(), false, "there was never a stray turn to release");
+
+  await adapter.kill();
+});

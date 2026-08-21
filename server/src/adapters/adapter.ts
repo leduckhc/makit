@@ -180,6 +180,21 @@ export interface AgentAdapter extends EventEmitter {
    */
   steer(input: UserInput): Promise<boolean>;
   /**
+   * Optional: drop a busy state that only an unmatched post-turn signal holds,
+   * and report whether one was dropped (SPEC-mid-turn-steering-and-queue).
+   *
+   * An agent can stream a chunk with no turn around it — pi-acp forwards a pi
+   * extension's notification that way, after the turn already ended. The
+   * adapter counts that as work and reports `running`, but the signal that would
+   * clear it has already been sent, so the session can never leave `running` and
+   * every message the user sends queues behind it forever.
+   *
+   * Only the adapter knows whether its busy state still has a closer, so only
+   * the adapter can answer this. An adapter that cannot tell omits the method,
+   * and its caller keeps queueing — the behaviour before this existed.
+   */
+  releaseStrayBusy?(): boolean;
+  /**
    * Optional: adapter-native fork of THIS session/thread at its head — a
    * high-fidelity branch of the same conversation (codex `thread/fork`; ACP
    * `session/fork` when it lands). Gated on {@link SessionCapabilities.fork};

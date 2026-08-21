@@ -868,6 +868,15 @@ export class Session extends EventEmitter {
   async sendUserMessage(text: string, attachments?: MediaAttachment[]) {
     const input = { text, ...(attachments?.length ? { attachments } : {}) };
 
+    // First: a busy state that nothing can leave must not swallow the message.
+    // An agent can stream a chunk outside any turn (pi-acp forwards a pi
+    // extension's post-turn notification that way), which reports `running` with
+    // no signal left to clear it. The adapter drops that one and emits `idle`, so
+    // a queue that was already waiting flushes in order and this message falls in
+    // behind it. Everything with a real closer — a live prompt, an open gate, an
+    // agent that says it is working — is left alone and still queues below.
+    if (BUSY_STATUSES.has(this.status)) this.adapter.releaseStrayBusy?.();
+
     // SPEC-mid-turn-steering-and-queue. Three cases, in this order:
     //  1. a queue already exists OR flushing is active -> append (never overtake
     //     an earlier message, including in the window between `idle` and the

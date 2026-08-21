@@ -253,3 +253,48 @@ test("the running signal is ignored once the adapter has exited", () => {
   tracker.noteAgentRunning();
   assert.deepEqual(statuses, []);
 });
+
+// ---- a stray post-turn signal must not pin the session forever -------------
+
+test("releaseStrayWork frees a turn that only a post-turn chunk opened", () => {
+  // The wedge: pi's memory extension notifies AFTER `agent_end`, so pi-acp
+  // forwards one `agent_message_chunk` with no `running` pair around it.
+  // `noteWork` opened a turn whose only closer — the agent's own settle — had
+  // already been sent, so the session stayed `running` for hours.
+  const { tracker, statuses } = makeTracker();
+  const key = tracker.enterTurn();
+  tracker.noteAgentRunning();
+  tracker.leaveTurn(key);
+  tracker.noteAgentSettled();
+  assert.deepEqual(statuses, ["running", "idle"]);
+
+  tracker.noteWork();
+  assert.equal(statuses.at(-1), "running", "the stray chunk re-opened a turn");
+  assert.equal(tracker.hasActiveTurns, true);
+
+  assert.equal(tracker.releaseStrayWork(), true);
+  assert.equal(statuses.at(-1), "idle", "and the release settles it");
+  assert.equal(tracker.hasActiveTurns, false);
+  assert.equal(tracker.releaseStrayWork(), false, "nothing left to release");
+});
+
+test("releaseStrayWork keeps a real prompt turn, an approval, and a running agent", () => {
+  // Only the stray turn is releasable. Anything with a closer of its own stays,
+  // because dropping it would report `idle` while the agent still works.
+  const { tracker } = makeTracker();
+  tracker.noteWork();
+
+  const prompt = tracker.enterTurn("prompt");
+  assert.equal(tracker.releaseStrayWork(), false, "a prompt is in flight");
+  tracker.leaveTurn(prompt);
+
+  tracker.enterApproval("awaiting-approval");
+  assert.equal(tracker.releaseStrayWork(), false, "the user is at a gate");
+  tracker.leaveApproval();
+
+  tracker.noteAgentRunning();
+  assert.equal(tracker.releaseStrayWork(), false, "the agent says it is working");
+  tracker.noteAgentSettled();
+
+  assert.equal(tracker.releaseStrayWork(), false, "the settle already closed it");
+});
