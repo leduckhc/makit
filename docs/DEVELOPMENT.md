@@ -107,12 +107,15 @@ Print a fresh pairing QR without restarting:
 kill -USR1 "$(pgrep -f 'tsx.*index.ts serve' || pgrep -f 'node.*makit')"
 ```
 
-### Idle auto-close (memory hygiene)
+### Idle auto-close (opt-in memory hygiene)
 
 makit runs **one agent process per session**, so live sessions cost real
-memory (60–450 MB each). Any session idle longer than the window is closed
-automatically: its agent is released (ACP `session/close` / codex
-`thread/unsubscribe`) and the process reaped (`SIGTERM` → `SIGKILL` after a
+memory (60–450 MB each). Idle auto-close is **off** by default: a session stays
+open until you close it. `MAKIT_IDLE_CLOSE_MIN` opts the host in.
+
+When you opt in, the server closes each session that is idle longer than the
+window: it releases the agent (ACP `session/close` / codex
+`thread/unsubscribe`) and reaps the process (`SIGTERM` → `SIGKILL` after a
 grace period). This is always reversible — the transcript and resume handle are
 kept, the session moves to the **Closed** list, and simply sending a message
 reopens and resumes it. Opening a closed session to *read* it does not respawn
@@ -120,7 +123,7 @@ an agent.
 
 | Env var | Default | Meaning |
 | --- | --- | --- |
-| `MAKIT_IDLE_CLOSE_MIN` | unset (off) | Minutes of inactivity before a session is auto-closed. Unset or `0` means a session is never auto-closed. Set it on a memory-tight host. |
+| `MAKIT_IDLE_CLOSE_MIN` | unset (off) | Minutes of inactivity before the server auto-closes a session. Only a positive number turns it on. Unset, empty, `0`, negative, and non-numeric values all keep every session open. The server logs a value that it rejects. Set it on a memory-tight host. |
 
 Sessions that are mid-turn, awaiting input/approval, still drafts, already cold,
 or lacking a native resume handle are never auto-closed.

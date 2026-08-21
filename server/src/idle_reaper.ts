@@ -58,7 +58,7 @@ export interface IdleReaperDeps {
   sessions: () => Iterable<Session>;
   /** Release one session's agent and mark it closed (`SessionManager.closeSession`). */
   close: (sessionId: string) => Promise<void>;
-  /** Quiet period before a session is eligible. `0` disables the reaper. */
+  /** Quiet period before a session is eligible. Omitted or `0` disables the reaper. */
   idleCloseMs?: number;
   /** Sweep interval. Defaults to a quarter of the window, floored at 30s. */
   sweepMs?: number;
@@ -98,8 +98,13 @@ export class IdleReaper {
   /** Guards against overlapping sweeps (a close awaits the agent). */
   private sweeping = false;
 
+  /**
+   * Resolve the window and the sweep interval once. An omitted window means
+   * {@link DEFAULT_IDLE_CLOSE_MS}, so a caller that passes no policy gets the
+   * documented default rather than a second one written here.
+   */
   constructor(private readonly deps: IdleReaperDeps) {
-    this.idleCloseMs = deps.idleCloseMs ?? 0;
+    this.idleCloseMs = deps.idleCloseMs ?? DEFAULT_IDLE_CLOSE_MS;
     // Sweep four times per window, bounded at both ends: prompt enough that a
     // cold session is released soon after it goes quiet, coarse enough to cost
     // nothing, and never so coarse that a long window stops being enforced.

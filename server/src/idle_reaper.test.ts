@@ -177,12 +177,12 @@ test("idle auto-close is off by default", () => {
   assert.equal(DEFAULT_IDLE_CLOSE_MS, 0);
 });
 
-test("a default-configured reaper is disabled and never arms a timer", () => {
+/** Omits `idleCloseMs` on purpose, to pin the constructor's own fallback. */
+test("a reaper built with no window is disabled and never arms a timer", () => {
   let armed = false;
   const r = new IdleReaper({
     sessions: () => [],
     close: async () => {},
-    idleCloseMs: resolveIdleCloseMs({} as NodeJS.ProcessEnv),
     setTimer: () => {
       armed = true;
       return "h";
