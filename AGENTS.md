@@ -33,13 +33,22 @@ flutter test
 flutter run -d macos                      # FakeServer, no server needed
 
 # full stack, no API key (StubAdapter)
-./app/tool/e2e.sh --mode=stub             # ~50s + Xcode build
-./app/tool/e2e-desktop.sh                 # macOS control plane
+./app/tool/e2e.sh --mode=stub             # ~50s + Xcode build — background it
+./app/tool/e2e-desktop.sh                 # macOS control plane — background it
 cd app && tool/audit.sh                   # the pre-handoff gate
 ```
 
 While iterating, run only the affected test files. Run the full suite once
 before you hand off.
+
+**Never run a long command in the foreground.** Both `e2e` scripts and
+`pnpm test` (~5.5 min) outlive an agent's patience, and a killed foreground run
+teaches you nothing. Redirect to a log, background it, then poll the log:
+
+```sh
+nohup ./app/tool/e2e.sh --mode=stub > /tmp/e2e.log 2>&1 &
+tail -5 /tmp/e2e.log
+```
 
 ## Definition of done
 
