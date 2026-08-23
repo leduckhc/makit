@@ -100,6 +100,44 @@ test("re-binds after a release, so publishing again still works", async () => {
   await l.close();
 });
 
+// Every published URL names a port. A release that took a FRESH port on the next
+// bind killed every URL a phone was still holding, even though the doc was
+// re-shared. Asking for the same port back revives them.
+test("a re-bind prefers the port the previous one used", async () => {
+  const { l } = listener("127.0.0.1");
+  const first = await l.ensureOrigin();
+  assert.ok(first);
+  await l.releaseIfIdle();
+  assert.equal(l.isListening, false);
+
+  const second = await l.ensureOrigin();
+  assert.ok(second);
+  assert.equal(second.origin, first.origin, "a URL minted before the release must still resolve");
+  await l.close();
+});
+
+test("a re-bind takes a fresh port when the old one was taken meanwhile", async () => {
+  const { l } = listener("127.0.0.1");
+  const first = await l.ensureOrigin();
+  assert.ok(first);
+  const port = Number(first.origin.split(":").pop());
+  await l.releaseIfIdle();
+
+  // Someone else grabs the port during the window it was free.
+  const squatter = createServer();
+  await new Promise<void>((r) => squatter.listen(port, "127.0.0.1", () => r()));
+
+  try {
+    const second = await l.ensureOrigin();
+    assert.ok(second, "a taken port must not make publish refuse");
+    assert.notEqual(second.origin, first.origin, "it must move, not claim a port it lost");
+    assert.equal(l.isListening, true);
+  } finally {
+    squatter.close();
+    await l.close();
+  }
+});
+
 test("a bind failure degrades loudly: null, not a dead URL (D15)", async () => {
   // Occupy a port, then force the listener at it so listen() fails.
   const blocker = createServer();

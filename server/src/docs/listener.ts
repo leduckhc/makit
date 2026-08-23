@@ -70,6 +70,13 @@ export class DocListener {
    * last lease to end. See {@link withOrigin}.
    */
   private leases = 0;
+  /**
+   * The port the last bind used, preferred by the next one. Every URL handed out
+   * names a port, and a release/rebind cycle used to take a FRESH ephemeral port,
+   * so any link still in a phone's hands died the moment the port was released.
+   * Asking for the same port again revives those links instead.
+   */
+  private lastPort: number | undefined;
   private readonly deps: DocListenerDeps;
 
   constructor(deps: DocListenerDeps) {
@@ -130,13 +137,23 @@ export class DocListener {
     const server = (this.deps.createServer ?? defaultCreateServer)();
     this.deps.attach(server);
 
-    const port = await bind(server, this.deps.port ?? 0, host);
+    // Prefer the port the previous bind used, so URLs minted before a release
+    // still resolve. A fixed `deps.port` (tests) is honoured exactly and never
+    // retried, because those tests assert a bind FAILURE.
+    const preferred = this.deps.port ?? this.lastPort ?? 0;
+    let port = await bind(server, preferred, host);
+    if (port === null && preferred !== 0 && this.deps.port === undefined) {
+      // Something else took the old port while it was free. A fresh port is a
+      // working share with a new URL, which beats refusing to publish at all.
+      port = await bind(server, 0, host);
+    }
     if (port === null) {
       server.close();
       return null;
     }
 
     this.server = server;
+    this.lastPort = port;
     this.origin = { origin: `http://${host}:${port}`, reach: "tailnet" };
     log.info(`[makit] docs listening on ${this.origin.origin} (published docs only)`);
     return this.origin;
