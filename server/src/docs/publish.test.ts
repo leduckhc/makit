@@ -29,12 +29,22 @@ const tailnet = async (): Promise<DocReach> => ({
 const lan = async (): Promise<DocReach> => ({ origin: "http://192.168.1.9:8123", reach: "lan" });
 const none = async (): Promise<DocReach | null> => null;
 
+/**
+ * Adapt a plain reach probe to the lease seam `publishDoc` now takes. The real
+ * implementation (`DocListener.withOrigin`) also holds the port open for the
+ * whole callback; these fixtures only need to hand the origin over.
+ */
+const holding =
+  (reach: () => Promise<DocReach | null>) =>
+  <T,>(use: (r: DocReach | null) => Promise<T>): Promise<T> =>
+    reach().then(use);
+
 test("publishes a resolvable doc, minting a tailnet grant with the reachable url", async () => {
   const root = fixture();
   const grants = new DocGrantStore();
   const result = await publishDoc(
     { worktreePath: root, relPath: "mockups/board.html" },
-    { grants, reach: tailnet },
+    { grants, withReach: holding(tailnet) },
   );
   assert.ok(result.ok);
   assert.equal(result.grant.reach, "tailnet");
@@ -51,7 +61,7 @@ test("mints whatever verified reach it is handed, e.g. an injected lan origin (D
   const grants = new DocGrantStore();
   const result = await publishDoc(
     { worktreePath: root, relPath: "mockups/board.html" },
-    { grants, reach: lan },
+    { grants, withReach: holding(lan) },
   );
   assert.ok(result.ok);
   assert.equal(result.grant.reach, "lan");
@@ -63,7 +73,7 @@ test("with no usable address, publishes NOTHING and states the reason (D15)", as
   const grants = new DocGrantStore();
   const result = await publishDoc(
     { worktreePath: root, relPath: "mockups/board.html" },
-    { grants, reach: none },
+    { grants, withReach: holding(none) },
   );
   assert.equal(result.ok, false);
   assert.ok(!result.ok && result.reason.length > 0);
@@ -78,7 +88,7 @@ test("the refusal states a remedy that can actually work, never --lan (D15 rev 2
   const root = fixture();
   const result = await publishDoc(
     { worktreePath: root, relPath: "mockups/board.html" },
-    { grants: new DocGrantStore(), reach: none },
+    { grants: new DocGrantStore(), withReach: holding(none) },
   );
   assert.equal(result.ok, false);
   const reason = result.ok ? "" : result.reason;
@@ -94,7 +104,7 @@ test("refuses an unresolvable doc without minting a grant", async () => {
   const grants = new DocGrantStore();
   const result = await publishDoc(
     { worktreePath: root, relPath: "../../etc/passwd" },
-    { grants, reach: tailnet },
+    { grants, withReach: holding(tailnet) },
   );
   assert.equal(result.ok, false);
   assert.equal(grants.list().length, 0);
@@ -108,10 +118,10 @@ test("does not consult reach when the doc cannot be resolved", async () => {
     { worktreePath: root, relPath: "does-not-exist.md" },
     {
       grants,
-      reach: async () => {
+      withReach: holding(async () => {
         reachCalls++;
         return { origin: "http://100.92.14.7:53187", reach: "tailnet" };
-      },
+      }),
     },
   );
   assert.equal(reachCalls, 0, "an invalid doc must be refused before probing reachability");
@@ -129,7 +139,7 @@ test("publishDoc percent-encodes each path segment of the URL", async () => {
     { worktreePath: "/repo", relPath },
     {
       grants,
-      reach: async () => ({ origin: "http://100.1.1.1:8123", reach: "tailnet" }),
+      withReach: holding(async () => ({ origin: "http://100.1.1.1:8123", reach: "tailnet" })),
       resolveDoc: () => ({
         ok: true,
         absPath: `/repo/${relPath}`,
@@ -168,9 +178,9 @@ test("a throwing reach probe becomes a stated reason, not an unhandled rejection
     { worktreePath: root, relPath: "mockups/board.html" },
     {
       grants,
-      reach: async () => {
+      withReach: holding(async () => {
         throw new Error("EADDRINUSE 100.64.0.1:7801");
-      },
+      }),
     },
   );
   assert.equal(result.ok, false);

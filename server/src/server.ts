@@ -373,6 +373,9 @@ export function startWsServer(opts: ServerOpts) {
   const docGrants = new DocGrantStore();
   const docListener = new DocListener({
     bindHost: tailnetAddressFromBindHost(host),
+    // Read at decision time, not handed over: `list()` also reaps expired and
+    // idle grants on the way through, so the release always sees the truth.
+    liveGrants: () => docGrants.list().length,
     attach: (server) => {
       attachDocRoute(server, { grants: docGrants });
       // Dedicated listener: nothing else answers, so unmatched paths (Safari's
@@ -380,7 +383,11 @@ export function startWsServer(opts: ServerOpts) {
       attachDocNotFound(server);
     },
   });
-  const docReach = (): Promise<DocReach | null> => docListener.ensureOrigin();
+  // Publishes reach the origin ONLY through a lease, so a release arriving from
+  // another command cannot close the port between the bind and the grant that
+  // names it (that handed back a URL nothing would ever answer).
+  const withDocReach = <T>(use: (reach: DocReach | null) => Promise<T>): Promise<T> =>
+    docListener.withOrigin(use);
   // Release the port once no grant remains. There is no expiry reaper of its
   // own: `onGrantsChanged` fires only from `DocsService.unpublish()` and
   // `DocsService.grants()`, and expired/idle grants are reaped lazily on the way
@@ -388,7 +395,7 @@ export function startWsServer(opts: ServerOpts) {
   // remain, and a grant that merely expired frees the port on the NEXT
   // grant-list or unpublish request rather than the instant its TTL passes.
   const releaseDocsIfIdle = (): void => {
-    void docListener.releaseIfIdle(docGrants.list().length);
+    void docListener.releaseIfIdle();
   };
 
   const emitDocsSnapshot = (snapshot: unknown): OutgoingFrame => ({
@@ -401,7 +408,7 @@ export function startWsServer(opts: ServerOpts) {
     listWorktrees: listDocWorktrees,
     exec: execRun,
     grants: docGrants,
-    reach: docReach,
+    withReach: withDocReach,
     onGrantsChanged: releaseDocsIfIdle,
     onSnapshot: (snapshot) => {
       const frame = emitDocsSnapshot(snapshot);
