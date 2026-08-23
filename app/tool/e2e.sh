@@ -4,8 +4,8 @@ set -euo pipefail
 # Full-stack mobile WS e2e on an iOS simulator (StubAdapter — no API key).
 # Counterpart to tool/e2e-desktop.sh, which does the macOS control plane.
 #
-# RUN THIS IN THE BACKGROUND. An Xcode build plus a simulator boot takes
-# many minutes on a cold run and is never quick on a warm one.
+# RUN THIS IN THE BACKGROUND. It needs an Xcode build and a simulator boot.
+# A cold run needs many minutes. A warm run also needs minutes.
 # A foreground run blocks the agent's tool call until it exits or is killed.
 # Start a background process instead:
 #
