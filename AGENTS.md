@@ -41,9 +41,11 @@ cd app && tool/audit.sh                   # the pre-handoff gate
 While iterating, run only the affected test files. Run the full suite once
 before you hand off.
 
-**Never run a long command in the foreground.** Both `e2e` scripts and
-`pnpm test` (~5.5 min) outlive an agent's patience, and a killed foreground run
-teaches you nothing. Redirect to a log, background it, then poll the log:
+**Run long commands in the background.** Both `e2e` scripts and
+`pnpm test` (~5.5 min) take several minutes.
+A foreground run blocks until the command finishes or is killed.
+Start a background process with output redirected to a log file.
+Then poll the log to watch progress:
 
 ```sh
 nohup ./app/tool/e2e.sh --mode=stub > /tmp/e2e.log 2>&1 &

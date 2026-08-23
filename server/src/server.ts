@@ -39,6 +39,7 @@ import type {
   SessionDTO,
   PortKillTarget,
   ForwardGrantDTO,
+  DocsSnapshotDTO,
 } from "./protocol.js";
 import { PROTOCOL_VERSION, newId } from "./protocol.js";
 import { decodeFrame, encodeFrame, WireErrorCode } from "./protocol/codec.js";
@@ -398,7 +399,9 @@ export function startWsServer(opts: ServerOpts) {
     void docListener.releaseIfIdle();
   };
 
-  const emitDocsSnapshot = (snapshot: unknown): OutgoingFrame => ({
+  // Typed with the DTO, not `unknown`: the producer and the shape the app decodes
+  // must not drift apart (the wire protocol is the real API).
+  const emitDocsSnapshot = (snapshot: DocsSnapshotDTO): OutgoingFrame => ({
     t: "event",
     id: newId("docs"),
     kind: "docs.snapshot",
