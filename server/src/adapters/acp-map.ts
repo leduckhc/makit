@@ -97,7 +97,13 @@ export class AcpEventMapper {
     switch (update.sessionUpdate) {
       case "agent_message_chunk": {
         this.flushThinking();
-        this.hooks.onWork?.();
+        // A notification is not the agent working. pi-acp maps a pi extension's
+        // `ui.notify` to a message chunk, and the memory extension notifies AFTER
+        // the turn ended, so that chunk would re-open a turn nothing can close:
+        // its `running: false` went out at `agent_end`. The session then stayed
+        // `running` for hours with every later message queued behind it. Same
+        // rule as the other bookkeeping updates below.
+        if (!isNotice(update)) this.hooks.onWork?.();
         this.ingestMedia(update.content);
         const chunk = contentBlockText(update.content);
         if (!chunk) return;
@@ -527,6 +533,20 @@ function contentBlockText(block: unknown): string {
     if (typeof t === "string") return t;
   }
   return "";
+}
+
+/**
+ * True for a chunk that carries a pi extension's notification rather than the
+ * agent's own output: pi-acp flags it as `_meta.piAcp.notify`. Untrusted
+ * boundary, so anything malformed reads as a normal chunk.
+ */
+function isNotice(update: SessionUpdate): boolean {
+  const meta = (update as { _meta?: unknown })._meta;
+  const piAcp =
+    typeof meta === "object" && meta !== null ? (meta as { piAcp?: unknown }).piAcp : undefined;
+  const notify =
+    typeof piAcp === "object" && piAcp !== null ? (piAcp as { notify?: unknown }).notify : undefined;
+  return typeof notify === "object" && notify !== null;
 }
 
 /**

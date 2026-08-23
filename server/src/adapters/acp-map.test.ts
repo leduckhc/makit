@@ -973,3 +973,50 @@ test("a completion carrying its output still does not count as work", () => {
 
   assert.equal(work(), before, "a completion is not evidence of more work");
 });
+
+test("a notification chunk is not agent work", () => {
+  // pi-acp maps a pi extension's `ui.notify` to an `agent_message_chunk`. The
+  // memory extension notifies AFTER the turn ended, so that chunk arrived with
+  // no turn to belong to and no `running` flag around it. Counting it as work
+  // re-opened a turn nothing would ever close, and the session stayed `running`
+  // for hours while every later message queued behind it.
+  const { mapper, work, events } = collectTurnSignals();
+  mapper.handle({
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text: "💾 Memory auto-reviewed and updated" },
+    _meta: { piAcp: { notify: { level: "info" } } },
+  } as SessionUpdate);
+
+  assert.equal(work(), 0, "a notification is not the agent working");
+  // The text still reaches the client — only the turn state is left alone.
+  assert.equal(
+    events.filter((e) => e.kind === "agent.message.delta").length,
+    1,
+    "the notice still streams",
+  );
+
+  // A normal chunk still counts.
+  mapper.handle(text("real output"));
+  assert.equal(work(), 1);
+});
+
+test("a malformed notify flag reads as a normal chunk", () => {
+  // Untrusted boundary: only a real notify object suppresses the work signal.
+  // Anything else is treated as the agent's own output, which is the safe way
+  // round — a chunk wrongly read as a notice would hide a working agent.
+  const { mapper, work } = collectTurnSignals();
+  for (const notify of [true, "info", 1, null]) {
+    mapper.handle({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "hi" },
+      _meta: { piAcp: { notify } },
+    } as SessionUpdate);
+  }
+  mapper.handle({
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "text", text: "hi" },
+    _meta: { piAcp: "not-an-object" },
+  } as SessionUpdate);
+
+  assert.equal(work(), 5, "every malformed flag still counts as work");
+});

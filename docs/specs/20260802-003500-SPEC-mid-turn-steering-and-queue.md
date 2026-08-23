@@ -155,6 +155,54 @@ agent may legitimately error instead.
    `session.kill`; on session death, pending items are dropped and an empty `queued` field
    is published in the sessions snapshot. Persisting unsent intent across restarts is out
    of scope.
+10. **A busy state with no closer must never hold a message.** Added after the defect in
+    [§Stray post-turn work](#stray-post-turn-work-amended). The adapter grows one more
+    optional method, and the send path calls it before it queues anything:
+
+    ```ts
+    /** Drop a busy state only a stray post-turn signal holds. True = dropped one. */
+    releaseStrayBusy?(): boolean;   // SubprocessAdapter: TurnStatusTracker.releaseStrayWork()
+    ```
+
+    It is the same rule that keeps `error` and `exited` out of `BUSY_STATUSES`: a session
+    that cannot reach `idle` must not swallow input into a queue that can never flush.
+
+## Stray post-turn work (amended)
+
+> **Amended after a live defect, three wedged sessions in one night.**
+
+pi extensions can talk to the user after the turn ends. The memory extension calls
+`ui.notify`, and pi-acp maps that to an `agent_message_chunk` — the same shape as real
+agent output. The chunk arrives with no turn around it, and no `running` flag: pi-acp
+already sent `running: false` at `agent_end`.
+
+`TurnStatusTracker.noteWork` therefore re-opened a turn whose only closer, the agent's own
+settle, was already spent. The session stayed `running` for hours. Every message the user
+sent hit the busy check, could not steer on ACP, and joined a queue that flushes on `idle`
+only. Nothing reached pi, and nothing told the user. In the recorded case a session sat at
+`running` from 00:21 with one message waiting, and its transcript ends at a completed turn.
+
+Two changes, one for the trigger and one for the class:
+
+1. **A notification is not work.** A chunk flagged `_meta.piAcp.notify` no longer calls
+   `onWork`, the same way a tool completion or a usage update does not. Its text still
+   streams to the client.
+2. **A stray turn is releasable.** `noteWork` records whether more work arrived after the
+   chunk that opened the turn. `releaseStrayWork()` drops a turn that is quiet, alone, and
+   holds no gate, and emits `idle` — which flushes the queue in order. A real prompt turn,
+   an open approval, the agent's own running signal, or any further streamed work all keep
+   the turn, so an agent that streams on after an early prompt answer still gets a queue
+   rather than a second prompt.
+
+**Live smoke** (real `pi-acp` + real `pi`, driven through `AcpAdapter` + `Session`, one
+turn then a follow-up): status trail `idle → running → idle → running`, both messages
+delivered (`['hello', 'second message']`), nothing left queued.
+
+**Evidence trail for the diagnosis.** In the wedged session the event log holds
+`session.status idle` at 00:21:12 and `session.status running` at 00:21:44 with **no**
+`user.message` between them, and the pi transcript ends at the completed turn. Both
+processes (`pi-acp` and `pi`) sat in `kevent` at 0% CPU with no children and no sockets:
+nothing was running, and the server had accepted a `send.message` for that session.
 
 ## Server design
 
@@ -257,6 +305,19 @@ Keyless and deterministic, per `makit-verify-feature-end-to-end`:
   `queue.cancel` removes the right item and emits a snapshot; `cancel` empties the queue;
   a queued message produces its `user.message` **only** at flush; attachments are
   materialised at flush (assert no file in the worktree while pending).
+- **Stray post-turn work** (`turn-status.test.ts`, `session.test.ts`, `acp-map.test.ts`,
+  `acp.test.ts`, `stub.test.ts`):
+  - `releaseStrayWork frees a turn that only a post-turn chunk opened`
+  - `releaseStrayWork keeps a real prompt turn, an approval, and a running agent`
+  - `a stray post-turn chunk never swallows the next message`
+  - `a queue held by a stray chunk drains in order`
+  - `a streaming agent still gets a queue, not a second prompt`
+  - `a notification chunk is not agent work`
+  - `a live adapter can release the busy state one post-turn chunk pinned`
+  - `a live adapter ignores a post-turn notification for turn state`
+  - `a session wedged by a post-turn chunk delivers the next message to the real adapter`
+  - `a malformed notify flag reads as a normal chunk`
+  - `STRAY pins the stub the way a post-turn chunk pins pi, and the release frees it`
 - **App:** chips render in order from `SessionDTO.queued`; ✕ sends `queue.cancel`; an empty
   snapshot removes the row; a steered message shows no chip.
 - **Live smoke (documented, not CI):** `/tmp/spike-steer/live-adapter.mts`-style harness

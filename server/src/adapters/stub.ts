@@ -180,6 +180,20 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       return;
     }
 
+    // STRAY: reproduce the wedge from SPEC-mid-turn-steering-and-queue §Stray post-turn work — the
+    // agent streams one chunk with no turn around it, which re-opens a turn whose
+    // usual closer (the agent's own settle) is already spent. Nothing here will
+    // ever clear it, so it is what `releaseStrayBusy` has to answer for.
+    if (prompt.includes("STRAY")) {
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "agent.message",
+        payload: { text: "\u{1F4BE} Memory auto-reviewed and updated" },
+      });
+      this.turns.noteWork();
+      return;
+    }
+
     // SPEC-cli-as-client (T15) — the two states `makit wait` must be able to observe, and
     // the one it must NOT confuse with a status. Placed before SLOW/STREAM so a
     // prompt naming a gate is never swallowed by another trigger.
@@ -485,6 +499,15 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   /** No mid-turn injection (SPEC-mid-turn-steering-and-queue): the session layer queues instead. */
   async steer(_input: UserInput): Promise<boolean> {
     return false;
+  }
+
+  /**
+   * Same answer the real subprocess adapters give (SPEC-mid-turn-steering-and-queue): the stub owns the
+   * same tracker, so a turn one stray chunk opened is releasable here too. The
+   * `STRAY` script is how both e2e loops reach it.
+   */
+  releaseStrayBusy(): boolean {
+    return this.turns.releaseStrayWork();
   }
 
   async cancel(): Promise<void> {

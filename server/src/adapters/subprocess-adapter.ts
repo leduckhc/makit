@@ -71,6 +71,15 @@ export abstract class SubprocessAdapter extends EventEmitter implements AgentAda
     return false;
   }
 
+  /**
+   * Ask the shared tracker to drop a turn that one stray post-turn chunk opened
+   * (see {@link TurnStatusTracker.releaseStrayWork}). Every subprocess adapter
+   * gets it, because every one of them re-opens a turn from the stream.
+   */
+  releaseStrayBusy(): boolean {
+    return this.turns.releaseStrayWork();
+  }
+
   /** Emit one normalized adapter event; the server fills in seq + sessionId. */
   protected emitEvent(e: AdapterEvent): void {
     this.emit("event", e);

@@ -868,6 +868,20 @@ export class Session extends EventEmitter {
   async sendUserMessage(text: string, attachments?: MediaAttachment[]) {
     const input = { text, ...(attachments?.length ? { attachments } : {}) };
 
+    // First: a busy state that nothing can leave must not swallow the message.
+    // An agent can stream a chunk outside any turn (pi-acp forwards a pi
+    // extension's post-turn notification that way), which reports `running` with
+    // no signal left to clear it. The adapter drops that one and emits `idle`, so
+    // a queue that was already waiting flushes in order and this message falls in
+    // behind it. Everything with a real closer — a live prompt, an open gate, an
+    // agent that says it is working — is left alone and still queues below.
+    //
+    // The adapter's answer is what this trusts, not `this.status`: an adapter that
+    // emitted the release asynchronously would otherwise still look busy here and
+    // the message would queue behind the state we just cleared.
+    const released =
+      BUSY_STATUSES.has(this.status) && this.adapter.releaseStrayBusy?.() === true;
+
     // SPEC-mid-turn-steering-and-queue. Three cases, in this order:
     //  1. a queue already exists OR flushing is active -> append (never overtake
     //     an earlier message, including in the window between `idle` and the
@@ -878,7 +892,7 @@ export class Session extends EventEmitter {
       this.enqueue(input);
       return;
     }
-    if (BUSY_STATUSES.has(this.status)) {
+    if (!released && BUSY_STATUSES.has(this.status)) {
       const steered = await this.adapter.steer(input);
       if (steered) return;
       // Steer failed: re-check the queue state before deciding. If another

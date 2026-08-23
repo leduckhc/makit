@@ -524,3 +524,20 @@ test("kill stops the TOOLS script mid-flight", async (t) => {
   await new Promise((r) => setTimeout(r, 900));
   assert.equal(events.length, afterKill, "an exited adapter emits nothing");
 });
+
+test("STRAY pins the stub the way a post-turn chunk pins pi, and the release frees it", async () => {
+  // The stub is what both e2e loops drive, so the guard has to be reachable
+  // here too (server/AGENTS.md: port every adapter change to the stub).
+  const stub = new StubAdapter();
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  const { coarse } = collectStatuses(stub);
+
+  await stub.send({ text: "STRAY" });
+  assert.deepEqual(coarse, ["running"], "one chunk with no turn looks like work");
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepEqual(coarse, ["running"], "and nothing here will ever clear it");
+
+  assert.equal(stub.releaseStrayBusy(), true);
+  assert.deepEqual(coarse, ["running", "idle"], "the release settles it");
+  assert.equal(stub.releaseStrayBusy(), false, "nothing left to release");
+});

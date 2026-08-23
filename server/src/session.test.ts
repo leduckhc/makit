@@ -729,3 +729,98 @@ test("a message is queued while the agent still streams after an early idle", as
     ["later"],
   );
 });
+
+// ---- a stray post-turn signal must not swallow a message --------------------
+
+/**
+ * A session wired to a REAL {@link TurnStatusTracker}, the way the subprocess
+ * adapters are: `send` opens a turn, and the tracker decides the status. Lets a
+ * test drive the exact signals pi-acp sends.
+ */
+function strayAdapter() {
+  const a = fakeAdapter();
+  const sent: string[] = [];
+  const tracker = new TurnStatusTracker({
+    emitStatus: (s) => a.emit("status", s),
+    emitSessionStatus: (status) =>
+      a.emit("event", { ts: Date.now(), kind: "session.status", payload: { status } }),
+    isExited: () => false,
+  });
+  (a as any).send = async (input: { text: string }) => {
+    sent.push(input.text);
+    tracker.enterTurn();
+  };
+  (a as any).steer = async () => false;
+  (a as any).releaseStrayBusy = () => tracker.releaseStrayWork();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: a });
+  return { adapter: a, sent, tracker, session };
+}
+
+test("SPEC-mid-turn-steering-and-queue: a stray post-turn chunk never swallows the next message", async () => {
+  // The wedge this reproduces, seen three times in one night: pi's memory
+  // extension notified after the turn ended, pi-acp forwarded it as an
+  // `agent_message_chunk`, and `noteWork` re-opened a turn whose only closer —
+  // the agent's own `running: false` — had already been sent. The session sat at
+  // `running` for hours, and every message the user typed went into a queue that
+  // could never flush. Nothing reached the agent, and nothing said so.
+  const f = strayAdapter();
+
+  // A real turn runs and finishes.
+  f.tracker.noteAgentRunning();
+  const turn = f.tracker.enterTurn();
+  f.tracker.leaveTurn(turn);
+  f.tracker.noteAgentSettled();
+  assert.equal(f.session.status, "idle");
+
+  // Half a minute later, one chunk arrives outside any turn.
+  f.tracker.noteWork();
+  assert.equal(f.session.status, "running", "the stray chunk looks like work");
+
+  await f.session.sendUserMessage("Continue");
+  await settle();
+
+  assert.deepEqual(f.sent, ["Continue"], "the message reaches the agent");
+  assert.equal(f.session.queuedMessages.length, 0, "and is not stuck in the queue");
+});
+
+test("SPEC-mid-turn-steering-and-queue: a queue held by a stray chunk drains in order", async () => {
+  // The observed session had a message waiting when the release became
+  // possible, so FIFO order must survive the unwedge.
+  const f = strayAdapter();
+  f.tracker.noteWork();
+
+  await f.session.sendUserMessage("first");
+  await settle();
+  await f.session.sendUserMessage("second");
+  await settle();
+
+  assert.deepEqual(f.sent, ["first"], "one message per turn");
+  assert.deepEqual(
+    f.session.queuedMessages.map((q) => q.text),
+    ["second"],
+    "the follow-up waits its turn",
+  );
+});
+
+test("SPEC-mid-turn-steering-and-queue: a streaming agent still gets a queue, not a second prompt", async () => {
+  // The guard must not fire while the agent is really working: work after the
+  // chunk that opened the turn is evidence the agent is alive, and a second
+  // prompt would land in the middle of its answer.
+  const f = strayAdapter();
+  f.tracker.noteWork(); // the prompt was answered early; the agent streams on
+  f.tracker.noteWork(); // ...and keeps streaming
+
+  await f.session.sendUserMessage("wait for me");
+  await settle();
+
+  assert.deepEqual(f.sent, [], "no prompt into a working agent");
+  assert.deepEqual(
+    f.session.queuedMessages.map((q) => q.text),
+    ["wait for me"],
+  );
+
+  // The agent's own settle still ends it, and the queue drains as before.
+  f.tracker.noteAgentSettled();
+  await settle();
+  assert.deepEqual(f.sent, ["wait for me"]);
+});

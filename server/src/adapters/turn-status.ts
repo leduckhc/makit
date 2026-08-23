@@ -39,6 +39,12 @@ export class TurnStatusTracker {
   /** The turn opened from streamed work, if one is open. */
   private workKey: string | null = null;
   /**
+   * True while {@link workKey}'s turn has seen no further work since the chunk
+   * that opened it. Such a turn may be released ({@link releaseStrayWork}),
+   * because a lone post-turn chunk is not evidence of a working agent.
+   */
+  private strayQuiet = false;
+  /**
    * The agent's own "I am working" signal, held until it reports it stopped.
    *
    * Deliberately NOT a turn: pi-acp can answer makit's `session/prompt` while pi
@@ -126,8 +132,42 @@ export class TurnStatusTracker {
     // The agent's own signal already holds the session running, and it alone
     // clears it — a synthetic turn here would only add a duplicate transition.
     if (this.agentRunning) return;
-    if (this.turns.size > 0) return;
+    if (this.turns.size > 0) {
+      // Work landing inside the stray turn is what tells the two cases apart: an
+      // agent that streams on after an early prompt answer, versus one lone
+      // chunk emitted outside any turn. Only the second is releasable.
+      if (this.workKey !== null) this.strayQuiet = false;
+      return;
+    }
+    this.strayQuiet = true;
     this.workKey = this.enterTurn();
+  }
+
+  /**
+   * Release a turn that ONE post-turn chunk opened, so a user message is never
+   * queued behind a state nothing can leave. Returns whether it released one,
+   * and emits `idle` when it does.
+   *
+   * The wedge it answers: pi's memory extension notifies after the turn ends,
+   * and pi-acp forwards that notification as an `agent_message_chunk`. It
+   * arrives with no turn and no `running` flag around it, because `running:
+   * false` went out at `agent_end`. {@link noteWork} then opens a turn whose
+   * only closer has already been sent, so the session stays `running` for hours
+   * and every later message enqueues behind it and never flushes.
+   *
+   * Deliberately narrow. A real prompt turn, an open gate, the agent's own
+   * running signal, or any further streamed work all keep the turn, because
+   * each of those either has a closer of its own or says the agent is alive.
+   */
+  releaseStrayWork(): boolean {
+    const key = this.workKey;
+    if (key === null || !this.strayQuiet) return false;
+    if (this.agentRunning || this.approvals > 0) return false;
+    if (this.turns.size > 1 || this.hooks.isExited()) return false;
+    this.workKey = null;
+    this.strayQuiet = false;
+    this.leaveTurn(key);
+    return true;
   }
 
   /**
@@ -162,6 +202,7 @@ export class TurnStatusTracker {
     const key = this.workKey;
     if (key !== null) {
       this.workKey = null;
+      this.strayQuiet = false;
       this.leaveTurn(key);
       return;
     }
