@@ -61,6 +61,8 @@ ReposState _repos() => ReposState([
 ]);
 
 void main() {
+  final repos = _repos();
+
   group('filterDocs', () {
     final docs = [
       _doc('mockups/x.html', kind: DocKind.html),
@@ -70,29 +72,50 @@ void main() {
     ];
 
     test('all keeps everything', () {
-      expect(filterDocs(_snap(docs), DocsFilter.all), hasLength(4));
+      expect(filterDocs(_snap(docs), DocsFilter.all, repos), hasLength(4));
     });
 
-    test('mockups keeps only files under mockups/', () {
-      final r = filterDocs(_snap(docs), DocsFilter.mockups);
+    test('markdown keeps only kind==md (never a path)', () {
+      final r = filterDocs(_snap(docs), DocsFilter.markdown, repos);
+      expect(r.map((d) => d.relPath), [
+        'docs/specs/s.md',
+        'README.md',
+        'docs/plan.md',
+      ]);
+    });
+
+    test('pages keeps only kind==html (never a path)', () {
+      final r = filterDocs(_snap(docs), DocsFilter.pages, repos);
       expect(r.map((d) => d.relPath), ['mockups/x.html']);
     });
 
-    test('specs keeps only files under docs/', () {
-      final r = filterDocs(_snap(docs), DocsFilter.specs);
-      expect(r.map((d) => d.relPath), ['docs/specs/s.md', 'docs/plan.md']);
-    });
-
     test('changed keeps only changed==true', () {
-      final r = filterDocs(_snap(docs), DocsFilter.changed);
+      final r = filterDocs(_snap(docs), DocsFilter.changed, repos);
       expect(r.map((d) => d.relPath), ['docs/plan.md']);
     });
+
+    test('thisRepo keeps only docs whose worktree belongs to repoId', () {
+      final scoped = _snap([
+        _doc('a.md', worktreePath: '/repo/a'),
+        _doc('b.md', worktreePath: '/repo/b'),
+        _doc('gone.md', worktreePath: '/elsewhere'),
+      ]);
+      final r = filterDocs(scoped, DocsFilter.thisRepo, repos, repoId: 'r1');
+      expect(r.map((d) => d.relPath), ['a.md', 'b.md']);
+    });
+
+    test(
+      'thisRepo with no repoId keeps nothing (a dead chip is never shown)',
+      () {
+        expect(filterDocs(_snap(docs), DocsFilter.thisRepo, repos), isEmpty);
+      },
+    );
 
     test('a null snapshot yields no docs, never a fabricated list', () {
       // _DocsScreenState._body relies on this branch to show a waiting state
       // rather than an empty-docs claim before the first snapshot lands.
-      expect(filterDocs(null, DocsFilter.all), isEmpty);
-      expect(docsFilterCounts(null)[DocsFilter.all], 0);
+      expect(filterDocs(null, DocsFilter.all, repos), isEmpty);
+      expect(docsFilterCounts(null, repos)[DocsFilter.all], 0);
     });
 
     test('search matches title OR path, case-insensitively', () {
@@ -103,6 +126,7 @@ void main() {
           _doc('docs/other.md', title: 'Something'),
         ]),
         DocsFilter.all,
+        repos,
         query: 'PORT',
       );
       expect(
@@ -120,11 +144,107 @@ void main() {
         _doc('docs/s.md', changed: true),
         _doc('README.md'),
       ]);
-      final counts = docsFilterCounts(snap);
+      final counts = docsFilterCounts(snap, repos);
       expect(counts[DocsFilter.all], 3);
-      expect(counts[DocsFilter.mockups], 1);
-      expect(counts[DocsFilter.specs], 1);
+      expect(counts[DocsFilter.markdown], 2);
+      expect(counts[DocsFilter.pages], 1);
       expect(counts[DocsFilter.changed], 1);
+    });
+
+    // The whole point of D6: a chip must never be dead in a valid repo. A repo
+    // with no `mockups/` directory (like `rho`) still has markdown and html
+    // files, so the kind chips must count them off `DocInfo.kind`, never a path.
+    test('kind chips are non-zero in a repo with no mockups/ directory', () {
+      final snap = _snap([
+        _doc('docs/spec.md', kind: DocKind.md),
+        _doc('docs/board.html', kind: DocKind.html),
+        _doc('NOTES.md', kind: DocKind.md),
+      ]);
+      final counts = docsFilterCounts(snap, repos);
+      expect(counts[DocsFilter.markdown], 2);
+      expect(counts[DocsFilter.pages], 1);
+    });
+  });
+
+  group('recentDocs (D5)', () {
+    test('keeps the 5 newest in scope, newest first', () {
+      final docs = [
+        for (var i = 0; i < 8; i++) _doc('n$i.md', modifiedAt: i * 10),
+      ];
+      final r = recentDocs(docs);
+      expect(r, hasLength(5));
+      expect(r.map((d) => d.relPath), [
+        'n7.md',
+        'n6.md',
+        'n5.md',
+        'n4.md',
+        'n3.md',
+      ]);
+    });
+
+    test('returns everything when fewer than the limit', () {
+      final docs = [_doc('a.md', modifiedAt: 5), _doc('b.md', modifiedAt: 9)];
+      expect(recentDocs(docs).map((d) => d.relPath), ['b.md', 'a.md']);
+    });
+  });
+
+  group('repoIdOwningNewestDoc (D4)', () {
+    test('is the repo holding the doc with the largest mtime', () {
+      final twoRepos = ReposState([
+        const RepoInfo(
+          id: 'alpha',
+          name: 'alpha',
+          path: '/alpha',
+          pinned: false,
+          lastActivityAt: 0,
+          isGitRepo: true,
+          defaultBranch: 'main',
+          currentBranch: 'main',
+          worktrees: [
+            Worktree(
+              id: 'wa',
+              path: '/alpha/wt',
+              branch: 'main',
+              isPrimary: true,
+              insertions: 0,
+              deletions: 0,
+              filesChanged: 0,
+              sessionIds: [],
+            ),
+          ],
+        ),
+        const RepoInfo(
+          id: 'beta',
+          name: 'beta',
+          path: '/beta',
+          pinned: false,
+          lastActivityAt: 0,
+          isGitRepo: true,
+          defaultBranch: 'main',
+          currentBranch: 'main',
+          worktrees: [
+            Worktree(
+              id: 'wb',
+              path: '/beta/wt',
+              branch: 'main',
+              isPrimary: true,
+              insertions: 0,
+              deletions: 0,
+              filesChanged: 0,
+              sessionIds: [],
+            ),
+          ],
+        ),
+      ]);
+      final grouping = groupDocsByRepoWorktree([
+        _doc('old.md', worktreePath: '/alpha/wt', modifiedAt: 10),
+        _doc('new.md', worktreePath: '/beta/wt', modifiedAt: 99),
+      ], twoRepos);
+      expect(repoIdOwningNewestDoc(grouping), 'beta');
+    });
+
+    test('is null for an empty grouping', () {
+      expect(repoIdOwningNewestDoc(const DocsGrouping(repos: [])), isNull);
     });
   });
 
@@ -136,7 +256,7 @@ void main() {
         _doc('c.md', worktreePath: '/repo/b', modifiedAt: 20),
       ]);
       final grouping = groupDocsByRepoWorktree(
-        filterDocs(snap, DocsFilter.all),
+        filterDocs(snap, DocsFilter.all, repos),
         _repos(),
       );
       expect(grouping.repos, hasLength(1));
@@ -149,7 +269,7 @@ void main() {
     test('a doc whose worktree is not active is dropped (D6)', () {
       final snap = _snap([_doc('x.md', worktreePath: '/gone')]);
       final grouping = groupDocsByRepoWorktree(
-        filterDocs(snap, DocsFilter.all),
+        filterDocs(snap, DocsFilter.all, repos),
         _repos(),
       );
       expect(grouping.repos, isEmpty);

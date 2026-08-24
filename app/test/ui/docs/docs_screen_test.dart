@@ -99,10 +99,15 @@ void main() {
     await _pump(tester, _snap([_doc('docs/a.md', title: 'Alpha')]));
     expect(find.text('MAKIT'), findsOneWidget);
     expect(find.text('feat/serving-html'), findsOneWidget);
-    expect(find.text('Alpha'), findsOneWidget);
+    // The doc appears in its group row (and, being newest, also in Recent).
+    expect(
+      find.byKey(const ValueKey('docs-screen-row-/A/feat:docs/a.md')),
+      findsOneWidget,
+    );
+    expect(find.text('Alpha'), findsWidgets);
   });
 
-  testWidgets('filter row shows counts and Specs filters to docs/', (
+  testWidgets('filter row shows kind counts and Pages filters to html', (
     tester,
   ) async {
     await _pump(
@@ -112,14 +117,20 @@ void main() {
         _doc('docs/s.md', title: 'Spec'),
       ]),
     );
-    // Both visible under All.
-    expect(find.byType(DocRow), findsNWidgets(2));
-    // Tap the Specs chip.
-    await tester.tap(find.text('Specs 1'));
+    // Both visible under All (in their group rows).
+    expect(
+      find.byKey(const ValueKey('docs-screen-row-/A/feat:mockups/x.html')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('docs-screen-row-/A/feat:docs/s.md')),
+      findsOneWidget,
+    );
+    // Tap the Pages chip (kind==html), keyed by its counted label.
+    await tester.tap(find.text('Pages 1'));
     await tester.pump();
-    expect(find.byType(DocRow), findsOneWidget);
-    expect(find.text('Spec'), findsOneWidget);
-    expect(find.text('Board'), findsNothing);
+    expect(find.text('Board'), findsWidgets);
+    expect(find.text('Spec'), findsNothing);
   });
 
   testWidgets('search field filters by title and path', (tester) async {
@@ -133,7 +144,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'ports');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.text('Ports forward'), findsOneWidget);
+    expect(find.text('Ports forward'), findsWidgets);
     expect(find.text('Something else'), findsNothing);
   });
 

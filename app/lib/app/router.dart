@@ -64,7 +64,11 @@ final routerProvider = Provider<GoRouter>((ref) {
                 builder: (_, s) =>
                     PortsScreen(repoId: s.uri.queryParameters['repo']),
               ),
-              GoRoute(path: 'docs', builder: (_, _) => const DocsScreen()),
+              GoRoute(
+                path: 'docs',
+                builder: (_, s) =>
+                    DocsScreen(repoId: s.uri.queryParameters['repo']),
+              ),
               GoRoute(
                 path: 'diagnostics',
                 builder: (_, _) => const DiagnosticsScreen(),

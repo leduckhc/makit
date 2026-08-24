@@ -10,16 +10,29 @@ library;
 import '../../store/docs.dart';
 import '../../store/store.dart';
 
-/// The filter chips the screen offers (mockup Card 2): All / Mockups / Specs /
-/// Changed.
-enum DocsFilter { all, mockups, specs, changed }
+/// The filter chips the screen offers (D6): All / This repo / Markdown / Pages
+/// / Changed. The kind chips read [DocInfo.kind], never a path — a chip must
+/// never be dead in a valid repo. The set mirrors `PortsFilter`.
+enum DocsFilter { all, thisRepo, markdown, pages, changed }
 
-bool _matchesFilter(DocInfo d, DocsFilter filter) => switch (filter) {
-  DocsFilter.all => true,
-  DocsFilter.mockups => d.relPath.startsWith('mockups/'),
-  DocsFilter.specs => d.relPath.startsWith('docs/'),
-  DocsFilter.changed => d.changed == true,
-};
+/// The set of worktree paths that belong to [repoId], or empty when unknown.
+/// *This repo* keeps only docs owned by one of those worktrees (D3), the same
+/// rule `filterPorts` applies for its own *This repo* chip.
+Set<String> _worktreePathsOf(ReposState repos, String? repoId) {
+  if (repoId == null) return const {};
+  final repo = repos.byId(repoId);
+  if (repo == null) return const {};
+  return {for (final w in repo.worktrees) w.path};
+}
+
+bool _matchesFilter(DocInfo d, DocsFilter filter, Set<String> thisRepoPaths) =>
+    switch (filter) {
+      DocsFilter.all => true,
+      DocsFilter.thisRepo => thisRepoPaths.contains(d.worktreePath),
+      DocsFilter.markdown => d.kind == DocKind.md,
+      DocsFilter.pages => d.kind == DocKind.html,
+      DocsFilter.changed => d.changed == true,
+    };
 
 /// Whether [d] matches a free-text [query], over title AND path.
 ///
@@ -38,20 +51,42 @@ bool docMatchesQuery(DocInfo d, String query) {
 /// waiting/empty state, never a fabricated list).
 List<DocInfo> filterDocs(
   DocsSnapshot? snapshot,
-  DocsFilter filter, {
+  DocsFilter filter,
+  ReposState repos, {
+  String? repoId,
   String query = '',
 }) {
   if (snapshot == null) return const [];
+  final thisRepoPaths = _worktreePathsOf(repos, repoId);
   return snapshot.docs
-      .where((d) => _matchesFilter(d, filter) && docMatchesQuery(d, query))
+      .where(
+        (d) =>
+            _matchesFilter(d, filter, thisRepoPaths) &&
+            docMatchesQuery(d, query),
+      )
       .toList();
 }
 
 /// Count for each filter, independent of the active one — so a chip can show
-/// "Mockups 27" while "All" is selected (mockup Card 2 badges).
-Map<DocsFilter, int> docsFilterCounts(DocsSnapshot? snapshot) => {
-  for (final f in DocsFilter.values) f: filterDocs(snapshot, f).length,
+/// "Markdown 27" while "All" is selected. The [repoId] feeds the *This repo*
+/// count, which is zero (and its chip hidden) when the board is unscoped.
+Map<DocsFilter, int> docsFilterCounts(
+  DocsSnapshot? snapshot,
+  ReposState repos, {
+  String? repoId,
+}) => {
+  for (final f in DocsFilter.values)
+    f: filterDocs(snapshot, f, repos, repoId: repoId).length,
 };
+
+/// The [limit] newest docs in [docs], newest first (D5). The board leads with
+/// this so recency answers *which* doc, above the grouping that answers
+/// *where*. Pure so the screen and its test share one definition.
+List<DocInfo> recentDocs(List<DocInfo> docs, {int limit = 5}) {
+  final sorted = [...docs]
+    ..sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+  return sorted.take(limit).toList();
+}
 
 /// One worktree's docs within a repo group.
 class WorktreeDocGroup {
@@ -85,6 +120,28 @@ class DocsGrouping {
   const DocsGrouping({required this.repos});
   final List<RepoDocGroup> repos;
   bool get isEmpty => repos.isEmpty;
+}
+
+/// The id of the repo that owns the newest doc across [grouping], or null when
+/// the grouping is empty (D4). Unscoped with more than one repo, only this repo
+/// stays expanded; the rest fold. Recency picks the open group, so no
+/// `activeRepo` state has to be invented.
+String? repoIdOwningNewestDoc(DocsGrouping grouping) {
+  String? bestRepoId;
+  var bestMtime = -1 << 62;
+  for (final repo in grouping.repos) {
+    for (final wt in repo.worktrees) {
+      // Each worktree's docs are already mtime-descending, so the first is its
+      // newest — one read per worktree, not a full scan.
+      if (wt.docs.isEmpty) continue;
+      final mtime = wt.docs.first.modifiedAt;
+      if (mtime > bestMtime) {
+        bestMtime = mtime;
+        bestRepoId = repo.repoId;
+      }
+    }
+  }
+  return bestRepoId;
 }
 
 /// Groups [docs] repo → worktree in first-seen order, mtime-descending inside

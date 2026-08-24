@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import '../../app/routes.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/docs.dart';
 import '../../store/ports.dart';
 import '../docs/doc_glyph.dart';
+import '../docs/worktree_docs_sheet.dart';
 import '../ports/ports_glyph.dart';
 import '../ports/worktree_ports_sheet.dart';
 import 'repo_chips.dart';
@@ -372,10 +371,12 @@ class _WorktreePortsGlyph extends ConsumerWidget {
   }
 }
 
-/// The worktree row's docs glyph (SPEC-doc-preview), phone form. Sits beside the ports
-/// plug and opens the global Docs screen on tap. Renders nothing when the
-/// worktree owns no docs, so a quiet branch adds no weight (and the 320 pt row
-/// stays within budget) — the same discipline as [_WorktreePortsGlyph].
+/// The worktree row's docs glyph (SPEC-doc-preview), phone form. Sits beside the
+/// ports plug and opens a SCOPED docs sheet on tap (SPEC-docs-scoping-and-board-rework D1):
+/// the sheet lists only this worktree's docs, so the badge that reads N produces
+/// a list of N. Renders nothing when the worktree owns no docs, so a quiet
+/// branch adds no weight — the same discipline as [_WorktreePortsGlyph], which
+/// it now mirrors including the `worktreePath` + `branch` handoff.
 class _WorktreeDocsGlyph extends ConsumerWidget {
   const _WorktreeDocsGlyph({required this.worktree});
 
@@ -387,7 +388,11 @@ class _WorktreeDocsGlyph extends ConsumerWidget {
     if (docs.isEmpty) return const SizedBox.shrink();
     return InkWell(
       borderRadius: BorderRadius.circular(kRadius8),
-      onTap: () => context.go(kRouteDocs),
+      onTap: () => showWorktreeDocsSheet(
+        context,
+        worktreePath: worktree.path,
+        branch: worktree.branch ?? 'detached',
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(
           minWidth: kTrailingControl,
