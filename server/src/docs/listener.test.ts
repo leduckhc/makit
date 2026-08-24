@@ -13,10 +13,18 @@ import { DocListener } from "./listener.js";
  * encrypting.
  */
 
-function listener(bindHost: string | null): { l: DocListener; opened: Server[] } {
+function listener(bindHost: string | null): {
+  l: DocListener;
+  opened: Server[];
+  live: { grants: number };
+} {
   const opened: Server[] = [];
+  // The listener reads this at the moment it decides to release, the way
+  // `server.ts` hands it `docGrants.list().length`.
+  const live = { grants: 0 };
   const l = new DocListener({
     bindHost,
+    liveGrants: () => live.grants,
     createServer: () => {
       const s = createServer();
       opened.push(s);
@@ -24,7 +32,7 @@ function listener(bindHost: string | null): { l: DocListener; opened: Server[] }
     },
     attach: () => {},
   });
-  return { l, opened };
+  return { l, opened, live };
 }
 
 test("does not bind at all when the host is not a tailnet address", async () => {
@@ -57,16 +65,18 @@ test("reuses the same listener across publishes", async () => {
   await l.close();
 });
 
-test("releaseIfIdle(0) closes the port; releaseIfIdle(n>0) keeps it", async () => {
-  const { l } = listener("127.0.0.1");
+test("releaseIfIdle closes the port only when no grant is live", async () => {
+  const { l, live } = listener("127.0.0.1");
   const reach = await l.ensureOrigin();
   assert.ok(reach);
   const port = Number(reach.origin.split(":").pop());
 
-  await l.releaseIfIdle(2);
+  live.grants = 2;
+  await l.releaseIfIdle();
   assert.equal(l.isListening, true, "grants outstanding — the port must stay open");
 
-  await l.releaseIfIdle(0);
+  live.grants = 0;
+  await l.releaseIfIdle();
   assert.equal(l.isListening, false, "nothing published — the port must be released");
 
   // And the port really is free again: a fresh listener can take it.
@@ -81,13 +91,51 @@ test("releaseIfIdle(0) closes the port; releaseIfIdle(n>0) keeps it", async () =
 test("re-binds after a release, so publishing again still works", async () => {
   const { l, opened } = listener("127.0.0.1");
   await l.ensureOrigin();
-  await l.releaseIfIdle(0);
+  await l.releaseIfIdle();
 
   const again = await l.ensureOrigin();
   assert.ok(again, "a later publish must be able to bind again");
   assert.equal(l.isListening, true);
   assert.equal(opened.length, 2, "a new server object per bind");
   await l.close();
+});
+
+// Every published URL names a port. A release that took a FRESH port on the next
+// bind killed every URL a phone was still holding, even though the doc was
+// re-shared. Asking for the same port back revives them.
+test("a re-bind prefers the port the previous one used", async () => {
+  const { l } = listener("127.0.0.1");
+  const first = await l.ensureOrigin();
+  assert.ok(first);
+  await l.releaseIfIdle();
+  assert.equal(l.isListening, false);
+
+  const second = await l.ensureOrigin();
+  assert.ok(second);
+  assert.equal(second.origin, first.origin, "a URL minted before the release must still resolve");
+  await l.close();
+});
+
+test("a re-bind takes a fresh port when the old one was taken meanwhile", async () => {
+  const { l } = listener("127.0.0.1");
+  const first = await l.ensureOrigin();
+  assert.ok(first);
+  const port = Number(first.origin.split(":").pop());
+  await l.releaseIfIdle();
+
+  // Someone else grabs the port during the window it was free.
+  const squatter = createServer();
+  await new Promise<void>((r) => squatter.listen(port, "127.0.0.1", () => r()));
+
+  try {
+    const second = await l.ensureOrigin();
+    assert.ok(second, "a taken port must not make publish refuse");
+    assert.notEqual(second.origin, first.origin, "it must move, not claim a port it lost");
+    assert.equal(l.isListening, true);
+  } finally {
+    squatter.close();
+    await l.close();
+  }
 });
 
 test("a bind failure degrades loudly: null, not a dead URL (D15)", async () => {
@@ -98,6 +146,7 @@ test("a bind failure degrades loudly: null, not a dead URL (D15)", async () => {
 
   const l = new DocListener({
     bindHost: "127.0.0.1",
+    liveGrants: () => 0,
     createServer,
     attach: () => {},
     port: taken,
@@ -105,6 +154,112 @@ test("a bind failure degrades loudly: null, not a dead URL (D15)", async () => {
   assert.equal(await l.ensureOrigin(), null, "a failed bind must not yield a URL");
   assert.equal(l.isListening, false);
   blocker.close();
+});
+
+// A publish reads the origin and THEN mints the grant that names it. Until that
+// grant exists the count is zero, so a release arriving from another command
+// (docs.grants, docs.unpublish) closed the port under the publish and the user
+// got a URL for a dead socket. A lease must outrank the count.
+test("a release during a lease is deferred, then honoured when the lease ends", async () => {
+  const { l, live } = listener("127.0.0.1");
+
+  const reached = await l.withOrigin(async (reach) => {
+    assert.ok(reach, "the lease must carry a bound origin");
+    // Zero grants, exactly as in the window before the grant is minted.
+    live.grants = 0;
+    await l.releaseIfIdle();
+    assert.equal(l.isListening, true, "a release must not close the port under a publish");
+    // The grant now exists, which is what keeps the port open after the lease.
+    live.grants = 1;
+    return reach.origin;
+  });
+  assert.match(reached, /^http:\/\/127\.0\.0\.1:\d+$/);
+  assert.equal(l.isListening, true, "a live grant keeps the port bound");
+
+  live.grants = 0;
+  await l.releaseIfIdle();
+  assert.equal(l.isListening, false, "the deferred release is not a permanent reprieve");
+});
+
+// Concurrent publishes must not let the FIRST one's exit close the port under the
+// second: the lease count, not a boolean, decides.
+test("overlapping leases keep the port until the last one ends", async () => {
+  const { l, live } = listener("127.0.0.1");
+  let releaseFirst: (() => void) | undefined;
+  const first = l.withOrigin(async () => {
+    await new Promise<void>((r) => (releaseFirst = r));
+  });
+  const second = l.withOrigin(async () => {
+    releaseFirst?.();
+    await first; // the first lease is fully gone before this one checks
+    await l.releaseIfIdle();
+    assert.equal(l.isListening, true, "a second publish still holds the port");
+  });
+  await Promise.all([first, second]);
+
+  live.grants = 0;
+  await l.releaseIfIdle();
+  assert.equal(l.isListening, false);
+});
+
+test("a lease over an unbindable host hands the callback null, not a dead origin", async () => {
+  const { l, opened } = listener(null);
+  const seen = await l.withOrigin(async (reach) => reach);
+  assert.equal(seen, null, "publish must refuse rather than mint a URL");
+  assert.equal(opened.length, 0);
+});
+
+test("a lease that ends with nothing published releases the port it took", async () => {
+  const { l } = listener("127.0.0.1");
+  await l.withOrigin(async (reach) => {
+    assert.ok(reach);
+    // No grant is minted — a refusal after the bind, or a mint that threw.
+  });
+  // The lease end must re-check, or the port stays bound with nothing published
+  // until the next unrelated grant-list read.
+  const deadline = Date.now() + 2_000;
+  while (l.isListening && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(l.isListening, false, "an idle port must not survive its lease");
+});
+
+// A phone that fetched a doc leaves its socket in the keep-alive pool. The
+// release must not wait that socket out: a publish arriving mid-close awaits the
+// close, so a stalled release becomes a stalled share. (Node's `close()` drops
+// pooled sockets for us; this test keeps that guarantee from regressing.)
+test("a release does not wait out a pooled keep-alive socket", async () => {
+  const opened: Server[] = [];
+  const l = new DocListener({
+    bindHost: "127.0.0.1",
+    liveGrants: () => 0,
+    createServer: () => {
+      const s = createServer();
+      opened.push(s);
+      return s;
+    },
+    attach: (s) =>
+      s.on("request", (_req, res) => {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("doc");
+      }),
+  });
+
+  const reach = await l.ensureOrigin();
+  assert.ok(reach);
+  // A real fetch, which leaves the connection pooled exactly as a phone does.
+  const res = await fetch(`${reach.origin}/docs/x/spec.md`);
+  assert.equal(res.status, 200);
+  await res.text();
+  // Let the socket settle into the keep-alive pool. Node classifies a connection
+  // as idle a tick after the last byte, and the case under test is a release
+  // that arrives LATER (an unpublish, or a TTL expiry), not one racing the byte.
+  await new Promise((r) => setTimeout(r, 50));
+
+  const started = Date.now();
+  await l.releaseIfIdle();
+  const took = Date.now() - started;
+
+  assert.equal(l.isListening, false, "the port must actually be released");
+  assert.ok(took < 1_000, `the release must not wait out the keep-alive: took ${took}ms`);
 });
 
 test("close() is idempotent and safe before any bind", async () => {

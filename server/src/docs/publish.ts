@@ -2,14 +2,22 @@
  * makit — SPEC-doc-preview D10/D15: publish one document and produce a URL that works.
  *
  * `publishDoc` validates the document through {@link resolveDocPath} (the same
- * boundary the route uses), then asks an injected `reach()` for a **verified**
+ * boundary the route uses), then asks an injected `withReach()` for a **verified**
  * reachable origin fronting the doc listener. It mints a grant only when there
  * is somewhere real to serve from.
  *
- * Degrade loudly (D15): `reach()` returns a verified origin for the doc
+ * The grant is minted INSIDE the `withReach` callback on purpose. The listener is
+ * released as soon as no grant remains, and a grant that is one line away from
+ * existing still counts as none — so a two-step "read the origin, then mint"
+ * let a concurrent `docs.grants` or `docs.unpublish` close the port under the
+ * publish, which handed the user a URL for a dead socket. Holding the origin for
+ * the whole mint closes that window, and the callback shape means no future
+ * caller can reintroduce it.
+ *
+ * Degrade loudly (D15): the lease hands over a verified origin for the doc
  * listener, or `null` when there is no usable address — in which case we publish
- * NOTHING and hand back a stated reason. `reach` is never invented: it reflects
- * what actually bound, so a publish button can never yield a dead URL.
+ * NOTHING and hand back a stated reason. The origin is never invented: it
+ * reflects what actually bound, so a publish button can never yield a dead URL.
  */
 
 import { resolveDocPath, type DocPathResult } from "./resolve.js";
@@ -38,11 +46,12 @@ export interface DocReach {
 export interface PublishDeps {
   grants: DocGrantStore;
   /**
-   * Establish (or reuse) a verified reachable origin for the doc listener, or
-   * `null` when there is no usable address (publish nothing). Only consulted
-   * once the document has been validated.
+   * Hold a verified reachable origin for the whole of `use`, so the listener
+   * cannot be released between the bind and the grant that names it. `use`
+   * receives `null` when there is no usable address (publish nothing). Only
+   * consulted once the document has been validated.
    */
-  reach: () => Promise<DocReach | null>;
+  withReach: <T>(use: (reach: DocReach | null) => Promise<T>) => Promise<T>;
   /** Injected for tests; defaults to {@link resolveDocPath}. */
   resolveDoc?: (worktreeRoot: string, relPath: string) => DocPathResult;
 }
@@ -62,34 +71,38 @@ export async function publishDoc(
 
   // Only now probe reachability — an invalid doc must never spawn `tailscale`.
   // A probe that throws (bind failure, spawn error) is a refusal with a reason,
-  // not an unhandled rejection escaping into the command router.
-  let reach: DocReach | null;
+  // not an unhandled rejection escaping into the command router. A failure from
+  // inside the callback is NOT a reach failure, so `held` keeps the two apart
+  // rather than relabelling a mint fault as an address fault.
+  let held = false;
   try {
-    reach = await deps.reach();
+    return await deps.withReach(async (reach) => {
+      held = true;
+      if (reach === null) {
+        return {
+          ok: false,
+          reason:
+            "no reachable address: makit is loopback-only. Start Tailscale and try again.",
+        };
+      }
+
+      const relPath = resolved.relPath;
+      const grant = deps.grants.mint({
+        worktreePath: input.worktreePath,
+        relPath,
+        reach: reach.reach,
+        ownerDeviceId: input.ownerDeviceId,
+        buildUrl: (grantId) => `${reach.origin}/docs/${grantId}/${encodePath(relPath)}`,
+      });
+      return { ok: true, grant };
+    });
   } catch (err) {
-    return { ok: false, reason: `could not establish a reachable address: ${(err as Error).message}` };
-  }
-  if (reach === null) {
+    if (held) throw err;
     return {
       ok: false,
-      reason:
-        "no reachable address: makit is loopback-only. Start Tailscale and try again.",
+      reason: `could not establish a reachable address: ${(err as Error).message}`,
     };
   }
-  // Bind the narrowed value to a `const` so the `buildUrl` closure below does not
-  // rely on TS's version-specific narrowing of a `let` captured after its last
-  // assignment.
-  const reached = reach;
-
-  const relPath = resolved.relPath;
-  const grant = deps.grants.mint({
-    worktreePath: input.worktreePath,
-    relPath,
-    reach: reached.reach,
-    ownerDeviceId: input.ownerDeviceId,
-    buildUrl: (grantId) => `${reached.origin}/docs/${grantId}/${encodePath(relPath)}`,
-  });
-  return { ok: true, grant };
 }
 
 /**

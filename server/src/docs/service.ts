@@ -38,8 +38,12 @@ export interface DocsServiceDeps {
   /** `run`-shaped exec for the merge-base `changed` diff (D5). */
   exec: Exec;
   grants: DocGrantStore;
-  /** Establish/reuse a verified reachable origin for the doc listener (D10/D15). */
-  reach: () => Promise<DocReach | null>;
+  /**
+   * Hold a verified reachable origin for the doc listener for the whole of `use`
+   * (D10/D15), so the port cannot be released between the bind and the grant
+   * that names it.
+   */
+  withReach: <T>(use: (reach: DocReach | null) => Promise<T>) => Promise<T>;
   /**
    * Called after anything that can leave the grant set empty (a revoke, or a
    * list that reaped the last expired grant). `server.ts` uses it to release the
@@ -258,7 +262,7 @@ export class DocsService implements DocsCommandPort {
   publish(worktreePath: string, relPath: string, ownerDeviceId?: string): Promise<PublishResult> {
     return publishDoc(
       { worktreePath, relPath, ownerDeviceId },
-      { grants: this.deps.grants, reach: this.deps.reach },
+      { grants: this.deps.grants, withReach: this.deps.withReach },
     );
   }
 

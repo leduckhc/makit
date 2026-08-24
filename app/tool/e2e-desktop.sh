@@ -6,6 +6,13 @@ set -euo pipefail
 # the real macOS desktop app against it (integration_test/desktop/). Counterpart
 # to tool/e2e.sh, which does the mobile WS stack on an iOS simulator.
 #
+# RUN THIS IN THE BACKGROUND. The macOS app build is slow every time.
+# A foreground run blocks the caller until it exits or is killed.
+# Start a background process instead:
+#
+#   nohup ./app/tool/e2e-desktop.sh > /tmp/e2e-desktop.log 2>&1 &
+#   # then poll: tail -5 /tmp/e2e-desktop.log
+#
 # macOS-only: the desktop control app is the `Platform.isMacOS` branch of
 # main.dart, so the harness targets the `macos` device, not a simulator.
 

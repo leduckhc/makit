@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Full-stack mobile WS e2e on an iOS simulator (StubAdapter — no API key).
+# Counterpart to tool/e2e-desktop.sh, which does the macOS control plane.
+#
+# RUN THIS IN THE BACKGROUND. It needs an Xcode build and a simulator boot.
+# A cold run needs many minutes. A warm run also needs minutes.
+# A foreground run blocks the agent's tool call until it exits or is killed.
+# Start a background process instead:
+#
+#   nohup ./app/tool/e2e.sh --mode=stub > /tmp/e2e.log 2>&1 &
+#   # then poll: tail -5 /tmp/e2e.log
+#
+# The same applies to tool/e2e-desktop.sh and to `cd server && pnpm test`
+# (~5.5 min). While iterating, prefer the one affected test file.
+
 MODE="stub"
 while [[ $# -gt 0 ]]; do
   case "$1" in

@@ -40,7 +40,7 @@ function makeService(overrides: {
     listWorktrees: overrides.listWorktrees ?? (() => [{ worktreePath: "/wt", baseBranch: "main", currentBranch: "feat" }]),
     exec: overrides.exec ?? (async () => ({ code: 0, stdout: "", stderr: "" })),
     grants,
-    reach: async () => ({ origin: "http://100.92.14.7:53187", reach: "tailnet" }),
+    withReach: (use) => use({ origin: "http://100.92.14.7:53187", reach: "tailnet" }),
     scan: overrides.scan ?? defaultScan,
     changedPaths: overrides.changed ?? (async () => new Set<string>()),
     onSnapshot: (s) => snapshots.push(s),
@@ -308,7 +308,7 @@ test("a re-index picks up worktrees that only appeared after the first scan", as
     listWorktrees: () => worktrees,
     exec: (async () => ({ code: 1, stdout: "", stderr: "" })) as Exec,
     grants: new DocGrantStore(),
-    reach: async () => null,
+    withReach: (use) => use(null),
     now: () => 1,
     onSnapshot: (s) => snapshots.push(s),
     setTimer: (fn) => {

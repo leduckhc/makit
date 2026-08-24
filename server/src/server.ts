@@ -39,6 +39,7 @@ import type {
   SessionDTO,
   PortKillTarget,
   ForwardGrantDTO,
+  DocsSnapshotDTO,
 } from "./protocol.js";
 import { PROTOCOL_VERSION, newId } from "./protocol.js";
 import { decodeFrame, encodeFrame, WireErrorCode } from "./protocol/codec.js";
@@ -104,6 +105,11 @@ import {
 import { loadHistory, saveHistory, historyFile } from "./ports/history_store.js";
 import { PortHealthProbe, createNetConnector } from "./ports/health.js";
 import { tailnetAddressFromBindHost } from "./ports/attribute.js";
+import { DocsService, type DocWorktree } from "./docs/service.js";
+import { DocGrantStore } from "./docs/grants.js";
+import { attachDocRoute, attachDocNotFound } from "./docs/route.js";
+import { DocListener } from "./docs/listener.js";
+import type { DocReach } from "./docs/publish.js";
 import { run as execRun } from "./git.js";
 import { stat as fsStat } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
@@ -335,11 +341,115 @@ export function startWsServer(opts: ServerOpts) {
     return null;
   };
 
+  // -------- docs index + publish (SPEC-doc-preview) -----------------------
+  //
+  // Restored after #159 replaced this block with a stub. Everything below
+  // already existed under `src/docs/`, fully unit-tested — only the wiring that
+  // builds it was lost, which made every client see an empty index and hid the
+  // app's own entry points (they render nothing when a worktree owns no docs).
+  //
+  // Worktrees to index, with the two branches the merge-base `changed` diff
+  // needs (D5), from the CACHED git-only repos snapshot — never a git shell-out
+  // per walk, exactly like the ports scanner's worktree source.
+  const listDocWorktrees = (): DocWorktree[] => {
+    const out: DocWorktree[] = [];
+    for (const repo of lastGitOnlyRepos ?? [])
+      for (const wt of repo.worktrees)
+        out.push({
+          worktreePath: wt.path,
+          baseBranch: repo.defaultBranch,
+          currentBranch: wt.branch,
+        });
+    return out;
+  };
+
+  // D10 rev 2: a SEPARATE plain-HTTP listener for published docs — never the
+  // pinned WSS listener, never `0.0.0.0`. It is bound LAZILY on the first
+  // publish and released once nothing is published, so makit holds no routable
+  // port open for a feature you are not using.
+  //
+  // Tailnet only: the capability lives in the URL path (D9), and rev 2 dropped
+  // the LAN fallback rather than let that capability cross a network WireGuard
+  // is not encrypting. No tailnet address ⇒ publish refuses with a reason (D15).
+  const docGrants = new DocGrantStore();
+  const docListener = new DocListener({
+    bindHost: tailnetAddressFromBindHost(host),
+    // Read at decision time, not handed over: `list()` also reaps expired and
+    // idle grants on the way through, so the release always sees the truth.
+    liveGrants: () => docGrants.list().length,
+    attach: (server) => {
+      attachDocRoute(server, { grants: docGrants });
+      // Dedicated listener: nothing else answers, so unmatched paths (Safari's
+      // /favicon.ico, a probe of /) must 404 rather than hang the socket.
+      attachDocNotFound(server);
+    },
+  });
+  // Publishes reach the origin ONLY through a lease, so a release arriving from
+  // another command cannot close the port between the bind and the grant that
+  // names it (that handed back a URL nothing would ever answer).
+  const withDocReach = <T>(use: (reach: DocReach | null) => Promise<T>): Promise<T> =>
+    docListener.withOrigin(use);
+  // Release the port once no grant remains. There is no expiry reaper of its
+  // own: `onGrantsChanged` fires only from `DocsService.unpublish()` and
+  // `DocsService.grants()`, and expired/idle grants are reaped lazily on the way
+  // through `grants.list()`. So the listener stays bound while live grants
+  // remain, and a grant that merely expired frees the port on the NEXT
+  // grant-list or unpublish request rather than the instant its TTL passes.
+  const releaseDocsIfIdle = (): void => {
+    void docListener.releaseIfIdle();
+  };
+
+  // Typed with the DTO, not `unknown`: the producer and the shape the app decodes
+  // must not drift apart (the wire protocol is the real API).
+  const emitDocsSnapshot = (snapshot: DocsSnapshotDTO): OutgoingFrame => ({
+    t: "event",
+    id: newId("docs"),
+    kind: "docs.snapshot",
+    snapshot,
+  });
+  const docsService = new DocsService({
+    listWorktrees: listDocWorktrees,
+    exec: execRun,
+    grants: docGrants,
+    withReach: withDocReach,
+    onGrantsChanged: releaseDocsIfIdle,
+    onSnapshot: (snapshot) => {
+      const frame = emitDocsSnapshot(snapshot);
+      for (const c of clients.values()) if (c.authed && c.watchingDocs) c.send(frame);
+    },
+    now: () => Date.now(),
+    // One-shot debounce, NOT a cadence: docs re-index only on a worktree change.
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (h) => clearTimeout(h as NodeJS.Timeout),
+  });
+  https.on("close", () => {
+    docsService.stop();
+    void docListener.close();
+  });
+
+  const countDocsWatchers = (): number => {
+    let n = 0;
+    for (const c of clients.values()) if (c.authed && c.watchingDocs) n++;
+    return n;
+  };
+  // Recompute after a `docs.watch` toggle or a socket close: the 0→1 edge runs
+  // one immediate walk, the 1→0 edge cancels any pending debounce.
+  const recomputeDocsWatchers = (): void => docsService.setWatchers(countDocsWatchers());
+  const sendDocsSnapshot = (client: WsClient): void => {
+    const cached = docsService.cachedSnapshot();
+    if (cached !== undefined) client.send(emitDocsSnapshot(cached));
+  };
+
   // Watch each project's git worktrees so a `git worktree add`/`remove` done
   // outside makit pushes a fresh repos.snapshot instead of waiting for the
   // next client reconnect. Kept in sync with the project set inside
   // broadcastReposSnapshot; closed when the listeners shut down.
-  const worktreeWatcher = watchWorktrees(() => void broadcastReposSnapshot());
+  const worktreeWatcher = watchWorktrees(() => {
+    void broadcastReposSnapshot();
+    // Same trigger drives the doc re-index (debounced 400ms inside the service);
+    // no polling loop of its own (D11).
+    docsService.onWorktreeChange();
+  });
   worktreeWatcher.sync(manager.listProjects().map((p) => p.path));
   https.on("close", () => worktreeWatcher.close());
 
@@ -712,12 +822,6 @@ export function startWsServer(opts: ServerOpts) {
     const cached = portsService.cachedSnapshot();
     if (cached !== undefined) client.send(emitPortsSnapshot(cached));
   };
-  // Stubs for docs watcher — not yet implemented in CLI branch
-  const recomputeDocsWatchers = (): void => {};
-  const sendDocsSnapshot = (client: WsClient): void => {
-    client.send({ t: "event", kind: "docs.snapshot", docs: [] });
-  };
-  const docsService = { snapshot: () => [] } as any;
 
   // -------- collaborators -------------------------------------------------
 
@@ -851,6 +955,10 @@ export function startWsServer(opts: ServerOpts) {
       // ports popover open never sends `ports.watch {on:false}`.
       state.watchingPorts = false;
       recomputePortsWatchers();
+      // SPEC-doc-preview: same leak guard for the doc index — a window killed
+      // with the Docs screen open never sends `docs.watch {on:false}`.
+      state.watchingDocs = false;
+      recomputeDocsWatchers();
       // SPEC-ports-forward D3: revoke this device's forward grants. A `browser:true` grant
       // resolves on its id alone, so without this the URL would keep working for
       // up to its TTL after the device that asked for it went away — and the
@@ -1039,6 +1147,13 @@ export function startWsServer(opts: ServerOpts) {
       // enrichment (which may reject or never resolve) — attribution must work
       // regardless of `gh` health (finding 27).
       lastGitOnlyRepos = gitOnly;
+      // The doc index is keyed off this worktree list, so it must re-walk when the
+      // list first arrives or changes. Without this the common case is an EMPTY
+      // Docs screen that never recovers: the app sends `docs.watch {on:true}`
+      // from the home screen's initState, which lands BEFORE the first
+      // `repos.snapshot`, so the 0→1 scan sees no worktrees and nothing else
+      // ever triggers a re-index. Debounced inside the service (D11).
+      docsService.onWorktreeChange();
       emit(preserveLastKnownPrs(gitOnly));
     } catch (e) {
       if (generation === reposSnapshotGeneration) {

@@ -34,6 +34,12 @@ export interface DocListenerDeps {
   createServer?: () => Server;
   /** Install the doc route (and its terminating 404) on a freshly-made server. */
   attach: (server: Server) => void;
+  /**
+   * How many grants are live RIGHT NOW. Read at the moment a release is decided,
+   * never passed in: a count handed over by a caller can already be stale by the
+   * time the decision is made, and the whole point of the decision is truth.
+   */
+  liveGrants: () => number;
   /** Fixed port, for tests that need a predictable bind failure. 0 = ephemeral. */
   port?: number;
 }
@@ -54,6 +60,23 @@ export class DocListener {
    * shutting down — two live listeners, the opposite of what `close` promises.
    */
   private closing: Promise<void> | undefined;
+  /**
+   * Publishes holding the origin open. A publish reads the origin and then mints
+   * the grant that names it, and until that grant exists the grant count is
+   * zero — so an idle release from another command (`docs.grants`,
+   * `docs.unpublish`) would close the port UNDER the publish and hand the user a
+   * URL for a dead socket. Nothing repairs such a URL: releases only ever close,
+   * and the next bind takes a fresh ephemeral port. So a release waits for the
+   * last lease to end. See {@link withOrigin}.
+   */
+  private leases = 0;
+  /**
+   * The port the last bind used, preferred by the next one. Every URL handed out
+   * names a port, and a release/rebind cycle used to take a FRESH ephemeral port,
+   * so any link still in a phone's hands died the moment the port was released.
+   * Asking for the same port again revives those links instead.
+   */
+  private lastPort: number | undefined;
   private readonly deps: DocListenerDeps;
 
   constructor(deps: DocListenerDeps) {
@@ -87,29 +110,67 @@ export class DocListener {
     return this.binding;
   }
 
+  /**
+   * Hold the origin for the whole of `use`, so no release can close the port
+   * between the bind and the grant that names it. `use` receives what
+   * {@link ensureOrigin} returned, including `null` when nothing could bind.
+   *
+   * This is the ONLY way the publish path reaches an origin, which is what makes
+   * the guarantee structural: a grant cannot be minted outside a lease, because
+   * the address needed to build its URL is not reachable outside one.
+   */
+  async withOrigin<T>(use: (reach: DocReach | null) => Promise<T>): Promise<T> {
+    this.leases += 1;
+    try {
+      return await use(await this.ensureOrigin());
+    } finally {
+      this.leases -= 1;
+      // A release refused while this lease was held never came back. Re-check on
+      // the way out, or a publish that bound a port and then minted no grant
+      // leaves it bound with nothing published. Fire-and-forget: a publish must
+      // not wait for a socket teardown to answer the client.
+      if (this.leases === 0) void this.releaseIfIdle();
+    }
+  }
+
   private async bindOnce(host: string): Promise<DocReach | null> {
     const server = (this.deps.createServer ?? defaultCreateServer)();
     this.deps.attach(server);
 
-    const port = await bind(server, this.deps.port ?? 0, host);
+    // Prefer the port the previous bind used, so URLs minted before a release
+    // still resolve. A fixed `deps.port` (tests) is honoured exactly and never
+    // retried, because those tests assert a bind FAILURE.
+    const preferred = this.deps.port ?? this.lastPort ?? 0;
+    let port = await bind(server, preferred, host);
+    if (port === null && preferred !== 0 && this.deps.port === undefined) {
+      // Something else took the old port while it was free. A fresh port is a
+      // working share with a new URL, which beats refusing to publish at all.
+      port = await bind(server, 0, host);
+    }
     if (port === null) {
       server.close();
       return null;
     }
 
     this.server = server;
+    this.lastPort = port;
     this.origin = { origin: `http://${host}:${port}`, reach: "tailnet" };
     log.info(`[makit] docs listening on ${this.origin.origin} (published docs only)`);
     return this.origin;
   }
 
   /**
-   * Release the port when `liveGrants` is zero. Called after a revoke, and after
+   * Release the port when nothing is published. Called after a revoke, and after
    * any read of the grant list (which reaps expired grants on the way through),
    * so an expiry frees the port without needing a timer of its own.
+   *
+   * A publish in flight (see {@link withOrigin}) defers the release: its grant
+   * does not exist yet, so the count alone cannot tell "nothing is published"
+   * from "the grant is one line away".
    */
-  async releaseIfIdle(liveGrants: number): Promise<void> {
-    if (liveGrants > 0) return;
+  async releaseIfIdle(): Promise<void> {
+    if (this.leases > 0) return;
+    if (this.deps.liveGrants() > 0) return;
     await this.close();
   }
 
@@ -138,6 +199,12 @@ export class DocListener {
     this.server = undefined;
     this.origin = undefined;
     if (server === undefined) return;
+    // `close()` drops sockets that are only being KEPT alive, so a phone's pooled
+    // connection does not hold the port. It does wait for a response still in
+    // flight, and Node classifies a connection as idle a tick AFTER its last
+    // byte, so a release racing that byte waits out `keepAliveTimeout` (5 s).
+    // That bound is accepted: it delays freeing the port, never the correctness
+    // of the next publish, which re-binds after this close.
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 }
