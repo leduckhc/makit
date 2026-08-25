@@ -1,6 +1,8 @@
-// SPEC-docs-scoping-and-board-rework D4 — unscoped with more than one repo,
-// only the repo owning the newest doc stays expanded; the others fold to a
-// counted header, the `_systemExpanded=false` folding precedent from Ports.
+// SPEC-docs-scoping-and-board-rework D8 — the board shows exactly one project.
+// Unscoped, the effective repo is the one owning the newest doc. Another
+// project is never rendered, not even collapsed, and its docs never leak into
+// the Recent group. Switching project is an explicit act through an app-bar
+// menu; the choice is view state.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -48,26 +50,33 @@ RepoInfo _repo(String id, String name, String wtPath) => RepoInfo(
   ],
 );
 
-Future<void> _pump(WidgetTester tester) async {
+Future<void> _pump(WidgetTester tester, {String? repoId}) async {
   // A tall surface so the lazy ListView builds every group header and row; the
-  // folding assertions then read true absence, not merely "below the fold".
+  // absence assertions then read true absence, not merely "below the fold".
   tester.view.physicalSize = const Size(1200, 4000);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
-  // alpha owns the newest doc (mtime 105); beta's docs are older (10, 11) so
-  // they never enter the 5-newest Recent group either.
+  // alpha owns the single newest doc (mtime 1000), so it is the effective
+  // project. beta holds a doc (mtime 999) that is NEWER than alpha's older doc
+  // (mtime 1) — a naive recentDocs(allDocs) would pull it into the top five, so
+  // its absence proves Recent is scoped to the active project, not merely
+  // "not interleaved".
   final snapshot = DocsSnapshot(
     docs: [
-      for (var i = 0; i < 6; i++)
-        _doc(
-          'a$i.md',
-          worktreePath: '/alpha/wt',
-          modifiedAt: 100 + i,
-          title: 'A$i',
-        ),
-      _doc('b0.md', worktreePath: '/beta/wt', modifiedAt: 10, title: 'B0'),
-      _doc('b1.md', worktreePath: '/beta/wt', modifiedAt: 11, title: 'B1'),
+      _doc(
+        'a_new.md',
+        worktreePath: '/alpha/wt',
+        modifiedAt: 1000,
+        title: 'ANew',
+      ),
+      _doc('a_old.md', worktreePath: '/alpha/wt', modifiedAt: 1, title: 'AOld'),
+      _doc(
+        'b_mid.md',
+        worktreePath: '/beta/wt',
+        modifiedAt: 999,
+        title: 'BMid',
+      ),
     ],
     scannedAt: 0,
     scanOk: true,
@@ -89,37 +98,79 @@ Future<void> _pump(WidgetTester tester) async {
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: DocsScreen()),
+      child: MaterialApp(home: DocsScreen(repoId: repoId)),
     ),
   );
   await tester.pump();
 }
 
 void main() {
-  testWidgets('only the repo owning the newest doc is expanded', (
+  // The ONLY navigation to this board in the whole app is
+  // `worktree_docs_sheet.dart:57`, which always passes `?repo=`. So the scoped
+  // case below is the one that ships; an unscoped board is reachable from tests
+  // alone. Without these two cases the project switcher would be dead code on
+  // the phone, which this repo treats as a defect class, not a nicety.
+  testWidgets('the switcher is reachable on a route-scoped board', (
     tester,
   ) async {
-    await _pump(tester);
-    // Both repo headers are present.
-    expect(find.text('ALPHA'), findsOneWidget);
-    expect(find.text('BETA'), findsOneWidget);
-    // alpha is expanded: at least one of its docs shows in its group.
+    await _pump(tester, repoId: 'alpha');
+    expect(find.text('AOld'), findsWidgets);
+    expect(find.text('BMid'), findsNothing);
+    // Non-vacuous: this fails while `_projectMenu` returns SizedBox.shrink()
+    // for any scoped board, which is exactly the shipped path.
     expect(
-      find.byKey(const ValueKey('docs-screen-row-/alpha/wt:a5.md')),
+      find.text('alpha'),
       findsOneWidget,
+      reason: 'a scoped board must still offer the project switcher',
     );
-    // beta is folded: its docs are not built, and are not in Recent either
-    // (they are older than alpha's newest five).
-    expect(find.text('B0'), findsNothing);
-    expect(find.text('B1'), findsNothing);
   });
 
-  testWidgets('tapping the folded header expands it', (tester) async {
-    await _pump(tester);
-    expect(find.text('B0'), findsNothing);
-    await tester.tap(find.text('BETA'));
+  testWidgets('switching away from the route scope swaps the list', (
+    tester,
+  ) async {
+    await _pump(tester, repoId: 'alpha');
+    await tester.tap(find.text('alpha'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('beta').last);
     await tester.pump();
-    expect(find.text('B0'), findsOneWidget);
-    expect(find.text('B1'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 50));
+    // The user's pick must beat `?repo=`, and the invariant must hold after it:
+    // exactly one project on screen, now the other one.
+    expect(find.text('BMid'), findsWidgets);
+    expect(find.text('ANew'), findsNothing);
+    expect(find.text('AOld'), findsNothing);
+    expect(find.text('ALPHA'), findsNothing);
   });
+
+  testWidgets('the board never renders a second project', (tester) async {
+    await _pump(tester);
+    // The active project's docs are present.
+    expect(find.text('ANew'), findsWidgets);
+    expect(find.text('AOld'), findsWidgets);
+    // The other project is never rendered: not its group header, and not its
+    // docs — not even folded, and not leaked into Recent despite mtime 999.
+    expect(find.text('BETA'), findsNothing);
+    expect(find.text('BMid'), findsNothing);
+  });
+
+  testWidgets(
+    'switching project through the app-bar menu swaps the whole list',
+    (tester) async {
+      await _pump(tester);
+      // The menu names the current project.
+      expect(find.text('alpha'), findsOneWidget);
+      // Open the menu and pick the other project.
+      await tester.tap(find.text('alpha'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('beta').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      // The whole list swapped: the first project's docs are absent, the second
+      // project's docs are present.
+      expect(find.text('ANew'), findsNothing);
+      expect(find.text('AOld'), findsNothing);
+      expect(find.text('ALPHA'), findsNothing);
+      expect(find.text('BMid'), findsWidgets);
+    },
+  );
 }

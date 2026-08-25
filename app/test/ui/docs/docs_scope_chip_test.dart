@@ -121,20 +121,25 @@ void main() {
     expect(find.text('Docs · feat/a'), findsNothing);
   });
 
-  testWidgets('scoped: "This repo" is present and pre-selected', (
+  testWidgets('scoped: no "This repo" chip; "All" is the default (D9)', (
     tester,
   ) async {
+    // D9 dropped the `This repo` chip: the board is always one project, so a
+    // scope chip could only ever be on. `All` now means "all docs in this
+    // project".
     await _pumpScreen(tester, repoId: 'r1');
-    final chip = tester.widget<ChoiceChip>(
-      find.widgetWithText(ChoiceChip, 'This repo'),
+    expect(find.widgetWithText(ChoiceChip, 'This repo'), findsNothing);
+    final all = tester.widget<ChoiceChip>(
+      find.widgetWithText(ChoiceChip, 'All 1'),
     );
-    expect(chip.selected, isTrue);
+    expect(all.selected, isTrue);
   });
 
-  testWidgets('unscoped: the "This repo" chip is absent', (tester) async {
+  testWidgets('unscoped: no "This repo" chip; "All" is the default (D9)', (
+    tester,
+  ) async {
     await _pumpScreen(tester);
     expect(find.widgetWithText(ChoiceChip, 'This repo'), findsNothing);
-    // And "All" is the selected default.
     final all = tester.widget<ChoiceChip>(
       find.widgetWithText(ChoiceChip, 'All 1'),
     );

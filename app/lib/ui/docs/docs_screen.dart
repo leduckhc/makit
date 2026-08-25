@@ -5,11 +5,13 @@
 /// Changed with counts), and a repo → worktree grouped list with the branch
 /// chip and the coloured left border, mtime-descending within a worktree (D5).
 ///
-/// Scope (SPEC-docs-scoping-and-board-rework D3): [DocsScreen.repoId], set via
-/// `?repo=<id>`, pre-selects the *This repo* filter, exactly like
-/// `ports_screen.dart`. A `Recent` group leads the board (D5), and unscoped
-/// with more than one repo only the repo owning the newest doc stays expanded
-/// (D4).
+/// Scope (SPEC-docs-scoping-and-board-rework D8): the board shows exactly one
+/// project. The effective repo is [DocsScreen.repoId] (from `?repo=<id>`) when
+/// set, else the repo owning the newest doc. Every list on screen — `Recent`,
+/// the worktree groups, and the chip counts — is drawn from that project alone;
+/// another project is never rendered. Switching project is an explicit act
+/// through an app-bar menu; the choice is view state and is never persisted.
+/// A `Recent` group leads the board (D5).
 ///
 /// Watch-gating (D11): it holds the ref-counted `docs.watch` while mounted
 /// (armed in [initState], released in [dispose]) so the index walks only while
@@ -49,32 +51,90 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
   // initState, the documented trap).
   late final DocsWatch _docsWatch = ref.read(docsWatchProvider);
 
-  // Scoped entry pre-selects *This repo*; unscoped starts on *All* — the
-  // `ports_screen.dart` rule.
-  late DocsFilter _filter = widget.repoId != null
-      ? DocsFilter.thisRepo
-      : DocsFilter.all;
+  // The filter always starts on *All* — under D8 the board is one project, so
+  // *All* means "all docs in this project" (D9). There is no scope chip.
+  DocsFilter _filter = DocsFilter.all;
   String _query = '';
 
-  /// User overrides of a repo group's fold state (D4). Absent means "use the
-  /// default": only the repo owning the newest doc is open.
-  final Map<String, bool> _repoExpandedOverride = {};
+  /// The project the user picked from the app-bar menu (D8), or null to use the
+  /// default (the repo owning the newest doc). View state only; never
+  /// persisted, and ignored when [DocsScreen.repoId] scopes the route.
+  String? _selectedRepoId;
+
+  // Scope cache: the projects that own docs and the default project both depend
+  // only on the snapshot + repo-set identity, not on the query or filter, so
+  // they must not be recomputed per keystroke.
+  DocsSnapshot? _scopeSnapshot;
+  ReposState? _scopeRepos;
+  List<RepoDocGroup> _projectsWithDocs = const [];
+  String? _defaultRepoId;
 
   DocsSnapshot? _countsSnapshot;
   ReposState? _countsRepos;
+  String? _countsRepoId;
   Map<DocsFilter, int> _countsCache = const {};
   String _subtitleCache = '';
 
+  /// Recompute the project set and the default project when the snapshot or the
+  /// repo set changes identity. Grouping the whole snapshot is O(docs), so it
+  /// rides the same identity cache the counts use.
+  void _recomputeScope(DocsSnapshot? snapshot, ReposState repos) {
+    if (identical(snapshot, _scopeSnapshot) && identical(repos, _scopeRepos)) {
+      return;
+    }
+    _scopeSnapshot = snapshot;
+    _scopeRepos = repos;
+    final grouping = snapshot == null
+        ? const DocsGrouping(repos: [])
+        : groupDocsByRepoWorktree(snapshot.docs, repos);
+    _projectsWithDocs = grouping.repos;
+    _defaultRepoId = repoIdOwningNewestDoc(grouping);
+  }
+
+  /// The one project the board shows (D8): the route scope wins; else the
+  /// user's menu pick, if it still owns docs; else the repo owning the newest
+  /// doc.
+  /// The project the board renders (D8). The user's menu pick wins, then the
+  /// route scope (`?repo=`), then the repo owning the newest doc.
+  ///
+  /// The pick must outrank the route: the only navigation here
+  /// (`worktree_docs_sheet.dart`) always passes `?repo=`, so if the route won,
+  /// the switcher could never change anything in the shipped app.
+  String? _effectiveRepoId() {
+    if (_selectedRepoId != null &&
+        _projectsWithDocs.any((r) => r.repoId == _selectedRepoId)) {
+      return _selectedRepoId;
+    }
+    if (widget.repoId != null) return widget.repoId;
+    return _defaultRepoId;
+  }
+
   /// [docsFilterCounts] walks every doc; the result changes only when the
-  /// snapshot or the repo set does. Recomputing it per rebuild made each
-  /// keystroke O(docs). The subtitle rides the same identity cache.
-  Map<DocsFilter, int> _countsFor(DocsSnapshot? snapshot, ReposState repos) {
+  /// snapshot, the repo set, or the effective project changes. Recomputing it
+  /// per rebuild made each keystroke O(docs). The subtitle rides the same
+  /// identity cache.
+  Map<DocsFilter, int> _countsFor(
+    DocsSnapshot? snapshot,
+    ReposState repos,
+    String? effectiveRepoId,
+  ) {
     if (!identical(snapshot, _countsSnapshot) ||
-        !identical(repos, _countsRepos)) {
+        !identical(repos, _countsRepos) ||
+        effectiveRepoId != _countsRepoId) {
       _countsSnapshot = snapshot;
       _countsRepos = repos;
-      _countsCache = docsFilterCounts(snapshot, repos, repoId: widget.repoId);
-      _subtitleCache = snapshot == null ? '' : _subtitle(snapshot);
+      _countsRepoId = effectiveRepoId;
+      _countsCache = docsFilterCounts(snapshot, repos, repoId: effectiveRepoId);
+      _subtitleCache = snapshot == null
+          ? ''
+          : _subtitle(
+              filterDocs(
+                snapshot,
+                DocsFilter.all,
+                repos,
+                repoId: effectiveRepoId,
+              ),
+            );
     }
     return _countsCache;
   }
@@ -97,9 +157,11 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
   Widget build(BuildContext context) {
     final snapshot = ref.watch(docsProvider);
     final repos = ref.watch(reposProvider);
-    // Counts describe the whole snapshot, not the query, so they must not be
-    // recomputed on every keystroke — memoised against the snapshot identity.
-    final counts = _countsFor(snapshot, repos);
+    _recomputeScope(snapshot, repos);
+    final effectiveRepoId = _effectiveRepoId();
+    // Counts describe the active project, not the query, so they must not be
+    // recomputed on every keystroke — memoised against the identity triple.
+    final counts = _countsFor(snapshot, repos, effectiveRepoId);
 
     return Scaffold(
       appBar: AppBar(
@@ -117,6 +179,7 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
               ),
           ],
         ),
+        actions: [_projectMenu(context, effectiveRepoId)],
         leading: IconButton(
           icon: const Icon(PhosphorIconsLight.arrowLeft),
           onPressed: () => Navigator.of(context).maybePop(),
@@ -129,26 +192,92 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
           _FilterRow(
             filter: _filter,
             counts: counts,
-            showThisRepo: widget.repoId != null,
             onChanged: (f) => setState(() => _filter = f),
           ),
           const Divider(height: 1),
-          Expanded(child: _body(context, snapshot, repos)),
+          Expanded(child: _body(context, snapshot, repos, effectiveRepoId)),
         ],
       ),
     );
   }
 
-  String _subtitle(DocsSnapshot snapshot) {
-    final files = snapshot.docs.length;
-    final worktrees = snapshot.docs.map((d) => d.worktreePath).toSet().length;
-    final changed = snapshot.docs.where((d) => d.changed == true).length;
+  /// The app-bar project switcher (D8). It names the active project and lists
+  /// every project that owns docs.
+  ///
+  /// It shows on a route-scoped board too. Every navigation here passes
+  /// `?repo=`, so gating it on an unscoped board left it unreachable in the
+  /// shipped app — a dead surface, and the user still needs a way to the other
+  /// project's docs without backing out through two screens. Hidden only when
+  /// one project owns docs, where there is nothing to switch to.
+  Widget _projectMenu(BuildContext context, String? effectiveRepoId) {
+    if (_projectsWithDocs.length < 2) {
+      return const SizedBox.shrink();
+    }
+    String? active;
+    for (final repo in _projectsWithDocs) {
+      if (repo.repoId == effectiveRepoId) {
+        active = repo.repoName;
+        break;
+      }
+    }
+    final theme = Theme.of(context);
+    return PopupMenuButton<String>(
+      tooltip: 'Switch project',
+      onSelected: (id) => setState(() => _selectedRepoId = id),
+      itemBuilder: (context) => [
+        for (final repo in _projectsWithDocs)
+          PopupMenuItem<String>(
+            value: repo.repoId,
+            child: Row(
+              children: [
+                Icon(
+                  repo.repoId == effectiveRepoId
+                      ? PhosphorIconsLight.check
+                      : PhosphorIconsLight.folder,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: kSpace8),
+                Text(repo.repoName),
+              ],
+            ),
+          ),
+      ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: kSpace12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                active ?? 'Project',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelLarge,
+              ),
+            ),
+            const Icon(PhosphorIconsLight.caretDown, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _subtitle(List<DocInfo> docs) {
+    final files = docs.length;
+    final worktrees = docs.map((d) => d.worktreePath).toSet().length;
+    final changed = docs.where((d) => d.changed == true).length;
     final f = files == 1 ? '1 file' : '$files files';
     final w = worktrees == 1 ? '1 worktree' : '$worktrees worktrees';
     return '$f · $w · $changed changed';
   }
 
-  Widget _body(BuildContext context, DocsSnapshot? snapshot, ReposState repos) {
+  Widget _body(
+    BuildContext context,
+    DocsSnapshot? snapshot,
+    ReposState repos,
+    String? effectiveRepoId,
+  ) {
     // No frame yet: the watch was just armed; show a spinner rather than claim
     // "no docs" before the first snapshot lands.
     if (snapshot == null) {
@@ -158,7 +287,7 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
       snapshot,
       _filter,
       repos,
-      repoId: widget.repoId,
+      repoId: effectiveRepoId,
       query: _query,
     );
     final grouping = groupDocsByRepoWorktree(visible, repos);
@@ -166,8 +295,8 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
-    // Docs that survived D6 (their worktree is active), flattened so the Recent
-    // group never lists a dead link.
+    // Every doc on screen belongs to the one active project (D8), flattened so
+    // the Recent group never lists a dead link and never a foreign project.
     final groupedDocs = [
       for (final repo in grouping.repos)
         for (final wt in repo.worktrees) ...wt.docs,
@@ -175,14 +304,6 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
     // D5: the doc you want is the one you just made — recency answers *which*,
     // above the grouping that answers *where*.
     final recent = recentDocs(groupedDocs);
-
-    // D4: unscoped with more than one repo, only the repo owning the newest doc
-    // stays open; the rest fold to a counted header — the `_systemExpanded`
-    // folding precedent from `ports_screen.dart`.
-    final foldingActive = widget.repoId == null && grouping.repos.length > 1;
-    final defaultOpenId = foldingActive
-        ? repoIdOwningNewestDoc(grouping)
-        : null;
 
     // Flatten the tree into a single builder list so a large aggregate builds
     // only the visible rows, the same laziness the popover enforces.
@@ -204,40 +325,26 @@ class _DocsScreenState extends ConsumerState<DocsScreen> {
     }
 
     for (final repo in grouping.repos) {
-      final expanded =
-          !foldingActive ||
-          (_repoExpandedOverride[repo.repoId] ??
-              (repo.repoId == defaultOpenId));
       items.add(
         () => _GroupHeader(
           title: repo.repoName,
           count: repo.worktrees.fold(0, (a, w) => a + w.docs.length),
-          // A caret only when folding is active; a scoped or single-repo board
-          // has nothing to fold.
-          folded: foldingActive ? !expanded : null,
-          onTap: foldingActive
-              ? () => setState(
-                  () => _repoExpandedOverride[repo.repoId] = !expanded,
-                )
-              : null,
         ),
       );
-      if (expanded) {
-        for (final wt in repo.worktrees) {
+      for (final wt in repo.worktrees) {
+        items.add(
+          () => _WorktreeHeader(branch: wt.branch, count: wt.docs.length),
+        );
+        for (final doc in wt.docs) {
           items.add(
-            () => _WorktreeHeader(branch: wt.branch, count: wt.docs.length),
+            () => DocRow(
+              key: ValueKey('docs-screen-row-${doc.key}'),
+              doc: doc,
+              nowMs: nowMs,
+              onTap: () => _open(doc),
+              pathStyle: DocPathStyle.absolute,
+            ),
           );
-          for (final doc in wt.docs) {
-            items.add(
-              () => DocRow(
-                key: ValueKey('docs-screen-row-${doc.key}'),
-                doc: doc,
-                nowMs: nowMs,
-                onTap: () => _open(doc),
-                pathStyle: DocPathStyle.absolute,
-              ),
-            );
-          }
         }
       }
     }
@@ -300,31 +407,24 @@ class _SearchField extends StatelessWidget {
   }
 }
 
-/// The filter chip row (All / This repo / Markdown / Pages / Changed), each
-/// kind chip carrying its count. *This repo* only appears when the board was
-/// entered with a repo (`?repo=<id>`) — without one there is no repo to filter
-/// to, so the chip would be a dead affordance (the `ports_screen.dart` rule).
+/// The filter chip row (All / Markdown / Pages / Changed), each carrying its
+/// count. Under D8 the board is always one project, so `All` means "all docs
+/// in this project" and there is no scope chip (D9).
 class _FilterRow extends StatelessWidget {
   const _FilterRow({
     required this.filter,
     required this.counts,
-    required this.showThisRepo,
     required this.onChanged,
   });
 
   final DocsFilter filter;
   final Map<DocsFilter, int> counts;
-  final bool showThisRepo;
   final ValueChanged<DocsFilter> onChanged;
 
   @override
   Widget build(BuildContext context) {
     final chips = <Widget>[
       _chip('All', DocsFilter.all),
-      // No count on *This repo*: it is a scope, not a bucket to eyeball — the
-      // same choice `ports_screen.dart` makes for its *This repo* chip.
-      if (showThisRepo)
-        _chip('This repo', DocsFilter.thisRepo, showCount: false),
       _chip('Markdown', DocsFilter.markdown),
       _chip('Pages', DocsFilter.pages),
       _chip('Changed', DocsFilter.changed),
@@ -344,36 +444,27 @@ class _FilterRow extends StatelessWidget {
     );
   }
 
-  Widget _chip(String label, DocsFilter value, {bool showCount = true}) =>
-      ChoiceChip(
-        // The count rides inside the label so a screen reader reads one string
-        // ("Markdown 27"), not a decorative badge read separately.
-        label: Text(showCount ? '$label ${counts[value] ?? 0}' : label),
-        selected: filter == value,
-        onSelected: (_) => onChanged(value),
-      );
+  Widget _chip(String label, DocsFilter value) => ChoiceChip(
+    // The count rides inside the label so a screen reader reads one string
+    // ("Markdown 27"), not a decorative badge read separately.
+    label: Text('$label ${counts[value] ?? 0}'),
+    selected: filter == value,
+    onSelected: (_) => onChanged(value),
+  );
 }
 
-/// A repo section header (mirrors ports_screen's `_GroupHeader`). [folded] is
-/// null for a plain, non-foldable header; non-null draws a caret and states
-/// which way it points, so the unscoped multi-repo board can fold the repos it
-/// does not open by default (D4).
+/// A repo section header (mirrors ports_screen's `_GroupHeader`). Under D8 the
+/// board shows one project, so a section header no longer folds — it is a plain
+/// label with a count.
 class _GroupHeader extends StatelessWidget {
-  const _GroupHeader({
-    required this.title,
-    required this.count,
-    this.folded,
-    this.onTap,
-  });
+  const _GroupHeader({required this.title, required this.count});
   final String title;
   final int count;
-  final bool? folded;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final row = Padding(
+    return Padding(
       padding: const EdgeInsets.fromLTRB(16, kSpace16, 16, kSpace4),
       child: Row(
         children: [
@@ -396,26 +487,8 @@ class _GroupHeader extends StatelessWidget {
               color: theme.colorScheme.outline,
             ),
           ),
-          if (folded != null) ...[
-            const SizedBox(width: kSpace4),
-            Icon(
-              folded!
-                  ? PhosphorIconsLight.caretRight
-                  : PhosphorIconsLight.caretDown,
-              size: 14,
-              color: theme.colorScheme.outline,
-            ),
-          ],
         ],
       ),
-    );
-    if (onTap == null) return row;
-    // Semantics: the caret is decorative; the label + state is what a screen
-    // reader needs — the `ports_screen.dart` rule.
-    return Semantics(
-      button: true,
-      expanded: folded == false,
-      child: InkWell(onTap: onTap, child: row),
     );
   }
 }

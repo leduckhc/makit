@@ -94,22 +94,30 @@ void main() {
       expect(r.map((d) => d.relPath), ['docs/plan.md']);
     });
 
-    test('thisRepo keeps only docs whose worktree belongs to repoId', () {
+    test('repoId scopes every filter to that project (D8/D9)', () {
       final scoped = _snap([
         _doc('a.md', worktreePath: '/repo/a'),
         _doc('b.md', worktreePath: '/repo/b'),
         _doc('gone.md', worktreePath: '/elsewhere'),
       ]);
-      final r = filterDocs(scoped, DocsFilter.thisRepo, repos, repoId: 'r1');
-      expect(r.map((d) => d.relPath), ['a.md', 'b.md']);
+      // Scoped to r1: only docs whose worktree belongs to r1 survive.
+      expect(
+        filterDocs(
+          scoped,
+          DocsFilter.all,
+          repos,
+          repoId: 'r1',
+        ).map((d) => d.relPath),
+        ['a.md', 'b.md'],
+      );
+      // Unscoped: filterDocs keeps every doc; the screen always passes the
+      // effective repoId, and grouping later drops any foreign worktree.
+      expect(filterDocs(scoped, DocsFilter.all, repos).map((d) => d.relPath), [
+        'a.md',
+        'b.md',
+        'gone.md',
+      ]);
     });
-
-    test(
-      'thisRepo with no repoId keeps nothing (a dead chip is never shown)',
-      () {
-        expect(filterDocs(_snap(docs), DocsFilter.thisRepo, repos), isEmpty);
-      },
-    );
 
     test('a null snapshot yields no docs, never a fabricated list', () {
       // _DocsScreenState._body relies on this branch to show a waiting state
@@ -185,6 +193,26 @@ void main() {
     test('returns everything when fewer than the limit', () {
       final docs = [_doc('a.md', modifiedAt: 5), _doc('b.md', modifiedAt: 9)];
       expect(recentDocs(docs).map((d) => d.relPath), ['b.md', 'a.md']);
+    });
+
+    test('Recent excludes a newer doc outside the active project (D8)', () {
+      // A doc in a foreign worktree is newer than everything in the active
+      // project. The screen scopes with filterDocs(repoId) before Recent, so a
+      // naive recentDocs over all docs cannot surface it.
+      final snap = _snap([
+        _doc('a1.md', worktreePath: '/repo/a', modifiedAt: 10, title: 'A1'),
+        _doc('a2.md', worktreePath: '/repo/a', modifiedAt: 20, title: 'A2'),
+        _doc(
+          'other.md',
+          worktreePath: '/elsewhere',
+          modifiedAt: 999,
+          title: 'Other',
+        ),
+      ]);
+      final scoped = filterDocs(snap, DocsFilter.all, repos, repoId: 'r1');
+      final recent = recentDocs(scoped);
+      expect(recent.map((d) => d.relPath), ['a2.md', 'a1.md']);
+      expect(recent.map((d) => d.title), isNot(contains('Other')));
     });
   });
 

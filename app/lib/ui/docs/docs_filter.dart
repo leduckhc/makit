@@ -10,14 +10,16 @@ library;
 import '../../store/docs.dart';
 import '../../store/store.dart';
 
-/// The filter chips the screen offers (D6): All / This repo / Markdown / Pages
-/// / Changed. The kind chips read [DocInfo.kind], never a path — a chip must
-/// never be dead in a valid repo. The set mirrors `PortsFilter`.
-enum DocsFilter { all, thisRepo, markdown, pages, changed }
+/// The filter chips the screen offers (D6/D9): All / Markdown / Pages /
+/// Changed. The kind chips read [DocInfo.kind], never a path — a chip must
+/// never be dead in a valid repo. `All` means "all docs in this project":
+/// under D8 the board always shows one project, so a `This repo` chip would be
+/// redundant and is dropped (D9).
+enum DocsFilter { all, markdown, pages, changed }
 
 /// The set of worktree paths that belong to [repoId], or empty when unknown.
-/// *This repo* keeps only docs owned by one of those worktrees (D3), the same
-/// rule `filterPorts` applies for its own *This repo* chip.
+/// The board scopes every filter to one project (D8), the same rule
+/// `filterPorts` applies for its own scoping.
 Set<String> _worktreePathsOf(ReposState repos, String? repoId) {
   if (repoId == null) return const {};
   final repo = repos.byId(repoId);
@@ -25,14 +27,12 @@ Set<String> _worktreePathsOf(ReposState repos, String? repoId) {
   return {for (final w in repo.worktrees) w.path};
 }
 
-bool _matchesFilter(DocInfo d, DocsFilter filter, Set<String> thisRepoPaths) =>
-    switch (filter) {
-      DocsFilter.all => true,
-      DocsFilter.thisRepo => thisRepoPaths.contains(d.worktreePath),
-      DocsFilter.markdown => d.kind == DocKind.md,
-      DocsFilter.pages => d.kind == DocKind.html,
-      DocsFilter.changed => d.changed == true,
-    };
+bool _matchesFilter(DocInfo d, DocsFilter filter) => switch (filter) {
+  DocsFilter.all => true,
+  DocsFilter.markdown => d.kind == DocKind.md,
+  DocsFilter.pages => d.kind == DocKind.html,
+  DocsFilter.changed => d.changed == true,
+};
 
 /// Whether [d] matches a free-text [query], over title AND path.
 ///
@@ -45,10 +45,13 @@ bool docMatchesQuery(DocInfo d, String query) {
       d.relPath.toLowerCase().contains(q);
 }
 
-/// Docs passing [filter] and (when non-empty) [query]. Search matches the title
-/// OR the path, case-insensitively — titles AND paths, never doc bodies (P1
-/// does not do full-text). A null snapshot yields no docs (the screen shows a
-/// waiting/empty state, never a fabricated list).
+/// Docs passing [filter] and (when non-empty) [query], scoped to [repoId] when
+/// set (D8). When [repoId] is null every project's docs pass — the screen
+/// always passes the effective project, so the null case is only for pure
+/// counting. Search matches the title OR the path, case-insensitively — titles
+/// AND paths, never doc bodies (P1 does not do full-text). A null snapshot
+/// yields no docs (the screen shows a waiting/empty state, never a fabricated
+/// list).
 List<DocInfo> filterDocs(
   DocsSnapshot? snapshot,
   DocsFilter filter,
@@ -57,19 +60,20 @@ List<DocInfo> filterDocs(
   String query = '',
 }) {
   if (snapshot == null) return const [];
-  final thisRepoPaths = _worktreePathsOf(repos, repoId);
+  final scopePaths = _worktreePathsOf(repos, repoId);
   return snapshot.docs
       .where(
         (d) =>
-            _matchesFilter(d, filter, thisRepoPaths) &&
+            (repoId == null || scopePaths.contains(d.worktreePath)) &&
+            _matchesFilter(d, filter) &&
             docMatchesQuery(d, query),
       )
       .toList();
 }
 
 /// Count for each filter, independent of the active one — so a chip can show
-/// "Markdown 27" while "All" is selected. The [repoId] feeds the *This repo*
-/// count, which is zero (and its chip hidden) when the board is unscoped.
+/// "Markdown 27" while "All" is selected. Every count is scoped to [repoId]
+/// (D8): the board shows one project, so its chips count that project alone.
 Map<DocsFilter, int> docsFilterCounts(
   DocsSnapshot? snapshot,
   ReposState repos, {
@@ -123,9 +127,8 @@ class DocsGrouping {
 }
 
 /// The id of the repo that owns the newest doc across [grouping], or null when
-/// the grouping is empty (D4). Unscoped with more than one repo, only this repo
-/// stays expanded; the rest fold. Recency picks the open group, so no
-/// `activeRepo` state has to be invented.
+/// the grouping is empty. Unscoped, the board shows this project by default
+/// (D8); recency picks it, so no `activeRepo` state has to be invented.
 String? repoIdOwningNewestDoc(DocsGrouping grouping) {
   String? bestRepoId;
   var bestMtime = -1 << 62;
