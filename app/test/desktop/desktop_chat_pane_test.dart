@@ -552,6 +552,75 @@ void main() {
     },
   );
 
+  // SPEC-pane-zoom D15: the column is 1140 pt, and zoom must not move it. Zoom
+  // reaches the pane as a `TextScaler`, so a column that read the scaler would
+  // widen with every zoom step and shift the text under the pointer.
+  group('the readable column', () {
+    /// Lays out a pane on a wide display under [textScale] — what a zoomed pane
+    /// hands its content — and answers the width the composer column occupies.
+    Future<double> composerWidth(
+      WidgetTester tester, {
+      double textScale = 1,
+    }) async {
+      tester.view.physicalSize = const Size(2600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState([_session()])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          chatItemsProvider(
+            's1',
+          ).overrideWithValue([UserMessageItem(seq: 1, ts: 0, text: 'hi')]),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => MediaQuery(
+                  data: MediaQuery.of(
+                    context,
+                  ).copyWith(textScaler: TextScaler.linear(textScale)),
+                  child: const DesktopChatPane(sessionId: 's1'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      return tester
+          .getSize(
+            find
+                .ancestor(
+                  of: find.byType(Composer),
+                  matching: find.byType(ConstrainedBox),
+                )
+                .first,
+          )
+          .width;
+    }
+
+    testWidgets('is 1140 pt wide on a display wider than that', (tester) async {
+      expect(await composerWidth(tester), kReadableContentMaxWidth);
+    });
+
+    testWidgets('holds still when the pane is zoomed in', (tester) async {
+      expect(await composerWidth(tester, textScale: 1.6), 1140);
+    });
+
+    testWidgets('holds still when the pane is zoomed out', (tester) async {
+      expect(await composerWidth(tester, textScale: 0.75), 1140);
+    });
+  });
+
   testWidgets('composer draft survives the pane being disposed and recreated', (
     tester,
   ) async {

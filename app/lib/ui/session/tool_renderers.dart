@@ -43,7 +43,10 @@ export '../../app/theme.dart'
 /// Max width for the readable content column. On wide (desktop) windows the
 /// transcript, composer and tool body are centered within this width instead of
 /// stretching edge-to-edge (which is hard to read and unbalanced).
-const double kReadableContentMaxWidth = 760;
+///
+/// The width is a constant, and pane zoom must not move it (SPEC-pane-zoom D15).
+/// Zoom is a text scale, so the glyphs grow inside a column that holds still.
+const double kReadableContentMaxWidth = 1140;
 
 abstract class ToolRenderer {
   const ToolRenderer();

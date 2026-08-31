@@ -78,6 +78,11 @@ void main() {
     'agent message fills the readable column so a short reply hugs the left '
     '(not centered)',
     (tester) async {
+      // A window wider than the column, so the cap is what limits the message
+      // and not the surface (the default 800 pt surface is narrower than it).
+      tester.view.physicalSize = const Size(1600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
       // Mimic the desktop pane: a Center wrapper loosens the width, which used
       // to let the message shrink-wrap to its text and appear centered.
       await tester.pumpWidget(
