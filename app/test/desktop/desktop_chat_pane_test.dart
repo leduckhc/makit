@@ -553,11 +553,12 @@ void main() {
   );
 
   // SPEC-pane-zoom D15: the column is 1140 pt, and zoom must not move it. Zoom
-  // reaches the pane as a `TextScaler`, so a column that read the scaler would
-  // widen with every zoom step and shift the text under the pointer.
+  // reaches the pane as a `TextScaler`. A column that read the scaler would
+  // widen at every zoom step. It would also shift the text under the pointer.
   group('the readable column', () {
-    /// Lays out a pane on a wide display under [textScale] — what a zoomed pane
-    /// hands its content — and answers the width the composer column occupies.
+    /// Lays out a pane on a wide display under [textScale].
+    /// A zoomed pane hands its content that same scaler.
+    /// Answers the width the composer column occupies.
     Future<double> composerWidth(
       WidgetTester tester, {
       double textScale = 1,
