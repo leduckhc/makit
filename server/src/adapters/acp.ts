@@ -383,18 +383,50 @@ export class AcpAdapter extends SubprocessAdapter {
   }
 
   /**
+   * Valid modes for the `/autocompact` pi slash command.
+   */
+  private static readonly AUTOCOMPACT_MODES: ReadonlySet<string> = new Set(["on", "off", "toggle"]);
+
+  /**
    * Control actions from the app. `configOption` maps to ACP
    * `session/set_config_option` (SPEC-acp-config-options-unified-composer); `mode` maps to
-   * `session/set_session_mode` (legacy, for `modes`-only agents). Other actions
-   * are silently ignored on this transport.
+   * `session/set_session_mode` (legacy, for `modes`-only agents). `compact` and
+   * `autocompact` become ACP slash-command prompts, because ACP has no native
+   * compaction RPC and pi-acp exposes these as built-in commands.
    */
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
     if (!this.conn || !this.acpSessionId) return;
     if (action === "configOption") return this.setConfigOption(args);
+    if (action === "compact") {
+      const instructions = typeof args?.instructions === "string" ? args.instructions.trim() : "";
+      if (/[\n\r]/.test(instructions)) {
+        throw new Error("compact instructions cannot contain newlines");
+      }
+      const text = instructions ? `/compact ${instructions}` : "/compact";
+      await this.sendCommandPrompt(text);
+      return;
+    }
+    if (action === "autocompact") {
+      const mode = typeof args?.mode === "string" ? args.mode.trim().toLowerCase() : "toggle";
+      if (!AcpAdapter.AUTOCOMPACT_MODES.has(mode)) {
+        throw new Error(`invalid autocompact mode: ${mode}`);
+      }
+      await this.sendCommandPrompt(`/autocompact ${mode}`);
+      return;
+    }
     if (action !== "mode") return;
     const modeId = typeof args?.id === "string" ? args.id : "";
     if (!modeId) return;
     await this.applyMode(modeId);
+  }
+
+  /** Send a slash-command as a prompt; errors propagate to the caller. */
+  private async sendCommandPrompt(text: string): Promise<void> {
+    if (!this.conn || !this.acpSessionId) return;
+    await this.conn.prompt({
+      sessionId: this.acpSessionId,
+      prompt: [{ type: "text", text }],
+    });
   }
 
   /**

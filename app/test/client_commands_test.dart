@@ -7,12 +7,12 @@ void main() {
         clientCommands.firstWhere((c) => c.name == name);
 
     test(
-      '/compact, /thinking, and /model are registered as builtin palette commands',
+      '/compact, /autocompact, /thinking, and /model are registered as builtin palette commands',
       () {
         // These back the pi built-ins that get_commands does NOT return, so they
         // must be present in the client registry to show in the slash palette
         // and to be intercepted by handleClientCommand (not sent to the agent).
-        for (final name in ['compact', 'thinking', 'model']) {
+        for (final name in ['compact', 'autocompact', 'thinking', 'model']) {
           final c = cmd(name);
           expect(c.description, isNotEmpty);
           expect(c.toSlashCmd().source, 'builtin');

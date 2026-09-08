@@ -353,12 +353,32 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   }
 
   /**
-   * Control actions from the app. Projects the unified `configOption` action
-   * (SPEC-acp-config-options-unified-composer) onto codex's turn params: `model`/`thought_level` picks are cached
-   * and applied on the next `turn/start` (`model`/`effort`), then re-emitted so
-   * the composer reflects the new current value.
+   * Control actions from the app. `configOption` projects the unified config
+   * surface (SPEC-acp-config-options-unified-composer) onto codex's turn params.
+   * `compact` triggers a native `thread/compact/start` turn when context is near
+   * the model's window. Other actions are ignored.
    */
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
+    if (action === "compact") {
+      if (!this.threadId) {
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: "cannot compact before the thread has started" },
+        });
+        return;
+      }
+      try {
+        await this.request("thread/compact/start", { threadId: this.threadId });
+      } catch (err) {
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: `compaction failed: ${(err as Error)?.message ?? String(err)}` },
+        });
+      }
+      return;
+    }
     if (action !== "configOption") return;
     const id = typeof args?.id === "string" ? args.id : "";
     if (id === "fast") {

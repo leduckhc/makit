@@ -1106,6 +1106,84 @@ test("modes-only agent routes a configOption id:mode to set_session_mode (no set
   assert.equal((events.find((e) => e.kind === "session.meta")!.payload as any).configOptions[0].currentValue, "ask");
 });
 
+test("sendAction compact and autocompact become slash-command prompts", async () => {
+  const prompts: string[] = [];
+  let agentRef: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (_sessionId, text) => {
+      prompts.push(text);
+    });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+
+  await adapter.sendAction!("compact");
+  await adapter.sendAction!("autocompact", { mode: "on" });
+  await adapter.sendAction!("compact", { instructions: "keep the plan" });
+
+  assert.deepEqual(prompts, ["/compact", "/autocompact on", "/compact keep the plan"]);
+  await adapter.kill();
+});
+
+test("sendAction compact rejects instructions with newlines", async () => {
+  const prompts: string[] = [];
+  const { transport } = pair((conn) => {
+    return new ScriptedAgent(conn, async (_sessionId, text) => {
+      prompts.push(text);
+    });
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+
+  await assert.rejects(
+    () => adapter.sendAction!("compact", { instructions: "line one\nline two" }),
+    /cannot contain newlines/,
+  );
+  assert.deepEqual(prompts, [], "no prompt is sent for invalid instructions");
+  await adapter.kill();
+});
+
+test("sendAction autocompact rejects unknown modes", async () => {
+  const prompts: string[] = [];
+  const { transport } = pair((conn) => {
+    return new ScriptedAgent(conn, async (_sessionId, text) => {
+      prompts.push(text);
+    });
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+
+  await assert.rejects(
+    () => adapter.sendAction!("autocompact", { mode: "onn" }),
+    /invalid autocompact mode/,
+  );
+  assert.deepEqual(prompts, [], "no prompt is sent for an invalid mode");
+  await adapter.kill();
+});
+
+test("sendCommandPrompt propagates prompt failures", async () => {
+  const { transport } = pair((conn) => {
+    const agent = new ScriptedAgent(conn, async () => {});
+    (agent as unknown as { prompt: () => Promise<void> }).prompt = async () => {
+      throw new Error("prompt refused");
+    };
+    return agent;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+
+  await assert.rejects(
+    () => adapter.sendAction!("compact"),
+    /RequestError|Internal error|prompt refused/,
+  );
+  await adapter.kill();
+});
+
 // ---------- capability probe (SPEC-new-session-config-at-spawn) -------------------------------------
 
 /**

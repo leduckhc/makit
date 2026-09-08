@@ -191,7 +191,13 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     if (action === "name" && typeof args?.name === "string") {
       session.setTitle(args.name);
     }
-    await session.sendAction(action, args);
+    try {
+      await session.sendAction(action, args);
+    } catch (err) {
+      session.recordError(
+        `action ${action} failed: ${(err as Error)?.message ?? String(err)}`,
+      );
+    }
   });
 
   r.register("cancel", async (ctx) => {

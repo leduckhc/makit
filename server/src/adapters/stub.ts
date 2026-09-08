@@ -665,6 +665,13 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   ];
 
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
+    if (action === "compact") {
+      // Simulate compaction by rolling back the deterministic usage ramp and
+      // emitting a fresh reading, so keyless e2e can see the context ring move.
+      this.turnCount = Math.max(0, this.turnCount - 5);
+      this.emitUsage();
+      return;
+    }
     if (action !== "configOption") return;
     const id = args?.id;
     const value = args?.value;

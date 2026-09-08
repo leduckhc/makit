@@ -37,6 +37,29 @@ const NO_FANOUT_KINDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Trigger automatic context compaction when this share of the window is in use.
+ * The reset hysteresis keeps one compaction from immediately re-arming while the
+ * agent is still reporting the pre-compaction reading.
+ *
+ * These are intentional defaults (SPEC-context-auto-compaction D1/D2); making
+ * them configurable is an explicit non-goal.
+ */
+const AUTO_COMPACT_FRACTION = 0.8;
+const AUTO_COMPACT_RESET_FRACTION = 0.65;
+
+/**
+ * Compute a context-occupancy fraction from a usage snapshot, or return null
+ * when the payload does not contain the required numeric fields. Malformed
+ * events must not overwrite the last known good reading.
+ */
+function computeContextFraction(usage: SessionUsageDTO): number | null {
+  const used = usage.contextTokens;
+  const window = usage.contextWindow;
+  if (typeof used !== "number" || typeof window !== "number" || window <= 0) return null;
+  return used / window;
+}
+
+/**
  * A message the user submitted while the agent was busy, held until the agent
  * goes idle (SPEC-mid-turn-steering-and-queue). Kept in memory only: unsent intent must not go stale in
  * a file across a restart.
@@ -210,6 +233,8 @@ export class Session extends EventEmitter {
 
   /** Pending lazy history loader — consumed (set to undefined) on first use. */
   private hydrateFrom?: () => SessionEvent[];
+  /** True while `backfill` replays history; live side effects are suppressed. */
+  private replaying = false;
 
   /**
    * Draft → started state machine (SPEC-server-hotpath-and-state P4). A fresh session is `started`
@@ -247,6 +272,17 @@ export class Session extends EventEmitter {
   private flushing = false;
   adapter: AgentAdapter;
   private readonly store?: EventStore;
+
+  /**
+   * Latest context occupancy fraction (0–1) from a `session.usage` event, or null
+   * before any reading with a known window. Used by automatic compaction.
+   */
+  private lastContextFraction: number | null = null;
+  /** True while an automatic compaction has been requested and not yet reset. */
+  private autoCompactFired = false;
+  /** True while an automatic compaction action is in flight. Prevents a queued
+   * message from flushing before the compact action has been accepted. */
+  private autoCompactPending = false;
 
   /**
    * The in-memory event cache: the recent tail, not the whole history.
@@ -444,6 +480,8 @@ export class Session extends EventEmitter {
     } else if (event.kind === "session.status") {
       const s = (event.payload as { status?: SessionStatus }).status;
       if (s) this.status = s;
+    } else if (event.kind === "session.usage" && !this.replaying) {
+      this.updateContextFraction(event.payload as unknown as SessionUsageDTO);
     }
     // A streamed token moves nothing but `lastActivityAt`, and the next real
     // event carries that. Persisting here meant a full 17-column session upsert
@@ -700,13 +738,70 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Update the cached context fraction and, if the session is idle and the
+   * threshold is crossed, request automatic compaction. Reset once the reading
+   * drops below the hysteresis line so future growth can trigger again.
+   */
+  private updateContextFraction(usage: SessionUsageDTO): void {
+    const fraction = computeContextFraction(usage);
+    if (fraction === null) return;
+
+    this.lastContextFraction = fraction;
+
+    if (fraction <= AUTO_COMPACT_RESET_FRACTION) {
+      this.autoCompactFired = false;
+    }
+
+    if (this.status !== "idle") return;
+    this.fireAutoCompact(fraction);
+  }
+
+  /** Re-evaluate automatic compaction when the session becomes idle. */
+  private maybeAutoCompactOnIdle(): void {
+    if (this.status !== "idle" || this.lastContextFraction === null) return;
+    this.fireAutoCompact(this.lastContextFraction);
+  }
+
+  /**
+   * Request automatic compaction if the cached fraction is above the threshold,
+   * the adapter supports control actions, and one is not already in flight.
+   * On failure, reset the guard so a later reading can retry.
+   */
+  private fireAutoCompact(fraction: number): void {
+    if (fraction < AUTO_COMPACT_FRACTION) return;
+    if (this.autoCompactFired || this.autoCompactPending) return;
+    if (!this.adapter.sendAction) return;
+
+    this.autoCompactFired = true;
+    this.autoCompactPending = true;
+    this.sendAction("compact")
+      .catch((err) => {
+        this.recordError(
+          `auto-compaction failed: ${(err as Error)?.message ?? String(err)}`,
+        );
+        this.autoCompactFired = false;
+      })
+      .finally(() => {
+        this.autoCompactPending = false;
+        // If a message was queued while compaction was being accepted, flush it
+        // now so the next user turn cannot overtake the compact action.
+        if (this.queued.length > 0) void this.flushNext();
+      });
+  }
+
+  /**
    * Seed the event log from a prior transcript BEFORE the adapter goes live.
    * Populates `this.events[]` (assigning seqs, sessionId, and bubbling up
    * status/preview) but does NOT emit — history is replayed to clients on
    * `sub` (see SubscriptionHub), so emitting here would double-fire.
    */
   backfill(events: AdapterEvent[]): void {
-    for (const e of events) this.record(e);
+    this.replaying = true;
+    try {
+      for (const e of events) this.record(e);
+    } finally {
+      this.replaying = false;
+    }
   }
 
   private bindAdapter(adapter: AgentAdapter): void {
@@ -719,9 +814,17 @@ export class Session extends EventEmitter {
       // Don't pre-assign this.status here — record() owns the mutation + the
       // before/after comparison that decides whether to fan out metaChanged.
       this.emit("event", this.record({ ts: Date.now(), kind: "session.status", payload: { status } }));
-      // The agent is ready for a new turn: hand it the next queued message
-      // (SPEC-mid-turn-steering-and-queue). One per transition — the next flush waits for the next idle.
-      if (status === "idle" && this.queued.length > 0) void this.flushNext();
+      if (status === "idle") {
+        // A usage reading that arrived while a turn was still running may now
+        // be eligible for automatic compaction.
+        this.maybeAutoCompactOnIdle();
+        // The agent is ready for a new turn: hand it the next queued message
+        // (SPEC-mid-turn-steering-and-queue). One per transition — the next flush waits for the next idle.
+        // If auto-compaction is being accepted right now, flushNext is deferred
+        // until the action resolves so the compact action is ordered before any
+        // new user turn.
+        if (this.queued.length > 0 && !this.autoCompactPending) void this.flushNext();
+      }
     };
 
     // A dead agent will never flush the queue; drop it rather than leave chips
@@ -883,12 +986,12 @@ export class Session extends EventEmitter {
       BUSY_STATUSES.has(this.status) && this.adapter.releaseStrayBusy?.() === true;
 
     // SPEC-mid-turn-steering-and-queue. Three cases, in this order:
-    //  1. a queue already exists OR flushing is active -> append (never overtake
-    //     an earlier message, including in the window between `idle` and the
-    //     flush's next turn starting)
+    //  1. a queue already exists OR flushing is active OR an automatic compaction
+    //     is being accepted -> append (never overtake an earlier message or
+    //     overtake a compact action)
     //  2. the agent is busy       -> try to steer into the running turn
     //  3. otherwise               -> a normal fresh turn
-    if (this.queued.length > 0 || this.flushing) {
+    if (this.queued.length > 0 || this.flushing || this.autoCompactPending) {
       this.enqueue(input);
       return;
     }
@@ -1064,7 +1167,19 @@ export class Session extends EventEmitter {
    * SDK call in the hosting extension. No-op if the adapter can't map actions.
    */
   async sendAction(action: string, args?: Record<string, unknown>) {
-    await this.adapter.sendAction?.(action, args);
+    // Any explicit compaction request (manual or automatic) arms the guard so
+    // we do not immediately request another compaction while the agent is still
+    // reporting the pre-compaction reading.
+    if (action === "compact") this.autoCompactFired = true;
+    try {
+      await this.adapter.sendAction?.(action, args);
+    } catch (err) {
+      // If compaction failed (e.g. invalid instructions, adapter refused), do
+      // not leave the guard set: the user may retry and auto-compaction should
+      // still be able to fire on the next high reading.
+      if (action === "compact") this.autoCompactFired = false;
+      throw err;
+    }
   }
 
   /**

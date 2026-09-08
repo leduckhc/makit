@@ -79,6 +79,8 @@ function fakeAppServer(
         return {};
       case "thread/unsubscribe":
         return { status: "unsubscribed" };
+      case "thread/compact/start":
+        return {};
       case "model/list":
         return {
           data: [
@@ -724,6 +726,22 @@ test("a normal turn's echo is not flagged as steered", async () => {
 
   const echo = events.find((e) => e.kind === "user.message")!;
   assert.equal((echo.payload as { steered?: boolean }).steered, undefined);
+});
+
+test("sendAction compact requests thread/compact/start", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  await adapter.sendAction!("compact");
+
+  const compact = fake.sent.find((m) => m.method === "thread/compact/start");
+  assert.ok(compact, "compact action must call thread/compact/start");
+  assert.equal(compact.params.threadId, "th1");
+
+  // It must not look like a user turn: no echo, no input.
+  assert.ok(!fake.sent.some((m) => m.method === "turn/start"));
+  await adapter.kill();
 });
 
 // Error objects verbatim from live codex (spec §Evidence). `activeTurnNotSteerable`

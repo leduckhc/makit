@@ -80,6 +80,24 @@ test("unknown option id or non-configOption action is ignored", async () => {
   assert.equal(metas.length, 1, "no re-emit for unknown id / other actions");
 });
 
+test("compact action rolls back the deterministic usage ramp", async () => {
+  const stub = new StubAdapter();
+  const usages: AdapterEvent[] = [];
+  stub.on("event", (e) => {
+    if (e.kind === "session.usage") usages.push(e);
+  });
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+
+  await stub.send({ text: "a" });
+  await stub.send({ text: "b" });
+  const before = usages.at(-1)!.payload as { contextTokens: number };
+  assert.ok(before.contextTokens > 0, "usage rises with each turn");
+
+  await stub.sendAction("compact");
+  const after = usages.at(-1)!.payload as { contextTokens: number };
+  assert.ok(after.contextTokens < before.contextTokens, "compact lowers the reading");
+});
+
 test("an adapter with no steering primitive reports it (SPEC-mid-turn-steering-and-queue T1)", async () => {
   const stub = new StubAdapter();
   const events: AdapterEvent[] = [];

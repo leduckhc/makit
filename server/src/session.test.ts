@@ -824,3 +824,249 @@ test("SPEC-mid-turn-steering-and-queue: a streaming agent still gets a queue, no
   await settle();
   assert.deepEqual(f.sent, ["wait for me"]);
 });
+
+// ---- automatic context compaction -----------------------------------------
+
+/**
+ * Fake adapter that records control actions so the auto-compaction trigger can be
+ * asserted without a real agent.
+ */
+function actionAdapter() {
+  const a = fakeAdapter();
+  const actions: { action: string; args?: Record<string, unknown> }[] = [];
+  (a as any).sendAction = async (action: string, args?: Record<string, unknown>) => {
+    actions.push({ action, args });
+  };
+  return { adapter: a, actions };
+}
+
+test("a usage reading above the auto-compaction threshold requests compact when idle", async () => {
+  const { adapter, actions } = actionAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+
+  session.adapter.emit("event", {
+    ts: 1,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, contextWindow: 100_000, measuredAt: 1 },
+  });
+  await settle();
+
+  assert.deepEqual(actions, [{ action: "compact", args: undefined }], "idle + 85% triggers auto-compact");
+});
+
+test("auto-compaction does not fire while a turn is running", async () => {
+  const { adapter, actions } = actionAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+
+  session.adapter.emit("status", "running");
+  session.adapter.emit("event", {
+    ts: 1,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, contextWindow: 100_000, measuredAt: 1 },
+  });
+  await settle();
+
+  assert.deepEqual(actions, [], "a running turn blocks auto-compact");
+
+  session.adapter.emit("status", "idle");
+  await settle();
+
+  assert.deepEqual(actions, [{ action: "compact", args: undefined }], "trigger fires once the turn ends");
+});
+
+test("auto-compaction resets once the reading drops below the hysteresis line", async () => {
+  const { adapter, actions } = actionAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+
+  session.adapter.emit("event", {
+    ts: 1,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, contextWindow: 100_000, measuredAt: 1 },
+  });
+  await settle();
+  assert.equal(actions.length, 1);
+
+  session.adapter.emit("event", {
+    ts: 2,
+    kind: "session.usage",
+    payload: { contextTokens: 60_000, contextWindow: 100_000, measuredAt: 2 },
+  });
+  await settle();
+
+  session.adapter.emit("event", {
+    ts: 3,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, contextWindow: 100_000, measuredAt: 3 },
+  });
+  await settle();
+
+  assert.equal(actions.length, 2, "a second crossing after reset re-arms the trigger");
+});
+
+test("a missing window or low reading never triggers auto-compaction", async () => {
+  const { adapter, actions } = actionAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+
+  session.adapter.emit("event", {
+    ts: 1,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, measuredAt: 1 },
+  });
+  session.adapter.emit("event", {
+    ts: 2,
+    kind: "session.usage",
+    payload: { contextTokens: 70_000, contextWindow: 100_000, measuredAt: 2 },
+  });
+  await settle();
+
+  assert.deepEqual(actions, []);
+});
+
+test("auto-compaction failure resets the guard so a later reading can retry", async () => {
+  const adapter = fakeAdapter();
+  const actions: { action: string; args?: Record<string, unknown> }[] = [];
+  let shouldFail = true;
+  (adapter as any).sendAction = async (action: string, args?: Record<string, unknown>) => {
+    if (shouldFail) throw new Error("adapter refused");
+    actions.push({ action, args });
+  };
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+  const errors: string[] = [];
+  session.on("event", (e) => {
+    if (e.kind === "session.error") errors.push((e.payload as { message: string }).message);
+  });
+
+  session.adapter.emit("event", {
+    ts: 1,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, contextWindow: 100_000, measuredAt: 1 },
+  });
+  await settle();
+  assert.equal(errors.length, 1, "failure is surfaced as a session.error");
+
+  // A second high reading without crossing the reset line should retry because
+  // the guard was cleared on failure.
+  shouldFail = false;
+  session.adapter.emit("event", {
+    ts: 2,
+    kind: "session.usage",
+    payload: { contextTokens: 86_000, contextWindow: 100_000, measuredAt: 2 },
+  });
+  await settle();
+
+  assert.deepEqual(actions, [{ action: "compact", args: undefined }], "retry fires once the adapter recovers");
+});
+
+test("a usage event with a missing window does not clear the last known fraction", async () => {
+  const { adapter, actions } = actionAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+
+  // First establish a high-water reading while running so the idle transition
+  // can trigger from the cached value.
+  session.adapter.emit("status", "running");
+  session.adapter.emit("event", {
+    ts: 1,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, contextWindow: 100_000, measuredAt: 1 },
+  });
+  // A malformed event with no window must not wipe the 85% reading.
+  session.adapter.emit("event", {
+    ts: 2,
+    kind: "session.usage",
+    payload: { contextTokens: 80_000, measuredAt: 2 },
+  });
+  session.adapter.emit("status", "idle");
+  await settle();
+
+  assert.deepEqual(actions, [{ action: "compact", args: undefined }], "idle transition still uses the last good reading");
+});
+
+test("a manual compact action arms the auto-compaction guard", async () => {
+  const { adapter, actions } = actionAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+
+  await session.sendAction("compact");
+
+  // The guard is now armed, so an idle transition at 85% must not request a
+  // second compaction immediately.
+  session.adapter.emit("event", {
+    ts: 1,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, contextWindow: 100_000, measuredAt: 1 },
+  });
+  session.adapter.emit("status", "idle");
+  await settle();
+
+  assert.deepEqual(
+    actions,
+    [{ action: "compact", args: undefined }],
+    "only the manual compact is sent; auto-compact is suppressed",
+  );
+});
+
+test("a failing manual compact clears the auto-compaction guard", async () => {
+  const adapter = fakeAdapter();
+  (adapter as any).sendAction = async () => {
+    throw new Error("adapter refused");
+  };
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+  const errors: string[] = [];
+  session.on("event", (e) => {
+    if (e.kind === "session.error") errors.push((e.payload as { message: string }).message);
+  });
+
+  await assert.rejects(() => session.sendAction("compact"), /adapter refused/);
+
+  // The guard was cleared by the failure, so a later idle high reading can
+  // still trigger automatic compaction.
+  session.adapter.emit("event", {
+    ts: 1,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, contextWindow: 100_000, measuredAt: 1 },
+  });
+  session.adapter.emit("status", "idle");
+  await settle();
+
+  assert.equal(errors.length, 1);
+  assert.ok(errors[0].includes("adapter refused"), "failure is surfaced");
+});
+
+test("sendUserMessage queues while automatic compaction is pending", async () => {
+  const adapter = fakeAdapter();
+  const sent: string[] = [];
+  let acceptCompact: (() => void) | undefined;
+  (adapter as any).send = async (input: { text: string }) => {
+    sent.push(input.text);
+  };
+  (adapter as any).sendAction = async (action: string) => {
+    if (action === "compact") {
+      // Hold the compact action open until we observe the user message being queued.
+      await new Promise<void>((resolve) => {
+        acceptCompact = resolve;
+      });
+    }
+  };
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+
+  // Trigger auto-compaction while idle.
+  session.adapter.emit("event", {
+    ts: 1,
+    kind: "session.usage",
+    payload: { contextTokens: 85_000, contextWindow: 100_000, measuredAt: 1 },
+  });
+  await settle();
+
+  // A user message sent before the compact action settles must be queued, not
+  // sent directly, so it cannot overtake the compact action.
+  const sendPromise = session.sendUserMessage("follow-up");
+  await settle();
+  assert.deepEqual(sent, [], "message is held while compaction is pending");
+  assert.equal(session.queuedMessages.length, 1, "message is queued");
+
+  acceptCompact?.();
+  await sendPromise;
+  await settle();
+
+  assert.deepEqual(sent, ["follow-up"], "message flushes after compaction resolves");
+  assert.equal(session.queuedMessages.length, 0);
+});
