@@ -14,6 +14,7 @@ function fakeAppServer(
     steer?: () => { result?: unknown; error?: unknown };
     fork?: () => { result?: unknown; error?: unknown };
     unsubscribe?: () => { result?: unknown; error?: unknown };
+    compact?: () => { result?: unknown; error?: unknown } | undefined;
   } = {},
 ) {
   let lineCb: (l: string) => void = () => {};
@@ -50,6 +51,16 @@ function fakeAppServer(
           queueMicrotask(() => feed({ id: msg.id, ...scripted }));
           return;
         }
+        // `thread/compact/start` is scripted per-test so compaction failures
+        // propagate to the session layer and reset the auto-compaction guard.
+        // A scripted handler returning `undefined` hangs the request (never
+        // replies), which lets a test exercise the exit-during-in-flight path.
+        if (msg.method === "thread/compact/start" && opts.compact) {
+          const scripted = opts.compact();
+          if (scripted === undefined) return;
+          queueMicrotask(() => feed({ id: msg.id, ...scripted }));
+          return;
+        }
         const result = respond(msg.method);
         if (result !== undefined) queueMicrotask(() => feed({ id: msg.id, result }));
       }
@@ -79,6 +90,15 @@ function fakeAppServer(
         return {};
       case "thread/unsubscribe":
         return { status: "unsubscribed" };
+      case "thread/compact/start":
+        // The real app-server acks the request, then reports the asynchronous
+        // compaction turn through `turn/started` + `turn/completed`.
+        queueMicrotask(() => {
+          const id = `tc${++turnSeq}`;
+          feed({ method: "turn/started", params: { turn: { id } } });
+          feed({ method: "turn/completed", params: { turn: { id } } });
+        });
+        return {};
       case "model/list":
         return {
           data: [
@@ -724,6 +744,224 @@ test("a normal turn's echo is not flagged as steered", async () => {
 
   const echo = events.find((e) => e.kind === "user.message")!;
   assert.equal((echo.payload as { steered?: boolean }).steered, undefined);
+});
+
+test("sendAction compact requests thread/compact/start", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  await adapter.sendAction!("compact");
+
+  const compact = fake.sent.find((m) => m.method === "thread/compact/start");
+  assert.ok(compact, "compact action must call thread/compact/start");
+  assert.equal(compact.params.threadId, "th1");
+
+  // It must not look like a user turn: no echo, no input.
+  assert.ok(!fake.sent.some((m) => m.method === "turn/start"));
+  await adapter.kill();
+});
+
+test("sendAction compact surfaces thread/compact/start failures and rejects", async () => {
+  const fake = fakeAppServer({
+    compact: () => ({ error: { code: -32600, message: "thread is busy" } }),
+  });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+
+  await assert.rejects(() => adapter.sendAction!("compact"), /thread is busy/);
+  assert.equal(errors.length, 1, "compaction failure is emitted as a session.error");
+  assert.equal(
+    (errors[0]!.payload as { code?: string }).code,
+    "compact_failed",
+    "failure carries a shared error code",
+  );
+  assert.ok(
+    (errors[0]!.payload as { message: string }).message.includes("thread is busy"),
+    "error names the adapter reason",
+  );
+  await adapter.kill();
+});
+
+test("sendAction compact waits for the compaction turn to complete", async () => {
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  let resolved = false;
+  const actionPromise = adapter.sendAction!("compact").then(() => {
+    resolved = true;
+  });
+
+  // Wait for the start request to be sent, but do not feed the completion yet.
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+  assert.equal(resolved, false, "action stays pending until the turn completes");
+
+  // Now finish the compaction turn.
+  fake.feed({ method: "turn/started", params: { turn: { id: "tc-pending" } } });
+  fake.feed({ method: "turn/completed", params: { turn: { id: "tc-pending" } } });
+  await actionPromise;
+
+  assert.equal(resolved, true, "action resolves once the compaction turn completes");
+  await adapter.kill();
+});
+
+test("concurrent compact actions share one waiter instead of orphaning the first", async () => {
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  let firstResolved = false;
+  let secondResolved = false;
+  const first = adapter.sendAction!("compact").then(() => {
+    firstResolved = true;
+  });
+  // A second compact while the first is still in flight must reuse the waiter,
+  // not overwrite it (which would orphan the first caller's queued messages).
+  const second = adapter.sendAction!("compact").then(() => {
+    secondResolved = true;
+  });
+
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+  assert.equal(
+    fake.sent.filter((m) => m.method === "thread/compact/start").length,
+    1,
+    "a concurrent compact reuses the in-flight waiter, not a second turn",
+  );
+
+  // Complete the single compaction turn; both callers must resolve.
+  fake.feed({ method: "turn/started", params: { turn: { id: "tc1" } } });
+  fake.feed({ method: "turn/completed", params: { turn: { id: "tc1" } } });
+  await Promise.all([first, second]);
+  assert.equal(firstResolved, true, "the first caller resolves");
+  assert.equal(secondResolved, true, "the sharing caller resolves");
+  await adapter.kill();
+});
+
+test("an unrelated finishing turn does not satisfy the compact waiter", async () => {
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  // A user turn is already running when the manual compact is requested.
+  fake.feed({ method: "turn/started", params: { turn: { id: "user-1" } } });
+
+  let resolved = false;
+  const action = adapter.sendAction!("compact").then(() => {
+    resolved = true;
+  });
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+
+  // The user turn finishes while the compact turn is still starting. The waiter
+  // is armed with no `turnId` yet, so this completion must NOT resolve it.
+  fake.feed({ method: "turn/completed", params: { turn: { id: "user-1" } } });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(resolved, false, "an unrelated finishing turn does not complete the compact action");
+
+  // The compact turn itself completes and resolves the waiter.
+  fake.feed({ method: "turn/started", params: { turn: { id: "tc1" } } });
+  fake.feed({ method: "turn/completed", params: { turn: { id: "tc1" } } });
+  await action;
+  assert.equal(resolved, true, "the compact turn completes the action");
+  await adapter.kill();
+});
+
+test("sendAction compact surfaces a completion timeout as a session.error", async () => {
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-to" });
+  // Shorten the 60s completion waiter so the test does not have to wait a minute.
+  (adapter as unknown as { compactTimeoutMs: number }).compactTimeoutMs = 50;
+
+  // The compaction turn never completes; the waiter times out.
+  await assert.rejects(() => adapter.sendAction!("compact"), /did not complete in time/);
+
+  assert.equal(errors.length, 1, "a timed-out compaction is surfaced as a session.error");
+  assert.equal((errors[0]!.payload as { code?: string }).code, "compact_failed");
+  await adapter.kill();
+});
+
+test("an in-flight compact turn is not aborted by the completion timer", async () => {
+  // The 60s timer is a safety net for a start response that never leads to a
+  // completion notification. Once `turn/started` has arrived, the agent is
+  // actively rearranging context — rejecting here would clear the waiter and
+  // let the session queue a duplicate auto-compact against the unchanged
+  // pre-compaction usage. The timer must be a no-op while the turn is running.
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-in-flight" });
+  (adapter as unknown as { compactTimeoutMs: number }).compactTimeoutMs = 20;
+
+  let resolved = false;
+  const action = adapter.sendAction!("compact").then(
+    () => {
+      resolved = true;
+    },
+    (err) => {
+      resolved = err;
+    },
+  );
+
+  // The compact turn STARTED — a duplicate auto-compact must not be scheduled.
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+  fake.feed({ method: "turn/started", params: { turn: { id: "tc-slow" } } });
+
+  // Let the timer fire.
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(resolved, false, "the timer must not reject an in-flight compact turn");
+  assert.equal(errors.length, 0, "the timer must not emit CompactFailed while the turn is running");
+
+  // Eventually completing the turn resolves the action.
+  fake.feed({ method: "turn/completed", params: { turn: { id: "tc-slow" } } });
+  await action;
+  assert.equal(resolved, true, "the action resolves once the compact turn completes");
+  await adapter.kill();
+});
+
+test("app-server exit during compact/start emits exactly one CompactFailed", async () => {
+  // `rejectPending` surfaces the exit as a `session.error` for the waiter, and
+  // the `thread/compact/start` catch also emits one. Without a guard, the same
+  // crash was recorded twice with different messages.
+  const fake = fakeAppServer({ compact: () => undefined });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-exit" });
+
+  const action = adapter.sendAction!("compact");
+
+  // Wait for the start request to be in flight (queued in `pending`).
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+
+  // Killing triggers `rejectPending`, which rejects the pending request and
+  // the waiter. The request-catch path also runs when the pending request
+  // rejects; both used to emit `CompactFailed`.
+  await adapter.kill();
+  await assert.rejects(() => action, /codex app-server exited/);
+
+  assert.equal(
+    errors.length,
+    1,
+    `an adapter exit during compact/start emits one error, got: ${errors
+      .map((e) => (e.payload as { message: string }).message)
+      .join(" | ")}`,
+  );
+  assert.equal((errors[0]!.payload as { code?: string }).code, "compact_failed");
 });
 
 // Error objects verbatim from live codex (spec §Evidence). `activeTurnNotSteerable`

@@ -27,7 +27,7 @@ import { isRecord, parseJsonLine } from "./wire.js";
 import { sharedMediaStore, type MediaStore } from "../media/store.js";
 import { prepareTurn, prepareTurnOrFail, type PreparedTurn } from "../media/attach.js";
 import type { AskUser } from "../uicall.js";
-import type { SessionConfigOption, ConfigOptionValue } from "../protocol.js";
+import { SessionErrorCode, type SessionConfigOption, type ConfigOptionValue } from "../protocol.js";
 import { log } from "../log.js";
 
 /** Codex speaks LF-delimited JSON over stdio — the shared line transport. */
@@ -133,6 +133,24 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private threadId?: string;
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
+  /**
+   * When a `compact` action is in flight, the adapter resolves `sendAction` only
+   * after codex reports the matching compaction turn complete. Keeps the session
+   * from flushing queued messages into a compaction turn that is still running.
+   */
+  private pendingCompaction?: {
+    done: Promise<void>;
+    resolve: () => void;
+    reject: (err: Error) => void;
+    turnId?: string;
+  };
+
+  /**
+   * How long to wait for the compaction turn to report `turn/completed` before
+   * failing the `compact` action. Overridable in tests; the production default
+   * matches the agent's worst-case compaction latency.
+   */
+  private compactTimeoutMs = 60_000;
 
   /**
    * Projected config surface (SPEC-acp-config-options-unified-composer). codex `app-server` is not ACP, so its
@@ -353,12 +371,110 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   }
 
   /**
-   * Control actions from the app. Projects the unified `configOption` action
-   * (SPEC-acp-config-options-unified-composer) onto codex's turn params: `model`/`thought_level` picks are cached
-   * and applied on the next `turn/start` (`model`/`effort`), then re-emitted so
-   * the composer reflects the new current value.
+   * Control actions from the app. `configOption` projects the unified config
+   * surface (SPEC-acp-config-options-unified-composer) onto codex's turn params.
+   * `compact` triggers a native `thread/compact/start` turn when context is near
+   * the model's window. Other actions are ignored.
    */
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
+    if (action === "compact") {
+      if (!this.threadId) {
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: {
+            code: SessionErrorCode.CompactNotStarted,
+            message: "cannot compact before the thread has started",
+          },
+        });
+        return;
+      }
+      // A compaction turn may already be in flight (e.g. auto-compact while
+      // the user manually triggers /compact). Await the same completion
+      // instead of starting a second compact turn: overwriting the single
+      // waiter would orphan the first caller, leaving its queued messages
+      // blocked forever.
+      if (this.pendingCompaction) {
+        await this.pendingCompaction.done;
+        return;
+      }
+      // Set up the completion waiter BEFORE requesting the start. The
+      // app-server may report the compaction turn (started + completed) before
+      // the JSON-RPC response reaches us, so the waiter must already exist.
+      let resolve!: () => void;
+      let reject!: (err: Error) => void;
+      const done = new Promise<void>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      const pending: { done: Promise<void>; resolve: () => void; reject: (err: Error) => void; turnId?: string } = { done, resolve, reject };
+      this.pendingCompaction = pending;
+      // Guard `done` against an unhandled rejection now: on a failed start
+      // request we reject `done` to wake any concurrent caller sharing this
+      // waiter, and without an attached handler that would surface as an
+      // unhandledRejection when no such caller exists. The timer-clearing
+      // cleanup is attached later, after the timer is armed, so it always sees
+      // an armed timer (the compact turn can complete before the request reply
+      // resolves, which would otherwise run cleanup with `timer` still unset).
+      done.catch(() => {});
+      try {
+        await this.request("thread/compact/start", { threadId: this.threadId });
+      } catch (err) {
+        // The start request failed, so no compaction turn will complete.
+        // If `rejectPending` cleared the waiter first (app-server exit while
+        // the start request was in flight), it already emitted `CompactFailed`
+        // and rejected `done`; skip a second emission for the same crash.
+        if (this.pendingCompaction !== pending) {
+          throw err;
+        }
+        this.pendingCompaction = undefined;
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: {
+            code: SessionErrorCode.CompactFailed,
+            message: `compaction failed: ${(err as Error)?.message ?? String(err)}`,
+          },
+        });
+        reject(err as Error);
+        throw err;
+      }
+      // The request acknowledged the start, but the compaction turn runs
+      // asynchronously. Hold the action promise until codex emits the matching
+      // `turn/completed` so the session does not treat the compact action as
+      // finished while the agent is still rearranging context.
+      const timer = setTimeout(() => {
+        if (this.pendingCompaction !== pending) return;
+        // If the compaction turn has started (turn/started arrived), the agent
+        // is actively rearranging context. Rejecting here would clear the
+        // waiter and let the session queue a duplicate auto-compact against
+        // the unchanged pre-compaction usage. Keep awaiting `turn/completed`
+        // instead; the app-server-exit path (`rejectPending`) is the final
+        // safety net for a turn that never completes.
+        if (pending.turnId) return;
+        this.pendingCompaction = undefined;
+        // Surface the timeout as a persisted `session.error` so the user (and
+        // auto-compaction) is aware the compaction never settled; otherwise
+        // the rejection is silently swallowed by the session's auto-compact
+        // catch path.
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: {
+            code: SessionErrorCode.CompactFailed,
+            message: "compaction turn did not complete in time",
+          },
+        });
+        reject(new Error("compaction turn did not complete in time"));
+      }, this.compactTimeoutMs);
+      const settle = () => {
+        if (this.pendingCompaction === pending) this.pendingCompaction = undefined;
+        clearTimeout(timer);
+      };
+      done.then(settle, settle);
+      await done;
+      return;
+    }
     if (action !== "configOption") return;
     const id = typeof args?.id === "string" ? args.id : "";
     if (id === "fast") {
@@ -546,12 +662,25 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     const turn = isRecord(p.turn) ? p.turn : undefined;
     const id = typeof turn?.id === "string" ? turn.id : undefined;
     if (method === "turn/started") {
-      if (id) this.turns.enterTurn(id);
-      else this.emit("status", "running");
+      if (id) {
+        this.turns.enterTurn(id);
+        if (this.pendingCompaction && !this.pendingCompaction.turnId) this.pendingCompaction.turnId = id;
+      } else {
+        this.emit("status", "running");
+      }
       return;
     }
     if (method === "turn/completed") {
       this.mapper.endTurn();
+      // Only the compaction turn's own completion may resolve the waiter. An
+      // unrelated turn completing while a compact is still starting must not
+      // satisfy the waiter (the waiter is armed with no `turnId` before
+      // `turn/started` arrives), or the session would flush queued messages
+      // into the still-running compaction turn.
+      if (this.pendingCompaction && this.pendingCompaction.turnId && this.pendingCompaction.turnId === id) {
+        this.pendingCompaction.resolve();
+        this.pendingCompaction = undefined;
+      }
       if (id) this.turns.leaveTurn(id);
       else this.turns.settleIdle();
       return;
@@ -698,6 +827,21 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private rejectPending(): void {
     for (const [, p] of this.pending) p.reject(new Error("codex app-server exited"));
     this.pending.clear();
+    if (this.pendingCompaction) {
+      // A compaction was in flight when the app-server exited; surface it as a
+      // persisted `session.error` so the user (and auto-compaction) sees the
+      // failure instead of a silently dropped compaction.
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: {
+          code: SessionErrorCode.CompactFailed,
+          message: "compaction failed: codex app-server exited",
+        },
+      });
+      this.pendingCompaction.reject(new Error("codex app-server exited"));
+      this.pendingCompaction = undefined;
+    }
   }
 }
 

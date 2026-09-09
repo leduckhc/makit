@@ -196,11 +196,56 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
         );
         return;
       }
+      final instructions = arg.trim();
       ref
           .read(storeControllerProvider.notifier)
-          .sendSessionAction(sessionId, 'compact');
+          .sendSessionAction(
+            sessionId,
+            'compact',
+            args: instructions.isNotEmpty
+                ? {'instructions': instructions}
+                : null,
+          );
       ref.status.info(
         'Compact requested',
+        source: StatusSources.agent,
+        sessionId: sessionId,
+      );
+    },
+  ),
+  ClientCommand(
+    name: 'autocompact',
+    description: 'Toggle automatic context compaction (on, off, toggle)',
+    handler: (context, ref, {required sessionId, required arg}) async {
+      final meta = ref.read(sessionMetaProvider(sessionId));
+      if (meta == null) {
+        ref.status.warning(
+          'Not available for this session',
+          source: StatusSources.agent,
+          sessionId: sessionId,
+        );
+        return;
+      }
+      final mode = arg.toLowerCase();
+      const validModes = {'on', 'off', 'toggle'};
+      if (mode.isNotEmpty && !validModes.contains(mode)) {
+        ref.status.warning(
+          'Unknown autocompact mode: $mode (use on, off, or toggle)',
+          source: StatusSources.agent,
+          sessionId: sessionId,
+        );
+        return;
+      }
+      final effective = mode.isEmpty ? 'toggle' : mode;
+      ref
+          .read(storeControllerProvider.notifier)
+          .sendSessionAction(
+            sessionId,
+            'autocompact',
+            args: {'mode': effective},
+          );
+      ref.status.info(
+        'Auto-compaction: $effective',
         source: StatusSources.agent,
         sessionId: sessionId,
       );

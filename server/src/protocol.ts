@@ -32,6 +32,13 @@ export interface Envelope {
   [k: string]: unknown;
 }
 
+/** Shared machine-readable codes for `session.error` payloads. */
+export const SessionErrorCode = {
+  CompactNotStarted: "compact_not_started",
+  CompactFailed: "compact_failed",
+} as const;
+export type SessionErrorCode = (typeof SessionErrorCode)[keyof typeof SessionErrorCode];
+
 export type EventKind =
   /**
    * The user's own turn, echoed by the adapter so transcripts are complete.

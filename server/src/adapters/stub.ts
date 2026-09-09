@@ -12,6 +12,12 @@ export interface StubAdapterOptions {
 
 const echoDelayMs = 50;
 
+// Deterministic context-window ramp constants (SPEC-context-usage / SPEC-context-auto-compaction).
+const USAGE_BASELINE = 19_000;
+const USAGE_PER_TURN = 1_200;
+const USAGE_WINDOW = 258_400;
+const USAGE_RESET_FRACTION = 0.65;
+
 /// Deterministic markdown reply exercised by the app's markdown_render E2E:
 /// heading, bold, a link, and a fenced dart code block (copy + highlight).
 const MARKDOWN_SAMPLE = [
@@ -588,12 +594,14 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
    * Deterministic `session.usage` ramp (SPEC-context-usage): a fixed per-turn context cost
    * on top of a fixed baseline (the real baseline being system prompt + tool
    * definitions), against a plausible window. Totals and cost accumulate.
+   *
+   * @param countAsTurn - when false, the reading reflects the current ramp
+   *   without advancing it. Used by the simulated compaction path so compaction
+   *   itself is not counted as a user turn.
    */
-  private emitUsage(): void {
-    this.turnCount += 1;
-    const baseline = 19_000;
-    const perTurn = 1_200;
-    const contextTokens = baseline + perTurn * this.turnCount;
+  private emitUsage(countAsTurn = true): void {
+    if (countAsTurn) this.turnCount += 1;
+    const contextTokens = USAGE_BASELINE + USAGE_PER_TURN * this.turnCount;
     const input = contextTokens * this.turnCount;
     const output = 5 * this.turnCount;
     this.emitEvent({
@@ -601,11 +609,11 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       kind: "session.usage",
       payload: {
         contextTokens,
-        contextWindow: 258_400,
+        contextWindow: USAGE_WINDOW,
         totals: {
           total: input + output,
           input,
-          cachedInput: this.turnCount > 1 ? baseline : 0,
+          cachedInput: this.turnCount > 1 ? USAGE_BASELINE : 0,
           cacheWrite: 0,
           output,
           reasoning: 0,
@@ -665,6 +673,19 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   ];
 
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
+    if (action === "compact") {
+      // Simulate compaction by rolling back the deterministic usage ramp below
+      // the auto-compaction reset threshold, so a later high reading can re-arm.
+      // Compaction itself is not a user turn, so the fresh reading does not
+      // advance the ramp.
+      const maxTokens = Math.floor(USAGE_RESET_FRACTION * USAGE_WINDOW) - 1;
+      const targetTurnCount = Math.max(0, Math.floor((maxTokens - USAGE_BASELINE) / USAGE_PER_TURN));
+      const minReduction = 5;
+      const desiredTurnCount = Math.min(this.turnCount - minReduction, targetTurnCount);
+      this.turnCount = Math.max(0, desiredTurnCount);
+      this.emitUsage(false);
+      return;
+    }
     if (action !== "configOption") return;
     const id = args?.id;
     const value = args?.value;

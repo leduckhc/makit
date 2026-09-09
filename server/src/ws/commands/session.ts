@@ -191,7 +191,19 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     if (action === "name" && typeof args?.name === "string") {
       session.setTitle(args.name);
     }
-    await session.sendAction(action, args);
+    try {
+      await session.sendAction(action, args);
+    } catch (err) {
+      // `compact` failures are already emitted by the adapter as a structured
+      // `session.error` (with the shared {code, message} envelope) on every
+      // failure path — recording again here would duplicate the error in the
+      // transcript with a generic message. Other actions do not emit, so this
+      // handler is their only error surface.
+      if (action === "compact") return;
+      session.recordError(
+        `action ${action} failed: ${(err as Error)?.message ?? String(err)}`,
+      );
+    }
   });
 
   r.register("cancel", async (ctx) => {

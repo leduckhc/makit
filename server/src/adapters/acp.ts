@@ -383,18 +383,301 @@ export class AcpAdapter extends SubprocessAdapter {
   }
 
   /**
+   * Valid modes for the `/autocompact` pi slash command.
+   */
+  private static readonly AUTOCOMPACT_MODES: ReadonlySet<string> = new Set(["on", "off", "toggle"]);
+
+  /**
+   * IDLE bound for `conn.prompt()` in {@link sendCommandPrompt}: the prompt
+   * is treated as wedged only when NO `sessionUpdate` arrives for this many
+   * ms. A live but slow compaction (e.g. a large context at 80% window, where
+   * compaction is slowest) keeps streaming updates and never trips this
+   * watchdog. A truly hung agent still fails within one interval so
+   * `Session.autoCompactPending` cannot stay set forever. Overridable in
+   * tests.
+   */
+  private commandPromptTimeoutMs = 60_000;
+
+  /**
+   * Set to `Date.now()` while at least one command prompt is in flight; the
+   * `sessionUpdate` client handler bumps it to keep every watchdog alive.
+   * Null when the {@link commandPromptInFlight} refcount drops to zero, so
+   * ordinary user-turn updates do not pay the write.
+   */
+  private commandPromptActivityAt: number | null = null;
+
+  /**
+   * Number of overlapping {@link sendCommandPrompt} calls in flight. Kept
+   * separate from {@link commandPromptActivityAt} so a completing command
+   * cannot null out the liveness timestamp of a still-running sibling (e.g.
+   * a fast `/autocompact` finishing while a slow `/compact` is still
+   * streaming): every in-flight command shares the same session, so any
+   * `sessionUpdate` proves them all alive.
+   */
+  private commandPromptInFlight = 0;
+
+  /**
+   * After the timeout fires and we cancel the ACP session, wait at most this
+   * long for the underlying prompt to actually settle before releasing the
+   * turn. Without the wait, `Session.sendAction("compact")` would clear
+   * `autoCompactPending` and flush a queued user prompt on top of the same
+   * ACP session while the agent is still processing the compact turn, which
+   * violates prompt ordering. Overridable in tests.
+   */
+  private commandPromptCancelGraceMs = 15_000;
+
+  /**
+   * Bound for the `conn.cancel()` call in {@link sendCommandPrompt}. A
+   * blocked ACP transport makes `cancel` hang the same way `prompt` did, so
+   * the compact action would never reject and the auto-compact guard would
+   * stay set. Cancel is a fire-and-forget signal, so a short bound is safe.
+   * Overridable in tests.
+   */
+  private commandPromptCancelSendTimeoutMs = 1_000;
+
+  /**
    * Control actions from the app. `configOption` maps to ACP
    * `session/set_config_option` (SPEC-acp-config-options-unified-composer); `mode` maps to
-   * `session/set_session_mode` (legacy, for `modes`-only agents). Other actions
-   * are silently ignored on this transport.
+   * `session/set_session_mode` (legacy, for `modes`-only agents). `compact` and
+   * `autocompact` become ACP slash-command prompts, because ACP has no native
+   * compaction RPC and pi-acp exposes these as built-in commands.
    */
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
     if (!this.conn || !this.acpSessionId) return;
     if (action === "configOption") return this.setConfigOption(args);
+    if (action === "compact") {
+      const instructions = typeof args?.instructions === "string" ? args.instructions.trim() : "";
+      if (/[\n\r]/.test(instructions)) {
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: "compact instructions cannot contain newlines" },
+        });
+        throw new Error("compact instructions cannot contain newlines");
+      }
+      const text = instructions ? `/compact ${instructions}` : "/compact";
+      await this.sendCommandPrompt(text);
+      return;
+    }
+    if (action === "autocompact") {
+      const mode = typeof args?.mode === "string" ? args.mode.trim().toLowerCase() : "toggle";
+      if (!AcpAdapter.AUTOCOMPACT_MODES.has(mode)) {
+        throw new Error(`invalid autocompact mode: ${mode}`);
+      }
+      await this.sendCommandPrompt(`/autocompact ${mode}`);
+      return;
+    }
     if (action !== "mode") return;
     const modeId = typeof args?.id === "string" ? args.id : "";
     if (!modeId) return;
     await this.applyMode(modeId);
+  }
+
+  /** Send a slash-command as a prompt; errors propagate to the caller. */
+  private async sendCommandPrompt(text: string): Promise<void> {
+    if (!this.conn || !this.acpSessionId) return;
+    const conn = this.conn;
+    const sessionId = this.acpSessionId;
+    const turnKey = this.turns.enterTurn();
+    // Start the underlying prompt BEFORE we race it: on timeout we must be
+    // able to reference the same promise to await its settlement, so a shared
+    // handle avoids leaking a second, unhandled rejection.
+    const promptPromise = conn.prompt({
+      sessionId,
+      prompt: [{ type: "text", text }],
+    });
+    let res: unknown;
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    try {
+      try {
+        // Bound the outbound prompt on IDLE, not on elapsed: any
+        // `sessionUpdate` for this ACP session bumps
+        // `commandPromptActivityAt`, so a live but slow compaction (which
+        // keeps streaming text/tool updates) never trips the watchdog. Only a
+        // truly silent agent — no updates for `commandPromptTimeoutMs` — is
+        // treated as wedged. The timer self-reschedules until either the
+        // prompt settles or the idle window elapses; the outer catch below
+        // then records `session.error` and
+        // `Session.sendAction("compact")`'s catch/finally clears the guards.
+        this.commandPromptInFlight++;
+        this.commandPromptActivityAt = Date.now();
+        res = await new Promise<unknown>((resolve, reject) => {
+          const arm = () => {
+            const activityAt = this.commandPromptActivityAt ?? Date.now();
+            const idleFor = Date.now() - activityAt;
+            const remaining = this.commandPromptTimeoutMs - idleFor;
+            if (remaining <= 0) {
+              timedOut = true;
+              reject(
+                new Error(
+                  `command prompt had no activity for ${this.commandPromptTimeoutMs}ms`,
+                ),
+              );
+              return;
+            }
+            timeoutTimer = setTimeout(arm, remaining);
+          };
+          timeoutTimer = setTimeout(arm, this.commandPromptTimeoutMs);
+          promptPromise.then(resolve, reject);
+        });
+      } catch (err) {
+        // On a timeout, the ACP session may still be processing the command.
+        // Cancel it and wait (bounded) for the underlying prompt to actually
+        // settle before we release the turn. Otherwise `leaveTurn` runs while
+        // the agent is still active, `Session.sendAction` clears
+        // `autoCompactPending`, and a queued user message would be sent on
+        // top of the still-running compact turn on the same ACP session.
+        if (timedOut) {
+          // `session/cancel` is scoped to the ACP session, not to a single
+          // in-flight prompt. In practice ACP agents (pi-acp) serialize
+          // prompts per session, so cancel narrows to the hung /compact.
+          // Auto-compaction is already idle-gated by
+          // `Session.updateContextFraction`, so this only affects a manual
+          // /compact during a busy session — rare and accepted, because the
+          // alternative (skip cancel) leaves the ordering violation this
+          // whole path exists to prevent.
+          //
+          // The cancel send itself must be bounded: a blocked ACP transport
+          // makes `conn.cancel()` hang the same way the prompt did, leaving
+          // the compact action pending forever.
+          let cancelSendTimer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([
+            conn.cancel({ sessionId }).catch(() => {}),
+            new Promise<void>((r) => {
+              cancelSendTimer = setTimeout(r, this.commandPromptCancelSendTimeoutMs);
+            }),
+          ]);
+          if (cancelSendTimer) clearTimeout(cancelSendTimer);
+          // Race the settle against a grace window. A cooperative agent
+          // settles quickly after cancel; a truly wedged agent forces the
+          // nuclear option below. Track the grace timer explicitly so a
+          // cooperative settle can clear it — otherwise it keeps the event
+          // loop alive for the full grace after every recovered timeout.
+          let graceTimer: ReturnType<typeof setTimeout> | undefined;
+          let graceWon = false;
+          await Promise.race([
+            promptPromise.catch(() => {}),
+            new Promise<void>((r) => {
+              graceTimer = setTimeout(() => {
+                graceWon = true;
+                r();
+              }, this.commandPromptCancelGraceMs);
+            }),
+          ]);
+          if (graceTimer) clearTimeout(graceTimer);
+          if (graceWon) {
+            // The agent ignored cancel and the prompt is still active. If we
+            // returned normally here, `Session.sendAction("compact")`'s
+            // finally would clear `autoCompactPending` and flush any queued
+            // user message on top of the still-active ACP session on the same
+            // sessionId — the ordering violation this whole path exists to
+            // prevent. Kill the adapter so the session transitions to
+            // `exited`: queued messages then fail loudly (the adapter cannot
+            // send anything on a disposed transport), which is safer than a
+            // silent interleave.
+            await this.kill().catch(() => {});
+          } else {
+            // Cooperative settle: the prompt actually completed during the
+            // grace window. Inspect its real outcome — a compaction that
+            // finished cleanly just after the timeout fired (but before
+            // cancel took effect) MUST NOT be reported as a failure, or
+            // `Session.sendAction("compact")`'s catch clears
+            // `autoCompactFired` and can immediately trigger another compact
+            // against unchanged usage.
+            try {
+              const recoveredRes = await promptPromise;
+              // The prompt actually succeeded (or the agent responded with a
+              // stop reason we classify below). Run the normal completion
+              // path — finalize the mapper once and handle `refusal` /
+              // `cancelled` stop reasons — then return through the outer
+              // `finally` which releases the turn. NOTE:
+              // `completeCommandPrompt` throws on refusal/cancelled;
+              // `Session.sendAction("compact")`'s catch then clears the
+              // auto-compaction guard so a later reading can retry.
+              this.completeCommandPrompt(recoveredRes);
+              return;
+            } catch (recoveredErr) {
+              // A `refusal` or `cancelled` stopReason surfaced through
+              // recovery: the throw is intentional, propagate it so the
+              // session clears its guard.
+              if (
+                recoveredErr instanceof Error &&
+                (recoveredErr.message === "Agent refused the command prompt." ||
+                  recoveredErr.message === "Agent cancelled the command prompt.")
+              ) {
+                throw recoveredErr;
+              }
+              // Prompt actually rejected during grace. Any partial state on
+              // the shared ACP mapper belongs to this /compact turn —
+              // finalize before we surface the timeout, or the buffer leaks
+              // into the next turn.
+              this.mapper.endTurn();
+            }
+          }
+        }
+        // `endTurn` is intentionally NOT called on a rejected prompt: the ACP
+        // mapper is shared across turns, so finalizing on failure (e.g. the
+        // session is busy with a running user turn, or pi-acp resolves
+        // `session/prompt` before the agent stops) would clobber the other
+        // turn's in-flight tools and buffered text.
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: `command prompt failed: ${(err as Error)?.message ?? String(err)}` },
+        });
+        throw err;
+      } finally {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        // Only null the shared liveness clock when THIS is the last in-flight
+        // command; a completing sibling must not disable the watchdog of a
+        // still-running one (see field docs).
+        this.commandPromptInFlight--;
+        if (this.commandPromptInFlight === 0) {
+          this.commandPromptActivityAt = null;
+        }
+      }
+      // Success path (normal ACP prompt resolution). Grace-recovery uses
+      // the same helper before returning through the outer `finally`.
+      this.completeCommandPrompt(res);
+    } finally {
+      // A slash command is a real turn; leave the tracker so the session's
+      // busy/idle signal stays correct.
+      this.turns.leaveTurn(turnKey);
+    }
+  }
+
+  /**
+   * Finalize a resolved command-prompt: flush the shared ACP mapper for this
+   * turn, and surface `stopReason: "refusal"` or `"cancelled"` as
+   * `session.error` + throw. A refused or cancelled `/compact` still resolves
+   * the ACP request, but no compaction happened — throwing lets
+   * `Session.sendAction("compact")`'s catch clear the auto-compaction guard
+   * so a later reading can retry.
+   */
+  private completeCommandPrompt(res: unknown): void {
+    this.mapper.endTurn();
+    const stopReason = (res as { stopReason?: string })?.stopReason;
+    if (stopReason === "refusal") {
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: "Agent refused the command prompt." },
+      });
+      throw new Error("Agent refused the command prompt.");
+    }
+    if (stopReason === "cancelled") {
+      // After the idle watchdog fires we send `session/cancel`; ACP agents
+      // typically complete the cancelled prompt with this stop reason. It is
+      // NOT a successful compaction — the agent did not finish rearranging
+      // context — so report it as a failure so the session can retry.
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: "Agent cancelled the command prompt." },
+      });
+      throw new Error("Agent cancelled the command prompt.");
+    }
   }
 
   /**
@@ -537,6 +820,14 @@ export class AcpAdapter extends SubprocessAdapter {
         // agent's historical turns are not duplicated into makit's event log
         // (SPEC-session-lifecycle-resume-list-delete). makit's SQLite log is the source of truth for the client.
         if (this.loading) return;
+        // Bump the command-prompt liveness watchdog: any update on this
+        // session proves the agent is alive, so a slow-but-live /compact of
+        // a large context is not mistaken for a wedged agent. Gated on the
+        // in-flight refcount so ordinary user-turn updates do not pay the
+        // write outside a command-prompt window.
+        if (this.commandPromptInFlight > 0) {
+          this.commandPromptActivityAt = Date.now();
+        }
         // The agent can switch modes autonomously; keep the selector in sync.
         const u = params.update as {
           sessionUpdate?: string;
