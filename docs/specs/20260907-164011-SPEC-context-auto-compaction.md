@@ -14,7 +14,7 @@
 
 ## Goal
 
-When a session's context occupancy nears the model's window, makit asks the agent to compact the conversation before the context is full. The user can still trigger compaction manually with `/compact`, and pi-acp users can toggle pi's own auto-compactor with `/autocompact`.
+A session's context occupancy can near the model's window. Makit then asks the agent to compact the conversation before the context is full. The user can still trigger compaction manually with `/compact`, and pi-acp users can toggle pi's own auto-compactor with `/autocompact`.
 
 Pi already has this internally; this spec wires it for ACP (pi-acp) and implements the equivalent for codex app-server.
 

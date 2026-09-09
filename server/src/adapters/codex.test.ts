@@ -14,6 +14,7 @@ function fakeAppServer(
     steer?: () => { result?: unknown; error?: unknown };
     fork?: () => { result?: unknown; error?: unknown };
     unsubscribe?: () => { result?: unknown; error?: unknown };
+    compact?: () => { result?: unknown; error?: unknown };
   } = {},
 ) {
   let lineCb: (l: string) => void = () => {};
@@ -47,6 +48,13 @@ function fakeAppServer(
         // proven not to block teardown.
         if (msg.method === "thread/unsubscribe" && opts.unsubscribe) {
           const scripted = opts.unsubscribe();
+          queueMicrotask(() => feed({ id: msg.id, ...scripted }));
+          return;
+        }
+        // `thread/compact/start` is scripted per-test so compaction failures
+        // propagate to the session layer and reset the auto-compaction guard.
+        if (msg.method === "thread/compact/start" && opts.compact) {
+          const scripted = opts.compact();
           queueMicrotask(() => feed({ id: msg.id, ...scripted }));
           return;
         }
@@ -741,6 +749,27 @@ test("sendAction compact requests thread/compact/start", async () => {
 
   // It must not look like a user turn: no echo, no input.
   assert.ok(!fake.sent.some((m) => m.method === "turn/start"));
+  await adapter.kill();
+});
+
+test("sendAction compact surfaces thread/compact/start failures and rejects", async () => {
+  const fake = fakeAppServer({
+    compact: () => ({ error: { code: -32600, message: "thread is busy" } }),
+  });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+
+  await assert.rejects(() => adapter.sendAction!("compact"), /thread is busy/);
+  assert.equal(errors.length, 1, "compaction failure is emitted as a session.error");
+  assert.ok(
+    (errors[0]!.payload as { message: string }).message.includes("thread is busy"),
+    "error names the adapter reason",
+  );
   await adapter.kill();
 });
 

@@ -98,6 +98,32 @@ test("compact action rolls back the deterministic usage ramp", async () => {
   assert.ok(after.contextTokens < before.contextTokens, "compact lowers the reading");
 });
 
+test("compact action drops usage below the auto-compaction reset threshold", async () => {
+  const stub = new StubAdapter();
+  const usages: AdapterEvent[] = [];
+  stub.on("event", (e) => {
+    if (e.kind === "session.usage") usages.push(e);
+  });
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+
+  // Ramp above the 80% trigger threshold. The usage event is emitted
+  // synchronously inside send(), so we can fire the turns concurrently.
+  for (let i = 0; i < 157; i++) {
+    void stub.send({ text: "x" });
+  }
+  await new Promise((r) => setTimeout(r, 0));
+
+  const before = usages.at(-1)!.payload as { contextTokens: number; contextWindow: number };
+  assert.ok(before.contextTokens / before.contextWindow > 0.8, "usage is above the trigger threshold");
+
+  await stub.sendAction("compact");
+  const after = usages.at(-1)!.payload as { contextTokens: number; contextWindow: number };
+  assert.ok(
+    after.contextTokens / after.contextWindow <= 0.65,
+    "compact drops usage below the reset threshold",
+  );
+});
+
 test("an adapter with no steering primitive reports it (SPEC-mid-turn-steering-and-queue T1)", async () => {
   const stub = new StubAdapter();
   const events: AdapterEvent[] = [];

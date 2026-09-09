@@ -60,6 +60,22 @@ function computeContextFraction(usage: SessionUsageDTO): number | null {
 }
 
 /**
+ * Narrow an adapter event payload to {@link SessionUsageDTO} at the boundary.
+ * The event bus carries loose payloads; this guard lets the session trust the
+ * typed value once validated.
+ */
+function isSessionUsagePayload(payload: unknown): payload is SessionUsageDTO {
+  if (typeof payload !== "object" || payload === null) return false;
+  const p = payload as Record<string, unknown>;
+  const used = p.contextTokens;
+  const window = p.contextWindow;
+  if (typeof used !== "number" && used !== undefined) return false;
+  if (typeof window !== "number" && window !== undefined) return false;
+  if (typeof p.measuredAt !== "number") return false;
+  return true;
+}
+
+/**
  * A message the user submitted while the agent was busy, held until the agent
  * goes idle (SPEC-mid-turn-steering-and-queue). Kept in memory only: unsent intent must not go stale in
  * a file across a restart.
@@ -481,7 +497,9 @@ export class Session extends EventEmitter {
       const s = (event.payload as { status?: SessionStatus }).status;
       if (s) this.status = s;
     } else if (event.kind === "session.usage" && !this.replaying) {
-      this.updateContextFraction(event.payload as unknown as SessionUsageDTO);
+      if (isSessionUsagePayload(event.payload)) {
+        this.updateContextFraction(event.payload);
+      }
     }
     // A streamed token moves nothing but `lastActivityAt`, and the next real
     // event carries that. Persisting here meant a full 17-column session upsert
@@ -772,21 +790,11 @@ export class Session extends EventEmitter {
     if (this.autoCompactFired || this.autoCompactPending) return;
     if (!this.adapter.sendAction) return;
 
-    this.autoCompactFired = true;
-    this.autoCompactPending = true;
-    this.sendAction("compact")
-      .catch((err) => {
-        this.recordError(
-          `auto-compaction failed: ${(err as Error)?.message ?? String(err)}`,
-        );
-        this.autoCompactFired = false;
-      })
-      .finally(() => {
-        this.autoCompactPending = false;
-        // If a message was queued while compaction was being accepted, flush it
-        // now so the next user turn cannot overtake the compact action.
-        if (this.queued.length > 0) void this.flushNext();
-      });
+    this.sendAction("compact").catch((err) => {
+      this.recordError(
+        `auto-compaction failed: ${(err as Error)?.message ?? String(err)}`,
+      );
+    });
   }
 
   /**
@@ -1169,8 +1177,12 @@ export class Session extends EventEmitter {
   async sendAction(action: string, args?: Record<string, unknown>) {
     // Any explicit compaction request (manual or automatic) arms the guard so
     // we do not immediately request another compaction while the agent is still
-    // reporting the pre-compaction reading.
-    if (action === "compact") this.autoCompactFired = true;
+    // reporting the pre-compaction reading. While compaction is being accepted,
+    // incoming user messages queue so they cannot overtake the compact action.
+    if (action === "compact") {
+      this.autoCompactFired = true;
+      this.autoCompactPending = true;
+    }
     try {
       await this.adapter.sendAction?.(action, args);
     } catch (err) {
@@ -1179,6 +1191,13 @@ export class Session extends EventEmitter {
       // still be able to fire on the next high reading.
       if (action === "compact") this.autoCompactFired = false;
       throw err;
+    } finally {
+      if (action === "compact") {
+        this.autoCompactPending = false;
+        // If a message was queued while compaction was being accepted, flush it
+        // now so the next user turn cannot overtake the compact action.
+        if (this.queued.length > 0) void this.flushNext();
+      }
     }
   }
 

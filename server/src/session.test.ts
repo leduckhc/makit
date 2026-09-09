@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import { Session, type SessionLifecycle } from "./session.js";
 import { TurnStatusTracker } from "./adapters/turn-status.js";
 import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
+import { NO_SESSION_CAPABILITIES } from "./adapters/adapter.js";
 import type { SessionEvent } from "./protocol.js";
 
 function fakeAdapter(): AgentAdapter {
@@ -829,15 +830,32 @@ test("SPEC-mid-turn-steering-and-queue: a streaming agent still gets a queue, no
 
 /**
  * Fake adapter that records control actions so the auto-compaction trigger can be
- * asserted without a real agent.
+ * asserted without a real agent. Fully typed — no `any` casts.
  */
+class RecordingAdapter extends EventEmitter implements AgentAdapter {
+  readonly agent = "pi";
+  readonly capabilities = NO_SESSION_CAPABILITIES;
+  actions: { action: string; args?: Record<string, unknown> }[] = [];
+  shouldFail = false;
+
+  async start() {}
+  async send() {}
+  async steer() {
+    return false;
+  }
+  async cancel() {}
+  async close() {}
+  async kill() {}
+
+  async sendAction(action: string, args?: Record<string, unknown>) {
+    if (this.shouldFail) throw new Error("adapter refused");
+    this.actions.push({ action, args });
+  }
+}
+
 function actionAdapter() {
-  const a = fakeAdapter();
-  const actions: { action: string; args?: Record<string, unknown> }[] = [];
-  (a as any).sendAction = async (action: string, args?: Record<string, unknown>) => {
-    actions.push({ action, args });
-  };
-  return { adapter: a, actions };
+  const adapter = new RecordingAdapter();
+  return { adapter, actions: adapter.actions };
 }
 
 test("a usage reading above the auto-compaction threshold requests compact when idle", async () => {
@@ -923,13 +941,8 @@ test("a missing window or low reading never triggers auto-compaction", async () 
 });
 
 test("auto-compaction failure resets the guard so a later reading can retry", async () => {
-  const adapter = fakeAdapter();
-  const actions: { action: string; args?: Record<string, unknown> }[] = [];
-  let shouldFail = true;
-  (adapter as any).sendAction = async (action: string, args?: Record<string, unknown>) => {
-    if (shouldFail) throw new Error("adapter refused");
-    actions.push({ action, args });
-  };
+  const adapter = new RecordingAdapter();
+  adapter.shouldFail = true;
   const session = new Session({ projectId: "p", agent: "pi", adapter });
   const errors: string[] = [];
   session.on("event", (e) => {
@@ -946,7 +959,7 @@ test("auto-compaction failure resets the guard so a later reading can retry", as
 
   // A second high reading without crossing the reset line should retry because
   // the guard was cleared on failure.
-  shouldFail = false;
+  adapter.shouldFail = false;
   session.adapter.emit("event", {
     ts: 2,
     kind: "session.usage",
@@ -954,7 +967,11 @@ test("auto-compaction failure resets the guard so a later reading can retry", as
   });
   await settle();
 
-  assert.deepEqual(actions, [{ action: "compact", args: undefined }], "retry fires once the adapter recovers");
+  assert.deepEqual(
+    adapter.actions,
+    [{ action: "compact", args: undefined }],
+    "retry fires once the adapter recovers",
+  );
 });
 
 test("a usage event with a missing window does not clear the last known fraction", async () => {
@@ -1005,10 +1022,8 @@ test("a manual compact action arms the auto-compaction guard", async () => {
 });
 
 test("a failing manual compact clears the auto-compaction guard", async () => {
-  const adapter = fakeAdapter();
-  (adapter as any).sendAction = async () => {
-    throw new Error("adapter refused");
-  };
+  const adapter = new RecordingAdapter();
+  adapter.shouldFail = true;
   const session = new Session({ projectId: "p", agent: "pi", adapter });
   const errors: string[] = [];
   session.on("event", (e) => {

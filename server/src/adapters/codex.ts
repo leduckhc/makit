@@ -376,6 +376,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
           kind: "session.error",
           payload: { message: `compaction failed: ${(err as Error)?.message ?? String(err)}` },
         });
+        throw err;
       }
       return;
     }

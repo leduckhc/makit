@@ -65,12 +65,12 @@ void main() {
     await sendComposerText(tester, '/compact keep the plan');
 
     // The stub simulates compaction by rolling the usage ramp back five turns,
-    // so the reading drops back to the single-turn level.
+    // so the reading drops below the auto-compaction reset threshold.
     await pumpUntil(
       tester,
-      find.text('8%'),
+      find.text('7%'),
       reason: '/compact did not lower the context usage reading',
     );
-    expect(find.text('8%'), findsOneWidget);
+    expect(find.text('7%'), findsOneWidget);
   });
 }
