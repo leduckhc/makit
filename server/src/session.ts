@@ -791,9 +791,11 @@ export class Session extends EventEmitter {
     if (!this.adapter.sendAction) return;
 
     this.sendAction("compact").catch(() => {
-      // The adapter already emits a `session.error` when it can add useful
-      // context, and the session layer resets the compaction guard in
-      // {@link sendAction}. Emitting again here would duplicate the failure.
+      // The adapter emits a `session.error` on every compact failure path
+      // (request refused, completion timeout, app-server exit), and the
+      // session layer resets the compaction guard in {@link sendAction}, so
+      // the failure is already surfaced and a later high reading can retry.
+      // Recording here would duplicate the adapter's structured error.
     });
   }
 

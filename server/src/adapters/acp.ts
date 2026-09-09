@@ -400,6 +400,11 @@ export class AcpAdapter extends SubprocessAdapter {
     if (action === "compact") {
       const instructions = typeof args?.instructions === "string" ? args.instructions.trim() : "";
       if (/[\n\r]/.test(instructions)) {
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: "compact instructions cannot contain newlines" },
+        });
         throw new Error("compact instructions cannot contain newlines");
       }
       const text = instructions ? `/compact ${instructions}` : "/compact";
@@ -429,6 +434,13 @@ export class AcpAdapter extends SubprocessAdapter {
         sessionId: this.acpSessionId,
         prompt: [{ type: "text", text }],
       });
+      // The command prompt's turn completed; finalize buffered text/thinking +
+      // tool state for this turn. `endTurn` is intentionally NOT in `finally`:
+      // the ACP mapper is shared across turns, so finalizing on failure (e.g.
+      // the session is busy with a running user turn, or pi-acp resolves
+      // `session/prompt` before the agent stops) would clobber the other
+      // turn's in-flight tools and buffered text.
+      this.mapper.endTurn();
     } catch (err) {
       this.emitEvent({
         ts: Date.now(),
@@ -437,9 +449,8 @@ export class AcpAdapter extends SubprocessAdapter {
       });
       throw err;
     } finally {
-      // A slash command is a real turn; finalize mapper state and leave the
-      // tracker so the session's busy/idle signal stays correct.
-      this.mapper.endTurn();
+      // A slash command is a real turn; leave the tracker so the session's
+      // busy/idle signal stays correct.
       this.turns.leaveTurn(turnKey);
     }
   }

@@ -139,10 +139,18 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    * from flushing queued messages into a compaction turn that is still running.
    */
   private pendingCompaction?: {
+    done: Promise<void>;
     resolve: () => void;
     reject: (err: Error) => void;
     turnId?: string;
   };
+
+  /**
+   * How long to wait for the compaction turn to report `turn/completed` before
+   * failing the `compact` action. Overridable in tests; the production default
+   * matches the agent's worst-case compaction latency.
+   */
+  private compactTimeoutMs = 60_000;
 
   /**
    * Projected config surface (SPEC-acp-config-options-unified-composer). codex `app-server` is not ACP, so its
@@ -381,6 +389,15 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
         });
         return;
       }
+      // A compaction turn may already be in flight (e.g. auto-compact while
+      // the user manually triggers /compact). Await the same completion
+      // instead of starting a second compact turn: overwriting the single
+      // waiter would orphan the first caller, leaving its queued messages
+      // blocked forever.
+      if (this.pendingCompaction) {
+        await this.pendingCompaction.done;
+        return;
+      }
       // Set up the completion waiter BEFORE requesting the start. The
       // app-server may report the compaction turn (started + completed) before
       // the JSON-RPC response reaches us, so the waiter must already exist.
@@ -390,13 +407,22 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
         resolve = res;
         reject = rej;
       });
-      const pending: (typeof this.pendingCompaction) = { resolve, reject };
+      const pending = { done, resolve, reject };
       this.pendingCompaction = pending;
+      // Guard `done` against an unhandled rejection now: on a failed start
+      // request we reject `done` to wake any concurrent caller sharing this
+      // waiter, and without an attached handler that would surface as an
+      // unhandledRejection when no such caller exists. The timer-clearing
+      // cleanup is attached later, after the timer is armed, so it always sees
+      // an armed timer (the compact turn can complete before the request reply
+      // resolves, which would otherwise run cleanup with `timer` still unset).
+      done.catch(() => {});
       try {
         await this.request("thread/compact/start", { threadId: this.threadId });
       } catch (err) {
         // The start request failed, so no compaction turn will complete.
-        // Clear the waiter to avoid a leaked timeout.
+        // Clear the waiter and reject `done` so any caller sharing this waiter
+        // sees the failure rather than waiting until the timeout.
         if (this.pendingCompaction === pending) this.pendingCompaction = undefined;
         this.emitEvent({
           ts: Date.now(),
@@ -406,23 +432,36 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
             message: `compaction failed: ${(err as Error)?.message ?? String(err)}`,
           },
         });
+        reject(err as Error);
         throw err;
       }
       // The request acknowledged the start, but the compaction turn runs
       // asynchronously. Hold the action promise until codex emits the matching
       // `turn/completed` so the session does not treat the compact action as
       // finished while the agent is still rearranging context.
-      const clearPending = () => {
-        if (this.pendingCompaction === pending) this.pendingCompaction = undefined;
-      };
-      done.then(clearPending, clearPending);
       const timer = setTimeout(() => {
         if (this.pendingCompaction === pending) {
           this.pendingCompaction = undefined;
+          // Surface the timeout as a persisted `session.error` so the user (and
+          // auto-compaction) is aware the compaction never settled; otherwise
+          // the rejection is silently swallowed by the session's auto-compact
+          // catch path.
+          this.emitEvent({
+            ts: Date.now(),
+            kind: "session.error",
+            payload: {
+              code: SessionErrorCode.CompactFailed,
+              message: "compaction turn did not complete in time",
+            },
+          });
           reject(new Error("compaction turn did not complete in time"));
         }
-      }, 60_000);
-      done.finally(() => clearTimeout(timer));
+      }, this.compactTimeoutMs);
+      const settle = () => {
+        if (this.pendingCompaction === pending) this.pendingCompaction = undefined;
+        clearTimeout(timer);
+      };
+      done.then(settle, settle);
       await done;
       return;
     }
@@ -623,7 +662,12 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     }
     if (method === "turn/completed") {
       this.mapper.endTurn();
-      if (this.pendingCompaction && (!this.pendingCompaction.turnId || this.pendingCompaction.turnId === id)) {
+      // Only the compaction turn's own completion may resolve the waiter. An
+      // unrelated turn completing while a compact is still starting must not
+      // satisfy the waiter (the waiter is armed with no `turnId` before
+      // `turn/started` arrives), or the session would flush queued messages
+      // into the still-running compaction turn.
+      if (this.pendingCompaction && this.pendingCompaction.turnId && this.pendingCompaction.turnId === id) {
         this.pendingCompaction.resolve();
         this.pendingCompaction = undefined;
       }
@@ -774,6 +818,17 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     for (const [, p] of this.pending) p.reject(new Error("codex app-server exited"));
     this.pending.clear();
     if (this.pendingCompaction) {
+      // A compaction was in flight when the app-server exited; surface it as a
+      // persisted `session.error` so the user (and auto-compaction) sees the
+      // failure instead of a silently dropped compaction.
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: {
+          code: SessionErrorCode.CompactFailed,
+          message: "compaction failed: codex app-server exited",
+        },
+      });
       this.pendingCompaction.reject(new Error("codex app-server exited"));
       this.pendingCompaction = undefined;
     }

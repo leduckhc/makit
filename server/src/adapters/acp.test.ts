@@ -1202,6 +1202,41 @@ test("sendCommandPrompt propagates prompt failures", async () => {
   await adapter.kill();
 });
 
+test("sendCommandPrompt does not finalize the shared mapper on failure (no clobber)", async () => {
+  const { transport } = pair((conn) => {
+    const agent = new ScriptedAgent(conn, async () => {});
+    (agent as unknown as { prompt: () => Promise<void> }).prompt = async () => {
+      throw new Error("prompt refused");
+    };
+    return agent;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+
+  // The ACP mapper is shared across turns. A failed command prompt (e.g. the
+  // session is busy with a running user turn) must NOT call `endTurn`, or it
+  // would finalize the other turn's in-flight tools and buffered text.
+  const mapper = (adapter as unknown as { mapper: { endTurn: () => void } }).mapper;
+  let endTurnCalls = 0;
+  const realEndTurn = mapper.endTurn.bind(mapper);
+  mapper.endTurn = () => {
+    endTurnCalls++;
+    realEndTurn();
+  };
+
+  await assert.rejects(
+    () => adapter.sendAction!("compact"),
+    /RequestError|Internal error|prompt refused/,
+  );
+  assert.equal(
+    endTurnCalls,
+    0,
+    "a failed command prompt must not finalize the shared mapper (would clobber an overlapping turn)",
+  );
+  await adapter.kill();
+});
+
 // ---------- capability probe (SPEC-new-session-config-at-spawn) -------------------------------------
 
 /**

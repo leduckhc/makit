@@ -808,6 +808,85 @@ test("sendAction compact waits for the compaction turn to complete", async () =>
   await adapter.kill();
 });
 
+test("concurrent compact actions share one waiter instead of orphaning the first", async () => {
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  let firstResolved = false;
+  let secondResolved = false;
+  const first = adapter.sendAction!("compact").then(() => {
+    firstResolved = true;
+  });
+  // A second compact while the first is still in flight must reuse the waiter,
+  // not overwrite it (which would orphan the first caller's queued messages).
+  const second = adapter.sendAction!("compact").then(() => {
+    secondResolved = true;
+  });
+
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+  assert.equal(
+    fake.sent.filter((m) => m.method === "thread/compact/start").length,
+    1,
+    "a concurrent compact reuses the in-flight waiter, not a second turn",
+  );
+
+  // Complete the single compaction turn; both callers must resolve.
+  fake.feed({ method: "turn/started", params: { turn: { id: "tc1" } } });
+  fake.feed({ method: "turn/completed", params: { turn: { id: "tc1" } } });
+  await Promise.all([first, second]);
+  assert.equal(firstResolved, true, "the first caller resolves");
+  assert.equal(secondResolved, true, "the sharing caller resolves");
+  await adapter.kill();
+});
+
+test("an unrelated finishing turn does not satisfy the compact waiter", async () => {
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  // A user turn is already running when the manual compact is requested.
+  fake.feed({ method: "turn/started", params: { turn: { id: "user-1" } } });
+
+  let resolved = false;
+  const action = adapter.sendAction!("compact").then(() => {
+    resolved = true;
+  });
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+
+  // The user turn finishes while the compact turn is still starting. The waiter
+  // is armed with no `turnId` yet, so this completion must NOT resolve it.
+  fake.feed({ method: "turn/completed", params: { turn: { id: "user-1" } } });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(resolved, false, "an unrelated finishing turn does not complete the compact action");
+
+  // The compact turn itself completes and resolves the waiter.
+  fake.feed({ method: "turn/started", params: { turn: { id: "tc1" } } });
+  fake.feed({ method: "turn/completed", params: { turn: { id: "tc1" } } });
+  await action;
+  assert.equal(resolved, true, "the compact turn completes the action");
+  await adapter.kill();
+});
+
+test("sendAction compact surfaces a completion timeout as a session.error", async () => {
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-to" });
+  // Shorten the 60s completion waiter so the test does not have to wait a minute.
+  (adapter as unknown as { compactTimeoutMs: number }).compactTimeoutMs = 50;
+
+  // The compaction turn never completes; the waiter times out.
+  await assert.rejects(() => adapter.sendAction!("compact"), /did not complete in time/);
+
+  assert.equal(errors.length, 1, "a timed-out compaction is surfaced as a session.error");
+  assert.equal((errors[0]!.payload as { code?: string }).code, "compact_failed");
+  await adapter.kill();
+});
+
 // Error objects verbatim from live codex (spec §Evidence). `activeTurnNotSteerable`
 // lives in `data.codexErrorInfo` — NOT in `message` — which is exactly why the
 // ladder keys off "the request rejected" rather than off string matching.
