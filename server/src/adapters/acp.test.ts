@@ -1202,6 +1202,189 @@ test("sendCommandPrompt propagates prompt failures", async () => {
   await adapter.kill();
 });
 
+test("sendCommandPrompt tolerates a slow-but-live prompt: session updates reset the idle watchdog", async () => {
+  // A large-context /compact can take much longer than the idle bound but
+  // keeps streaming session updates. An absolute timeout would kill live
+  // work; an idle watchdog must reset on any sessionUpdate for this session
+  // so a talking agent is not confused with a wedged one.
+  let promptResolve: ((v: unknown) => void) | undefined;
+  let agentRef: ScriptedAgent | undefined;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async () => {});
+    (agentRef as unknown as { prompt: () => Promise<unknown> }).prompt = () =>
+      new Promise<unknown>((resolve) => {
+        promptResolve = resolve;
+      });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  // Idle bound is 40ms. We stream a heartbeat every 20ms for 200ms (5x the
+  // bound) — an absolute timer would have fired long before now.
+  (adapter as unknown as {
+    commandPromptTimeoutMs: number;
+  }).commandPromptTimeoutMs = 40;
+
+  const action = adapter.sendAction!("compact");
+  let settled = false;
+  action.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+
+  // Stream heartbeats for 5x the idle bound.
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    agentRef!.update("acp-sess-1", {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: `chunk ${i}` },
+    });
+  }
+
+  assert.equal(
+    settled,
+    false,
+    "a heartbeating prompt must NOT be killed by the idle watchdog",
+  );
+
+  // Complete the prompt cleanly.
+  promptResolve!({ stopReason: "end_turn" });
+  await action;
+  await adapter.kill();
+});
+
+test("overlapping command prompts do not stomp each other's idle watchdog", async () => {
+  // Two `sendCommandPrompt` calls can overlap (e.g. /autocompact returning
+  // fast while /compact is still streaming). A shared liveness flag would
+  // let the first-to-settle null out the timestamp, so later sessionUpdates
+  // stop bumping the still-running sibling's watchdog. Use a refcount: only
+  // null the shared clock when the LAST in-flight command settles.
+  let firstResolve: ((v: unknown) => void) | undefined;
+  let secondResolve: ((v: unknown) => void) | undefined;
+  let promptCount = 0;
+  let agentRef: ScriptedAgent | undefined;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async () => {});
+    (agentRef as unknown as { prompt: () => Promise<unknown> }).prompt = () =>
+      new Promise<unknown>((resolve) => {
+        promptCount++;
+        if (promptCount === 1) firstResolve = resolve;
+        else secondResolve = resolve;
+      });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  (adapter as unknown as {
+    commandPromptTimeoutMs: number;
+  }).commandPromptTimeoutMs = 50;
+
+  // Two overlapping commands. The first finishes quickly; the second runs
+  // longer than the idle bound but keeps receiving heartbeats.
+  const first = adapter.sendAction!("autocompact", { mode: "on" });
+  const second = adapter.sendAction!("compact");
+
+  // Let both prompts get queued at the fake agent.
+  await new Promise((r) => setTimeout(r, 10));
+
+  // Finish the first: this must NOT null out the liveness clock while the
+  // second is still in flight.
+  firstResolve!({ stopReason: "end_turn" });
+  await first;
+
+  // Stream heartbeats for well past the idle bound.
+  let secondSettled = false;
+  second.then(
+    () => {
+      secondSettled = true;
+    },
+    () => {
+      secondSettled = true;
+    },
+  );
+  for (let i = 0; i < 6; i++) {
+    await new Promise((r) => setTimeout(r, 25));
+    agentRef!.update("acp-sess-1", {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: `chunk ${i}` },
+    });
+  }
+
+  assert.equal(
+    secondSettled,
+    false,
+    "the second in-flight command must keep its watchdog fed by session updates, even after a sibling settled",
+  );
+
+  secondResolve!({ stopReason: "end_turn" });
+  await second;
+  await adapter.kill();
+});
+
+test("sendCommandPrompt adopts a success that lands during the grace window", async () => {
+  // A compaction that finishes just after the timeout fires but before
+  // cancel takes effect used to be reported as `command prompt failed` —
+  // which then cleared `autoCompactFired` and could trigger another compact
+  // against unchanged usage. The grace-window winner branch must inspect the
+  // prompt's real outcome and adopt a success, not blindly rethrow the
+  // timeout error.
+  let promptResolve: ((v: unknown) => void) | undefined;
+  const { transport } = pair((conn) => {
+    const agent = new ScriptedAgent(conn, async () => {});
+    (agent as unknown as { prompt: () => Promise<unknown> }).prompt = () =>
+      new Promise<unknown>((resolve) => {
+        promptResolve = resolve;
+      });
+    return agent;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  (adapter as unknown as {
+    commandPromptTimeoutMs: number;
+    commandPromptCancelSendTimeoutMs: number;
+    commandPromptCancelGraceMs: number;
+  }).commandPromptTimeoutMs = 30;
+  (adapter as unknown as {
+    commandPromptTimeoutMs: number;
+    commandPromptCancelSendTimeoutMs: number;
+    commandPromptCancelGraceMs: number;
+  }).commandPromptCancelSendTimeoutMs = 10;
+  (adapter as unknown as {
+    commandPromptTimeoutMs: number;
+    commandPromptCancelSendTimeoutMs: number;
+    commandPromptCancelGraceMs: number;
+  }).commandPromptCancelGraceMs = 200;
+
+  const action = adapter.sendAction!("compact");
+
+  // Wait past the idle bound so the timeout fires and cancel is sent, then
+  // land a clean success on the underlying prompt during the grace window.
+  await new Promise((r) => setTimeout(r, 60));
+  promptResolve!({ stopReason: "end_turn" });
+
+  await action; // MUST resolve, not throw.
+  assert.equal(
+    errors.length,
+    0,
+    `a successful compact during grace must not emit session.error; got: ${errors
+      .map((e) => (e.payload as { message: string }).message)
+      .join(" | ")}`,
+  );
+  await adapter.kill();
+});
+
 test("sendCommandPrompt kills the adapter when a wedged agent ignores cancel past the grace window", async () => {
   // A hung ACP agent that never replies to `/compact` used to leave
   // `Session.autoCompactPending` set forever, queueing every subsequent user
@@ -1252,13 +1435,13 @@ test("sendCommandPrompt kills the adapter when a wedged agent ignores cancel pas
 
   await assert.rejects(
     () => adapter.sendAction!("compact"),
-    /command prompt did not reply/,
+    /command prompt had no activity/,
   );
 
   assert.equal(errors.length, 1, "a hung command prompt is surfaced as a session.error");
   assert.match(
     (errors[0]!.payload as { message: string }).message,
-    /command prompt failed: command prompt did not reply/,
+    /command prompt failed: command prompt had no activity/,
   );
   assert.equal(
     cancelCalls.length,
@@ -1335,7 +1518,7 @@ test("sendCommandPrompt bounds a hung cancel, clears the grace timer, and finali
   const started = Date.now();
   const action = assert.rejects(
     () => adapter.sendAction!("compact"),
-    /command prompt did not reply/,
+    /command prompt had no activity/,
   );
 
   // Cooperative agent: once the timeout fires and cancel is sent, resolve the
