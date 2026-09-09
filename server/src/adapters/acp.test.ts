@@ -1327,6 +1327,63 @@ test("overlapping command prompts do not stomp each other's idle watchdog", asyn
   await adapter.kill();
 });
 
+test("sendCommandPrompt treats a cancelled stopReason during grace as a compact failure", async () => {
+  // After the idle watchdog fires we send `session/cancel`. ACP agents
+  // typically complete the cancelled prompt with `stopReason: "cancelled"`.
+  // That must NOT be adopted as a successful compaction, or
+  // `autoCompactFired` stays armed and auto-compaction cannot retry until
+  // usage drops below the 65% reset line — leaving a still-full window.
+  let promptResolve: ((v: unknown) => void) | undefined;
+  const { transport } = pair((conn) => {
+    const agent = new ScriptedAgent(conn, async () => {});
+    (agent as unknown as { prompt: () => Promise<unknown> }).prompt = () =>
+      new Promise<unknown>((resolve) => {
+        promptResolve = resolve;
+      });
+    return agent;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  (adapter as unknown as {
+    commandPromptTimeoutMs: number;
+    commandPromptCancelSendTimeoutMs: number;
+    commandPromptCancelGraceMs: number;
+  }).commandPromptTimeoutMs = 30;
+  (adapter as unknown as {
+    commandPromptTimeoutMs: number;
+    commandPromptCancelSendTimeoutMs: number;
+    commandPromptCancelGraceMs: number;
+  }).commandPromptCancelSendTimeoutMs = 10;
+  (adapter as unknown as {
+    commandPromptTimeoutMs: number;
+    commandPromptCancelSendTimeoutMs: number;
+    commandPromptCancelGraceMs: number;
+  }).commandPromptCancelGraceMs = 200;
+
+  const action = adapter.sendAction!("compact");
+
+  await new Promise((r) => setTimeout(r, 60));
+  promptResolve!({ stopReason: "cancelled" });
+
+  await assert.rejects(() => action, /Agent cancelled the command prompt/);
+  assert.equal(
+    errors.length,
+    1,
+    "a cancelled compact during grace must be surfaced as a session.error",
+  );
+  assert.match(
+    (errors[0]!.payload as { message: string }).message,
+    /Agent cancelled the command prompt/,
+  );
+  await adapter.kill();
+});
+
 test("sendCommandPrompt adopts a success that lands during the grace window", async () => {
   // A compaction that finishes just after the timeout fires but before
   // cancel takes effect used to be reported as `command prompt failed` —

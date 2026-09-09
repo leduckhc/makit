@@ -589,19 +589,22 @@ export class AcpAdapter extends SubprocessAdapter {
               const recoveredRes = await promptPromise;
               // The prompt actually succeeded (or the agent responded with a
               // stop reason we classify below). Run the normal completion
-              // path — finalize the mapper once and handle a `refusal` stop
-              // reason — then return through the outer `finally` which
-              // releases the turn. NOTE: `completeCommandPrompt` throws on
-              // refusal; `Session.sendAction("compact")`'s catch then clears
-              // the auto-compaction guard so a later reading can retry.
+              // path — finalize the mapper once and handle `refusal` /
+              // `cancelled` stop reasons — then return through the outer
+              // `finally` which releases the turn. NOTE:
+              // `completeCommandPrompt` throws on refusal/cancelled;
+              // `Session.sendAction("compact")`'s catch then clears the
+              // auto-compaction guard so a later reading can retry.
               this.completeCommandPrompt(recoveredRes);
               return;
             } catch (recoveredErr) {
-              // A `refusal` stopReason surfaced through recovery: the throw
-              // is intentional, propagate it so the session clears its guard.
+              // A `refusal` or `cancelled` stopReason surfaced through
+              // recovery: the throw is intentional, propagate it so the
+              // session clears its guard.
               if (
                 recoveredErr instanceof Error &&
-                recoveredErr.message === "Agent refused the command prompt."
+                (recoveredErr.message === "Agent refused the command prompt." ||
+                  recoveredErr.message === "Agent cancelled the command prompt.")
               ) {
                 throw recoveredErr;
               }
@@ -646,20 +649,34 @@ export class AcpAdapter extends SubprocessAdapter {
 
   /**
    * Finalize a resolved command-prompt: flush the shared ACP mapper for this
-   * turn, and surface a `stopReason: "refusal"` as `session.error` + throw.
-   * A refused `/compact` still resolves the ACP request, but no compaction
-   * happened — throwing lets `Session.sendAction("compact")`'s catch clear
-   * the auto-compaction guard so a later reading can retry.
+   * turn, and surface `stopReason: "refusal"` or `"cancelled"` as
+   * `session.error` + throw. A refused or cancelled `/compact` still resolves
+   * the ACP request, but no compaction happened — throwing lets
+   * `Session.sendAction("compact")`'s catch clear the auto-compaction guard
+   * so a later reading can retry.
    */
   private completeCommandPrompt(res: unknown): void {
     this.mapper.endTurn();
-    if ((res as { stopReason?: string })?.stopReason === "refusal") {
+    const stopReason = (res as { stopReason?: string })?.stopReason;
+    if (stopReason === "refusal") {
       this.emitEvent({
         ts: Date.now(),
         kind: "session.error",
         payload: { message: "Agent refused the command prompt." },
       });
       throw new Error("Agent refused the command prompt.");
+    }
+    if (stopReason === "cancelled") {
+      // After the idle watchdog fires we send `session/cancel`; ACP agents
+      // typically complete the cancelled prompt with this stop reason. It is
+      // NOT a successful compaction — the agent did not finish rearranging
+      // context — so report it as a failure so the session can retry.
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: "Agent cancelled the command prompt." },
+      });
+      throw new Error("Agent cancelled the command prompt.");
     }
   }
 
