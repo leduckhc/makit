@@ -423,10 +423,25 @@ export class AcpAdapter extends SubprocessAdapter {
   /** Send a slash-command as a prompt; errors propagate to the caller. */
   private async sendCommandPrompt(text: string): Promise<void> {
     if (!this.conn || !this.acpSessionId) return;
-    await this.conn.prompt({
-      sessionId: this.acpSessionId,
-      prompt: [{ type: "text", text }],
-    });
+    const turnKey = this.turns.enterTurn();
+    try {
+      await this.conn.prompt({
+        sessionId: this.acpSessionId,
+        prompt: [{ type: "text", text }],
+      });
+    } catch (err) {
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: `command prompt failed: ${(err as Error)?.message ?? String(err)}` },
+      });
+      throw err;
+    } finally {
+      // A slash command is a real turn; finalize mapper state and leave the
+      // tracker so the session's busy/idle signal stays correct.
+      this.mapper.endTurn();
+      this.turns.leaveTurn(turnKey);
+    }
   }
 
   /**

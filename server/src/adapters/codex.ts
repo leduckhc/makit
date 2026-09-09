@@ -27,7 +27,7 @@ import { isRecord, parseJsonLine } from "./wire.js";
 import { sharedMediaStore, type MediaStore } from "../media/store.js";
 import { prepareTurn, prepareTurnOrFail, type PreparedTurn } from "../media/attach.js";
 import type { AskUser } from "../uicall.js";
-import type { SessionConfigOption, ConfigOptionValue } from "../protocol.js";
+import { SessionErrorCode, type SessionConfigOption, type ConfigOptionValue } from "../protocol.js";
 import { log } from "../log.js";
 
 /** Codex speaks LF-delimited JSON over stdio — the shared line transport. */
@@ -133,6 +133,16 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private threadId?: string;
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
+  /**
+   * When a `compact` action is in flight, the adapter resolves `sendAction` only
+   * after codex reports the matching compaction turn complete. Keeps the session
+   * from flushing queued messages into a compaction turn that is still running.
+   */
+  private pendingCompaction?: {
+    resolve: () => void;
+    reject: (err: Error) => void;
+    turnId?: string;
+  };
 
   /**
    * Projected config surface (SPEC-acp-config-options-unified-composer). codex `app-server` is not ACP, so its
@@ -364,20 +374,56 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
         this.emitEvent({
           ts: Date.now(),
           kind: "session.error",
-          payload: { message: "cannot compact before the thread has started" },
+          payload: {
+            code: SessionErrorCode.CompactNotStarted,
+            message: "cannot compact before the thread has started",
+          },
         });
         return;
       }
+      // Set up the completion waiter BEFORE requesting the start. The
+      // app-server may report the compaction turn (started + completed) before
+      // the JSON-RPC response reaches us, so the waiter must already exist.
+      let resolve!: () => void;
+      let reject!: (err: Error) => void;
+      const done = new Promise<void>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      const pending: (typeof this.pendingCompaction) = { resolve, reject };
+      this.pendingCompaction = pending;
       try {
         await this.request("thread/compact/start", { threadId: this.threadId });
       } catch (err) {
+        // The start request failed, so no compaction turn will complete.
+        // Clear the waiter to avoid a leaked timeout.
+        if (this.pendingCompaction === pending) this.pendingCompaction = undefined;
         this.emitEvent({
           ts: Date.now(),
           kind: "session.error",
-          payload: { message: `compaction failed: ${(err as Error)?.message ?? String(err)}` },
+          payload: {
+            code: SessionErrorCode.CompactFailed,
+            message: `compaction failed: ${(err as Error)?.message ?? String(err)}`,
+          },
         });
         throw err;
       }
+      // The request acknowledged the start, but the compaction turn runs
+      // asynchronously. Hold the action promise until codex emits the matching
+      // `turn/completed` so the session does not treat the compact action as
+      // finished while the agent is still rearranging context.
+      const clearPending = () => {
+        if (this.pendingCompaction === pending) this.pendingCompaction = undefined;
+      };
+      done.then(clearPending, clearPending);
+      const timer = setTimeout(() => {
+        if (this.pendingCompaction === pending) {
+          this.pendingCompaction = undefined;
+          reject(new Error("compaction turn did not complete in time"));
+        }
+      }, 60_000);
+      done.finally(() => clearTimeout(timer));
+      await done;
       return;
     }
     if (action !== "configOption") return;
@@ -567,12 +613,20 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     const turn = isRecord(p.turn) ? p.turn : undefined;
     const id = typeof turn?.id === "string" ? turn.id : undefined;
     if (method === "turn/started") {
-      if (id) this.turns.enterTurn(id);
-      else this.emit("status", "running");
+      if (id) {
+        this.turns.enterTurn(id);
+        if (this.pendingCompaction && !this.pendingCompaction.turnId) this.pendingCompaction.turnId = id;
+      } else {
+        this.emit("status", "running");
+      }
       return;
     }
     if (method === "turn/completed") {
       this.mapper.endTurn();
+      if (this.pendingCompaction && (!this.pendingCompaction.turnId || this.pendingCompaction.turnId === id)) {
+        this.pendingCompaction.resolve();
+        this.pendingCompaction = undefined;
+      }
       if (id) this.turns.leaveTurn(id);
       else this.turns.settleIdle();
       return;
@@ -719,6 +773,10 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private rejectPending(): void {
     for (const [, p] of this.pending) p.reject(new Error("codex app-server exited"));
     this.pending.clear();
+    if (this.pendingCompaction) {
+      this.pendingCompaction.reject(new Error("codex app-server exited"));
+      this.pendingCompaction = undefined;
+    }
   }
 }
 

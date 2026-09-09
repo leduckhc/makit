@@ -88,6 +88,13 @@ function fakeAppServer(
       case "thread/unsubscribe":
         return { status: "unsubscribed" };
       case "thread/compact/start":
+        // The real app-server acks the request, then reports the asynchronous
+        // compaction turn through `turn/started` + `turn/completed`.
+        queueMicrotask(() => {
+          const id = `tc${++turnSeq}`;
+          feed({ method: "turn/started", params: { turn: { id } } });
+          feed({ method: "turn/completed", params: { turn: { id } } });
+        });
         return {};
       case "model/list":
         return {
@@ -766,10 +773,38 @@ test("sendAction compact surfaces thread/compact/start failures and rejects", as
 
   await assert.rejects(() => adapter.sendAction!("compact"), /thread is busy/);
   assert.equal(errors.length, 1, "compaction failure is emitted as a session.error");
+  assert.equal(
+    (errors[0]!.payload as { code?: string }).code,
+    "compact_failed",
+    "failure carries a shared error code",
+  );
   assert.ok(
     (errors[0]!.payload as { message: string }).message.includes("thread is busy"),
     "error names the adapter reason",
   );
+  await adapter.kill();
+});
+
+test("sendAction compact waits for the compaction turn to complete", async () => {
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  let resolved = false;
+  const actionPromise = adapter.sendAction!("compact").then(() => {
+    resolved = true;
+  });
+
+  // Wait for the start request to be sent, but do not feed the completion yet.
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+  assert.equal(resolved, false, "action stays pending until the turn completes");
+
+  // Now finish the compaction turn.
+  fake.feed({ method: "turn/started", params: { turn: { id: "tc-pending" } } });
+  fake.feed({ method: "turn/completed", params: { turn: { id: "tc-pending" } } });
+  await actionPromise;
+
+  assert.equal(resolved, true, "action resolves once the compaction turn completes");
   await adapter.kill();
 });
 

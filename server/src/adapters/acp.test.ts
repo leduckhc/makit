@@ -1127,6 +1127,24 @@ test("sendAction compact and autocompact become slash-command prompts", async ()
   await adapter.kill();
 });
 
+test("sendAction compact is tracked as a turn and finalizes mapper state", async () => {
+  const { transport } = pair((conn) => {
+    return new ScriptedAgent(conn, async () => {});
+  });
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const statuses: string[] = [];
+  adapter.on("status", (s) => statuses.push(s));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  assert.deepEqual(statuses.at(-1), "idle", "session starts idle");
+
+  await adapter.sendAction!("compact");
+  assert.equal(statuses.at(-2), "running", "compact prompt opens a tracked turn");
+  assert.equal(statuses.at(-1), "idle", "compact prompt closes the turn");
+
+  await adapter.kill();
+});
+
 test("sendAction compact rejects instructions with newlines", async () => {
   const prompts: string[] = [];
   const { transport } = pair((conn) => {

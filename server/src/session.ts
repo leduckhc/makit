@@ -55,7 +55,7 @@ const AUTO_COMPACT_RESET_FRACTION = 0.65;
 function computeContextFraction(usage: SessionUsageDTO): number | null {
   const used = usage.contextTokens;
   const window = usage.contextWindow;
-  if (typeof used !== "number" || typeof window !== "number" || window <= 0) return null;
+  if (typeof used !== "number" || used < 0 || typeof window !== "number" || window <= 0) return null;
   return used / window;
 }
 
@@ -790,10 +790,10 @@ export class Session extends EventEmitter {
     if (this.autoCompactFired || this.autoCompactPending) return;
     if (!this.adapter.sendAction) return;
 
-    this.sendAction("compact").catch((err) => {
-      this.recordError(
-        `auto-compaction failed: ${(err as Error)?.message ?? String(err)}`,
-      );
+    this.sendAction("compact").catch(() => {
+      // The adapter already emits a `session.error` when it can add useful
+      // context, and the session layer resets the compaction guard in
+      // {@link sendAction}. Emitting again here would duplicate the failure.
     });
   }
 
@@ -1009,7 +1009,7 @@ export class Session extends EventEmitter {
       // Steer failed: re-check the queue state before deciding. If another
       // message arrived during the async steer and started flushing, enqueue
       // this one behind it; otherwise enqueue as the first queued message.
-      if (this.queued.length > 0 || this.flushing || BUSY_STATUSES.has(this.status)) {
+      if (this.queued.length > 0 || this.flushing || this.autoCompactPending || BUSY_STATUSES.has(this.status)) {
         this.enqueue(input);
         return;
       }
@@ -1196,7 +1196,7 @@ export class Session extends EventEmitter {
         this.autoCompactPending = false;
         // If a message was queued while compaction was being accepted, flush it
         // now so the next user turn cannot overtake the compact action.
-        if (this.queued.length > 0) void this.flushNext();
+        if (this.queued.length > 0 && !BUSY_STATUSES.has(this.status)) void this.flushNext();
       }
     }
   }
