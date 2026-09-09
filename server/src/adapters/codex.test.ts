@@ -14,7 +14,7 @@ function fakeAppServer(
     steer?: () => { result?: unknown; error?: unknown };
     fork?: () => { result?: unknown; error?: unknown };
     unsubscribe?: () => { result?: unknown; error?: unknown };
-    compact?: () => { result?: unknown; error?: unknown };
+    compact?: () => { result?: unknown; error?: unknown } | undefined;
   } = {},
 ) {
   let lineCb: (l: string) => void = () => {};
@@ -53,8 +53,11 @@ function fakeAppServer(
         }
         // `thread/compact/start` is scripted per-test so compaction failures
         // propagate to the session layer and reset the auto-compaction guard.
+        // A scripted handler returning `undefined` hangs the request (never
+        // replies), which lets a test exercise the exit-during-in-flight path.
         if (msg.method === "thread/compact/start" && opts.compact) {
           const scripted = opts.compact();
+          if (scripted === undefined) return;
           queueMicrotask(() => feed({ id: msg.id, ...scripted }));
           return;
         }
@@ -885,6 +888,80 @@ test("sendAction compact surfaces a completion timeout as a session.error", asyn
   assert.equal(errors.length, 1, "a timed-out compaction is surfaced as a session.error");
   assert.equal((errors[0]!.payload as { code?: string }).code, "compact_failed");
   await adapter.kill();
+});
+
+test("an in-flight compact turn is not aborted by the completion timer", async () => {
+  // The 60s timer is a safety net for a start response that never leads to a
+  // completion notification. Once `turn/started` has arrived, the agent is
+  // actively rearranging context — rejecting here would clear the waiter and
+  // let the session queue a duplicate auto-compact against the unchanged
+  // pre-compaction usage. The timer must be a no-op while the turn is running.
+  const fake = fakeAppServer({ compact: () => ({ result: {} }) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-in-flight" });
+  (adapter as unknown as { compactTimeoutMs: number }).compactTimeoutMs = 20;
+
+  let resolved = false;
+  const action = adapter.sendAction!("compact").then(
+    () => {
+      resolved = true;
+    },
+    (err) => {
+      resolved = err;
+    },
+  );
+
+  // The compact turn STARTED — a duplicate auto-compact must not be scheduled.
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+  fake.feed({ method: "turn/started", params: { turn: { id: "tc-slow" } } });
+
+  // Let the timer fire.
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(resolved, false, "the timer must not reject an in-flight compact turn");
+  assert.equal(errors.length, 0, "the timer must not emit CompactFailed while the turn is running");
+
+  // Eventually completing the turn resolves the action.
+  fake.feed({ method: "turn/completed", params: { turn: { id: "tc-slow" } } });
+  await action;
+  assert.equal(resolved, true, "the action resolves once the compact turn completes");
+  await adapter.kill();
+});
+
+test("app-server exit during compact/start emits exactly one CompactFailed", async () => {
+  // `rejectPending` surfaces the exit as a `session.error` for the waiter, and
+  // the `thread/compact/start` catch also emits one. Without a guard, the same
+  // crash was recorded twice with different messages.
+  const fake = fakeAppServer({ compact: () => undefined });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-exit" });
+
+  const action = adapter.sendAction!("compact");
+
+  // Wait for the start request to be in flight (queued in `pending`).
+  await waitFor(() => fake.sent.some((m) => m.method === "thread/compact/start"));
+
+  // Killing triggers `rejectPending`, which rejects the pending request and
+  // the waiter. The request-catch path also runs when the pending request
+  // rejects; both used to emit `CompactFailed`.
+  await adapter.kill();
+  await assert.rejects(() => action, /codex app-server exited/);
+
+  assert.equal(
+    errors.length,
+    1,
+    `an adapter exit during compact/start emits one error, got: ${errors
+      .map((e) => (e.payload as { message: string }).message)
+      .join(" | ")}`,
+  );
+  assert.equal((errors[0]!.payload as { code?: string }).code, "compact_failed");
 });
 
 // Error objects verbatim from live codex (spec §Evidence). `activeTurnNotSteerable`

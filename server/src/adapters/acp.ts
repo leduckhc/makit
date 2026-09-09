@@ -429,25 +429,43 @@ export class AcpAdapter extends SubprocessAdapter {
   private async sendCommandPrompt(text: string): Promise<void> {
     if (!this.conn || !this.acpSessionId) return;
     const turnKey = this.turns.enterTurn();
+    let res: unknown;
     try {
-      await this.conn.prompt({
-        sessionId: this.acpSessionId,
-        prompt: [{ type: "text", text }],
-      });
-      // The command prompt's turn completed; finalize buffered text/thinking +
-      // tool state for this turn. `endTurn` is intentionally NOT in `finally`:
-      // the ACP mapper is shared across turns, so finalizing on failure (e.g.
-      // the session is busy with a running user turn, or pi-acp resolves
-      // `session/prompt` before the agent stops) would clobber the other
-      // turn's in-flight tools and buffered text.
+      try {
+        res = await this.conn.prompt({
+          sessionId: this.acpSessionId,
+          prompt: [{ type: "text", text }],
+        });
+      } catch (err) {
+        // `endTurn` is intentionally NOT called on a rejected prompt: the ACP
+        // mapper is shared across turns, so finalizing on failure (e.g. the
+        // session is busy with a running user turn, or pi-acp resolves
+        // `session/prompt` before the agent stops) would clobber the other
+        // turn's in-flight tools and buffered text.
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: `command prompt failed: ${(err as Error)?.message ?? String(err)}` },
+        });
+        throw err;
+      }
+      // The command prompt returned normally, which INCLUDES the agent
+      // refusing (`stopReason: "refusal"`). Either way THIS turn is over, so
+      // finalize its buffered mapper state before we surface the refusal.
       this.mapper.endTurn();
-    } catch (err) {
-      this.emitEvent({
-        ts: Date.now(),
-        kind: "session.error",
-        payload: { message: `command prompt failed: ${(err as Error)?.message ?? String(err)}` },
-      });
-      throw err;
+      if ((res as { stopReason?: string })?.stopReason === "refusal") {
+        // A refused `/compact` prompt still resolves the ACP request, but no
+        // compaction happened. Surface it so `Session.sendAction("compact")`
+        // clears the auto-compaction guard (its catch resets `autoCompactFired`),
+        // otherwise later automatic attempts would be blocked while usage
+        // stays above the reset threshold.
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: { message: "Agent refused the command prompt." },
+        });
+        throw new Error("Agent refused the command prompt.");
+      }
     } finally {
       // A slash command is a real turn; leave the tracker so the session's
       // busy/idle signal stays correct.

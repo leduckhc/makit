@@ -407,7 +407,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
         resolve = res;
         reject = rej;
       });
-      const pending = { done, resolve, reject };
+      const pending: { done: Promise<void>; resolve: () => void; reject: (err: Error) => void; turnId?: string } = { done, resolve, reject };
       this.pendingCompaction = pending;
       // Guard `done` against an unhandled rejection now: on a failed start
       // request we reject `done` to wake any concurrent caller sharing this
@@ -421,9 +421,13 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
         await this.request("thread/compact/start", { threadId: this.threadId });
       } catch (err) {
         // The start request failed, so no compaction turn will complete.
-        // Clear the waiter and reject `done` so any caller sharing this waiter
-        // sees the failure rather than waiting until the timeout.
-        if (this.pendingCompaction === pending) this.pendingCompaction = undefined;
+        // If `rejectPending` cleared the waiter first (app-server exit while
+        // the start request was in flight), it already emitted `CompactFailed`
+        // and rejected `done`; skip a second emission for the same crash.
+        if (this.pendingCompaction !== pending) {
+          throw err;
+        }
+        this.pendingCompaction = undefined;
         this.emitEvent({
           ts: Date.now(),
           kind: "session.error",
@@ -440,22 +444,28 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       // `turn/completed` so the session does not treat the compact action as
       // finished while the agent is still rearranging context.
       const timer = setTimeout(() => {
-        if (this.pendingCompaction === pending) {
-          this.pendingCompaction = undefined;
-          // Surface the timeout as a persisted `session.error` so the user (and
-          // auto-compaction) is aware the compaction never settled; otherwise
-          // the rejection is silently swallowed by the session's auto-compact
-          // catch path.
-          this.emitEvent({
-            ts: Date.now(),
-            kind: "session.error",
-            payload: {
-              code: SessionErrorCode.CompactFailed,
-              message: "compaction turn did not complete in time",
-            },
-          });
-          reject(new Error("compaction turn did not complete in time"));
-        }
+        if (this.pendingCompaction !== pending) return;
+        // If the compaction turn has started (turn/started arrived), the agent
+        // is actively rearranging context. Rejecting here would clear the
+        // waiter and let the session queue a duplicate auto-compact against
+        // the unchanged pre-compaction usage. Keep awaiting `turn/completed`
+        // instead; the app-server-exit path (`rejectPending`) is the final
+        // safety net for a turn that never completes.
+        if (pending.turnId) return;
+        this.pendingCompaction = undefined;
+        // Surface the timeout as a persisted `session.error` so the user (and
+        // auto-compaction) is aware the compaction never settled; otherwise
+        // the rejection is silently swallowed by the session's auto-compact
+        // catch path.
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.error",
+          payload: {
+            code: SessionErrorCode.CompactFailed,
+            message: "compaction turn did not complete in time",
+          },
+        });
+        reject(new Error("compaction turn did not complete in time"));
       }, this.compactTimeoutMs);
       const settle = () => {
         if (this.pendingCompaction === pending) this.pendingCompaction = undefined;

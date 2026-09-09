@@ -1202,6 +1202,37 @@ test("sendCommandPrompt propagates prompt failures", async () => {
   await adapter.kill();
 });
 
+test("sendCommandPrompt surfaces a refusal stopReason so the compact guard can retry", async () => {
+  // A resolved `/compact` prompt with `stopReason: "refusal"` means the agent
+  // acknowledged the request but refused to compact. Previously the promise
+  // resolved, which left `Session.autoCompactFired` armed even though no
+  // compaction happened; the next high-usage reading could not trigger another
+  // attempt until usage fell below the reset threshold.
+  const { transport } = pair((conn) => {
+    const agent = new ScriptedAgent(conn, async () => {});
+    (agent as unknown as {
+      prompt: () => Promise<{ stopReason: string }>;
+    }).prompt = async () => ({ stopReason: "refusal" });
+    return agent;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const errors: AdapterEvent[] = [];
+  adapter.on("event", (e) => {
+    if (e.kind === "session.error") errors.push(e);
+  });
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+
+  await assert.rejects(() => adapter.sendAction!("compact"), /refused the command prompt/);
+  assert.equal(errors.length, 1, "a refused compact emits exactly one session.error");
+  assert.match(
+    (errors[0]!.payload as { message: string }).message,
+    /Agent refused the command prompt/,
+  );
+  await adapter.kill();
+});
+
 test("sendCommandPrompt does not finalize the shared mapper on failure (no clobber)", async () => {
   const { transport } = pair((conn) => {
     const agent = new ScriptedAgent(conn, async () => {});
